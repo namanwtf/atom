@@ -19,6 +19,7 @@ import atom.core.tool.ToolContext
 import atom.core.tool.ToolRegistry
 import atom.core.tool.ToolResult
 import atom.device.Accessibility
+import atom.app.feature.Features
 import atom.device.DeviceTools
 import atom.linux.LinuxTools
 import java.util.UUID
@@ -153,7 +154,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) {
                 val engine = graph.router.acquire().also { routed = it }
                 update { copy(phase = TaskPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = engine.notice) }
 
-                val deviceTools = DeviceTools.create(app, shell) + LinuxTools.create(app)
+                val deviceTools = DeviceTools.create(app, shell) + LinuxTools.create(app) +
+                    Features.all.flatMap { it.tools(app) }
                 val tools = if (settings.confirmActTools) {
                     deviceTools.map { if (it.risk == Risk.Act) ConfirmingTool(it) else it }
                 } else {
@@ -162,7 +164,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) {
                 risks = tools.associate { it.spec.name to it.risk }
                 val registry = ToolRegistry(tools)
                 val config = engine.agentConfig(
-                    systemPrompt = SystemPrompt.build(shell.tier, engine.onDevice),
+                    systemPrompt = SystemPrompt.build(shell.tier, engine.onDevice) +
+                        Features.all.mapNotNull { it.promptHint(app) }.joinToString("") { "\n\n" + it },
                     tools = registry.specs,
                     slowApprovals = settings.confirmActTools,
                 )

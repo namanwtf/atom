@@ -1,4 +1,4 @@
-package atom.app.ui.common
+package atom.ui.components
 
 import android.content.BroadcastReceiver
 import android.content.Context

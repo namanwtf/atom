@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
-package atom.app.ui.common
+package atom.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,24 +46,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import atom.app.AppGraph
-import atom.app.R
-import atom.app.graph
-
-/** ViewModel built from the app graph; no DI framework needed. */
-@Composable
-inline fun <reified VM : ViewModel> graphViewModel(crossinline create: (AppGraph) -> VM): VM {
-    val graph = LocalContext.current.graph
-    return viewModel { create(graph) }
-}
+import atom.ui.R
 
 // ------------------------------------------------------------------ Screen scaffolding
 

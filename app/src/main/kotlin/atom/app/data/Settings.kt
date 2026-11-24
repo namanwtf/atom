@@ -1,5 +1,7 @@
 package atom.app.data
 
+import atom.ui.theme.ThemeMode
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -44,8 +46,6 @@ sealed interface EngineSelection {
         val backend: LocalBackend = LocalBackend.Auto,
     ) : EngineSelection
 }
-
-enum class ThemeMode { Dark, Light, System }
 
 data class AppSettings(
     val selection: EngineSelection? = null,

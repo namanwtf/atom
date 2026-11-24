@@ -1,4 +1,4 @@
-package atom.app.ui.theme
+package atom.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,7 +18,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import atom.app.data.ThemeMode
 
 /*
  * Monochrome, matched to the silver emblem. White is the only "accent": primary actions are white with black
@@ -119,6 +118,8 @@ private val AtomShapes = Shapes(
     large = RoundedCornerShape(26.dp),
     extraLarge = RoundedCornerShape(32.dp),
 )
+
+enum class ThemeMode { Dark, Light, System }
 
 /** Extra colours the Material scheme has no slot for. */
 @Immutable

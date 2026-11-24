@@ -23,8 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.app.data.AppSettings
 import atom.app.graph
-import atom.app.ui.theme.AtomTheme
-import atom.app.ui.theme.isDark
+import atom.ui.theme.AtomTheme
+import atom.ui.theme.isDark
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

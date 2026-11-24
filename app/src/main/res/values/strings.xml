@@ -247,4 +247,9 @@
     <string name="legal_gpl2_desc">PRoot (or any later version), used for Linux without root.</string>
     <string name="legal_lgpl3">GNU Lesser General Public License v3.0</string>
     <string name="legal_lgpl3_desc">talloc, part of the PRoot build.</string>
+    <string name="settings_section_models">Models &amp; voice</string>
+    <string name="settings_section_context">Context &amp; extensions</string>
+    <string name="settings_section_tools">Tools</string>
+    <string name="settings_section_system_more">System enhancements</string>
+    <string name="settings_section_general">General</string>
 </resources>

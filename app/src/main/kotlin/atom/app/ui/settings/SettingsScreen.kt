@@ -2,6 +2,13 @@
 
 package atom.app.ui.settings
 
+import atom.ui.feature.FeatureEntry
+import atom.ui.feature.FeatureSection
+
+import atom.ui.components.AtomMenu
+import atom.ui.components.AtomMenuItem
+import atom.ui.components.ScreenIcons
+
 import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -61,19 +68,19 @@ import atom.app.R
 import atom.app.data.AppSettings
 import atom.app.data.EngineSelection
 import atom.app.data.LocalBackend
-import atom.app.data.ThemeMode
+import atom.ui.theme.ThemeMode
 import atom.app.engine.ProviderResolver
-import atom.app.ui.common.Group
-import atom.app.ui.common.GroupDivider
-import atom.app.ui.common.GroupRow
-import atom.app.ui.common.LargeTitleScreen
-import atom.app.ui.common.RowChevron
-import atom.app.ui.common.RowValue
-import atom.app.ui.common.SectionLabel
-import atom.app.ui.common.StatusDot
-import atom.app.ui.common.AtomSwitch
-import atom.app.ui.theme.AtomIcons
-import atom.app.ui.theme.extras
+import atom.ui.components.Group
+import atom.ui.components.GroupDivider
+import atom.ui.components.GroupRow
+import atom.ui.components.LargeTitleScreen
+import atom.ui.components.RowChevron
+import atom.ui.components.RowValue
+import atom.ui.components.SectionLabel
+import atom.ui.components.StatusDot
+import atom.ui.components.AtomSwitch
+import atom.ui.theme.AtomIcons
+import atom.ui.theme.extras
 import atom.device.ShellTier
 import atom.models.InstalledModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -127,6 +134,8 @@ fun SettingsScreen(
     onOpenLicenses: () -> Unit,
     onOpenTerminal: () -> Unit = {},
     onOpenLinux: () -> Unit = {},
+    features: List<FeatureEntry> = emptyList(),
+    onOpenRoute: (String) -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val installed by vm.installed.collectAsStateWithLifecycle()
@@ -287,6 +296,28 @@ fun SettingsScreen(
             }
         }
 
+        // ---------------------------------------------------------------- Feature modules
+        FeatureSection.entries.forEach { section ->
+            val rows = features.filter { it.section == section }
+            if (rows.isNotEmpty()) {
+                item(key = "l-f-${section.name}") { SectionLabel(stringResource(featureSectionLabel(section))) }
+                item(key = "g-f-${section.name}") {
+                    Group {
+                        rows.forEachIndexed { i, entry ->
+                            if (i > 0) GroupDivider()
+                            GroupRow(
+                                title = stringResource(entry.title),
+                                subtitle = entry.subtitle?.let { stringResource(it) },
+                                icon = entry.icon,
+                                onClick = { onOpenRoute(entry.route) },
+                                trailing = { RowChevron() },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // ---------------------------------------------------------------- About
         item(key = "l-about") { SectionLabel(stringResource(R.string.settings_about)) }
         item(key = "g-about") {
@@ -428,169 +459,10 @@ private fun themeLabelRes(mode: ThemeMode) = when (mode) {
 private fun versionName(context: Context): String =
     runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
-// ==================================================================== Shared with Models and Setup
-
-/** Graphite popup menu with rounded corners, matching the grouped lists. */
-@Composable
-internal fun AtomMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        offset = DpOffset(16.dp, 0.dp),
-        shape = RoundedCornerShape(18.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 0.dp,
-        shadowElevation = 12.dp,
-    ) { content() }
-}
-
-@Composable
-internal fun AtomMenuItem(text: String, checked: Boolean, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        trailingIcon = if (checked) {
-            { Icon(Icons.Filled.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface) }
-        } else {
-            null
-        },
-        onClick = onClick,
-    )
-}
-
-/**
- * Graphite track with a white pill that slides to the selected segment. Used for the Models tabs.
- */
-@Composable
-internal fun SegmentedControl(
-    options: List<Pair<String, ImageVector?>>,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val c = MaterialTheme.colorScheme
-    BoxWithConstraints(
-        modifier
-            .fillMaxWidth()
-            .height(46.dp)
-            .clip(RoundedCornerShape(50))
-            .background(c.surfaceContainerHigh)
-            .padding(4.dp),
-    ) {
-        val segment = maxWidth / options.size
-        val offset by animateDpAsState(segment * selected, tween(220), label = "segment")
-        Box(
-            Modifier
-                .offset(x = offset)
-                .width(segment)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(50))
-                .background(c.primary),
-        )
-        Row(Modifier.fillMaxWidth().fillMaxHeight()) {
-            options.forEachIndexed { i, (label, icon) ->
-                val active = i == selected
-                val tint by animateColorAsState(if (active) c.onPrimary else c.onSurfaceVariant, tween(200), label = "segmentText")
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(50))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onSelect(i) },
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (icon != null) {
-                        Icon(icon, null, Modifier.size(16.dp), tint = tint)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = tint)
-                }
-            }
-        }
-    }
-}
-
-/** Compact pill button for actions inside a group or card: white when [primary], graphite otherwise. */
-@Composable
-internal fun CompactButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    primary: Boolean = true,
-    enabled: Boolean = true,
-    icon: ImageVector? = null,
-    contentColor: Color? = null,
-) {
-    val c = MaterialTheme.colorScheme
-    val container = when {
-        !enabled -> c.surfaceContainerHigh
-        primary -> c.primary
-        else -> c.surfaceContainerHighest
-    }
-    val content = when {
-        !enabled -> c.onSurfaceVariant
-        contentColor != null -> contentColor
-        primary -> c.onPrimary
-        else -> c.onSurface
-    }
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = container,
-        contentColor = content,
-        modifier = modifier.heightIn(min = 40.dp),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (icon != null) {
-                Icon(icon, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-    }
-}
-
-/** Glyphs these screens need beyond AtomIcons (Material Design paths, Apache-2.0). */
-internal object ScreenIcons {
-    val Shield: ImageVector by lazy {
-        icon("Shield", "M12,1L3,5v6c0,5.55 3.84,10.74 9,12 5.16,-1.26 9,-6.45 9,-12V5l-9,-4zM12,11.99h7c-0.53,4.12 -3.28,7.79 -7,8.94V12H5V6.3l7,-3.11v8.8z")
-    }
-    val Storage: ImageVector by lazy {
-        icon("Storage", "M2,20h20v-4H2v4zM4,17h2v2H4v-2zM2,4v4h20V4H2zM6,7H4V5h2v2zM2,14h20v-4H2v4zM4,11h2v2H4v-2z")
-    }
-    val Document: ImageVector by lazy {
-        icon(
-            "Document",
-            "M14,2H6c-1.1,0 -1.99,0.9 -1.99,2L4,20c0,1.1 0.89,2 1.99,2H18c1.1,0 2,-0.9 2,-2V8l-6,-6zM16,18H8v-2h8v2zM16,14H8v-2h8v2zM13,9V3.5L18.5,9H13z",
-        )
-    }
-    val Contrast: ImageVector by lazy {
-        icon(
-            "Contrast",
-            "M12,3c-4.97,0 -9,4.03 -9,9s4.03,9 9,9s9,-4.03 9,-9c0,-0.46 -0.04,-0.92 -0.1,-1.36c-0.98,1.37 -2.58,2.26 -4.4,2.26c-2.98,0 -5.4,-2.42 -5.4,-5.4c0,-1.81 0.89,-3.42 2.26,-4.4C12.92,3.04 12.46,3 12,3L12,3z",
-        )
-    }
-    val Key: ImageVector by lazy {
-        icon(
-            "Key",
-            "M12.65,10C11.83,7.67 9.61,6 7,6c-3.31,0 -6,2.69 -6,6s2.69,6 6,6c2.61,0 4.83,-1.67 5.65,-4H17v4h4v-4h2v-4H12.65zM7,14c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2z",
-        )
-    }
-    val Tune: ImageVector by lazy {
-        icon("Tune", "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z")
-    }
-    val ChevronDown: ImageVector by lazy { icon("ChevronDown", "M7.41,8.59L12,13.17l4.59,-4.58L18,10l-6,6 -6,-6 1.41,-1.41z") }
-
-    private fun icon(name: String, path: String): ImageVector =
-        ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
-            .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black))
-            .build()
+private fun featureSectionLabel(section: FeatureSection): Int = when (section) {
+    FeatureSection.Models -> R.string.settings_section_models
+    FeatureSection.Context -> R.string.settings_section_context
+    FeatureSection.Tools -> R.string.settings_section_tools
+    FeatureSection.System -> R.string.settings_section_system_more
+    FeatureSection.General -> R.string.settings_section_general
 }
