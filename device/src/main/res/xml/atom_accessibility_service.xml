@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No accessibilityEventTypes on purpose: the service subscribes to nothing while idle and turns on
+  window events only during an agent task (Accessibility.setTaskActive).
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/atom_device_accessibility_description"
+    android:notificationTimeout="150"
+    android:summary="@string/atom_device_accessibility_summary" />

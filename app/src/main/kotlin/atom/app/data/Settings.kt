@@ -1,0 +1,134 @@
+package atom.app.data
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import java.io.IOException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+/** Hardware path for on-device inference. GGUF models only distinguish GPU offload from CPU. */
+@Serializable
+enum class LocalBackend { Auto, Npu, Gpu, Cpu }
+
+/** Which model answers the next task. */
+@Serializable
+sealed interface EngineSelection {
+    @Serializable
+    @SerialName("cloud")
+    data class Cloud(
+        val providerId: String,
+        val model: String,
+        /** Only set when it differs from the provider default (custom endpoints, proxies). */
+        val baseUrl: String? = null,
+    ) : EngineSelection
+
+    @Serializable
+    @SerialName("local")
+    data class Local(
+        val installedModelId: String,
+        val backend: LocalBackend = LocalBackend.Auto,
+    ) : EngineSelection
+}
+
+enum class ThemeMode { Dark, Light, System }
+
+data class AppSettings(
+    val selection: EngineSelection? = null,
+    /** Used instead of the on-device model while the PowerGovernor disallows local inference. */
+    val cloudFallback: EngineSelection.Cloud? = null,
+    val wifiOnlyDownloads: Boolean = true,
+    /** When true, Act-risk tools (taps, typing) also ask first, not only Sensitive ones. */
+    val confirmActTools: Boolean = false,
+    val onboarded: Boolean = false,
+    val theme: ThemeMode = ThemeMode.Dark,
+    /** Opt-in "Hey Atom" listener. Off by default: an open microphone is never free. */
+    val heyAtom: Boolean = false,
+    /** Also listen with the screen off on battery (charging always allows it). */
+    val heyAtomScreenOff: Boolean = false,
+)
+
+class SettingsRepository(private val store: DataStore<Preferences>) {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    val settings: Flow<AppSettings> = store.data
+        .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+        .map(::read)
+        .distinctUntilChanged()
+
+    suspend fun current(): AppSettings = settings.first()
+
+    suspend fun setSelection(selection: EngineSelection) {
+        store.edit { it[SELECTION] = json.encodeToString(EngineSelection.serializer(), selection) }
+    }
+
+    suspend fun setFallback(fallback: EngineSelection.Cloud?) {
+        store.edit {
+            if (fallback == null) it.remove(FALLBACK)
+            else it[FALLBACK] = json.encodeToString(EngineSelection.Cloud.serializer(), fallback)
+        }
+    }
+
+    suspend fun setWifiOnly(value: Boolean) {
+        store.edit { it[WIFI_ONLY] = value }
+    }
+
+    suspend fun setConfirmActTools(value: Boolean) {
+        store.edit { it[CONFIRM_ACT] = value }
+    }
+
+    suspend fun setOnboarded() {
+        store.edit { it[ONBOARDED] = true }
+    }
+
+    suspend fun setTheme(mode: ThemeMode) {
+        store.edit { it[THEME] = mode.name }
+    }
+
+    suspend fun setHeyAtom(enabled: Boolean) {
+        store.edit { it[HEY_ATOM] = enabled }
+    }
+
+    suspend fun setHeyAtomScreenOff(enabled: Boolean) {
+        store.edit { it[HEY_ATOM_SCREEN_OFF] = enabled }
+    }
+
+    private fun read(p: Preferences) = AppSettings(
+        selection = p[SELECTION]?.let { decode(EngineSelection.serializer(), it) },
+        cloudFallback = p[FALLBACK]?.let { decode(EngineSelection.Cloud.serializer(), it) },
+        wifiOnlyDownloads = p[WIFI_ONLY] ?: true,
+        confirmActTools = p[CONFIRM_ACT] ?: false,
+        onboarded = p[ONBOARDED] ?: false,
+        theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.Dark,
+        heyAtom = p[HEY_ATOM] ?: false,
+        heyAtomScreenOff = p[HEY_ATOM_SCREEN_OFF] ?: false,
+    )
+
+    private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
+        runCatching { json.decodeFromString(serializer, raw) }.getOrNull()
+
+    private companion object {
+        val SELECTION = stringPreferencesKey("engine_selection")
+        val FALLBACK = stringPreferencesKey("cloud_fallback")
+        val WIFI_ONLY = booleanPreferencesKey("wifi_only_downloads")
+        val CONFIRM_ACT = booleanPreferencesKey("confirm_act_tools")
+        val ONBOARDED = booleanPreferencesKey("onboarded")
+        val THEME = stringPreferencesKey("theme")
+        val HEY_ATOM = booleanPreferencesKey("hey_atom")
+        val HEY_ATOM_SCREEN_OFF = booleanPreferencesKey("hey_atom_screen_off")
+    }
+}
