@@ -86,6 +86,7 @@ dependencies {
     implementation(project(":device"))
     implementation(project(":models"))
     implementation(project(":voice"))
+    implementation(project(":ui"))
     implementation(project(":linux"))
 
     implementation(libs.androidx.core.ktx)
@@ -102,8 +103,6 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
-    implementation(libs.haze)
-    implementation(libs.haze.blur)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 }

@@ -3,6 +3,7 @@ package atom.app
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.ComponentName
+import atom.app.feature.Features
 import atom.app.ui.MainActivity
 import atom.voice.Wake
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ class AtomApp : Application() {
         super.onCreate()
         graph = AppGraph(this)
         graph.notifications.createChannels()
+        Features.all.forEach { it.onAppCreate(this) }
 
         Wake.setAssistLaunchComponent(ComponentName(this, MainActivity::class.java))
         // Commands are not replayed, so this collector lives for the whole process. A spoken command opens the

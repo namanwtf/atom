@@ -75,7 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import atom.app.R
-import atom.app.ui.common.CircleIconButton
+import atom.ui.components.CircleIconButton
 import atom.linux.LinuxState
 import atom.linux.term.TerminalKeys
 import atom.linux.term.TerminalScreen as Screen

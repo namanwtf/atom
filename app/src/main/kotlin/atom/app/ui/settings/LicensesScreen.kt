@@ -1,5 +1,7 @@
 package atom.app.ui.settings
 
+import atom.ui.components.ScreenIcons
+
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -38,11 +40,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import atom.app.R
-import atom.app.ui.common.Group
-import atom.app.ui.common.GroupDivider
-import atom.app.ui.common.GroupRow
-import atom.app.ui.common.LargeTitleScreen
-import atom.app.ui.theme.extras
+import atom.ui.components.Group
+import atom.ui.components.GroupDivider
+import atom.ui.components.GroupRow
+import atom.ui.components.LargeTitleScreen
+import atom.ui.theme.extras
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
