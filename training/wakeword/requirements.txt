@@ -1,0 +1,9 @@
+# Build-time only (Python 3.12, macOS arm64). Versions used for the shipped model.
+tensorflow==2.20.0
+torch==2.15.0
+onnxruntime==1.32.0
+numpy==2.5.5
+scipy==1.18.1
+soundfile==0.14.0
+pyarrow
+pyroomacoustics==0.10.1
