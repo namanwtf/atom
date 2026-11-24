@@ -96,7 +96,7 @@ internal class GeminiEngine(
         putJsonObject("generationConfig") {
             put("maxOutputTokens", request.maxOutputTokens)
             request.temperature?.let { put("temperature", it) }
-            request.reasoning?.let { effort ->
+            request.reasoning?.takeIf { it != ReasoningEffort.Off }?.let { effort ->
                 putJsonObject("thinkingConfig") {
                     put("includeThoughts", true)
                     if (BUDGET_MODEL.containsMatchIn(modelId)) {
@@ -179,6 +179,8 @@ internal class GeminiEngine(
             ReasoningEffort.Low -> 1024
             ReasoningEffort.Medium -> 8192
             ReasoningEffort.High -> 24_576
+            ReasoningEffort.XHigh, ReasoningEffort.Max -> 32_768
+            ReasoningEffort.Off -> 0
         }
     }
 }

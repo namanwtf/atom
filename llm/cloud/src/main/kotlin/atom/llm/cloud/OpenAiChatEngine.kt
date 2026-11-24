@@ -195,6 +195,8 @@ internal val ReasoningEffort.wireName: String
         ReasoningEffort.Low -> "low"
         ReasoningEffort.Medium -> "medium"
         ReasoningEffort.High -> "high"
+        ReasoningEffort.XHigh, ReasoningEffort.Max -> "xhigh"
+        ReasoningEffort.Off -> "none"
     }
 
 /** Turns Chat Completions stream chunks into [LlmEvent]s, accumulating tool-call fragments by index. */
