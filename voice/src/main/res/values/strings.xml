@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="atom_voice_assistant_label">Atom</string>
+    <string name="atom_voice_title">Atom</string>
+    <string name="atom_voice_listening">Listening for “Hey Atom”</string>
+    <string name="atom_voice_paused">“Hey Atom” paused: %1$s</string>
+    <string name="atom_voice_turn_off">Turn off</string>
+    <string name="atom_voice_channel_name">“Hey Atom” listening</string>
+    <string name="atom_voice_channel_description">Shown while Atom can hear the wake word.</string>
+</resources>

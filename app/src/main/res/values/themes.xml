@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; the window theme only covers the first frame. -->
+    <style name="Theme.Atom" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/atom_bg_dark</item>
+        <item name="android:colorAccent">@color/atom_blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

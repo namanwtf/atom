@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Atom" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/atom_bg_dark</item>
+        <item name="android:colorAccent">@color/atom_blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenBackground">@color/atom_bg_dark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/atom_blue</item>
+    </style>
+</resources>

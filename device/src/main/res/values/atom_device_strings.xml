@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="atom_device_accessibility_label">Atom</string>
+    <string name="atom_device_accessibility_summary">Lets Atom see and operate the screen while it runs a task you asked for.</string>
+    <string name="atom_device_accessibility_description">Atom reads what is on screen and taps, types and scrolls for you, only while it is carrying out a task you started. When no task is running it receives no screen events. Screen contents go only to the AI model you chose in Atom, on this phone or in the cloud.</string>
+</resources>

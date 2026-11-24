@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Atom</string>
+
+    <!-- Screens -->
+    <string name="screen_models">Models</string>
+    <string name="screen_settings">Settings</string>
+    <string name="screen_setup">Permissions &amp; setup</string>
+    <string name="screen_licenses">Open-source notices</string>
+
+    <!-- Common actions -->
+    <string name="action_send">Send</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_done">Done</string>
+    <string name="action_save">Save</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_replace">Replace</string>
+    <string name="action_retry">Retry download</string>
+    <string name="action_download">Download</string>
+    <string name="action_add_download">Add &amp; download</string>
+    <string name="action_use">Use</string>
+    <string name="action_use_model">Use this model</string>
+    <string name="action_test">Test</string>
+    <string name="action_settings">Settings</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_open_drawer">Open conversations</string>
+    <string name="cd_delete_conversation">Delete conversation</string>
+    <string name="cd_dismiss">Dismiss</string>
+    <string name="cd_show_secret">Show</string>
+    <string name="cd_hide_secret">Hide</string>
+    <string name="cd_pick_model">Pick a model</string>
+    <string name="cd_step_ok">Succeeded</string>
+    <string name="cd_step_error">Failed</string>
+
+    <!-- Chat -->
+    <string name="input_hint">Ask Atom to do something…</string>
+    <string name="input_hint_running">Atom is working…</string>
+    <string name="empty_title">What should I do?</string>
+    <string name="empty_subtitle">Atom reads your screen and taps through apps for you.</string>
+    <string name="empty_no_engine">Pick a model to get started.</string>
+    <string name="empty_choose_model">Choose a model</string>
+    <string name="empty_no_accessibility">Turn on Accessibility so Atom can see and tap.</string>
+    <string name="empty_open_setup">Set up</string>
+    <string name="suggestion_1">What\'s on my screen right now?</string>
+    <string name="suggestion_2">Turn on Do Not Disturb until 8 am</string>
+    <string name="suggestion_3">Open YouTube and search for lo-fi music</string>
+    <string name="suggestion_4">How much storage is free?</string>
+    <string name="status_preparing">Getting ready…</string>
+    <string name="status_thinking">Thinking…</string>
+    <string name="status_waiting_approval">Waiting for your approval</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_step_limit">Stopped at the step limit</string>
+    <string name="usage_tokens">%1$s in · %2$s out</string>
+    <string name="step_arguments">Arguments</string>
+    <string name="step_result">Result</string>
+    <string name="step_awaiting">Approve?</string>
+    <string name="banner_busy_elsewhere">A task is running in another conversation.</string>
+    <string name="drawer_new_chat">New chat</string>
+    <string name="drawer_empty">No conversations yet.</string>
+    <string name="drawer_untitled">Untitled</string>
+    <string name="delete_conversation_title">Delete conversation?</string>
+    <string name="delete_conversation_text">“%1$s” will be removed from this phone.</string>
+
+    <!-- Engine chip -->
+    <string name="engine_none">No model</string>
+    <string name="engine_model_missing">Model missing</string>
+    <string name="engine_label_cloud">%1$s · %2$s</string>
+    <string name="badge_on_device">on-device</string>
+
+    <!-- Confirmation -->
+    <string name="confirm_title">Allow this action?</string>
+    <string name="confirm_text">Atom wants to do something that needs your OK.</string>
+    <string name="confirm_countdown">Denied automatically in %1$d s</string>
+    <string name="confirm_allow">Allow</string>
+    <string name="confirm_deny">Deny</string>
+
+    <!-- Routing -->
+    <string name="route_no_engine">No model selected. Pick one in Models.</string>
+    <string name="route_unknown_provider">Unknown provider “%1$s”.</string>
+    <string name="route_missing_key">Add an API key for %1$s in Models.</string>
+    <string name="route_model_missing">The selected on-device model is no longer installed.</string>
+    <string name="route_engine_failed">Could not start the model: %1$s</string>
+    <string name="route_local_paused">On-device model paused: %1$s. Set a cloud fallback in Settings to keep going.</string>
+    <string name="route_fallback_notice">Using your cloud fallback: %1$s.</string>
+    <string name="power_reason_hot">the phone is hot</string>
+    <string name="power_reason_saver">Battery Saver is on</string>
+    <string name="power_reason_battery">battery is at %1$d%%</string>
+    <string name="power_reason_generic">power conditions</string>
+
+    <!-- Notifications -->
+    <string name="channel_task">Running task</string>
+    <string name="channel_task_desc">Shown only while Atom is working on a task you asked for.</string>
+    <string name="channel_approval">Approvals</string>
+    <string name="channel_approval_desc">Atom asks before sensitive actions.</string>
+    <string name="channel_result">Task results</string>
+    <string name="channel_result_desc">When a task finishes while Atom is in the background.</string>
+    <string name="notif_working_title">Atom is working</string>
+    <string name="notif_waiting_title">Atom needs your approval</string>
+    <string name="notif_waiting_text">Tap Allow or Deny</string>
+    <string name="notif_starting">Starting…</string>
+    <string name="notif_thinking">Thinking…</string>
+    <string name="notif_done">Task done</string>
+    <string name="notif_failed">Task failed</string>
+    <string name="notif_step_limit">Stopped at the step limit</string>
+
+    <!-- Models -->
+    <string name="tab_on_device">On-device</string>
+    <string name="tab_cloud">Cloud</string>
+    <string name="local_intro_title">Run models on this phone</string>
+    <string name="local_intro_text">Private and offline. One tap downloads a model and sets it up. This phone has %1$d GB of RAM.</string>
+    <string name="wifi_only">Download on Wi-Fi only</string>
+    <string name="wifi_only_desc">Models are large; this saves mobile data.</string>
+    <string name="section_installed">Installed</string>
+    <string name="section_catalog">Recommended</string>
+    <string name="section_from_link">Add from a link</string>
+    <string name="section_hf">Hugging Face</string>
+    <string name="badge_in_use">In use</string>
+    <string name="badge_vision">Vision</string>
+    <string name="badge_needs_hf">Needs HF token</string>
+    <string name="badge_key_saved">Key saved</string>
+    <string name="min_ram">%1$d GB RAM</string>
+    <string name="ram_warning">Needs %1$d GB RAM; this phone has %2$d GB. It may not run.</string>
+    <string name="download_progress">%1$s of %2$s · %3$d%%</string>
+    <string name="download_queued">Waiting…</string>
+    <string name="download_verifying">Verifying…</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="model_active">Active</string>
+    <string name="needs_hf_hint">Add a Hugging Face token below to download this model.</string>
+    <string name="link_desc">Paste a Hugging Face link or a direct URL to a .litertlm or .gguf file.</string>
+    <string name="link_hint">https://huggingface.co/…</string>
+    <string name="hf_desc">Some models (like Gemma) are gated. Accept the license on Hugging Face, then add a read token here.</string>
+    <string name="hf_label">Hugging Face token</string>
+    <string name="secret_saved">Saved and encrypted</string>
+    <string name="delete_model_title">Delete model?</string>
+    <string name="delete_model_text">%1$s will be removed and its storage freed.</string>
+    <string name="cloud_provider">Provider</string>
+    <string name="cloud_base_url">Base URL</string>
+    <string name="cloud_api_key">API key</string>
+    <string name="cloud_get_key">Get a key</string>
+    <string name="cloud_key_label">Paste API key</string>
+    <string name="cloud_key_optional">API key (optional)</string>
+    <string name="cloud_key_note">Keys are encrypted with a key that never leaves this phone\'s secure hardware.</string>
+    <string name="cloud_model">Model</string>
+    <string name="cloud_model_hint">Model name</string>
+    <string name="cloud_fetch_models">Fetch models</string>
+    <string name="cloud_models_found">%1$d available</string>
+    <string name="cloud_set_fallback">Use as cloud fallback</string>
+    <string name="cloud_is_fallback">This is your cloud fallback</string>
+    <string name="cloud_fallback_explain">When the phone is hot or the battery is low, Atom pauses on-device models and uses the fallback instead.</string>
+    <string name="test_running">Sending a test request…</string>
+    <string name="test_ok">Works: “%1$s” in %2$s</string>
+    <string name="test_ok_empty">Connected in %1$s</string>
+    <string name="test_failed">Failed: %1$s</string>
+
+    <!-- Setup -->
+    <string name="setup_welcome_title">Welcome to Atom</string>
+    <string name="setup_welcome_text">A few permissions and Atom can work your phone for you.</string>
+    <string name="setup_accessibility_title">Accessibility</string>
+    <string name="setup_accessibility_text">Lets Atom read what is on screen and tap, type and scroll for you. It is only active while a task runs.</string>
+    <string name="setup_open_accessibility">Open Accessibility settings</string>
+    <string name="setup_notifications_title">Notifications</string>
+    <string name="setup_notifications_text">Shows progress with a Stop button, and asks for approval while Atom works in other apps.</string>
+    <string name="setup_allow_notifications">Allow notifications</string>
+    <string name="setup_shell_title">Shell access</string>
+    <string name="setup_battery_title">Battery</string>
+    <string name="setup_battery_1">Atom does nothing in the background. It runs only while a task you started is in progress, and the notification disappears when it ends.</string>
+    <string name="setup_battery_2">On-device models are unloaded from memory after 5 minutes idle, or sooner if the system needs the memory.</string>
+    <string name="setup_battery_3">When the phone is hot or the battery is low, on-device inference pauses and your cloud fallback (if set) takes over.</string>
+    <string name="setup_battery_4">The screen is never kept awake. A short CPU wake lock is held only if a task is still running with the screen off.</string>
+    <string name="setup_model_title">Model</string>
+    <string name="setup_model_text">Download a model to run on this phone, or add a cloud API key.</string>
+    <string name="setup_continue">Continue</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_enabled_not_connected">Enabled, waiting to connect</string>
+    <string name="setup_restricted_hint">Installed outside a store? Android blocks this switch until you open Atom\'s App info, tap ⋮ and choose \"Allow restricted settings\".</string>
+    <string name="setup_open_app_info">Open App info</string>
+    <string name="setup_voice_title">Voice</string>
+    <string name="voice_assistant_on">Atom is your assistant</string>
+    <string name="voice_assistant_off">Not your assistant yet</string>
+    <string name="voice_assistant_text">Long-press the power button to open Atom. Costs nothing: no microphone, nothing in the background.</string>
+    <string name="voice_assistant_set">Set as assistant</string>
+    <string name="voice_hey_atom">\"Hey Atom\"</string>
+    <string name="voice_hey_atom_text">Listens only while the screen is on or charging. Pauses on battery saver, heat, low battery and calls.</string>
+    <string name="voice_model_missing">Wake-word model not installed in this build yet.</string>
+    <string name="voice_state_listening">Listening for \"Hey Atom\"</string>
+    <string name="voice_state_paused">Paused: %1$s</string>
+    <string name="voice_screen_off">Also with the screen off</string>
+    <string name="voice_screen_off_text">Keeps the microphone open on battery. Costs noticeably more.</string>
+    <string name="status_off">Off</string>
+    <string name="status_allowed">Allowed</string>
+    <string name="status_not_allowed">Not allowed</string>
+    <string name="shell_detecting">Checking…</string>
+    <string name="shell_root">Root available</string>
+    <string name="shell_shizuku">Shizuku connected</string>
+    <string name="shell_none">No shell access</string>
+    <string name="shell_tier_none_label">None</string>
+    <string name="shell_tier_none_desc">Screen control only: reading, tapping, typing, opening apps.</string>
+    <string name="shell_tier_shizuku_label">Shizuku</string>
+    <string name="shell_tier_shizuku_desc">Adds ADB-level shell commands: toggle settings, manage apps, read system state. No root needed.</string>
+    <string name="shell_tier_root_label">Root</string>
+    <string name="shell_tier_root_desc">Full shell as root. Powerful; every shell command still asks you first.</string>
+    <string name="shell_check_again">Check again</string>
+
+    <!-- Settings -->
+    <string name="settings_engine">Model</string>
+    <string name="settings_engine_none_sub">Tap to choose a model</string>
+    <string name="settings_backend">Hardware</string>
+    <string name="settings_backend_desc">Auto picks the NPU or GPU when the model supports it. GGUF models use the CPU unless GPU is chosen.</string>
+    <string name="backend_auto">Auto</string>
+    <string name="backend_npu">NPU</string>
+    <string name="backend_gpu">GPU</string>
+    <string name="backend_cpu">CPU</string>
+    <string name="settings_fallback">Cloud fallback</string>
+    <string name="settings_fallback_none">None</string>
+    <string name="settings_fallback_desc">Used when on-device inference is paused</string>
+    <string name="settings_fallback_add_key">Add a cloud key in Models…</string>
+    <string name="settings_safety">Safety</string>
+    <string name="settings_confirm_act">Ask before taps and typing</string>
+    <string name="settings_confirm_act_desc">Sensitive actions (shell, sending, deleting) always ask. Turn this on to approve every step.</string>
+    <string name="settings_setup_desc">Accessibility, notifications, shell, battery</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_system">System</string>
+    <string name="settings_about">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_license">GNU GPL v3.0 or later</string>
+    <string name="about_license_view">View LICENSE</string>
+    <string name="about_notices_desc">Third-party software included in Atom</string>
+    <string name="about_trademark">The license grants no rights to use the Atom name or logo. Modified versions must use their own name and branding.</string>
+
+    <!-- Open-source notices (mirrors the repository NOTICE file) -->
+    <string name="legal_notice">NOTICE</string>
+    <string name="legal_notice_desc">Copyright, the Atom name rule, and every third-party component.</string>
+    <string name="legal_gpl">GNU General Public License v3.0</string>
+    <string name="legal_gpl_desc">Atom\'s own license (version 3 or any later version).</string>
+    <string name="legal_apache">Apache License 2.0</string>
+    <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API.</string>
+    <string name="legal_mit">MIT License</string>
+    <string name="legal_mit_desc">llama.cpp and ggml.</string>
+</resources>
