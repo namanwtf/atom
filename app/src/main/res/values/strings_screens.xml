@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings added by the Models, Settings, Setup and Licenses restyle. Existing strings stay in strings.xml. -->
+<resources>
+    <!-- Models -->
+    <string name="models_progress_short">%1$d%% · %2$s</string>
+    <string name="models_from_links">Added from links</string>
+    <string name="models_more">More models</string>
+    <string name="models_downloads">Downloads</string>
+    <string name="models_choose_from_list">Choose from list</string>
+    <string name="models_test_connection">Test connection</string>
+
+    <!-- Settings -->
+    <string name="settings_behaviour">Behaviour</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_system">System</string>
+    <string name="settings_shell_row">Shell access</string>
+    <string name="settings_shell_not_checked">Not checked</string>
+    <string name="settings_tier_root">Root</string>
+    <string name="settings_tier_shizuku">Shizuku</string>
+    <string name="settings_tier_app">App</string>
+    <string name="settings_terminal_row">Terminal</string>
+    <string name="settings_terminal_row_desc">Run commands at your current shell level</string>
+    <string name="settings_linux_row">Linux</string>
+    <string name="settings_linux_row_desc">Alpine or Debian, one tap</string>
+    <string name="settings_voice">Voice</string>
+    <string name="settings_hey_atom_on">On</string>
+    <string name="settings_license_row">License</string>
+</resources>

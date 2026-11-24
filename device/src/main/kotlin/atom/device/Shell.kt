@@ -11,8 +11,8 @@ import rikka.shizuku.Shizuku
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-/** How much privilege shell commands run with. */
-enum class ShellTier { None, Shizuku, Root }
+/** How much privilege shell commands run with. [App] is Atom's own sandboxed user: always available. */
+enum class ShellTier { App, Shizuku, Root }
 
 data class ShellResult(val exitCode: Int, val stdout: String, val stderr: String)
 
@@ -22,12 +22,12 @@ interface ShellExecutor {
 }
 
 object Shells {
-    /** Root (`su -c id` works) beats Shizuku (binder alive + permission granted) beats None. */
+    /** Root (`su -c id` works) beats Shizuku (binder alive + permission granted) beats the app's own shell. */
     suspend fun detect(context: Context): ShellExecutor {
         if (rootAvailable()) return PersistentShell(ShellTier.Root) { ProcessBuilder("su").start() }
         return when (val s = shizukuStatus()) {
             ShizukuStatus.Ready -> PersistentShell(ShellTier.Shizuku) { ShizukuProcess.start("sh") }
-            else -> NoShell(s.hint)
+            else -> PersistentShell(ShellTier.App) { ProcessBuilder("/system/bin/sh").start() }
         }
     }
 
@@ -86,12 +86,6 @@ object Shells {
     } ?: false
 }
 
-/** Used when neither root nor Shizuku is usable; every command returns the reason and the fix. */
-internal class NoShell(private val hint: String) : ShellExecutor {
-    override val tier = ShellTier.None
-    override suspend fun run(command: String, timeoutMs: Long) =
-        ShellResult(127, "", "No shell access on this phone. $hint")
-}
 
 /** Shizuku 13 keeps newProcess private (it nudges towards UserService); it is still the lightest path. */
 internal object ShizukuProcess {

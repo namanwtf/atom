@@ -29,9 +29,11 @@ import atom.app.ui.settings.LicensesScreen
 import atom.app.ui.settings.SettingsScreen
 import atom.app.ui.settings.SettingsViewModel
 import atom.app.ui.setup.SetupScreen
+import atom.app.ui.terminal.LinuxScreen
+import atom.app.ui.terminal.TerminalScreen
 import kotlinx.coroutines.launch
 
-enum class Destination { Chat, Models, Settings, Setup, Licenses }
+enum class Destination { Chat, Models, Settings, Setup, Licenses, Terminal, Linux }
 
 /** A tiny back stack: five screens do not need a navigation library. */
 @Composable
@@ -77,6 +79,8 @@ fun AtomRoot(settings: AppSettings) {
                     onOpenModels = { push(Destination.Models) },
                     onOpenSetup = { push(Destination.Setup) },
                     onOpenLicenses = { push(Destination.Licenses) },
+                    onOpenTerminal = { push(Destination.Terminal) },
+                    onOpenLinux = { push(Destination.Linux) },
                 )
                 Destination.Setup -> SetupScreen(
                     firstRun = !settings.onboarded,
@@ -89,6 +93,8 @@ fun AtomRoot(settings: AppSettings) {
                     },
                 )
                 Destination.Licenses -> LicensesScreen(onBack = ::pop)
+                Destination.Terminal -> TerminalScreen(onBack = ::pop)
+                Destination.Linux -> LinuxScreen(onBack = ::pop, onOpenTerminal = { push(Destination.Terminal) })
             }
         }
     }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="atom_blue">#FF4F8BFF</color>
-    <color name="atom_bg_dark">#FF0A0C11</color>
-    <color name="ic_launcher_background">#FF4F8BFF</color>
+    <color name="atom_bg_dark">#FF000000</color>
+    <color name="ic_launcher_background">#FF000000</color>
 </resources>

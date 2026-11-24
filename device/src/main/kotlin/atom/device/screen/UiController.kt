@@ -322,7 +322,7 @@ internal object UiController {
         }
         if (!needsKeyEnter) return summary
         val sh = shell
-        if (sh != null && sh.tier != ShellTier.None && sh.run("input keyevent 66", 5_000).exitCode == 0) {
+        if (sh != null && sh.tier != ShellTier.App && sh.run("input keyevent 66", 5_000).exitCode == 0) {
             return "$summary and pressed Enter"
         }
         return "$summary, but Enter is not supported in this field; tap the app's send/search button instead"

@@ -196,13 +196,14 @@
     <string name="shell_detecting">Checking…</string>
     <string name="shell_root">Root available</string>
     <string name="shell_shizuku">Shizuku connected</string>
-    <string name="shell_none">No shell access</string>
-    <string name="shell_tier_none_label">None</string>
-    <string name="shell_tier_none_desc">Screen control only: reading, tapping, typing, opening apps.</string>
+    <string name="shell_none">App shell (no root)</string>
+    <string name="shell_tier_none_label">App</string>
+    <string name="shell_tier_none_desc">Screen control plus a sandboxed shell as Atom\'s own user. Always available.</string>
     <string name="shell_tier_shizuku_label">Shizuku</string>
     <string name="shell_tier_shizuku_desc">Adds ADB-level shell commands: toggle settings, manage apps, read system state. No root needed.</string>
     <string name="shell_tier_root_label">Root</string>
     <string name="shell_tier_root_desc">Full shell as root. Powerful; every shell command still asks you first.</string>
+    <string name="shell_root_hint">Rooted? KernelSU hides root until you allow it: open KernelSU (or Magisk), give Atom superuser, then tap Check again.</string>
     <string name="shell_check_again">Check again</string>
 
     <!-- Settings -->
@@ -242,4 +243,8 @@
     <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API.</string>
     <string name="legal_mit">MIT License</string>
     <string name="legal_mit_desc">llama.cpp and ggml.</string>
+    <string name="legal_gpl2">GNU General Public License v2.0</string>
+    <string name="legal_gpl2_desc">PRoot (or any later version), used for Linux without root.</string>
+    <string name="legal_lgpl3">GNU Lesser General Public License v3.0</string>
+    <string name="legal_lgpl3_desc">talloc, part of the PRoot build.</string>
 </resources>

@@ -1,17 +1,15 @@
 package atom.app.ui.theme
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import atom.app.R
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
@@ -82,19 +80,16 @@ object AtomIcons {
             .build()
 }
 
-/** The Atom mark: a nucleus with three tilted electron orbits. */
+/** The Atom emblem, the same artwork as the launcher icon. */
 @Composable
-fun AtomMark(modifier: Modifier = Modifier.size(28.dp), color: Color = MaterialTheme.colorScheme.primary) {
-    Canvas(modifier) {
-        val c = center
-        val rx = size.minDimension * 0.46f
-        val ry = rx * 0.36f
-        val stroke = Stroke(width = size.minDimension * 0.065f)
-        for (angle in floatArrayOf(0f, 60f, 120f)) {
-            rotate(angle, c) {
-                drawOval(color, topLeft = Offset(c.x - rx, c.y - ry), size = Size(rx * 2, ry * 2), style = stroke)
-            }
-        }
-        drawCircle(color, radius = size.minDimension * 0.095f, center = c)
-    }
+fun AtomMark(modifier: Modifier = Modifier.size(28.dp)) {
+    Image(
+        painter = painterResource(R.mipmap.ic_launcher_fg),
+        contentDescription = null,
+        // The launcher foreground keeps the emblem inside the adaptive-icon safe zone; undo that padding here.
+        modifier = modifier.graphicsLayer {
+            scaleX = 1.55f
+            scaleY = 1.55f
+        },
+    )
 }
