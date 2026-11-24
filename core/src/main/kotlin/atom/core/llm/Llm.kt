@@ -34,7 +34,8 @@ data class ChatMessage(
 /** [parameters] is a JSON Schema object describing the tool's arguments. */
 data class ToolSpec(val name: String, val description: String, val parameters: JsonObject)
 
-enum class ReasoningEffort { Low, Medium, High }
+/** Requested thinking depth. A null effort means "model default"; [Off] asks the model not to think. */
+enum class ReasoningEffort { Off, Low, Medium, High, XHigh, Max }
 
 data class LlmRequest(
     val model: String,

@@ -64,7 +64,7 @@ internal class AnthropicEngine(
     internal fun buildBody(request: LlmRequest): JsonObject = buildJsonObject {
         val modelId = request.model.ifBlank { model }
         val legacy = isLegacyModel(modelId)
-        val effort = request.reasoning
+        val effort = request.reasoning?.takeIf { it != ReasoningEffort.Off }
         val legacyBudget = effort?.takeIf { legacy && !midToolLoop(request.messages) }?.let(::thinkingBudget)
 
         put("model", modelId)
@@ -177,6 +177,9 @@ internal class AnthropicEngine(
             ReasoningEffort.Low -> 1024
             ReasoningEffort.Medium -> 4096
             ReasoningEffort.High -> 16_384
+            ReasoningEffort.XHigh -> 32_000
+            ReasoningEffort.Max -> 63_999
+            ReasoningEffort.Off -> 0
         }
 
         /**
