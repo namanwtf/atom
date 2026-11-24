@@ -1,0 +1,538 @@
+{
+ "positives_quiet": {
+  "n": 1500,
+  "recall": 0.8946666666666667
+ },
+ "positives_noisy_5to20dB_rir50": {
+  "n": 1500,
+  "recall": 0.788
+ },
+ "speech_librispeech_test_other": {
+  "hours": 5.341547256944445,
+  "false_accepts": 2,
+  "fa_per_hour": 0.37442334660614257,
+  "fa_scores": [
+   0.5497252345085144,
+   0.6966087818145752
+  ]
+ },
+ "background_freesound_cc0_test": {
+  "hours": 3.7310573611111106,
+  "false_accepts": 0,
+  "fa_per_hour": 0.0,
+  "fa_scores": []
+ },
+ "negatives_combined": {
+  "hours": 9.072604618055555,
+  "false_accepts": 2,
+  "fa_per_hour": 0.22044386195555835
+ },
+ "adversarial_tts_false_accept_rate_quiet": {
+  "hey at them": {
+   "n": 15,
+   "fa_rate": 0.6666666666666666
+  },
+  "hey at": {
+   "n": 9,
+   "fa_rate": 0.5555555555555556
+  },
+  "hey adams": {
+   "n": 29,
+   "fa_rate": 0.5172413793103449
+  },
+  "pay adam": {
+   "n": 10,
+   "fa_rate": 0.5
+  },
+  "hey, adam": {
+   "n": 28,
+   "fa_rate": 0.5
+  },
+  "hey adam": {
+   "n": 79,
+   "fa_rate": 0.43037974683544306
+  },
+  "hey hat": {
+   "n": 6,
+   "fa_rate": 0.3333333333333333
+  },
+  "hey atlas": {
+   "n": 14,
+   "fa_rate": 0.2857142857142857
+  },
+  "hey sam": {
+   "n": 7,
+   "fa_rate": 0.2857142857142857
+  },
+  "hey adam smith": {
+   "n": 14,
+   "fa_rate": 0.2857142857142857
+  },
+  "hey adder": {
+   "n": 12,
+   "fa_rate": 0.25
+  },
+  "hey item": {
+   "n": 21,
+   "fa_rate": 0.23809523809523808
+  },
+  "say atom": {
+   "n": 9,
+   "fa_rate": 0.2222222222222222
+  },
+  "hey autumn": {
+   "n": 23,
+   "fa_rate": 0.21739130434782608
+  },
+  "hey ottoman": {
+   "n": 5,
+   "fa_rate": 0.2
+  },
+  "hey add them": {
+   "n": 16,
+   "fa_rate": 0.1875
+  },
+  "hey, i'm adam": {
+   "n": 22,
+   "fa_rate": 0.18181818181818182
+  },
+  "the atom": {
+   "n": 22,
+   "fa_rate": 0.18181818181818182
+  },
+  "okay atom": {
+   "n": 18,
+   "fa_rate": 0.16666666666666666
+  },
+  "they had them": {
+   "n": 7,
+   "fa_rate": 0.14285714285714285
+  },
+  "hey attempt": {
+   "n": 8,
+   "fa_rate": 0.125
+  },
+  "hey anna": {
+   "n": 8,
+   "fa_rate": 0.125
+  },
+  "hey a": {
+   "n": 8,
+   "fa_rate": 0.125
+  },
+  "hey at home": {
+   "n": 16,
+   "fa_rate": 0.125
+  },
+  "hey anthem": {
+   "n": 18,
+   "fa_rate": 0.1111111111111111
+  },
+  "hey adele": {
+   "n": 10,
+   "fa_rate": 0.1
+  },
+  "hey madam": {
+   "n": 22,
+   "fa_rate": 0.09090909090909091
+  },
+  "i'm adam": {
+   "n": 11,
+   "fa_rate": 0.09090909090909091
+  },
+  "hey aman": {
+   "n": 13,
+   "fa_rate": 0.07692307692307693
+  },
+  "a tom": {
+   "n": 13,
+   "fa_rate": 0.07692307692307693
+  },
+  "hey mom": {
+   "n": 16,
+   "fa_rate": 0.0625
+  },
+  "hey amit": {
+   "n": 28,
+   "fa_rate": 0.03571428571428571
+  },
+  "hey": {
+   "n": 30,
+   "fa_rate": 0.03333333333333333
+  },
+  "adam": {
+   "n": 39,
+   "fa_rate": 0.02564102564102564
+  },
+  "atom": {
+   "n": 60,
+   "fa_rate": 0.016666666666666666
+  },
+  "atomic": {
+   "n": 23,
+   "fa_rate": 0.0
+  },
+  "madam": {
+   "n": 3,
+   "fa_rate": 0.0
+  },
+  "hey ahmed": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "an atom": {
+   "n": 26,
+   "fa_rate": 0.0
+  },
+  "hey there": {
+   "n": 19,
+   "fa_rate": 0.0
+  },
+  "hey siri": {
+   "n": 21,
+   "fa_rate": 0.0
+  },
+  "hey google": {
+   "n": 13,
+   "fa_rate": 0.0
+  },
+  "hey edam": {
+   "n": 19,
+   "fa_rate": 0.0
+  },
+  "hey, what time is it": {
+   "n": 9,
+   "fa_rate": 0.0
+  },
+  "hey bottom": {
+   "n": 22,
+   "fa_rate": 0.0
+  },
+  "hey tom": {
+   "n": 25,
+   "fa_rate": 0.0
+  },
+  "hey alexa": {
+   "n": 11,
+   "fa_rate": 0.0
+  },
+  "hey phantom": {
+   "n": 5,
+   "fa_rate": 0.0
+  },
+  "hey hey": {
+   "n": 7,
+   "fa_rate": 0.0
+  },
+  "atoms": {
+   "n": 15,
+   "fa_rate": 0.0
+  },
+  "adamant": {
+   "n": 11,
+   "fa_rate": 0.0
+  },
+  "hey custom": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "hey atari": {
+   "n": 7,
+   "fa_rate": 0.0
+  },
+  "hey totem": {
+   "n": 10,
+   "fa_rate": 0.0
+  },
+  "may i have them": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "anatomy": {
+   "n": 14,
+   "fa_rate": 0.0
+  },
+  "eight of them": {
+   "n": 4,
+   "fa_rate": 0.0
+  },
+  "hey atomic": {
+   "n": 19,
+   "fa_rate": 0.0
+  },
+  "hey man": {
+   "n": 13,
+   "fa_rate": 0.0
+  },
+  "hey tim": {
+   "n": 6,
+   "fa_rate": 0.0
+  },
+  "hey random": {
+   "n": 4,
+   "fa_rate": 0.0
+  },
+  "hey stadium": {
+   "n": 4,
+   "fa_rate": 0.0
+  }
+ },
+ "adversarial_tts_overall_quiet": {
+  "n": 1000,
+  "fa_rate": 0.144
+ },
+ "adversarial_tts_false_accept_rate_noisy_5to20dB_rir50": {
+  "hey at them": {
+   "n": 15,
+   "fa_rate": 0.6666666666666666
+  },
+  "say atom": {
+   "n": 9,
+   "fa_rate": 0.6666666666666666
+  },
+  "pay adam": {
+   "n": 10,
+   "fa_rate": 0.6
+  },
+  "hey adam": {
+   "n": 79,
+   "fa_rate": 0.5189873417721519
+  },
+  "hey adams": {
+   "n": 29,
+   "fa_rate": 0.5172413793103449
+  },
+  "hey anna": {
+   "n": 8,
+   "fa_rate": 0.5
+  },
+  "hey anthem": {
+   "n": 18,
+   "fa_rate": 0.4444444444444444
+  },
+  "hey atlas": {
+   "n": 14,
+   "fa_rate": 0.42857142857142855
+  },
+  "hey, adam": {
+   "n": 28,
+   "fa_rate": 0.42857142857142855
+  },
+  "hey ottoman": {
+   "n": 5,
+   "fa_rate": 0.4
+  },
+  "hey add them": {
+   "n": 16,
+   "fa_rate": 0.375
+  },
+  "hey item": {
+   "n": 21,
+   "fa_rate": 0.3333333333333333
+  },
+  "hey at": {
+   "n": 9,
+   "fa_rate": 0.3333333333333333
+  },
+  "hey hat": {
+   "n": 6,
+   "fa_rate": 0.3333333333333333
+  },
+  "hey tim": {
+   "n": 6,
+   "fa_rate": 0.3333333333333333
+  },
+  "hey at home": {
+   "n": 16,
+   "fa_rate": 0.3125
+  },
+  "hey sam": {
+   "n": 7,
+   "fa_rate": 0.2857142857142857
+  },
+  "hey adam smith": {
+   "n": 14,
+   "fa_rate": 0.2857142857142857
+  },
+  "hey attempt": {
+   "n": 8,
+   "fa_rate": 0.25
+  },
+  "hey adele": {
+   "n": 10,
+   "fa_rate": 0.2
+  },
+  "hey madam": {
+   "n": 22,
+   "fa_rate": 0.18181818181818182
+  },
+  "hey adder": {
+   "n": 12,
+   "fa_rate": 0.16666666666666666
+  },
+  "hey aman": {
+   "n": 13,
+   "fa_rate": 0.15384615384615385
+  },
+  "they had them": {
+   "n": 7,
+   "fa_rate": 0.14285714285714285
+  },
+  "hey, i'm adam": {
+   "n": 22,
+   "fa_rate": 0.13636363636363635
+  },
+  "the atom": {
+   "n": 22,
+   "fa_rate": 0.13636363636363635
+  },
+  "okay atom": {
+   "n": 18,
+   "fa_rate": 0.1111111111111111
+  },
+  "hey totem": {
+   "n": 10,
+   "fa_rate": 0.1
+  },
+  "hey autumn": {
+   "n": 23,
+   "fa_rate": 0.08695652173913043
+  },
+  "hey google": {
+   "n": 13,
+   "fa_rate": 0.07692307692307693
+  },
+  "hey amit": {
+   "n": 28,
+   "fa_rate": 0.07142857142857142
+  },
+  "hey mom": {
+   "n": 16,
+   "fa_rate": 0.0625
+  },
+  "hey there": {
+   "n": 19,
+   "fa_rate": 0.05263157894736842
+  },
+  "hey siri": {
+   "n": 21,
+   "fa_rate": 0.047619047619047616
+  },
+  "hey bottom": {
+   "n": 22,
+   "fa_rate": 0.045454545454545456
+  },
+  "an atom": {
+   "n": 26,
+   "fa_rate": 0.038461538461538464
+  },
+  "adam": {
+   "n": 39,
+   "fa_rate": 0.02564102564102564
+  },
+  "atomic": {
+   "n": 23,
+   "fa_rate": 0.0
+  },
+  "madam": {
+   "n": 3,
+   "fa_rate": 0.0
+  },
+  "hey ahmed": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "hey": {
+   "n": 30,
+   "fa_rate": 0.0
+  },
+  "hey edam": {
+   "n": 19,
+   "fa_rate": 0.0
+  },
+  "atom": {
+   "n": 60,
+   "fa_rate": 0.0
+  },
+  "anatomy": {
+   "n": 14,
+   "fa_rate": 0.0
+  },
+  "eight of them": {
+   "n": 4,
+   "fa_rate": 0.0
+  },
+  "hey tom": {
+   "n": 25,
+   "fa_rate": 0.0
+  },
+  "hey atomic": {
+   "n": 19,
+   "fa_rate": 0.0
+  },
+  "hey man": {
+   "n": 13,
+   "fa_rate": 0.0
+  },
+  "hey phantom": {
+   "n": 5,
+   "fa_rate": 0.0
+  },
+  "hey hey": {
+   "n": 7,
+   "fa_rate": 0.0
+  },
+  "i'm adam": {
+   "n": 11,
+   "fa_rate": 0.0
+  },
+  "hey a": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "atoms": {
+   "n": 15,
+   "fa_rate": 0.0
+  },
+  "hey, what time is it": {
+   "n": 9,
+   "fa_rate": 0.0
+  },
+  "hey alexa": {
+   "n": 11,
+   "fa_rate": 0.0
+  },
+  "may i have them": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "adamant": {
+   "n": 11,
+   "fa_rate": 0.0
+  },
+  "hey custom": {
+   "n": 8,
+   "fa_rate": 0.0
+  },
+  "hey atari": {
+   "n": 7,
+   "fa_rate": 0.0
+  },
+  "a tom": {
+   "n": 13,
+   "fa_rate": 0.0
+  },
+  "hey random": {
+   "n": 4,
+   "fa_rate": 0.0
+  },
+  "hey stadium": {
+   "n": 4,
+   "fa_rate": 0.0
+  }
+ },
+ "adversarial_tts_overall_noisy_5to20dB_rir50": {
+  "n": 1000,
+  "fa_rate": 0.174
+ }
+}
