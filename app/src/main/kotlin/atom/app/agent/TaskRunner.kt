@@ -20,6 +20,7 @@ import atom.core.tool.ToolRegistry
 import atom.core.tool.ToolResult
 import atom.device.Accessibility
 import atom.device.DeviceTools
+import atom.linux.LinuxTools
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -152,7 +153,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) {
                 val engine = graph.router.acquire().also { routed = it }
                 update { copy(phase = TaskPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = engine.notice) }
 
-                val deviceTools = DeviceTools.create(app, shell)
+                val deviceTools = DeviceTools.create(app, shell) + LinuxTools.create(app)
                 val tools = if (settings.confirmActTools) {
                     deviceTools.map { if (it.risk == Risk.Act) ConfirmingTool(it) else it }
                 } else {

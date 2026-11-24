@@ -24,5 +24,6 @@ include(
     ":device",
     ":models",
     ":voice",
+    ":linux",
     ":app",
 )

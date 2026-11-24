@@ -23,3 +23,9 @@ Third-party software included in Atom (all GPL-3.0 compatible):
 - Kotlin, kotlinx.coroutines, kotlinx.serialization (JetBrains) — Apache License 2.0.
 - AndroidX and Jetpack Compose (Google) — Apache License 2.0.
 - Shizuku API (RikkaApps) — Apache License 2.0.
+- Haze (Chris Banes) — Apache License 2.0.
+- PRoot (https://github.com/termux/proot) — GPL-2.0-or-later, Copyright STMicroelectronics;
+  shipped as the separate executables libproot.so / libproot_loader.so; build script in
+  linux/third_party/proot.
+- talloc 2.5.0 (Samba) — LGPL-3.0-or-later, linked into libproot.so.
+- XZ for Java (org.tukaani:xz) — 0BSD.

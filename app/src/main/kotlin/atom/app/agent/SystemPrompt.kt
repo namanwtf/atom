@@ -25,7 +25,7 @@ object SystemPrompt {
             when (tier) {
                 ShellTier.Root -> "root. Shell commands run as root; be careful and prefer read-only commands."
                 ShellTier.Shizuku -> "Shizuku (ADB-level). Shell commands run with shell-user privileges."
-                ShellTier.None -> "none. Work through the screen only."
+                ShellTier.App -> "app user only (no root). Shell works for general commands but not system-level changes."
             },
         )
     }

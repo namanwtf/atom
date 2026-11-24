@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package atom.app.ui.setup
 
 import android.Manifest
@@ -10,34 +8,33 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,17 +44,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.app.R
 import atom.app.graph
-import atom.app.ui.common.AtomCard
-import atom.app.ui.common.StatusLine
+import atom.app.ui.common.AtomSwitch
+import atom.app.ui.common.BottomActionBar
+import atom.app.ui.common.Group
+import atom.app.ui.common.GroupDivider
+import atom.app.ui.common.GroupRow
+import atom.app.ui.common.LargeTitleScreen
+import atom.app.ui.common.PrimaryButton
+import atom.app.ui.common.StatusDot
+import atom.app.ui.settings.CompactButton
 import atom.app.ui.theme.AtomIcons
 import atom.app.ui.theme.AtomMark
 import atom.app.ui.theme.extras
@@ -103,164 +110,183 @@ fun SetupScreen(
         notificationsGranted = granted
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.screen_setup)) },
-                navigationIcon = {
-                    if (!firstRun) {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back)) }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (firstRun) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                    AtomMark(Modifier.size(44.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(stringResource(R.string.setup_welcome_title), style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            stringResource(R.string.setup_welcome_text),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+    val colors = MaterialTheme.colorScheme
+    val ok = MaterialTheme.extras.success
+    val warn = MaterialTheme.extras.warning
+
+    LargeTitleScreen(
+        title = stringResource(R.string.screen_setup),
+        onBack = if (firstRun) null else onBack,
+        bottomBar = {
+            BottomActionBar {
+                PrimaryButton(stringResource(if (firstRun) R.string.setup_continue else R.string.action_done), onDone)
             }
+        },
+    ) {
+        if (firstRun) {
+            item(key = "welcome") { Welcome() }
+        }
 
-            val colors = MaterialTheme.colorScheme
-            val ok = MaterialTheme.extras.success
-            val warn = MaterialTheme.extras.warning
-
-            SetupCard(AtomIcons.Eye, stringResource(R.string.setup_accessibility_title)) {
-                StatusLine(
-                    dot = when {
-                        connected -> ok
-                        accessibilityEnabled -> warn
-                        else -> colors.error
+        item(key = "accessibility") {
+            CapabilityGroup(
+                icon = AtomIcons.Eye,
+                title = stringResource(R.string.setup_accessibility_title),
+                dot = when {
+                    connected -> ok
+                    accessibilityEnabled -> warn
+                    else -> colors.error
+                },
+                status = stringResource(
+                    when {
+                        connected -> R.string.status_connected
+                        accessibilityEnabled -> R.string.status_enabled_not_connected
+                        else -> R.string.status_off
                     },
-                    text = stringResource(
-                        when {
-                            connected -> R.string.status_connected
-                            accessibilityEnabled -> R.string.status_enabled_not_connected
-                            else -> R.string.status_off
-                        },
-                    ),
-                )
+                ),
+            ) {
                 Body(stringResource(R.string.setup_accessibility_text))
                 if (!connected) {
-                    Button(onClick = {
-                        runCatching { context.startActivity(Accessibility.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }) { Text(stringResource(R.string.setup_open_accessibility)) }
+                    Actions {
+                        CompactButton(stringResource(R.string.setup_open_accessibility), onClick = {
+                            runCatching { context.startActivity(Accessibility.settingsIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        })
+                    }
                     if (!accessibilityEnabled) {
-                        Body(stringResource(R.string.setup_restricted_hint))
-                        TextButton(onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            }
-                        }) { Text(stringResource(R.string.setup_open_app_info)) }
+                        Hint(stringResource(R.string.setup_restricted_hint))
+                        Actions {
+                            CompactButton(stringResource(R.string.setup_open_app_info), primary = false, onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            })
+                        }
                     }
                 }
             }
+        }
 
-            VoiceCard()
+        item(key = "voice") { VoiceGroup() }
 
-            SetupCard(Icons.Filled.Notifications, stringResource(R.string.setup_notifications_title)) {
-                StatusLine(
-                    dot = if (notificationsGranted) ok else warn,
-                    text = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_not_allowed),
-                )
+        item(key = "notifications") {
+            CapabilityGroup(
+                icon = Icons.Filled.Notifications,
+                title = stringResource(R.string.setup_notifications_title),
+                dot = if (notificationsGranted) ok else warn,
+                status = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_not_allowed),
+            ) {
                 Body(stringResource(R.string.setup_notifications_text))
                 if (!notificationsGranted) {
-                    FilledTonalButton(onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
+                    Actions {
+                        CompactButton(stringResource(R.string.setup_allow_notifications), onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
                             }
-                        }
-                    }) { Text(stringResource(R.string.setup_allow_notifications)) }
+                        })
+                    }
                 }
             }
+        }
 
-            SetupCard(AtomIcons.Terminal, stringResource(R.string.setup_shell_title)) {
-                if (checkingShell || tier == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(stringResource(R.string.shell_detecting), style = MaterialTheme.typography.labelLarge)
-                    }
-                } else {
-                    StatusLine(
-                        dot = if (tier == ShellTier.None) colors.outline else ok,
-                        text = stringResource(
-                            when (tier) {
-                                ShellTier.Root -> R.string.shell_root
-                                ShellTier.Shizuku -> R.string.shell_shizuku
-                                else -> R.string.shell_none
-                            },
-                        ),
+        item(key = "shell") {
+            val detecting = checkingShell || tier == null
+            CapabilityGroup(
+                icon = AtomIcons.Terminal,
+                title = stringResource(R.string.setup_shell_title),
+                dot = if (detecting) null else if (tier == ShellTier.App) colors.outline else ok,
+                status = stringResource(
+                    when {
+                        detecting -> R.string.shell_detecting
+                        tier == ShellTier.Root -> R.string.shell_root
+                        tier == ShellTier.Shizuku -> R.string.shell_shizuku
+                        else -> R.string.shell_none
+                    },
+                ),
+                busy = detecting,
+            ) {
+                Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TierLine(stringResource(R.string.shell_tier_none_label), stringResource(R.string.shell_tier_none_desc), tier == ShellTier.App)
+                    TierLine(stringResource(R.string.shell_tier_shizuku_label), stringResource(R.string.shell_tier_shizuku_desc), tier == ShellTier.Shizuku)
+                    TierLine(stringResource(R.string.shell_tier_root_label), stringResource(R.string.shell_tier_root_desc), tier == ShellTier.Root)
+                }
+                if (tier != null && tier != ShellTier.Root) Hint(stringResource(R.string.shell_root_hint))
+                Actions {
+                    CompactButton(
+                        stringResource(R.string.shell_check_again),
+                        primary = false,
+                        enabled = !checkingShell,
+                        onClick = {
+                            scope.launch {
+                                checkingShell = true
+                                runCatching { graph.redetectShell() }
+                                checkingShell = false
+                            }
+                        },
                     )
                 }
-                TierLine(stringResource(R.string.shell_tier_none_label), stringResource(R.string.shell_tier_none_desc), tier == ShellTier.None)
-                TierLine(stringResource(R.string.shell_tier_shizuku_label), stringResource(R.string.shell_tier_shizuku_desc), tier == ShellTier.Shizuku)
-                TierLine(stringResource(R.string.shell_tier_root_label), stringResource(R.string.shell_tier_root_desc), tier == ShellTier.Root)
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            checkingShell = true
-                            runCatching { graph.redetectShell() }
-                            checkingShell = false
-                        }
-                    },
-                    enabled = !checkingShell,
-                ) { Text(stringResource(R.string.shell_check_again)) }
             }
+        }
 
-            SetupCard(AtomIcons.Battery, stringResource(R.string.setup_battery_title)) {
-                Body(stringResource(R.string.setup_battery_1))
-                Body(stringResource(R.string.setup_battery_2))
-                Body(stringResource(R.string.setup_battery_3))
-                Body(stringResource(R.string.setup_battery_4))
+        item(key = "battery") {
+            CapabilityGroup(icon = AtomIcons.Battery, title = stringResource(R.string.setup_battery_title)) {
+                Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Bullet(stringResource(R.string.setup_battery_1))
+                    Bullet(stringResource(R.string.setup_battery_2))
+                    Bullet(stringResource(R.string.setup_battery_3))
+                    Bullet(stringResource(R.string.setup_battery_4))
+                }
+                Spacer(Modifier.height(4.dp))
             }
+        }
 
-            if (!engineChosen) {
-                SetupCard(AtomIcons.Chip, stringResource(R.string.setup_model_title)) {
+        if (!engineChosen) {
+            item(key = "model") {
+                CapabilityGroup(icon = AtomIcons.Chip, title = stringResource(R.string.setup_model_title)) {
                     Body(stringResource(R.string.setup_model_text))
-                    FilledTonalButton(onClick = onOpenModels) { Text(stringResource(R.string.empty_choose_model)) }
+                    Actions { CompactButton(stringResource(R.string.empty_choose_model), onClick = onOpenModels) }
                 }
             }
-
-            Spacer(Modifier.height(4.dp))
-            Button(onClick = onDone, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text(stringResource(if (firstRun) R.string.setup_continue else R.string.action_done))
-            }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun VoiceCard() {
+private fun Welcome() {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) { AtomMark(Modifier.size(96.dp)) }
+        Spacer(Modifier.height(22.dp))
+        Text(
+            stringResource(R.string.setup_welcome_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Light,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.setup_welcome_text),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+    }
+}
+
+@Composable
+private fun VoiceGroup() {
     val context = LocalContext.current
     val graph = context.graph
     val scope = rememberCoroutineScope()
@@ -287,21 +313,37 @@ private fun VoiceCard() {
         }
     }
 
-    SetupCard(AtomIcons.Mic, stringResource(R.string.setup_voice_title)) {
-        val ok = MaterialTheme.extras.success
-        StatusLine(
-            dot = if (assistant) ok else MaterialTheme.colorScheme.outline,
-            text = stringResource(if (assistant) R.string.voice_assistant_on else R.string.voice_assistant_off),
-        )
+    fun toggleHeyAtom(on: Boolean) {
+        if (on && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            scope.launch { graph.settings.setHeyAtom(on) }
+            apply(on, screenOff)
+        }
+    }
+
+    fun toggleScreenOff(on: Boolean) {
+        scope.launch { graph.settings.setHeyAtomScreenOff(on) }
+        apply(true, on)
+    }
+
+    CapabilityGroup(
+        icon = AtomIcons.Mic,
+        title = stringResource(R.string.setup_voice_title),
+        dot = if (assistant) MaterialTheme.extras.success else MaterialTheme.colorScheme.outline,
+        status = stringResource(if (assistant) R.string.voice_assistant_on else R.string.voice_assistant_off),
+    ) {
         Body(stringResource(R.string.voice_assistant_text))
         if (!assistant) {
-            FilledTonalButton(onClick = {
-                AssistantRole.requestIntent(context)?.let { runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
-            }) { Text(stringResource(R.string.voice_assistant_set)) }
+            Actions {
+                CompactButton(stringResource(R.string.voice_assistant_set), onClick = {
+                    AssistantRole.requestIntent(context)?.let { runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+                })
+            }
         }
-
-        Spacer(Modifier.height(4.dp))
-        ToggleRow(
+        Spacer(Modifier.height(6.dp))
+        GroupDivider(inset = 0.dp)
+        GroupRow(
             title = stringResource(R.string.voice_hey_atom),
             subtitle = when {
                 !modelReady -> stringResource(R.string.voice_model_missing)
@@ -312,69 +354,129 @@ private fun VoiceCard() {
                     WakeState.Off -> stringResource(R.string.voice_hey_atom_text)
                 }
             },
-            checked = heyAtom,
             enabled = modelReady,
-        ) { on ->
-            if (on && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            } else {
-                scope.launch { graph.settings.setHeyAtom(on) }
-                apply(on, screenOff)
-            }
-        }
-        if (heyAtom) {
-            ToggleRow(
-                title = stringResource(R.string.voice_screen_off),
-                subtitle = stringResource(R.string.voice_screen_off_text),
-                checked = screenOff,
-                enabled = true,
-            ) { on ->
-                scope.launch { graph.settings.setHeyAtomScreenOff(on) }
-                apply(true, on)
+            onClick = { toggleHeyAtom(!heyAtom) },
+            trailing = { AtomSwitch(checked = heyAtom, onCheckedChange = ::toggleHeyAtom, enabled = modelReady) },
+        )
+        AnimatedVisibility(
+            visible = heyAtom,
+            enter = fadeIn(tween(180)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(200)),
+        ) {
+            Column {
+                GroupDivider(inset = 18.dp)
+                GroupRow(
+                    title = stringResource(R.string.voice_screen_off),
+                    subtitle = stringResource(R.string.voice_screen_off_text),
+                    onClick = { toggleScreenOff(!screenOff) },
+                    trailing = { AtomSwitch(checked = screenOff, onCheckedChange = ::toggleScreenOff) },
+                )
             }
         }
     }
 }
 
+/**
+ * One capability as a graphite group: icon, title and a status line (dot + text), then body text and actions.
+ * Groups are spaced like separate sections.
+ */
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun CapabilityGroup(
+    icon: ImageVector,
+    title: String,
+    dot: Color? = null,
+    status: String? = null,
+    busy: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Group(Modifier.padding(top = 12.dp).animateContentSize(tween(200))) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.width(18.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (status != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (busy) {
+                            CircularProgressIndicator(
+                                Modifier.size(10.dp),
+                                strokeWidth = 1.5.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else if (dot != null) {
+                            StatusDot(dot)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
         }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            content()
+        }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SetupCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
-    AtomCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium)
-        }
-        content()
-    }
+private fun Actions(content: @Composable () -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) { content() }
 }
 
 @Composable
 private fun Body(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 18.dp),
+    )
+}
+
+/** Quieter, smaller text for edge-case instructions (restricted settings, KernelSU). */
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 18.dp),
+    )
+}
+
+@Composable
+private fun Bullet(text: String) {
+    Row {
+        Box(Modifier.padding(top = 8.dp, end = 12.dp)) { StatusDot(MaterialTheme.colorScheme.outline, Modifier.size(5.dp)) }
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable
 private fun TierLine(label: String, desc: String, current: Boolean) {
+    val c = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth()) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(76.dp),
-        )
-        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.width(88.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (current) c.onSurface else c.onSurfaceVariant,
+            )
+            if (current) {
+                Spacer(Modifier.width(6.dp))
+                Icon(Icons.Filled.Check, null, Modifier.size(14.dp), tint = c.onSurface)
+            }
+        }
+        Text(desc, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
 }
 

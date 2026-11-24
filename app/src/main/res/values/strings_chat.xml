@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chat screen (restyle). Shared chat strings stay in strings.xml. -->
+    <string name="chat_empty_headline">How can I help?</string>
+    <string name="chat_cd_more">More options</string>
+    <string name="chat_recent">Recent</string>
+</resources>

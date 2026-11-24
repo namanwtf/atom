@@ -8,7 +8,8 @@ plugins {
 abstract class BundleLegalFiles : DefaultTask() {
     @get:InputFile abstract val notice: RegularFileProperty
     @get:InputFile abstract val license: RegularFileProperty
-    @get:InputFile abstract val apache: RegularFileProperty
+    /** Every `licenses/<Name>.txt` is bundled as `LICENSE-<Name>`. */
+    @get:InputDirectory abstract val licenses: DirectoryProperty
     @get:InputFile abstract val mitLlamaCpp: RegularFileProperty
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
@@ -20,7 +21,9 @@ abstract class BundleLegalFiles : DefaultTask() {
         }
         notice.get().asFile.copyTo(dir.resolve("NOTICE"))
         license.get().asFile.copyTo(dir.resolve("LICENSE-GPL-3.0"))
-        apache.get().asFile.copyTo(dir.resolve("LICENSE-Apache-2.0"))
+        licenses.get().asFile.listFiles { f -> f.extension == "txt" }.orEmpty().forEach {
+            it.copyTo(dir.resolve("LICENSE-" + it.nameWithoutExtension))
+        }
         mitLlamaCpp.get().asFile.copyTo(dir.resolve("LICENSE-MIT-llama.cpp"))
     }
 }
@@ -29,7 +32,7 @@ val bundleLegal = tasks.register<BundleLegalFiles>("bundleLegalFiles") {
     val root = rootProject.layout.projectDirectory
     notice.set(root.file("NOTICE"))
     license.set(root.file("LICENSE"))
-    apache.set(root.file("licenses/Apache-2.0.txt"))
+    licenses.set(root.dir("licenses"))
     mitLlamaCpp.set(root.file("engine/llamacpp/third_party/llama.cpp/LICENSE"))
 }
 
@@ -70,7 +73,8 @@ android {
     buildFeatures { compose = true }
 
     packaging {
-        jniLibs { useLegacyPackaging = false }
+        // proot must exist as a real file in nativeLibraryDir to be executable (Android forbids exec from app data).
+        jniLibs { useLegacyPackaging = true }
     }
 }
 
@@ -82,6 +86,7 @@ dependencies {
     implementation(project(":device"))
     implementation(project(":models"))
     implementation(project(":voice"))
+    implementation(project(":linux"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -97,6 +102,8 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 }

@@ -122,7 +122,8 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
         val where = when (shell.tier) {
             ShellTier.Root -> "Runs as root (su)."
             ShellTier.Shizuku -> "Runs as the adb shell user via Shizuku (no root: system dirs are read-only)."
-            ShellTier.None -> "Currently unavailable (no root or Shizuku); calls explain how to enable it."
+            ShellTier.App -> "Runs as Atom's own app user (no root): fine for files in Atom's storage, network tools and " +
+                "general commands; system settings and other apps' data are off limits."
         }
         return SimpleTool(
             name = "shell",
