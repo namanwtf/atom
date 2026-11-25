@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-internal val Context.runtimeDataStore: DataStore<Preferences> by preferencesDataStore(name = "runtime")
+internal val Context.runtimeDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_runtime")
 
 /** Agent-runtime and chat switches. Defaults match the old app's functional defaults. */
 data class RuntimeSettings(

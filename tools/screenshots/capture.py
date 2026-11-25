@@ -18,7 +18,8 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-PKG = os.environ.get("ATOM_PKG", "io.github.namanwtf.atomnext")
+# Debug builds carry applicationIdSuffix ".debug" (app/build.gradle.kts).
+PKG = os.environ.get("ATOM_PKG", "io.github.namanwtf.atom.debug")
 ACTIVITY = f"{PKG}/atom.app.ui.MainActivity"
 EXTRA_ROUTE = "atom.app.EXTRA_ROUTE"
 OUT = os.environ.get("SHOT_DIR", "shots")
@@ -141,11 +142,35 @@ def shot(name):
     sys.stdout.flush()
 
 
+def fail(message):
+    print(f"[capture] FATAL: {message}", file=sys.stderr)
+    sys.stdout.flush()
+    sys.exit(1)
+
+
+def require_installed():
+    """Stops the run when the package is missing, instead of photographing the launcher."""
+    out = adb("shell", "pm", "path", PKG).decode(errors="replace")
+    if "package:" not in out:
+        fail(f"{PKG} is not installed (set ATOM_PKG if the debug id changed)")
+
+
+def checked_sh(cmd):
+    """Runs a setup command whose failure would make every screenshot wrong."""
+    r = subprocess.run(["adb", "shell", cmd], capture_output=True, timeout=60)
+    text = (r.stdout + r.stderr).decode(errors="replace")
+    if r.returncode != 0 or re.search(r"(?i)\b(exception|error|unknown package)\b", text):
+        fail(f"`{cmd}` failed: {text.strip()[:400]}")
+
+
 def launch(route=None, wait=4):
     args = ["shell", "am", "start", "-W", "-n", ACTIVITY]
     if route:
         args += ["--es", EXTRA_ROUTE, route]
-    adb(*args)
+    r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
+    text = (r.stdout + r.stderr).decode(errors="replace")
+    if r.returncode != 0 or "Error" in text:
+        fail(f"launch of {ACTIVITY} {route or ''} failed: {text.strip()[:400]}")
     time.sleep(wait)
 
 
@@ -211,14 +236,18 @@ def bubble_bounds():
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
+    require_installed()
     sh(f"cmd uimode night {'yes' if mode == 'dark' else 'no'}")
     # The bubble is on by default; keep it off the app screenshots until the bubble section below allows it.
-    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
-    sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
-    sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
+    checked_sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
+    checked_sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
+    checked_sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
     sh("settings put global window_animation_scale 0.5")
     # The emulator has a hardware keyboard; show the on-screen one anyway so keyboard layouts can be checked.
     sh("settings put secure show_ime_with_hard_keyboard 1")
+    # Start each pass from a cold app, so the light pass does not resume on the dark pass's last screen.
+    sh(f"am force-stop {PKG}")
+    sh("input keyevent KEYCODE_HOME")
     p = f"{mode}_"
 
     launch(wait=8)

@@ -24,8 +24,13 @@ Third-party software included in Atom (all GPL-3.0 compatible):
 - AndroidX and Jetpack Compose (Google) — Apache License 2.0.
 - Shizuku API (RikkaApps) — Apache License 2.0.
 - Haze (Chris Banes) — Apache License 2.0.
+- Miuix (compose-miuix-ui contributors, https://github.com/compose-miuix-ui/miuix) —
+  Apache License 2.0; includes material-color-utilities (MaterialKolor) — Apache License 2.0.
 - PRoot (https://github.com/termux/proot) — GPL-2.0-or-later, Copyright STMicroelectronics;
   shipped as the separate executables libproot.so / libproot_loader.so; build script in
   linux/third_party/proot.
 - talloc 2.5.0 (Samba) — LGPL-3.0-or-later, linked into libproot.so.
 - XZ for Java (org.tukaani:xz) — 0BSD.
+- JetBrains Mono 2.304 (https://github.com/JetBrains/JetBrainsMono) — SIL Open Font License 1.1,
+  Copyright 2020 The JetBrains Mono Project Authors; Regular and Bold TTF bundled as
+  linux/src/main/res/font (licenses/OFL-1.1.txt).

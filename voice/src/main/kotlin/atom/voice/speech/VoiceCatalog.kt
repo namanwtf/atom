@@ -94,6 +94,7 @@ object VoiceCatalog {
 
     val deepSeek = listOf(
         VoicePreset("stella", "Stella", "Female"),
+        VoicePreset("starfish", "Starfish", "DeepSeek voice"),
         VoicePreset("tide", "Tide", "Male"),
     )
 

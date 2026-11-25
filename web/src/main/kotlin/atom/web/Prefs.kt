@@ -11,7 +11,7 @@ internal val PrefsJson = Json { ignoreUnknownKeys = true; encodeDefaults = true;
 
 /** One non-secret settings object stored as JSON in this module's SharedPreferences. */
 internal class JsonPref<T>(context: Context, private val key: String, private val serializer: KSerializer<T>, default: T) {
-    private val prefs = context.applicationContext.getSharedPreferences("atom_web", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences("atom4_web", Context.MODE_PRIVATE)
     private val state = MutableStateFlow(
         prefs.getString(key, null)?.let { runCatching { PrefsJson.decodeFromString(serializer, it) }.getOrNull() } ?: default,
     )

@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
 /**
  * One-tap model manager: downloads catalog models in the background (WorkManager + a dataSync
  * foreground notification), resumes interrupted transfers, verifies checksums and keeps a manifest
- * of what is installed under `filesDir/models`.
+ * of what is installed under `filesDir/atom4_models`.
  */
 class ModelStore private constructor(context: Context) {
 
@@ -51,7 +51,7 @@ class ModelStore private constructor(context: Context) {
     private val workManager = WorkManager.getInstance(appContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    internal val modelsDir: File = File(appContext.filesDir, "models").apply { mkdirs() }
+    internal val modelsDir: File = File(appContext.filesDir, "atom4_models").apply { mkdirs() }
     private val manifest = InstalledManifest(modelsDir)
 
     /** Tokens live only in memory for the lifetime of the process; never written to disk or WorkManager. */

@@ -72,7 +72,8 @@ fun shQuote(s: String): String = ShellFraming.quote(s)
 /** How a write went out. [Panel] means a system panel was opened for the user to flip the switch. */
 sealed interface Written {
     data class Done(val via: String) : Written
-    data class Panel(val what: String) : Written
+    /** [reason] replaces the default "needs Shizuku or root" explanation when the direct path was tried and refused. */
+    data class Panel(val what: String, val reason: String? = null) : Written
 }
 
 /** A readable, writable piece of device state with a stable display form and a journal encoding. */
@@ -139,7 +140,7 @@ object ControlRunner {
         val status = if (after != null && c.matches(after, target)) ChangeStatus.Verified else ChangeStatus.Unconfirmed
         val note = (written as? Written.Panel)?.let {
             if (status == ChangeStatus.Verified) "Switched by the user in the ${it.what} Atom opened"
-            else "Android does not let apps flip this directly without Shizuku or root, so Atom opened the ${it.what}; switch it there"
+            else (it.reason ?: "Android does not let apps flip this directly without Shizuku or root") + ", so Atom opened the ${it.what}; switch it there"
         }
         val via = (written as? Written.Done)?.via
         if (journal && before != null && (status == ChangeStatus.Verified || written is Written.Done)) {
@@ -236,7 +237,7 @@ open class SettingBool(
 }
 
 /** Opens [intent] for the user when Atom cannot flip a switch itself. */
-suspend fun openPanel(env: DeviceEnv, what: String, vararg intents: Intent): Written {
-    for (i in intents) if (env.startActivity(i)) return Written.Panel(what)
+suspend fun openPanel(env: DeviceEnv, what: String, vararg intents: Intent, reason: String? = null): Written {
+    for (i in intents) if (env.startActivity(i)) return Written.Panel(what, reason)
     throw ControlError("Atom cannot change this on this phone without Shizuku or root, and the settings screen would not open.")
 }
