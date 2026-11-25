@@ -82,7 +82,7 @@ internal object MiniChat {
             @Suppress("DEPRECATION")
             softInputMode = LayoutParams.SOFT_INPUT_ADJUST_RESIZE or LayoutParams.SOFT_INPUT_STATE_HIDDEN
             if (blur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                blurBehindRadius = (36 * slot.context.resources.displayMetrics.density).roundToInt()
+                blurBehindRadius = (16 * slot.context.resources.displayMetrics.density).roundToInt()
             }
         }
         val w = OverlayWindow(slot.context, params, onBack = {

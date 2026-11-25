@@ -36,7 +36,7 @@ internal fun effectsEnabled(): Boolean {
 }
 
 /**
- * A band of light that runs from the top centre down both screen edges and fades, once per invocation. Nothing is
+ * A coloured band of light that runs from the top centre down both screen edges and fades, once per invocation. Nothing is
  * drawn (and no frames are requested) once it has finished.
  */
 @Composable
@@ -73,14 +73,18 @@ private fun DrawScope.drawHalo(p: Float) {
     measure.getSegment((head - band).coerceAtLeast(0f), head, right, true)
     val left = Path()
     measure.getSegment(length - head, (length - head + band).coerceAtMost(length), left, true)
+    val aurora = Brush.sweepGradient(AURORA, center = Offset(w / 2f, h / 2f))
     for ((width, alpha) in listOf(18.dp.toPx() to 0.08f, 8.dp.toPx() to 0.2f, 2.5.dp.toPx() to 0.85f)) {
         val style = Stroke(width, cap = StrokeCap.Round)
-        drawPath(right, Color.White.copy(alpha = alpha * fade), style = style)
-        drawPath(left, Color.White.copy(alpha = alpha * fade), style = style)
+        drawPath(right, aurora, alpha = alpha * fade, style = style)
+        drawPath(left, aurora, alpha = alpha * fade, style = style)
     }
 }
 
-/** Soft white waves along the bottom edge whose height follows the voice level. Composed only while listening. */
+/**
+ * Coloured waves along the bottom edge (light blue through violet and pink to amber) whose height follows the
+ * voice level. Composed only while listening and while fading out after it.
+ */
 @Composable
 internal fun VoiceWave(level: Float, modifier: Modifier = Modifier) {
     val smooth by animateFloatAsState(level.coerceIn(0f, 1f), tween(120), label = "level")
@@ -112,16 +116,16 @@ internal fun VoiceWave(level: Float, modifier: Modifier = Modifier) {
                 lineTo(size.width, base)
                 close()
             }
-            drawPath(
-                path,
-                Brush.verticalGradient(listOf(Color.White.copy(alpha = alpha * 1.6f), Color.White.copy(alpha = alpha * 0.2f)), startY = base - height, endY = base),
-            )
+            drawPath(path, Brush.horizontalGradient(AURORA), alpha = (alpha * 2.4f).coerceAtMost(1f))
         }
         drawRect(
-            Brush.verticalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.06f + 0.1f * smooth)), startY = 0f, endY = base),
+            Brush.verticalGradient(listOf(Color.Transparent, AURORA[0].copy(alpha = 0.08f + 0.12f * smooth)), startY = 0f, endY = base),
             topLeft = Offset.Zero,
         )
     }
 }
 
 private const val HALO_MS = 900
+
+/** The wake colours: light blue, violet, pink, amber, and back to blue so the sweep closes without a seam. */
+private val AURORA = listOf(Color(0xFF60A5FA), Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFFFBBF24), Color(0xFF60A5FA))

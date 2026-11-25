@@ -72,6 +72,9 @@ internal class WindowOwner : LifecycleOwner, SavedStateRegistryOwner {
 internal class RootLayout(context: Context, private val onBack: (() -> Boolean)?) : FrameLayout(context) {
     var touchInterceptor: OnTouchListener? = null
 
+    /** Called for a touch that starts outside the window (needs FLAG_WATCH_OUTSIDE_TOUCH). */
+    var onOutsideTouch: (() -> Unit)? = null
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK && onBack != null) {
             if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) return onBack.invoke() || super.dispatchKeyEvent(event)
@@ -81,6 +84,12 @@ internal class RootLayout(context: Context, private val onBack: (() -> Boolean)?
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_OUTSIDE) {
+            onOutsideTouch?.let {
+                it()
+                return true
+            }
+        }
         val interceptor = touchInterceptor ?: return super.dispatchTouchEvent(ev)
         return interceptor.onTouch(this, ev)
     }

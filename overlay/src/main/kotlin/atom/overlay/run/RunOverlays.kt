@@ -1,5 +1,8 @@
 package atom.overlay.run
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.view.Gravity
 import android.view.WindowManager.LayoutParams
@@ -38,7 +41,14 @@ internal data class CapsuleView(
     val mood: BubbleMood,
 )
 
-internal data class ResultView(val conversationId: String, val source: RunSource, val ok: Boolean, val preview: String)
+/** [usedScreen]: the run worked on the background virtual display, so the card offers "Open screen". */
+internal data class ResultView(
+    val conversationId: String,
+    val source: RunSource,
+    val ok: Boolean,
+    val text: String,
+    val usedScreen: Boolean,
+)
 
 /**
  * The run capsule and edge glow, shown while any run uses the screen (whatever started it), then the result card.
@@ -46,6 +56,8 @@ internal data class ResultView(val conversationId: String, val source: RunSource
  */
 internal object RunOverlays {
     private var capsule: OverlayWindow? = null
+    private var resultWindow: OverlayWindow? = null
+    private val usedDisplay = HashSet<String>()
     private var glow: OverlayWindow? = null
     private val driving = LinkedHashSet<String>()
     private var lastRuns: List<HostRun> = emptyList()
@@ -59,6 +71,7 @@ internal object RunOverlays {
     var steering by mutableStateOf(false)
         private set
     var steerText by mutableStateOf("")
+    private var glowPaused by mutableStateOf(false)
 
     private val prefs get() = OverlayRuntime.prefs
 
@@ -82,13 +95,15 @@ internal object RunOverlays {
 
     fun onFinished(run: HostRun, presentedElsewhere: Boolean) {
         val drove = driving.remove(run.conversationId)
+        val onDisplay = usedDisplay.remove(run.conversationId) || Overlay.viewfinder?.shows(run) == true
         if (drove && !presentedElsewhere && run.phase != RunPhase.Cancelled) {
             showResult(
                 ResultView(
                     conversationId = run.conversationId,
                     source = run.source,
                     ok = run.phase == RunPhase.Done,
-                    preview = (if (run.phase == RunPhase.Done) Markdown.plain(run.text) else run.error.orEmpty()).take(280),
+                    text = (if (run.phase == RunPhase.Done) Markdown.plain(run.text) else run.error.orEmpty()).take(MAX_RESULT_CHARS),
+                    usedScreen = onDisplay,
                 ),
             )
         }
@@ -97,6 +112,7 @@ internal object RunOverlays {
 
     fun onWindowSourceChanged() {
         removeCapsule()
+        removeResultWindow()
         removeGlow()
         refresh()
     }
@@ -157,6 +173,18 @@ internal object RunOverlays {
         runCatching { ctx.startActivity(Overlay.hooks.appIntent(ctx, id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
+    /** Shows the screen the run worked on in the background (the stage, or its app on the main display). */
+    fun openScreen() {
+        val r = result ?: return
+        val ctx = resultWindow?.view?.context ?: OverlayRuntime.app
+        dismissResult()
+        Overlay.viewfinder?.openScreen(ctx, r.conversationId)
+    }
+
+    fun copy(context: Context, text: String) {
+        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Atom", text))
+    }
+
     fun dismissResult() {
         resultTimer?.cancel()
         resultTimer = null
@@ -180,15 +208,19 @@ internal object RunOverlays {
     private fun refresh() {
         val active = lastRuns.firstOrNull { it.phase.active && it.conversationId in driving }
         val next = active?.let(::viewOf)
+        if (next != null && next.viewfinder) usedDisplay += next.conversationId
         if (next != view) view = next
         if (next == null) {
             expanded = false
             endSteer()
         }
         // Glow first, so a capsule created in the same pass sits above it.
-        val glowing = next != null && prefs.edgeGlow.value && (next.phase == RunPhase.Running || next.phase == RunPhase.Starting)
+        val glowing = next != null && prefs.edgeGlow.value &&
+            (next.phase == RunPhase.Running || next.phase == RunPhase.Starting || next.phase == RunPhase.Paused)
         if (glowing) ensureGlow() else removeGlow()
-        if (next != null || result != null) ensureCapsule() else removeCapsule()
+        glowPaused = next?.phase == RunPhase.Paused
+        if (next != null) ensureCapsule() else removeCapsule()
+        if (result != null) ensureResultWindow() else removeResultWindow()
         Bubble.setPassThrough(next != null && next.phase != RunPhase.Paused)
     }
 
@@ -254,8 +286,31 @@ internal object RunOverlays {
         val params = OverlayWindow.params(slot.type, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, OverlayWindow.PASS_THROUGH).apply {
             alpha = OverlayWindow.MAX_PASS_THROUGH_ALPHA
         }
-        val w = OverlayWindow(slot.context, params) { EdgeGlow() }
+        val w = OverlayWindow(slot.context, params) { EdgeGlow(glowPaused) }
         if (w.show()) glow = w
+    }
+
+    private fun ensureResultWindow() {
+        if (resultWindow != null) return
+        val slot = Windows.runOverlay() ?: return
+        val ctx = slot.context
+        val area = Windows.area(ctx)
+        val params = OverlayWindow.params(
+            slot.type,
+            LayoutParams.MATCH_PARENT,
+            LayoutParams.WRAP_CONTENT,
+            LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_NOT_TOUCH_MODAL,
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = area.bottom.roundToInt()
+        }
+        val w = OverlayWindow(ctx, params) { ResultCard() }
+        if (w.show()) resultWindow = w
+    }
+
+    private fun removeResultWindow() {
+        resultWindow?.remove()
+        resultWindow = null
     }
 
     private fun removeGlow() {
@@ -264,4 +319,5 @@ internal object RunOverlays {
     }
 
     private const val RESULT_MS = 30_000L
+    private const val MAX_RESULT_CHARS = 4_000
 }

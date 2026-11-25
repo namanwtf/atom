@@ -55,6 +55,39 @@ def dump():
     return nodes
 
 
+def switch_checked(label):
+    """True/False for the switch on the settings row titled `label` (the last such title), None if not found."""
+    for _ in range(3):
+        sh("uiautomator dump /sdcard/ui.xml >/dev/null 2>&1")
+        raw = adb("exec-out", "cat", "/sdcard/ui.xml")
+        try:
+            root = ET.fromstring(raw)
+            break
+        except ET.ParseError:
+            time.sleep(1)
+    else:
+        return None
+    rows, switches = [], []
+    for n in root.iter("node"):
+        b = [int(x) for x in re.findall(r"\d+", n.get("bounds", ""))]
+        if len(b) != 4:
+            continue
+        if n.get("text", "") == label:
+            rows.append(b)
+        if n.get("checkable") == "true":
+            switches.append((b, n.get("checked") == "true"))
+    if not rows:
+        return None
+    row = rows[-1]
+    cy = (row[1] + row[3]) // 2
+    best = None
+    for b, checked in switches:
+        d = abs((b[1] + b[3]) // 2 - cy)
+        if d < 160 and (best is None or d < best[0]):
+            best = (d, checked)
+    return None if best is None else best[1]
+
+
 def find(pattern):
     rx = re.compile(pattern, re.I)
     for text, desc, bounds in dump():
@@ -126,7 +159,7 @@ def window_frames():
     out = sh("dumpsys window windows")
     print("=====WINDOWS=====")
     for block in out.split("Window #"):
-        if PKG in block:
+        if PKG in block or "AtomBubble" in block:
             head = block.splitlines()[0] if block.splitlines() else ""
             frame = re.search(r"mFrame=\S+|frame=\[[^\]]+\]\[[^\]]+\]", block)
             attrs = re.search(r"mAttrs=\{[^\n]*", block)
@@ -134,24 +167,43 @@ def window_frames():
     print("=====END=====")
 
 
+FRAME = re.compile(r"(?:mFrame|\bframe)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
+
+
 def bubble_bounds():
+    """Frame of the bubble window. It is titled "AtomBubble" (status, menu and drag layers have longer titles)."""
     out = sh("dumpsys window windows")
-    for block in out.split("Window #"):
+    blocks = out.split("Window #")
+    for block in blocks:
+        head = block.splitlines()[0] if block.splitlines() else ""
+        if re.search(r"\bAtomBubble\}", head):
+            m = FRAME.search(block)
+            if m:
+                return tuple(map(int, m.groups()))
+    # Older builds: any small app-overlay window of the package.
+    for block in blocks:
         if PKG in block and ("TYPE_APPLICATION_OVERLAY" in block or "ty=APPLICATION_OVERLAY" in block):
-            m = re.search(r"mFrame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]", block) or re.search(
-                r"frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]", block
-            )
+            m = FRAME.search(block)
             if m:
                 l, t, r, b = map(int, m.groups())
                 if (r - l) < 600 and (b - t) < 600:
                     return (l, t, r, b)
+    print("[capture] overlay windows of the package, for diagnosis:")
+    for block in blocks:
+        if PKG in block or "AtomBubble" in block:
+            lines = block.splitlines()
+            print("   ", (lines[0] if lines else "")[:160])
+            for line in lines:
+                if "ty=" in line or "frame=" in line or "mFrame=" in line:
+                    print("       ", line.strip()[:200])
     return None
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     sh(f"cmd uimode night {'yes' if mode == 'dark' else 'no'}")
-    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    # The bubble is on by default; keep it off the app screenshots until the bubble section below allows it.
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
     sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
     sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
     sh("settings put global window_animation_scale 0.5")
@@ -216,38 +268,71 @@ def main():
     if mode != "dark":
         return
 
-    # Floating bubble: switch it on from Settings -> Floating assistant, then look at it over the launcher.
+    # Floating bubble. It is on by default and shows once "display over other apps" is allowed.
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
     launch("overlay/settings", wait=3)
-    tap("Floating bubble", wait=2)
+    state = switch_checked("Floating bubble")
+    print(f"[capture] Floating bubble switch checked: {state}")
+    if state is False:
+        b = None
+        for text, desc, bounds in dump():
+            if text == "Floating bubble" and bounds:
+                b = bounds
+        if b:
+            tap_bounds(b)
+            time.sleep(2)
+        print(f"[capture] after tap, switch checked: {switch_checked('Floating bubble')}")
     shot(p + "30_bubble_switch")
     sh("input keyevent KEYCODE_HOME")
     time.sleep(3)
     window_frames()
     shot(p + "31_bubble_idle")
     b = bubble_bounds()
-    if b:
-        cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-        # Long-press: the hold menu. Capture while still holding.
-        subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} {cx} {cy} 4000"])
-        time.sleep(2.2)
-        shot(p + "32_hold_menu")
-        time.sleep(3)
-        sh("input keyevent KEYCODE_BACK")
-        time.sleep(1)
-        # Mid-drag towards the dismiss target.
-        subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} 540 1750 5000"])
-        time.sleep(4)
-        shot(p + "33_drag_dismiss")
-        time.sleep(3)
-        window_frames()
-        shot(p + "34_after_drag")
-        b = bubble_bounds() or b
-        cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-        sh(f"input tap {cx} {cy}")
-        time.sleep(2.5)
-        shot(p + "35_mini_chat")
-    else:
+    if not b:
         print("[capture] bubble window not found")
+        return
+    print(f"[capture] bubble frame at rest: {b}")
+    cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+    # Long-press: the hold menu. Capture while still holding; lifting on the bubble selects nothing.
+    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} {cx} {cy} 4000"])
+    time.sleep(2.2)
+    window_frames()
+    shot(p + "32_hold_menu")
+    time.sleep(3)
+    # A tap on the bubble spot (inside the menu window, away from the buttons) closes the menu.
+    sh(f"input tap {cx} {cy}")
+    time.sleep(1.2)
+    # Mid-drag towards the dismiss target (stopping short of its 96dp hit radius).
+    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} 540 1750 5000"])
+    time.sleep(4)
+    shot(p + "33_drag_dismiss")
+    time.sleep(3)
+    window_frames()
+    shot(p + "34_after_drag")
+    b = bubble_bounds() or b
+    print(f"[capture] bubble frame after the drag: {b}")
+    cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+    # The hold menu again, now that the bubble rests on the other edge (the fan mirrors).
+    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} {cx} {cy} 3000"])
+    time.sleep(2.2)
+    shot(p + "36_hold_menu_other_side")
+    time.sleep(2)
+    sh(f"input tap {cx} {cy}")
+    time.sleep(1.2)
+    before = bubble_bounds()
+    # Tap: the mini chat.
+    sh(f"input tap {cx} {cy}")
+    time.sleep(2.5)
+    shot(p + "35_mini_chat")
+    # Focus the composer: the panel shrinks so the composer sits on the keyboard.
+    if tap("^Ask Atom", wait=2.5):
+        shot(p + "37_mini_chat_keyboard")
+        back(wait=1.5)
+    back(wait=1.5)
+    window_frames()
+    shot(p + "38_after_panel")
+    after = bubble_bounds()
+    print(f"[capture] bubble frame before the panel: {before}, after closing it: {after}, unchanged: {before == after}")
 
 
 if __name__ == "__main__":
