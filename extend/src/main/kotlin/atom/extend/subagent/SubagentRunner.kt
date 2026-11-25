@@ -101,6 +101,7 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         var calls = 0
         var tokensIn = 0
         var tokensOut = 0
+        var tokensCached = 0
         var sensitive = false
         val remaining = (deadline - System.currentTimeMillis()).coerceAtLeast(5_000)
         val finished = try {
@@ -133,6 +134,10 @@ class SubagentRunner(private val env: SubagentEnvironment) {
                             SubagentRuns.update(runId) {
                                 copy(steps = steps.map { if (it.id == e.call.id) it.copy(state = state, durationMs = e.durationMs) else it })
                             }
+                        }
+                        is AgentEvent.ModelCall -> {
+                            tokensCached += e.stats.cacheReadTokens
+                            SubagentRuns.update(runId) { copy(cachedTokens = tokensCached) }
                         }
                         is AgentEvent.Usage -> {
                             tokensIn = e.inputTokens

@@ -28,6 +28,8 @@ interface TaskPorts {
     fun stop(conversationId: String)
     fun notifyResult(task: ScheduledTask, run: TaskRun, text: String)
     fun notifyAlert(task: ScheduledTask, message: String)
+    /** The task paused itself after repeated failures. */
+    fun notifyPaused(task: ScheduledTask, message: String) = notifyAlert(task, message)
     fun notifyReadyToRun(task: ScheduledTask)
     /** Wake-up times changed; re-arm the alarm. */
     fun wakeupsChanged()
@@ -106,7 +108,7 @@ class TaskEngine(
         for (task in due) {
             val dueAt = Instant.ofEpochMilli(task.nextRunAt!!)
             when (Planner.missed(task.missedPolicy, dueAt, now)) {
-                Planner.Decision.RunNow -> trigger(task, manual = false)
+                Planner.Decision.RunNow -> trigger(task, manual = false, catchUp = now.toEpochMilli() - dueAt.toEpochMilli() > CATCH_UP_AFTER_MS)
                 Planner.Decision.Skip -> record(task, RunStatus.Skipped, "Missed the ${ScheduleText.relative(dueAt, now, zone)} slot while the phone was off or asleep")
             }
             val fresh = state.task(task.id) ?: continue
@@ -127,7 +129,7 @@ class TaskEngine(
     }
 
     /** Starts [task] now unless a rule stops it; returns why it did not start, or null. */
-    private fun trigger(task: ScheduledTask, manual: Boolean): String? {
+    private fun trigger(task: ScheduledTask, manual: Boolean, catchUp: Boolean = false): String? {
         if (isRunning(task.id)) {
             record(task, RunStatus.Skipped, "Skipped: the previous run was still going", manual)
             return "Already running"
@@ -158,7 +160,7 @@ class TaskEngine(
             record(task, RunStatus.Skipped, "Skipped: its conversation is busy", manual)
             return "Conversation busy"
         }
-        val run = TaskRun(UUID.randomUUID().toString(), task.id, ports.now().toEpochMilli(), RunStatus.Running, conversationId = convId, manual = manual)
+        val run = TaskRun(UUID.randomUUID().toString(), task.id, ports.now().toEpochMilli(), RunStatus.Running, conversationId = convId, manual = manual, catchUp = catchUp)
         state.putRun(run)
         if (task.destination == Destination.Conversation && task.conversationId != convId) {
             state.updateTask(task.id) { it.copy(conversationId = convId) }
@@ -227,7 +229,7 @@ class TaskEngine(
             paused -> Unit
             status == RunStatus.Succeeded && fresh.notify != NotifyMode.Silent -> ports.notifyResult(fresh, done, text)
             status == RunStatus.Unchanged && fresh.notify == NotifyMode.EveryRun -> ports.notifyResult(fresh, done, summary)
-            status.failure && fresh.notify != NotifyMode.Silent -> ports.notifyAlert(fresh, "${fresh.name}: $summary")
+            status.failure && fresh.notify != NotifyMode.Silent -> ports.notifyAlert(fresh, TaskNotices.failedBody(summary))
         }
     }
 
@@ -237,7 +239,7 @@ class TaskEngine(
         if (failures >= ScheduledTask.AUTO_PAUSE_AFTER && task.enabled) {
             val reason = "Paused after $failures failed runs in a row"
             state.updateTask(taskId) { it.copy(consecutiveFailures = failures, enabled = false, pausedReason = reason) }
-            ports.notifyAlert(task, "${task.name}: $reason. Open it to check and switch it back on.")
+            ports.notifyPaused(task, "$reason. Open it to check and switch it back on.")
             ports.wakeupsChanged()
         } else {
             state.updateTask(taskId) { it.copy(consecutiveFailures = failures) }
@@ -252,6 +254,9 @@ class TaskEngine(
     companion object {
         const val NO_CHANGE = "NO_CHANGE"
         const val EARLY_SLACK_MS = 1_000L
+
+        /** A scheduled run that starts this late counts as a catch-up in the run timeline. */
+        const val CATCH_UP_AFTER_MS = 5 * 60_000L
         const val MEMO_CHARS = 4_000
         const val SUMMARY_CHARS = 600
 

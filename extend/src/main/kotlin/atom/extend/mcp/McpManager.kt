@@ -32,6 +32,8 @@ data class McpServer(
     val tools: List<McpToolEntry> = emptyList(),
     val enabledTools: Set<String> = emptySet(),
     val truncated: Boolean = false,
+    /** Why the catalog was cut short; null when it was complete (or saved by an older version). */
+    val truncation: McpTruncation? = null,
     val lastError: String? = null,
     val refreshedAt: Long = 0,
 ) {
@@ -66,7 +68,8 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
             url = cleanUrl,
             hasToken = tok != null,
             tools = tools.map { it.entry() },
-            truncated = truncated,
+            truncated = truncated != null,
+            truncation = truncated,
             refreshedAt = System.currentTimeMillis(),
         )
         if (tok != null) secrets().write(tokenKey(server.id), tok)
@@ -83,7 +86,8 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
             val updated = server.copy(
                 tools = tools.map { it.entry() },
                 enabledTools = server.enabledTools.filterTo(mutableSetOf()) { it in names },
-                truncated = truncated,
+                truncated = truncated != null,
+                truncation = truncated,
                 lastError = null,
                 refreshedAt = System.currentTimeMillis(),
             )
@@ -156,4 +160,11 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
 
     private fun load(): List<McpServer> =
         Files.readOrNull(file)?.let { runCatching { McpProtocol.json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
+}
+
+/** Pure rules for switching MCP tools on (unit-tested). */
+object McpToolRules {
+    /** How many tools "Enable all" would switch on that are not marked read-only (and so need confirming). */
+    fun riskyToEnable(tools: List<McpToolEntry>, enabled: Set<String>): Int =
+        tools.count { !it.readOnly && it.name !in enabled }
 }

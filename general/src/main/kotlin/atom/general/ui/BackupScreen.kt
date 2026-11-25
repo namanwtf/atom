@@ -37,6 +37,7 @@ import atom.ui.components.GroupRow
 import atom.ui.components.LargeTitleScreen
 import atom.ui.components.RowChevron
 import atom.ui.components.ScreenIcons
+import atom.ui.components.SectionLabel
 import atom.ui.feature.Backups
 import atom.ui.feature.FeatureNav
 import atom.ui.theme.AtomIcons
@@ -57,7 +58,7 @@ private sealed interface BackupDialog {
 internal fun BackupScreen(nav: FeatureNav) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val engine = remember { BackupEngine(appVersion = appVersion(context)) }
+    val engine = remember { BackupEngine(appVersion = appVersion(context), saving = { GeneralHooks.conversationsSaving() }) }
     val contributors = remember { Backups.all }
     var working by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<BackupDialog?>(null) }
@@ -74,6 +75,10 @@ internal fun BackupScreen(nav: FeatureNav) {
             working = false
             dialog = when (result) {
                 ImportResult.Busy -> BackupDialog.Busy(file)
+                ImportResult.Saving -> BackupDialog.Message(
+                    context.getString(R.string.backup_saving_title),
+                    context.getString(R.string.backup_saving_body),
+                )
                 is ImportResult.Invalid -> BackupDialog.Message(
                     context.getString(R.string.backup_invalid_title),
                     result.problems.joinToString("\n") { problemText(context, it, ::labels) },
@@ -155,22 +160,21 @@ internal fun BackupScreen(nav: FeatureNav) {
     }
 
     LargeTitleScreen(title = stringResource(R.string.backup_title), onBack = nav::back) {
-        item(key = "intro") {
-            FootNote(
-                if (contributors.isEmpty()) {
-                    stringResource(R.string.backup_nothing_registered)
-                } else {
-                    stringResource(R.string.backup_intro) + "\n" +
-                        stringResource(R.string.backup_includes, labels(contributors.map { it.key }))
-                },
-                Modifier.padding(bottom = 14.dp),
-            )
+        item(key = "warning") {
+            Group(Modifier.padding(top = 12.dp)) {
+                GroupRow(
+                    title = stringResource(R.string.backup_keep_safe),
+                    subtitle = if (contributors.isEmpty()) stringResource(R.string.backup_nothing_registered) else stringResource(R.string.backup_intro),
+                    titleColor = MaterialTheme.colorScheme.error,
+                )
+            }
         }
+        item(key = "label") { SectionLabel(stringResource(R.string.backup_group)) }
         item(key = "actions") {
             Group {
                 GroupRow(
                     title = stringResource(R.string.backup_export),
-                    subtitle = stringResource(R.string.backup_export_sub),
+                    subtitle = stringResource(R.string.backup_export_sub, labels(contributors.map { it.key })),
                     icon = AtomIcons.Download,
                     enabled = contributors.isNotEmpty() && !working,
                     onClick = {
@@ -182,7 +186,6 @@ internal fun BackupScreen(nav: FeatureNav) {
                     },
                     trailing = { RowChevron() },
                 )
-                GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.backup_import),
                     subtitle = stringResource(R.string.backup_import_sub),
@@ -202,7 +205,7 @@ internal fun BackupScreen(nav: FeatureNav) {
                 )
             }
         }
-        item(key = "never") { FootNote(stringResource(R.string.backup_never_included), Modifier.padding(top = 6.dp)) }
+        item(key = "never") { FootNote(stringResource(R.string.backup_never_included), Modifier.padding(top = 12.dp)) }
     }
 
     when (val d = dialog) {
@@ -263,21 +266,21 @@ internal fun BackupScreen(nav: FeatureNav) {
     }
 }
 
+/** The Miuix dialog with one confirm button, plus Cancel when [onDismiss] is set. */
 @Composable
 private fun AtomDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: (() -> Unit)?) {
-    val c = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = { (onDismiss ?: onConfirm)() },
-        containerColor = c.surfaceContainerHigh,
-        titleContentColor = c.onSurface,
-        textContentColor = c.onSurfaceVariant,
-        title = { Text(title) },
-        text = { Text(body, style = MaterialTheme.typography.bodyMedium) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirm, color = c.onSurface) } },
-        dismissButton = onDismiss?.let { d ->
-            { TextButton(onClick = d) { Text(stringResource(R.string.backup_cancel), color = c.onSurfaceVariant) } }
-        },
-    )
+    atom.ui.components.AtomDialog(show = true, onDismiss = { (onDismiss ?: onConfirm)() }, title = title, summary = body) {
+        if (onDismiss != null) {
+            atom.ui.components.DialogButtons(
+                confirmText = confirm,
+                onConfirm = onConfirm,
+                dismissText = stringResource(R.string.backup_cancel),
+                onDismiss = onDismiss,
+            )
+        } else {
+            atom.ui.components.AtomTextButton(confirm, onConfirm, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
+        }
+    }
 }
 
 private sealed interface ReadResult {

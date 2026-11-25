@@ -133,6 +133,21 @@ class ConversationStore(private val dir: File) {
     private val mutex = Mutex()
     private val index = MutableStateFlow<List<ConversationSummary>?>(null)
 
+    /** Writes in progress (save, update, delete); reads do not count. */
+    private val writes = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** True while a conversation is being written (a backup import waits for it). Reads never set it. */
+    val isSaving: Boolean get() = writes.get() > 0
+
+    private inline fun <T> writing(block: () -> T): T {
+        writes.incrementAndGet()
+        try {
+            return block()
+        } finally {
+            writes.decrementAndGet()
+        }
+    }
+
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
     /** Ids of conversations just saved, updated or deleted. */
@@ -153,12 +168,14 @@ class ConversationStore(private val dir: File) {
 
     suspend fun save(conversation: Conversation) = withContext(Dispatchers.IO) {
         val file = fileFor(conversation.id) ?: return@withContext
-        mutex.withLock {
-            loadIndexLocked()
-            dir.mkdirs()
-            writeAtomic(file, json.encodeToString(ConversationDto.serializer(), conversation.toDto()))
-            searchText[conversation.id] = conversation.updatedAt to plainText(conversation)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == conversation.id } + conversation.summary())
+        writing {
+            mutex.withLock {
+                loadIndexLocked()
+                dir.mkdirs()
+                writeAtomic(file, json.encodeToString(ConversationDto.serializer(), conversation.toDto()))
+                searchText[conversation.id] = conversation.updatedAt to plainText(conversation)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == conversation.id } + conversation.summary())
+            }
         }
         _changes.tryEmit(conversation.id)
     }
@@ -166,25 +183,29 @@ class ConversationStore(private val dir: File) {
     /** Load, change and save in one step; returns the saved conversation or null if it does not exist. */
     suspend fun update(id: String, change: (Conversation) -> Conversation): Conversation? = withContext(Dispatchers.IO) {
         val file = fileFor(id) ?: return@withContext null
-        val saved = mutex.withLock {
-            loadIndexLocked()
-            val current = readConversation(file) ?: return@withLock null
-            val next = change(current)
-            writeAtomic(file, json.encodeToString(ConversationDto.serializer(), next.toDto()))
-            searchText[id] = next.updatedAt to plainText(next)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == id } + next.summary())
-            next
+        val saved = writing {
+            mutex.withLock {
+                loadIndexLocked()
+                val current = readConversation(file) ?: return@withLock null
+                val next = change(current)
+                writeAtomic(file, json.encodeToString(ConversationDto.serializer(), next.toDto()))
+                searchText[id] = next.updatedAt to plainText(next)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == id } + next.summary())
+                next
+            }
         }
         if (saved != null) _changes.tryEmit(id)
         saved
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            loadIndexLocked()
-            fileFor(id)?.delete()
-            searchText.remove(id)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == id })
+        writing {
+            mutex.withLock {
+                loadIndexLocked()
+                fileFor(id)?.delete()
+                searchText.remove(id)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == id })
+            }
         }
         _changes.tryEmit(id)
     }

@@ -11,11 +11,23 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
 enum class SessionMode { Console, Simple }
+
+/** The labels of a row in the Sessions dialog. */
+enum class SessionStatus { Current, Running, Idle, Exited }
+
+object SessionStatuses {
+    /** "Exited" wins; otherwise the current session is marked Current and every live one Running or Idle. */
+    fun of(current: Boolean, exited: Boolean, busy: Boolean): List<SessionStatus> = when {
+        exited -> if (current) listOf(SessionStatus.Current, SessionStatus.Exited) else listOf(SessionStatus.Exited)
+        else -> listOfNotNull(SessionStatus.Current.takeIf { current }, if (busy) SessionStatus.Running else SessionStatus.Idle)
+    }
+}
 
 /** Who opened a session; the agent has its own small pool so it can never use up the user's slots. */
 enum class SessionOwner { User, Agent }
@@ -35,6 +47,20 @@ class SessionEntry internal constructor(
 
     internal val generationFlow = MutableStateFlow(0)
     val generation: StateFlow<Int> get() = generationFlow
+
+    /** When the program last wrote to the screen (wall clock), for the Running / Idle label. */
+    @Volatile var lastOutputAtMs: Long = 0L
+        internal set
+
+    /** True while a Simple-mode command runs, or while a console printed something in the last [BUSY_WINDOW_MS]. */
+    fun busy(nowMs: Long = System.currentTimeMillis()): Boolean {
+        simple?.let { s -> return s.blocks.value.lastOrNull()?.running == true }
+        return nowMs - lastOutputAtMs < BUSY_WINDOW_MS
+    }
+
+    companion object {
+        const val BUSY_WINDOW_MS = 2_000L
+    }
 
     val title: String get() = if (owner == SessionOwner.Agent) "Agent ${env.label} $number" else "${env.label} $number"
 }
@@ -113,9 +139,12 @@ object TerminalSessions {
         entry.generationFlow.value += 1
         val claim = "session:${entry.id}:${entry.generationFlow.value}"
         LinuxRuntime.acquire(app, claim, LinuxRuntime.Claim.Session)
+        // The screen only changes when the program prints, so each new frame marks activity.
+        val activity = scope.launch { session.screen.drop(1).collect { entry.lastOutputAtMs = System.currentTimeMillis() } }
         // Release the hold as soon as the program ends, even if the user keeps the tab open.
         scope.launch {
             session.exitCode.first { it != null }
+            activity.cancel()
             LinuxRuntime.release(claim)
         }
     }

@@ -37,6 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import atom.extend.R
+import atom.ui.components.AtomDialog
+import atom.ui.components.DialogButtons
 import atom.ui.theme.extras
 
 /** Graphite text field matching the grouped lists. */
@@ -133,24 +135,36 @@ internal fun ConfirmDialog(
     destructive: Boolean = false,
     dismiss: String? = null,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    confirm,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(dismiss ?: stringResource(R.string.ext_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        },
-    )
+    AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        if (destructive) {
+            DangerButtons(confirm, onConfirm, dismiss ?: stringResource(R.string.ext_cancel), onDismiss)
+        } else {
+            DialogButtons(
+                confirmText = confirm,
+                onConfirm = onConfirm,
+                dismissText = dismiss ?: stringResource(R.string.ext_cancel),
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+/** The Miuix dialog button pair with the confirm button in the error colour, for deletes. */
+@Composable
+internal fun DangerButtons(confirm: String, onConfirm: () -> Unit, dismiss: String, onDismiss: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        top.yukonga.miuix.kmp.basic.TextButton(text = dismiss, onClick = onDismiss, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+        top.yukonga.miuix.kmp.basic.TextButton(
+            text = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error,
+                textColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onError,
+            ),
+        )
+    }
 }
 
 /** Text entry dialog (single field). */
@@ -165,20 +179,26 @@ internal fun InputDialog(
     initial: String = "",
 ) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { ExtendField(value, { value = it }, placeholder, secret = secret, mono = secret) },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) {
-                Text(confirm, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ext_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        },
-    )
+    AtomDialog(show = true, onDismiss = onDismiss, title = title) {
+        Column {
+            ExtendField(value, { value = it }, placeholder, secret = secret, mono = secret)
+            DialogButtons(
+                confirmText = confirm,
+                onConfirm = { onConfirm(value) },
+                dismissText = stringResource(R.string.ext_cancel),
+                onDismiss = onDismiss,
+                confirmEnabled = value.isNotBlank(),
+            )
+        }
+    }
+}
+
+/** A Miuix dialog with one "Got it" button, for descriptions. */
+@Composable
+internal fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
+    AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        atom.ui.components.AtomTextButton(stringResource(R.string.ext_got_it), onDismiss, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
+    }
 }
 
 /** Inline progress line, shown only while work is actually running. */

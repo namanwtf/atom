@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -41,7 +42,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import atom.automation.schedule.ScheduleText
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomDialog
 import atom.ui.components.AtomMenu
+import atom.ui.components.DialogButtons
+import atom.ui.components.SpinnerOption
+import atom.ui.components.SpinnerRow
 import atom.ui.components.AtomMenuItem
 import atom.ui.components.CompactButton
 import atom.ui.components.GroupRow
@@ -86,16 +92,18 @@ internal fun AtomField(
     )
 }
 
-/** A row whose value is picked from a short menu. */
+/** A row whose value is picked from the Miuix dropdown. */
 @Composable
 internal fun <T> ChoiceRow(title: String, value: T, options: List<T>, label: (T) -> String, onPick: (T) -> Unit, subtitle: String? = null) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        GroupRow(title, subtitle = subtitle, onClick = { open = true }, trailing = { RowValue(label(value)) })
-        AtomMenu(open, { open = false }) {
-            options.forEach { o -> AtomMenuItem(label(o), o == value) { open = false; onPick(o) } }
-        }
-    }
+    // A stored value that is no longer offered (a removed model, an unknown field value) still shows its label.
+    val shown = if (value in options) options else options + value
+    SpinnerRow(
+        title = title,
+        options = shown.map { SpinnerOption(label(it)) },
+        selectedIndex = shown.indexOf(value),
+        onSelect = { i -> shown.getOrNull(i)?.let(onPick) },
+        summary = subtitle,
+    )
 }
 
 @Composable
@@ -151,12 +159,7 @@ internal fun <T> PillChoices(options: List<T>, selected: T?, label: (T) -> Strin
 
 @Composable
 internal fun NavRow(title: String, subtitle: String? = null, value: String? = null, onClick: () -> Unit) =
-    GroupRow(title, subtitle = subtitle, onClick = onClick, trailing = {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (value != null) RowValue(value)
-            RowChevron()
-        }
-    })
+    ArrowRow(title, onClick, summary = subtitle, value = value)
 
 @Composable
 internal fun HealthDot(ok: Boolean) = StatusDot(if (ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.extras.warning)
@@ -173,14 +176,27 @@ internal fun Note(text: String, modifier: Modifier = Modifier, warning: Boolean 
 
 @Composable
 internal fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        confirmButton = { TextButton(onConfirm) { Text(confirm, color = MaterialTheme.colorScheme.onSurface) } },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-    )
+    AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        DangerButtons(confirm, onConfirm, onDismiss)
+    }
+}
+
+/** The Miuix dialog button pair with the confirm button in the error colour, for deletes and clears. */
+@Composable
+private fun DangerButtons(confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        top.yukonga.miuix.kmp.basic.TextButton(text = "Cancel", onClick = onDismiss, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
+        top.yukonga.miuix.kmp.basic.TextButton(
+            text = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error,
+                textColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onError,
+            ),
+        )
+    }
 }
 
 @Composable

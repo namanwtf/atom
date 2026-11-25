@@ -67,11 +67,15 @@
 
     <!-- Backup -->
     <string name="backup_title">Data backup</string>
-    <string name="backup_intro">One JSON file with your data. Keep it somewhere safe.</string>
+    <string name="backup_intro">The backup is one JSON file with your data, including model provider API keys. Anyone with the file can read it, so store it privately.</string>
+    <string name="backup_keep_safe">Keep the backup file safe</string>
+    <string name="backup_group">Backup</string>
+    <string name="backup_saving_title">Wait for conversations to finish saving</string>
+    <string name="backup_saving_body">A conversation is still being saved. Try the import again in a moment, so nothing is lost or overwritten.</string>
     <string name="backup_includes">Includes: %1$s</string>
     <string name="backup_nothing_registered">Nothing to back up yet.</string>
     <string name="backup_export">Export data</string>
-    <string name="backup_export_sub">Save everything to one file</string>
+    <string name="backup_export_sub">Save %1$s to a JSON file</string>
     <string name="backup_import">Import data</string>
     <string name="backup_import_sub">Replace current data from a backup file</string>
     <string name="backup_never_included">Speech credentials and sign-in tokens are never included. The system cloud backup is off; this is the only backup.</string>
@@ -83,13 +87,13 @@
     <string name="backup_ok">OK</string>
     <string name="backup_exported">Backup saved.</string>
     <string name="backup_export_failed">Could not save the backup: %1$s</string>
-    <string name="backup_confirm_title">Replace current data?</string>
+    <string name="backup_confirm_title">Import Atom data?</string>
     <string name="backup_confirm_body">Backup from %1$s, Atom %2$s.\n\nThese parts will be replaced: %3$s.\n\nYour current data for them will be overwritten. This cannot be undone.</string>
     <string name="backup_confirm_untouched">\n\nNot in the file, left as is: %1$s.</string>
     <string name="backup_confirm_unknown">\n\nSkipped (not supported by this version): %1$s.</string>
     <string name="backup_confirm_secrets">\n\nThe file contains API keys.</string>
     <string name="backup_replace">Replace</string>
-    <string name="backup_busy_title">Stop running tasks first</string>
+    <string name="backup_busy_title">Stop running agent tasks first</string>
     <string name="backup_busy_body">An agent task is running. Stop it before importing, so nothing writes data mid-import.</string>
     <string name="backup_stop_tasks">Stop tasks</string>
     <string name="backup_done_title">Import complete</string>

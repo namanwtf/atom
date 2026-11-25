@@ -6,6 +6,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Intent
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -280,13 +281,18 @@ class JobManager private constructor(context: Context) {
                 },
             )
         }
-        val open = app.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
+        // The app's launcher opens the route named by this extra: tapping lands on Background tasks.
+        val open = app.packageManager.getLaunchIntentForPackage(app.packageName)?.apply {
+            putExtra("atom.app.EXTRA_ROUTE", "linux/jobs")
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }?.let {
             PendingIntent.getActivity(app, r.id.hashCode(), it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
         val n = Notification.Builder(app, CHANNEL)
             .setSmallIcon(if (r.state == JobState.Completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
-            .setContentTitle(JobRules.describe(r))
-            .setContentText(r.command.take(120))
+            .setContentTitle(JobRules.notificationTitle(r))
+            .setContentText(JobRules.notificationText(r).substringBefore('\n'))
+            .setStyle(Notification.BigTextStyle().bigText(JobRules.notificationText(r)))
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

@@ -1,6 +1,21 @@
 package atom.extend.skills
 
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import atom.extend.ui.InfoDialog
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomMenu
+import atom.ui.components.AtomMenuItem
+import atom.ui.components.AtomRow
+import atom.ui.components.SwitchRow
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -56,6 +71,7 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
     var message by remember { mutableStateOf<Message?>(null) }
     var replace by remember { mutableStateOf<Pair<List<String>, CompletableDeferred<Boolean>>?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
+    var describing by remember { mutableStateOf<SkillInfo?>(null) }
     val importedFmt = stringResource(R.string.sk_imported)
     val skippedFmt = stringResource(R.string.sk_skipped)
 
@@ -88,17 +104,22 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
         }
     }
 
+    fun toggle(s: SkillInfo, on: Boolean) {
+        store.setEnabled(s.name, on)
+        if (on) Toast.makeText(context, context.getString(R.string.sk_enabled_toast, s.name), Toast.LENGTH_SHORT).show()
+    }
+
     LargeTitleScreen(title = stringResource(R.string.ext_entry_skills), onBack = nav::back) {
         item {
-            Hint(stringResource(R.string.sk_how), Modifier.padding(bottom = 4.dp))
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                CompactButton(
-                    stringResource(R.string.sk_import),
+            Hint(stringResource(R.string.sk_how), Modifier.padding(top = 12.dp, bottom = 4.dp))
+            Group(Modifier.padding(top = 8.dp)) {
+                ArrowRow(
+                    title = stringResource(if (busy) R.string.sk_checking else R.string.sk_import),
+                    summary = if (busy) stringResource(R.string.sk_importing) else stringResource(R.string.sk_import_sub),
                     onClick = { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
                     enabled = !busy,
                 )
             }
-            if (busy) WorkingLine(stringResource(R.string.sk_importing))
             message?.let { Notice(it.text, it.error) }
         }
         val builtIn = skills.filter { it.origin == SkillOrigin.BuiltIn }
@@ -106,25 +127,43 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
         item { SectionLabel(stringResource(R.string.sk_builtin)) }
         item {
             Group {
-                builtIn.forEachIndexed { i, s ->
-                    if (i > 0) GroupDivider(18.dp)
-                    SkillRow(s, onToggle = { store.setEnabled(s.name, it) }, onDelete = null)
+                builtIn.forEach { s ->
+                    // Tapping the row shows the full description; the switch turns the skill on or off.
+                    AtomRow(
+                        title = s.name,
+                        summary = s.manifest.description.oneLine(),
+                        onClick = { describing = s },
+                        end = { Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(s.enabled, { toggle(s, it) }) } },
+                    )
                 }
             }
         }
         item { SectionLabel(stringResource(R.string.sk_installed)) }
         item {
-            if (user.isEmpty()) {
-                Hint(stringResource(R.string.sk_none))
-            } else {
-                Group {
-                    user.forEachIndexed { i, s ->
-                        if (i > 0) GroupDivider(18.dp)
-                        SkillRow(s, onToggle = { store.setEnabled(s.name, it) }, onDelete = { deleting = s.name })
-                    }
+            Group {
+                if (user.isEmpty()) AtomRow(title = stringResource(R.string.sk_none))
+                user.forEach { s ->
+                    UserSkillRow(
+                        s,
+                        onToggle = { toggle(s, it) },
+                        onDescribe = { describing = s },
+                        onDelete = { deleting = s.name },
+                    )
                 }
             }
         }
+    }
+
+    describing?.let { s ->
+        InfoDialog(
+            title = s.name,
+            text = if (s.origin == SkillOrigin.User) {
+                s.manifest.description + "\n\n" + stringResource(R.string.sk_files, s.fileCount, formatBytes(s.sizeBytes))
+            } else {
+                s.manifest.description
+            },
+            onDismiss = { describing = null },
+        )
     }
 
     replace?.let { (names, answer) ->
@@ -152,51 +191,46 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
             onDismiss = { deleting = null },
             onConfirm = {
                 deleting = null
-                scope.launch { withContext(Dispatchers.IO) { store.delete(name) } }
+                scope.launch {
+                    if (withContext(Dispatchers.IO) { store.delete(name) }) {
+                        Toast.makeText(context, context.getString(R.string.sk_removed_toast, name), Toast.LENGTH_SHORT).show()
+                    }
+                }
             },
         )
     }
 }
 
+private fun String.oneLine(): String = lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ").let {
+    if (it.length <= 140) it else it.take(139).trimEnd() + "…"
+}
+
+/** An installed skill: switch, a one-line description and a "More actions" menu (View description, Delete). */
 @Composable
-private fun SkillRow(skill: SkillInfo, onToggle: (Boolean) -> Unit, onDelete: (() -> Unit)?) {
-    var expanded by rememberSaveable(skill.name) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(skill.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(12.dp))
-            AtomSwitch(skill.enabled, onToggle)
-        }
-        Text(
-            skill.manifest.description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = if (expanded) Int.MAX_VALUE else 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp).clickable { expanded = !expanded },
-        )
-        if (expanded || onDelete != null) {
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (skill.origin == SkillOrigin.User) {
-                    Text(
-                        stringResource(R.string.sk_files, skill.fileCount, formatBytes(skill.sizeBytes)),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    Spacer(Modifier.weight(1f))
+private fun UserSkillRow(skill: SkillInfo, onToggle: (Boolean) -> Unit, onDescribe: () -> Unit, onDelete: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    val more = stringResource(R.string.sk_more_actions, skill.name)
+    AtomRow(
+        title = skill.name,
+        summary = skill.manifest.description.oneLine(),
+        onClick = { onToggle(!skill.enabled) },
+        end = {
+            Box(Modifier.align(Alignment.CenterVertically)) {
+                IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = more }) {
+                    Icon(MiuixIcons.More, null, tint = MiuixTheme.colorScheme.onSurfaceVariantActions)
                 }
-                CompactButton(
-                    stringResource(if (expanded) R.string.sk_less else R.string.sk_more),
-                    onClick = { expanded = !expanded },
-                    primary = false,
-                )
-                if (onDelete != null) {
-                    CompactButton(stringResource(R.string.ext_delete), onClick = onDelete, primary = false, contentColor = MaterialTheme.colorScheme.error)
+                AtomMenu(menu, { menu = false }) {
+                    AtomMenuItem(stringResource(R.string.sk_view_description), false) {
+                        menu = false
+                        onDescribe()
+                    }
+                    AtomMenuItem(stringResource(R.string.ext_delete), false) {
+                        menu = false
+                        onDelete()
+                    }
                 }
             }
-        }
-    }
+            Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(skill.enabled, onToggle) }
+        },
+    )
 }
