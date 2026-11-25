@@ -138,14 +138,17 @@ internal fun <T> PickerRow(title: String, options: List<T>, selected: T, label: 
 
 @Composable
 internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(confirm, color = MaterialTheme.colorScheme.onSurface) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-    )
+    atom.ui.components.AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        atom.ui.components.DialogButtons(
+            confirmText = confirm,
+            onConfirm = {
+                onDismiss()
+                onConfirm()
+            },
+            dismissText = "Cancel",
+            onDismiss = onDismiss,
+        )
+    }
 }
 
 /** Decoded thumbnails, bounded to a few MB. */

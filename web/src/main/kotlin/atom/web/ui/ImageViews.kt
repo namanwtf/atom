@@ -68,6 +68,13 @@ import java.io.File
 @Composable
 fun ImageResultCard(toolText: String, modifier: Modifier = Modifier) {
     val jobs by ImageJobs.jobs.collectAsState()
+    // While the call is still running the chat passes a live spec; show the job as soon as the generator starts it.
+    val spec = remember(toolText) { ImageJobs.parseLive(toolText) }
+    if (spec != null) {
+        val job = ImageJobs.liveJob(spec, jobs.values)
+        ImageJobCard(job ?: remember(spec) { ImageJobs.placeholder(spec) }, modifier)
+        return
+    }
     val id = remember(toolText) { ImageJobs.parseId(toolText) }
     val live = id?.let { jobs[it] }
     val job = live ?: remember(toolText) { fromText(toolText) }
@@ -110,12 +117,24 @@ fun ImageJobCard(job: ImageJob, modifier: Modifier = Modifier) {
             JobState.Done -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     job.images.take(4).forEach { item ->
-                        val bmp = rememberThumb(item.file, 512)
+                        val exists = remember(item.file) { File(item.file).isFile }
+                        val bmp = if (exists) rememberThumb(item.file, 512) else null
                         Box(
                             Modifier.weight(1f).aspectRatio(if (job.images.size == 1 && item.width > 0) item.width.toFloat() / item.height.coerceAtLeast(1) else 1f)
-                                .clip(RoundedCornerShape(14.dp)).background(c.surfaceContainerHigh).clickable { viewing = item },
+                                .clip(RoundedCornerShape(14.dp)).background(c.surfaceContainerHigh)
+                                .then(if (exists) Modifier.clickable { viewing = item } else Modifier),
+                            contentAlignment = Alignment.Center,
                         ) {
                             if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            if (!exists) {
+                                Text("Local image was cleared", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                            }
+                        }
+                    }
+                    if (job.prompt.isNotBlank()) {
+                        Column(Modifier.fillMaxWidth().clickable { showPrompt = true }) {
+                            Text("Prompt", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+                            Text(job.prompt, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -129,9 +148,11 @@ fun ImageJobCard(job: ImageJob, modifier: Modifier = Modifier) {
                     }, primary = false)
                     CompactButton("Share", onClick = { runCatching { Share.share(context, files) } }, primary = false, icon = Icons.Filled.Share)
                     CompactButton("Edit", onClick = {
-                        files.firstOrNull()?.let { Web.host.attachToComposer(context, Share.uriFor(context, it)) }
+                        files.firstOrNull()?.let {
+                            Web.host.attachToComposer(context, Share.uriFor(context, it))
+                            Toast.makeText(context, ATTACHED_TO_INPUT, Toast.LENGTH_SHORT).show()
+                        }
                     }, primary = false, icon = Icons.Filled.Edit)
-                    CompactButton("Prompt", onClick = { showPrompt = true }, primary = false)
                 }
             }
         }
@@ -147,6 +168,12 @@ fun ImageJobCard(job: ImageJob, modifier: Modifier = Modifier) {
     }
     viewing?.let { item -> ImageViewer(item, onClose = { viewing = null }, allowDelete = false) }
 }
+
+private const val ATTACHED_TO_INPUT = "Attached to input. Describe the changes you want."
+
+/** The warning before deleting one generated image. */
+internal const val DELETE_WARNING =
+    "Once deleted, this local original image can no longer be loaded in chat history. Copies saved to Pictures stay."
 
 private fun fromText(text: String): ImageJob {
     val paths = Regex("^- (/\\S+) \\(", RegexOption.MULTILINE).findAll(text).map { it.groupValues[1] }.toList()
@@ -202,13 +229,14 @@ internal fun ImageViewer(item: GalleryItem, onClose: () -> Unit, allowDelete: Bo
                 CompactButton("Share", onClick = { runCatching { Share.share(context, listOf(File(item.file))) } }, primary = false, icon = Icons.Filled.Share)
                 CompactButton("Edit", onClick = {
                     Web.host.attachToComposer(context, Share.uriFor(context, File(item.file)))
+                    Toast.makeText(context, ATTACHED_TO_INPUT, Toast.LENGTH_SHORT).show()
                     onClose()
                 }, primary = false, icon = Icons.Filled.Edit)
             }
         }
     }
     if (confirmDelete) {
-        ConfirmDialog("Delete image?", "It is removed from Atom. Copies saved to Pictures stay.", "Delete", onConfirm = {
+        ConfirmDialog("Delete image?", DELETE_WARNING, "Delete", onConfirm = {
             onDelete()
             onClose()
         }, onDismiss = { confirmDelete = false })

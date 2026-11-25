@@ -66,6 +66,8 @@ sealed interface ImportResult {
     data class Success(val imported: List<String>, val skipped: List<String>) : ImportResult
     /** Agent tasks are running; nothing was touched. */
     data object Busy : ImportResult
+    /** Conversations are still being saved; nothing was touched. */
+    data object Saving : ImportResult
     data class Invalid(val problems: List<BackupProblem>) : ImportResult
     /**
      * [failedKey] threw. Every section imported before it (and itself) was restored from its in-memory snapshot;
@@ -83,6 +85,8 @@ class BackupEngine(
     private val appVersion: String,
     private val contributors: () -> List<BackupContributor> = { Backups.all },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** True while conversations are still being written; imports wait until they are done. */
+    private val saving: () -> Boolean = { false },
 ) {
     suspend fun export(): String {
         val list = contributors()
@@ -165,6 +169,7 @@ class BackupEngine(
      */
     suspend fun import(file: BackupFile, tasksRunning: () -> Boolean): ImportResult {
         if (tasksRunning()) return ImportResult.Busy
+        if (saving()) return ImportResult.Saving
         val plan = when (val v = validate(file)) {
             is ValidationResult.Invalid -> return ImportResult.Invalid(v.problems)
             is ValidationResult.Ok -> v.plan

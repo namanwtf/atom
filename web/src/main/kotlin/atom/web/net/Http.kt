@@ -51,7 +51,11 @@ object Http {
 
     /** Long-running image generation calls. */
     val slowClient: OkHttpClient by lazy {
-        client.newBuilder().readTimeout(300, TimeUnit.SECONDS).callTimeout(330, TimeUnit.SECONDS).build()
+        client.newBuilder().readTimeout(300, TimeUnit.SECONDS).callTimeout(330, TimeUnit.SECONDS)
+            // These calls carry API keys in headers; a redirect is reported, never followed.
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
     }
 
     fun toRequest(spec: HttpSpec): Request {

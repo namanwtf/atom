@@ -131,6 +131,9 @@ class ConversationStore(private val dir: File) {
     private val mutex = Mutex()
     private val index = MutableStateFlow<List<ConversationSummary>?>(null)
 
+    /** True while a conversation is being written (a backup import waits for it). */
+    val isSaving: Boolean get() = mutex.isLocked
+
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
     /** Ids of conversations just saved, updated or deleted. */
