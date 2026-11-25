@@ -37,6 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import atom.extend.R
+import atom.ui.components.AtomDialog
+import atom.ui.components.DialogButtons
 import atom.ui.theme.extras
 
 /** Graphite text field matching the grouped lists. */
@@ -133,24 +135,16 @@ internal fun ConfirmDialog(
     destructive: Boolean = false,
     dismiss: String? = null,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    confirm,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(dismiss ?: stringResource(R.string.ext_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        },
-    )
+    // Miuix dialog: the confirm button is the primary one either way ([destructive] is kept for callers); the
+    // title says what is removed.
+    AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        DialogButtons(
+            confirmText = confirm,
+            onConfirm = onConfirm,
+            dismissText = dismiss ?: stringResource(R.string.ext_cancel),
+            onDismiss = onDismiss,
+        )
+    }
 }
 
 /** Text entry dialog (single field). */
@@ -165,20 +159,26 @@ internal fun InputDialog(
     initial: String = "",
 ) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { ExtendField(value, { value = it }, placeholder, secret = secret, mono = secret) },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) {
-                Text(confirm, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ext_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        },
-    )
+    AtomDialog(show = true, onDismiss = onDismiss, title = title) {
+        Column {
+            ExtendField(value, { value = it }, placeholder, secret = secret, mono = secret)
+            DialogButtons(
+                confirmText = confirm,
+                onConfirm = { onConfirm(value) },
+                dismissText = stringResource(R.string.ext_cancel),
+                onDismiss = onDismiss,
+                confirmEnabled = value.isNotBlank(),
+            )
+        }
+    }
+}
+
+/** A Miuix dialog with one "Got it" button, for descriptions. */
+@Composable
+internal fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
+    AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        atom.ui.components.AtomTextButton(stringResource(R.string.ext_got_it), onDismiss, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
+    }
 }
 
 /** Inline progress line, shown only while work is actually running. */
