@@ -14,10 +14,18 @@ import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** On-demand, downscaled JPEG screenshots. Only taken when a tool explicitly asks: images are costly. */
+/**
+ * On-demand JPEG screenshots, downscaled by default. Only taken when a tool explicitly asks: images are costly.
+ * With full resolution the frame keeps the screen's own size (and a higher JPEG quality), so image pixels are
+ * screen pixels.
+ */
 internal object Screenshots {
     private const val MAX_SIDE = 1080
     private const val QUALITY = 60
+    private const val FULL_QUALITY = 85
+
+    /** Longest side and JPEG quality for a capture. */
+    fun encoding(fullResolution: Boolean): Pair<Int, Int> = if (fullResolution) Int.MAX_VALUE to FULL_QUALITY else MAX_SIDE to QUALITY
 
     class Shot(val image: ContentPart.Image, val note: String)
 
@@ -26,7 +34,7 @@ internal object Screenshots {
         class Failed(val code: Int) : Raw
     }
 
-    suspend fun capture(svc: AccessibilityService): Shot {
+    suspend fun capture(svc: AccessibilityService, fullResolution: Boolean = false): Shot {
         var raw = take(svc)
         if (raw is Raw.Failed && raw.code == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
             delay(1_050) // the system rate-limits screenshots per service
@@ -36,7 +44,7 @@ internal object Screenshots {
             is Raw.Ok -> raw.result
             is Raw.Failed -> throw UiError("Screenshot failed: ${reason(raw.code)}")
         }
-        return withContext(Dispatchers.Default) { encode(ok) }
+        return withContext(Dispatchers.Default) { encode(ok, fullResolution) }
     }
 
     private suspend fun take(svc: AccessibilityService): Raw = suspendCancellableCoroutine { cont ->
@@ -55,7 +63,7 @@ internal object Screenshots {
         )
     }
 
-    private fun encode(result: AccessibilityService.ScreenshotResult): Shot {
+    private fun encode(result: AccessibilityService.ScreenshotResult, fullResolution: Boolean): Shot {
         val buffer = result.hardwareBuffer
         val software = try {
             val hw = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
@@ -68,14 +76,15 @@ internal object Screenshots {
         } finally {
             buffer.close()
         }
-        return encodeBitmap(software)
+        return encodeBitmap(software, fullResolution)
     }
 
-    /** Downscales and JPEG-encodes [software]; recycles it. */
-    fun encodeBitmap(software: Bitmap): Shot {
+    /** Downscales (unless [fullResolution]) and JPEG-encodes [software]; recycles it. */
+    fun encodeBitmap(software: Bitmap, fullResolution: Boolean = false): Shot {
+        val (maxSide, quality) = encoding(fullResolution)
         val w = software.width
         val h = software.height
-        val scale = minOf(1f, MAX_SIDE.toFloat() / max(w, h))
+        val scale = minOf(1f, maxSide.toFloat() / max(w, h))
         val scaled = if (scale < 1f) {
             Bitmap.createScaledBitmap(software, (w * scale).roundToInt(), (h * scale).roundToInt(), true)
                 .also { software.recycle() }
@@ -83,11 +92,12 @@ internal object Screenshots {
             software
         }
         val bytes = ByteArrayOutputStream(64 * 1024).use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, QUALITY, out)
+            scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
             out.toByteArray()
         }
         val note = buildString {
             append("Screenshot ${scaled.width}x${scaled.height} attached")
+            if (fullResolution) append(" at the screen's original resolution")
             if (scale < 1f) {
                 append(" (scaled ${String.format(java.util.Locale.US, "%.3f", scale)} of the ${w}x$h screen; divide image pixels by that to get tap x,y)")
             }

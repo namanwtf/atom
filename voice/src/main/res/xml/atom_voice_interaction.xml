@@ -3,5 +3,5 @@
     android:sessionService="atom.voice.assist.AtomVoiceInteractionSessionService"
     android:recognitionService="atom.voice.assist.AtomRecognitionService"
     android:supportsAssist="true"
-    android:supportsLaunchVoiceAssistFromKeyguard="false"
+    android:supportsLaunchVoiceAssistFromKeyguard="true"
     android:supportsLocalInteraction="false" />

@@ -1,5 +1,6 @@
 package atom.core.agent
 
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ChatMessage
 import atom.core.llm.FinishReason
 import atom.core.llm.LlmEngine
@@ -55,6 +56,8 @@ enum class StopReason { Completed, StepLimit, OutputLimit }
 data class MessageInfo(
     val reasoning: String? = null,
     val reasoningMs: Long? = null,
+    /** Provider search suggestions for this assistant message (Gemini grounding); null when none. */
+    val searchSuggestions: SearchSuggestions? = null,
     val durationMs: Long? = null,
     val isError: Boolean = false,
     /** Only for the current turn; persist [Scrubber.scrub] of it instead. */
@@ -178,7 +181,7 @@ class Agent(
             emit(AgentEvent.ModelCall(turn.stats))
             emit(AgentEvent.Usage(state.inTokens, state.outTokens))
 
-            append(state, ChatMessage.assistant(turn.text, turn.calls), MessageInfo(turn.reasoning, turn.reasoningMs))
+            append(state, ChatMessage.assistant(turn.text, turn.calls), MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
             state.lastReported = turn.reportedInput + turn.reportedOutput
             state.sinceReport = 0
             emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
@@ -295,6 +298,7 @@ class Agent(
         val reportedInput: Int,
         val reportedOutput: Int,
         val stats: ModelCallStats,
+        val suggestions: SearchSuggestions? = null,
     )
 
     private suspend fun FlowCollector<AgentEvent>.streamWithRetry(request: LlmRequest): Turn {
@@ -311,6 +315,7 @@ class Agent(
                 val calls = mutableListOf<ToolCall>()
                 var finish = FinishReason.Stop
                 var usage: LlmEvent.Usage? = null
+                var suggestions: SearchSuggestions? = null
                 engine.stream(request).collect { event ->
                     when (event) {
                         is LlmEvent.TextDelta -> {
@@ -337,6 +342,7 @@ class Agent(
                         }
                         is LlmEvent.Usage -> usage = event
                         is LlmEvent.Finished -> finish = event.reason
+                        is LlmEvent.Suggestions -> if (!event.suggestions.isEmpty) suggestions = event.suggestions
                     }
                 }
                 val end = System.nanoTime()
@@ -359,6 +365,7 @@ class Agent(
                         cacheReadTokens = reported?.cacheReadTokens ?: 0,
                         cacheWriteTokens = reported?.cacheWriteTokens ?: 0,
                     ),
+                    suggestions = suggestions,
                 )
             } catch (e: LlmException) {
                 if (!e.retryable || attempt >= config.maxRetries) throw e
