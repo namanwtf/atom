@@ -157,6 +157,8 @@ def main():
     sh("settings put global window_animation_scale 0.5")
     p = f"{mode}_"
 
+    # Start clean so each mode opens on the home chat, not on the screen the previous mode left open.
+    sh(f"am force-stop {PKG}")
     launch(wait=8)
     shot(p + "01_launch")
     # Get past a first-run screen if this build still has one.

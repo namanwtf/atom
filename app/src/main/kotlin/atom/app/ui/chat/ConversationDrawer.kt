@@ -288,7 +288,7 @@ private fun BrandBadge() {
         Modifier.size(26.dp).background(Brush.linearGradient(listOf(primary, end)), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(HomeGlyphs.Orbit, null, Modifier.size(16.dp), tint = Color.White)
+        Icon(HomeGlyphs.Orbit, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
     }
 }
 
