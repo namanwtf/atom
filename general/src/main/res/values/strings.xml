@@ -22,6 +22,7 @@
     <string name="appearance_mode_dark">Dark</string>
     <string name="appearance_monet">Monet colors</string>
     <string name="appearance_monet_sub">Use system dynamic colors when available</string>
+    <string name="appearance_monet_unavailable">Needs Android 12 or later</string>
     <string name="appearance_color_style">Color style</string>
     <string name="appearance_accent">Accent color</string>
     <string name="accent_system">System colors</string>
