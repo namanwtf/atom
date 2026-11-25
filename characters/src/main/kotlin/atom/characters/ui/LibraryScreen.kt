@@ -57,6 +57,7 @@ import atom.ui.components.GroupDivider
 import atom.ui.components.GroupRow
 import atom.ui.components.LargeTitleScreen
 import atom.ui.components.RowChevron
+import atom.ui.components.AtomSearchBar
 import atom.ui.components.RowValue
 import atom.ui.components.SectionLabel
 import atom.ui.components.SegmentedControl
@@ -116,7 +117,7 @@ internal fun LibraryScreen(nav: FeatureNav) {
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SearchField(query, { query = it }, stringResource(R.string.characters_search))
+                AtomSearchBar(query, { query = it }, label = stringResource(R.string.characters_search))
                 SegmentedControl(
                     options = listOf(
                         stringResource(R.string.characters_filter_all) to null,
