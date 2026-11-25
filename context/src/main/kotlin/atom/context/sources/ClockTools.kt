@@ -20,7 +20,7 @@ import java.util.Calendar
 /** Alarms and timers through the system clock app's public intents. */
 internal class ClockTools(context: Context) {
     private val app = context.applicationContext
-    private val prefs = app.getSharedPreferences("atom_clock", Context.MODE_PRIVATE)
+    private val prefs = app.getSharedPreferences("atom4_clock", Context.MODE_PRIVATE)
 
     fun all(): List<Tool> = listOf(setAlarm(), setTimer(), list(), changeAlarm())
 

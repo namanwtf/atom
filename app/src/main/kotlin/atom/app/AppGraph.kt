@@ -53,8 +53,8 @@ class AppGraph(private val app: Application) {
 
     val settings = SettingsRepository(app.settingsDataStore)
     val vault = KeyVault(app.vaultDataStore)
-    val conversations = ConversationStore(File(app.filesDir, "conversations"))
-    val journal = RunJournal(File(app.filesDir, "run-journal"))
+    val conversations = ConversationStore(File(app.filesDir, "atom4_conversations"))
+    val journal = RunJournal(File(app.filesDir, "atom4_run-journal"))
     val runtimePrefs = RuntimePrefs(app.runtimeDataStore)
     val notifications = TaskNotifications(app).also { n ->
         appScope.launch {
