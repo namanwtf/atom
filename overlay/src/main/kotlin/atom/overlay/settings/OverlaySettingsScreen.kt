@@ -56,9 +56,27 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
     }
 
     LargeTitleScreen(title = stringResource(R.string.overlay_settings_title), onBack = nav::back) {
-        item { SectionLabel(stringResource(R.string.overlay_section_bubble)) }
+        // As before: Assistant model, then the Floating bubble switch, then Reasoning level.
+        item { SectionLabel(stringResource(R.string.overlay_section_assistant)) }
         item {
             Group {
+                GroupRow(
+                    title = stringResource(R.string.overlay_default_assistant),
+                    subtitle = stringResource(R.string.overlay_default_assistant_hint),
+                    onClick = { openAssistantPicker(context) },
+                    trailing = { RowValue(stringResource(assistant)) },
+                )
+                val modelRoute = Overlay.hooks.assistantModelRoute
+                if (modelRoute != null) {
+                    GroupDivider(inset = 18.dp)
+                    GroupRow(
+                        title = stringResource(R.string.overlay_assistant_model),
+                        subtitle = stringResource(R.string.overlay_assistant_model_hint),
+                        onClick = { nav.open(modelRoute) },
+                        trailing = { RowChevron() },
+                    )
+                }
+                GroupDivider(inset = 18.dp)
                 GroupRow(
                     title = stringResource(R.string.overlay_bubble_switch),
                     subtitle = stringResource(
@@ -67,12 +85,32 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
                             else -> R.string.overlay_bubble_hint
                         },
                     ),
-                    onClick = { toggleBubble(context, !bubbleOn, canOverlay) { enableOnReturn = true } },
+                    onClick = {
+                        if (bubbleOn && !canOverlay) {
+                            toggleBubble(context, true, canOverlay) { enableOnReturn = true }
+                        } else {
+                            toggleBubble(context, !bubbleOn, canOverlay) { enableOnReturn = true }
+                        }
+                    },
                     trailing = {
                         AtomSwitch(bubbleOn, onCheckedChange = { on -> toggleBubble(context, on, canOverlay) { enableOnReturn = true } })
                     },
                 )
-                GroupDivider(inset = 18.dp)
+                if (modelRoute != null) {
+                    GroupDivider(inset = 18.dp)
+                    GroupRow(
+                        title = stringResource(R.string.overlay_reasoning),
+                        subtitle = stringResource(R.string.overlay_reasoning_hint),
+                        onClick = { nav.open(modelRoute) },
+                        trailing = { RowChevron() },
+                    )
+                }
+            }
+        }
+
+        item { SectionLabel(stringResource(R.string.overlay_section_bubble)) }
+        item {
+            Group {
                 GroupRow(
                     title = stringResource(R.string.overlay_permission),
                     subtitle = stringResource(if (canOverlay) R.string.overlay_permission_granted else R.string.overlay_permission_missing),
@@ -112,25 +150,9 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
             }
         }
 
-        item { SectionLabel(stringResource(R.string.overlay_section_assistant)) }
+        item { SectionLabel(stringResource(R.string.overlay_section_overlay)) }
         item {
             Group {
-                GroupRow(
-                    title = stringResource(R.string.overlay_default_assistant),
-                    subtitle = stringResource(R.string.overlay_default_assistant_hint),
-                    onClick = { openAssistantPicker(context) },
-                    trailing = { RowValue(stringResource(assistant)) },
-                )
-                Overlay.hooks.assistantModelRoute?.let { route ->
-                    GroupDivider(inset = 18.dp)
-                    GroupRow(
-                        title = stringResource(R.string.overlay_assistant_model),
-                        subtitle = stringResource(R.string.overlay_assistant_model_hint),
-                        onClick = { nav.open(route) },
-                        trailing = { RowChevron() },
-                    )
-                }
-                GroupDivider(inset = 18.dp)
                 GroupRow(
                     title = stringResource(R.string.overlay_chips),
                     subtitle = stringResource(R.string.overlay_chips_hint),
@@ -154,6 +176,10 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
     }
 }
 
+/**
+ * The switch is on by default. Without the overlay permission it stays on and says why nothing shows; tapping the
+ * row then asks for the permission, and the bubble appears on return. Turning it on asks the same way.
+ */
 private fun toggleBubble(context: Context, on: Boolean, canOverlay: Boolean, awaitPermission: () -> Unit) {
     if (on && !canOverlay) {
         awaitPermission()
