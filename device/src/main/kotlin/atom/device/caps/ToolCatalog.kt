@@ -38,9 +38,41 @@ data class ToolGroupInfo(
 object ToolCatalog {
     private val groups = LinkedHashMap<String, ToolGroupInfo>()
 
+    /**
+     * Set by the app: why a card's tools do not exist right now because their feature is off in its own settings
+     * page (for example web search switched off), or null when the feature is on. The Tool list shows them off.
+     */
+    @Volatile
+    var featureOff: (cardId: String) -> String? = { null }
+
     fun register(vararg g: ToolGroupInfo) = synchronized(groups) { g.forEach { groups[it.id] = it } }
 
     val all: List<ToolGroupInfo> get() = synchronized(groups) { groups.values.sortedBy { it.order } }
+
+    /**
+     * Where the cards disagree with the gates tools really check ([realGates], tool name to switches): a gated tool
+     * with no card, or a card whose switches differ from the tool's gate. Empty when consistent.
+     */
+    fun mismatches(cards: List<ToolGroupInfo>, realGates: Map<String, Set<ToolSwitch>>): List<String> {
+        val cardOf = HashMap<String, ToolGroupInfo>()
+        cards.sortedBy { it.order }.forEach { g -> g.tools.forEach { t -> cardOf.putIfAbsent(t, g) } }
+        return realGates.toSortedMap().mapNotNull { (tool, gate) ->
+            val card = cardOf[tool]
+            when {
+                card == null -> "$tool has no card"
+                card.switches != gate -> "$tool: card ${card.id} says ${card.switches}, gate is $gate"
+                else -> null
+            }
+        }
+    }
+
+    /** A card for gated tools that no card lists yet (newer tools), so each still gets its own switch. */
+    fun uncardedGroup(cards: List<ToolGroupInfo>, realGates: Map<String, Set<ToolSwitch>>): ToolGroupInfo? {
+        val listed = cards.flatMap { it.tools }.toSet()
+        val extra = realGates.keys.filter { it !in listed }.sorted()
+        if (extra.isEmpty()) return null
+        return ToolGroupInfo("more_device", "More device tools", "Newer device tools.", extra, Needs.Nothing, emptySet(), 99)
+    }
 
     init {
         register(
@@ -72,19 +104,23 @@ object ToolCatalog {
                 listOf("list_changes", "undo_last_change", "undo_change", "undo_changes_today"), Needs.Nothing, setOf(ToolSwitch.DeviceDirect), 45,
             ),
             ToolGroupInfo(
-                "system_ops", "System operations", "Freeze, unfreeze and force-stop apps; read and write protected settings keys.",
-                listOf("freeze_app", "unfreeze_app", "force_stop_app", "read_setting", "write_setting"), Needs.ShizukuOrRoot,
+                "system_ops", "System operations", "Freeze, unfreeze and force-stop apps; write protected settings keys.",
+                listOf("freeze_app", "unfreeze_app", "force_stop_app", "write_setting"), Needs.ShizukuOrRoot,
                 setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveOps), 50,
             ),
             ToolGroupInfo(
-                "logs", "System logs", "Read logcat filtered by process, tag, level, time and text.",
-                listOf("read_system_logs"), Needs.ShizukuOrRoot, setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead), 55,
+                "logs", "System logs and settings", "Read logcat filtered by process, tag, level, time and text; read protected settings keys.",
+                listOf("read_system_logs", "read_setting"), Needs.ShizukuOrRoot, setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead), 55,
+            ),
+            ToolGroupInfo(
+                "battery", "Battery usage", "What drained the battery, per app.",
+                listOf("battery_drain"), Needs.ShizukuOrRoot, setOf(ToolSwitch.DeviceDirect), 58,
             ),
             ToolGroupInfo(
                 "power", "Power tools",
                 "Per-app firewall (root), background-data restriction, refresh-rate lock, battery charge limit (root and a supported kernel), " +
-                    "what drained the battery, and GPS spoofing (Atom as mock location app).",
-                listOf("app_firewall", "refresh_rate", "charge_limit", "battery_drain", "spoof_location"), Needs.ShizukuOrRoot,
+                    "and GPS spoofing (Atom as mock location app).",
+                listOf("app_firewall", "refresh_rate", "charge_limit", "spoof_location"), Needs.ShizukuOrRoot,
                 setOf(ToolSwitch.SensitiveOps), 60,
             ),
             ToolGroupInfo(
@@ -92,6 +128,12 @@ object ToolCatalog {
                 setOf(ToolSwitch.TerminalFiles), 90,
             ),
             // Tools from modules that do not depend on this one; listed by name so each gets its own switch.
+            ToolGroupInfo(
+                "background", "Background display",
+                "Run a task in another app on a hidden screen, look and act there, and present the result on the main screen.",
+                listOf("background_open_app", "background_look", "background_act", "background_close", "present_to_main_screen"),
+                Needs.Root, setOf(ToolSwitch.DeviceDirect), 15,
+            ),
             ToolGroupInfo(
                 "web", "Web search and reading", "Search the web and read pages with the service set in Web search and reading.",
                 listOf("web_search", "read_page"), Needs.Nothing, emptySet(), 25,

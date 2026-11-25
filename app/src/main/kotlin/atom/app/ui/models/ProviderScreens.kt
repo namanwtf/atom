@@ -136,6 +136,10 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
     var selected by remember(providerId) { mutableStateOf(emptySet<String>()) }
+    var modelQuery by rememberSaveable(providerId) { mutableStateOf("") }
+    val visibleModels = ModelSearch.filter(config.models, modelQuery).map { it.id }.toSet()
+    val settingsNow by vm.settings.collectAsStateWithLifecycle()
+    val currentModel = (settingsNow?.selection as? EngineSelection.Cloud)?.takeIf { it.providerId == providerId }?.model
     val copySuffix = stringResource(R.string.mdl_copy_suffix)
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
@@ -144,7 +148,8 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
         onBack = if (selected.isNotEmpty()) ({ selected = emptySet() }) else onBack,
         actions = {
             if (selected.isNotEmpty()) {
-                val all = config.models.map { it.id }.toSet()
+                // Only the rows the search shows: hidden models are never selected (or deleted) by accident.
+                val all = visibleModels
                 val allSelected = selected.containsAll(all)
                 AtomTextButton(
                     stringResource(if (allSelected) R.string.set_select_none else R.string.set_select_all),
@@ -193,7 +198,7 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
         if (tab == 0) {
             providerSettingsItems(vm, config, onRemove = { confirm = "remove" }, onReset = { confirm = "reset" })
         } else {
-            providerModelItems(vm, nav, config, selected, onSelected = { selected = it })
+            providerModelItems(vm, nav, config, selected, onSelected = { selected = it }, query = modelQuery, onQuery = { modelQuery = it })
         }
     }
 
@@ -217,7 +222,8 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
         )
         "deleteModels" -> ConfirmDialog(
             title = pluralStringResource(R.plurals.mdl_delete_models_title, selected.size, selected.size),
-            text = stringResource(R.string.mdl_delete_models_text),
+            text = stringResource(R.string.mdl_delete_models_text) +
+                if (currentModel != null && currentModel in selected) "\n\n" + stringResource(R.string.set_delete_current_warning) else "",
             confirm = stringResource(R.string.action_delete),
             onConfirm = {
                 vm.deleteModels(providerId, selected)
@@ -754,21 +760,38 @@ private fun LazyListScope.providerModelItems(
     config: ProviderConfig,
     selected: Set<String>,
     onSelected: (Set<String>) -> Unit,
+    query: String,
+    onQuery: (String) -> Unit,
 ) {
-    item(key = "models-body") { ProviderModels(vm, nav, config, selected, onSelected) }
+    item(key = "models-body") { ProviderModels(vm, nav, config, selected, onSelected, query, onQuery) }
+}
+
+/** Model search on a provider's Model tab: id or display name. */
+internal object ModelSearch {
+    fun filter(models: List<ModelConfig>, query: String): List<ModelConfig> {
+        val q = query.trim().lowercase()
+        return if (q.isEmpty()) models else models.filter { it.id.lowercase().contains(q) || it.displayName.lowercase().contains(q) }
+    }
 }
 
 @Composable
-private fun ProviderModels(vm: ModelsViewModel, nav: ModelsNav, config: ProviderConfig, selected: Set<String>, onSelected: (Set<String>) -> Unit) {
+private fun ProviderModels(
+    vm: ModelsViewModel,
+    nav: ModelsNav,
+    config: ProviderConfig,
+    selected: Set<String>,
+    onSelected: (Set<String>) -> Unit,
+    query: String,
+    onQuery: (String) -> Unit,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val pulls by vm.pulls.collectAsStateWithLifecycle()
     val pull = pulls[config.id]
-    var query by rememberSaveable(config.id) { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     val current = settings?.selection as? EngineSelection.Cloud
     val q = query.trim().lowercase()
-    val shown = config.models.filter { q.isEmpty() || it.id.lowercase().contains(q) || it.displayName.lowercase().contains(q) }
+    val shown = ModelSearch.filter(config.models, query)
     val selecting = selected.isNotEmpty()
 
     Column {
@@ -814,7 +837,7 @@ private fun ProviderModels(vm: ModelsViewModel, nav: ModelsNav, config: Provider
 
         AtomSearchBar(
             query = query,
-            onQueryChange = { query = it },
+            onQueryChange = onQuery,
             label = stringResource(R.string.mdl_search_models),
             modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
         )

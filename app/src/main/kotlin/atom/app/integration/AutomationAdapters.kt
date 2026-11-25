@@ -153,7 +153,7 @@ class AppToolInvoker(private val context: Context, private val graph: AppGraph) 
         Features.all.flatMap { f -> runCatching { f.tools(context) }.getOrDefault(emptyList()) }.withoutSwitchedOff()
 
     /** Without probing the shell (that is not free): enough for listing in the rule editor. */
-    private fun quickTools(): List<Tool> = (LinuxTools.create(context) + featureTools()).distinctBy { it.spec.name }
+    private fun quickTools(): List<Tool> = (LinuxTools.create(context) + featureTools()).withoutSwitchedOff().distinctBy { it.spec.name }
 
     private suspend fun fullTools(): List<Tool> =
         (DeviceTools.create(context, graph.shell()) + LinuxTools.create(context) + featureTools())

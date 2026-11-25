@@ -16,9 +16,18 @@ import kotlinx.coroutines.flow.asStateFlow
 class SystemPrefs private constructor(context: Context) {
     private val sp: SharedPreferences = context.getSharedPreferences("atom4_system", Context.MODE_PRIVATE)
 
-    private val _backgroundDisplay = MutableStateFlow(sp.getBoolean(K_BG_DISPLAY, false))
+    private val _backgroundDisplay = MutableStateFlow(
+        if (sp.contains(K_BG_DISPLAY)) {
+            sp.getBoolean(K_BG_DISPLAY, false)
+        } else {
+            // On for a new install, as in the original app; an install that already stored settings keeps it off.
+            val fresh = sp.all.isEmpty()
+            sp.edit().putBoolean(K_BG_DISPLAY, fresh).apply()
+            fresh
+        },
+    )
 
-    /** Off by default until it has been verified on the user's phone. */
+    /** On by default for new installs. It only acts with root (see [SystemFeature.tools]). */
     val backgroundDisplay: StateFlow<Boolean> = _backgroundDisplay.asStateFlow()
 
     private val _hooks = MutableStateFlow(HookConfig.fromMap(sp.all))

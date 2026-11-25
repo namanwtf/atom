@@ -205,7 +205,7 @@ def main():
         back()
 
     # Model picker sheet from the model capsule.
-    if tap("model|DeepSeek|choose", wait=1.5):
+    if tap("^Choose model$", wait=1.5):
         shot(p + "05_model_picker")
         back()
 

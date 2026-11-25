@@ -33,6 +33,9 @@ internal object Integration {
     fun install(app: AtomApp) {
         val graph = app.graph
 
+        // Tool list: web, browser and image tools follow their own settings pages.
+        atom.device.caps.ToolCatalog.featureOff = { id -> atom.web.WebFeature.toolsOffReason(app, id) }
+
         // Extend: subagents run on the parent's tools, lease and model. Its secrets keep their own Keystore store.
         SubagentBridge(graph).let { Extend.install(contextWindow = it, engines = it, toolScope = it) }
 

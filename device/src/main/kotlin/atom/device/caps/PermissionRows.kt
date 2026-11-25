@@ -39,10 +39,11 @@ object PermissionRows {
     /** Capabilities that are not one of the classic rows, in registration order. */
     fun others(ids: List<String>): List<String> = ids.filterNot(::isClassic)
 
-    fun tone(status: CapStatus): StatusTone = when (status) {
+    /** [optional] rows (root, mock location...) are grey rather than red while they are not set up. */
+    fun tone(status: CapStatus, optional: Boolean = false): StatusTone = when (status) {
         CapStatus.Available -> StatusTone.Good
+        CapStatus.Missing, CapStatus.NotEnabled -> if (optional) StatusTone.Muted else StatusTone.Bad
         CapStatus.Issue, CapStatus.Checking -> StatusTone.Warning
-        CapStatus.Missing, CapStatus.NotEnabled -> StatusTone.Bad
         CapStatus.Unsupported -> StatusTone.Muted
     }
 

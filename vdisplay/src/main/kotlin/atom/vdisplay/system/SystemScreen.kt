@@ -120,7 +120,7 @@ internal fun SystemScreen(nav: FeatureNav) {
                 val google = remember(resumes) { googleAppStatus(context) }
                 GroupRow(stringResource(R.string.vd_google_app), subtitle = stringResource(google) + "\n" + stringResource(R.string.vd_google_eligibility))
             }
-            Text(
+            if (rememberFrameworkSeen()) Text(
                 stringResource(R.string.vd_settings_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -34,6 +34,7 @@ import atom.device.caps.ToolRow
 import atom.device.caps.ToolSection
 import atom.device.caps.ToolSections
 import atom.device.feature.DeviceFeature
+import atom.device.switches.ToolGates
 import atom.device.switches.ToolSwitches
 import atom.ui.components.ArrowRow
 import atom.ui.components.AtomDialog
@@ -65,12 +66,16 @@ private const val ROUTE_BROWSER = "web/browser"
 fun ToolListScreen(nav: FeatureNav) {
     val context = LocalContext.current
     remember { ToolSwitches.init(context) }
-    remember { ToolSwitches.foldMasters(ToolCatalog.all) }
     val disabled by ToolSwitches.disabledTools.collectAsState()
     var allView by rememberSaveable { mutableStateOf(false) }
     var chip by rememberSaveable { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<ToolRow?>(null) }
-    val groups = remember { ToolCatalog.all }
+    val groups = remember {
+        // Building this module's tools records their gates, so newer tools without a card still get a switch.
+        runCatching { atom.device.DeviceTools.listing(context) + DeviceFeature.tools(context) }
+        val cards = ToolCatalog.all
+        cards + listOfNotNull(ToolCatalog.uncardedGroup(cards, ToolGates.snapshot()))
+    }
     val isOn: (String) -> Boolean = { it !in disabled }
     // "Current device" leaves out what this phone cannot gain (root or Shizuku missing); tools that only need a
     // permission or the accessibility service stay, with their requirement line.
@@ -136,14 +141,19 @@ fun ToolListScreen(nav: FeatureNav) {
             item(key = "g-${s.section.name}") {
                 Group {
                     s.rows.forEach { row ->
-                        ToolSwitchRow(row, isOn(row.tool), met = row.group.needs.met(context), onInfo = { info = row })
+                        val off = ToolCatalog.featureOff(row.group.id)
+                        if (off != null) {
+                            FeatureOffRow(row, off, onOpen = { nav.open(if (row.group.id == "image") ROUTE_IMAGES else ROUTE_WEB) }, onInfo = { info = row })
+                        } else {
+                            ToolSwitchRow(row, isOn(row.tool), met = row.group.needs.met(context), onInfo = { info = row })
+                        }
                     }
                 }
             }
         }
         item(key = "note") {
             Text(
-                "Switches take effect on the next tool call, even in the middle of a task.",
+                "Switches take effect on the next tool call, even in the middle of a task. Switching off web search also stops provider-hosted search.",
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -194,6 +204,24 @@ private fun ToolSwitchRow(row: ToolRow, on: Boolean, met: Boolean, onInfo: () ->
                     Icon(Icons.Outlined.Info, "About ${row.title}", Modifier.size(20.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantActions)
                 }
                 AtomSwitch(on, { ToolSwitches.setTool(row.tool, it) })
+            }
+        },
+    )
+}
+
+/** A tool whose feature is off in its own page: shown off, tapping opens that page. */
+@Composable
+private fun FeatureOffRow(row: ToolRow, reason: String, onOpen: () -> Unit, onInfo: () -> Unit) {
+    GroupRow(
+        title = row.title,
+        subtitle = reason,
+        onClick = onOpen,
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onInfo) {
+                    Icon(Icons.Outlined.Info, "About ${row.title}", Modifier.size(20.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                }
+                AtomSwitch(false, null, enabled = false)
             }
         },
     )

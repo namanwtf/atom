@@ -30,6 +30,7 @@ object SettingsRows {
     const val OVERLAY_PERMISSION = "row:overlay_permission"
     const val ACCESSIBILITY = "row:accessibility"
     const val ENFORCE_ACCESSIBILITY = "row:enforce_accessibility"
+    const val SETUP = "row:setup"
     const val VERSION = "row:version"
     const val CHECK_UPDATES = "row:check_updates"
     const val FEEDBACK = "row:feedback"
@@ -38,7 +39,10 @@ object SettingsRows {
 
     fun isRow(key: String): Boolean = key.startsWith("row:")
 
-    /** Rows that only make sense once the Xposed framework has been seen on this phone. */
+    /**
+     * Rows that only make sense once the Xposed framework has been seen on this phone. Automatically setting the
+     * default assistant also works with root alone, so the screen shows it then too.
+     */
     val NEEDS_FRAMEWORK: Set<String> = setOf(POWER_KEY, AUTO_ASSISTANT, CTS_GESTURE_BAR, CTS_TWO_FINGER, ENFORCE_ACCESSIBILITY)
 }
 
@@ -115,8 +119,9 @@ object SettingsTree {
             SettingsRows.OVERLAY_PERMISSION,
             SettingsRows.ACCESSIBILITY,
             SettingsRows.ENFORCE_ACCESSIBILITY,
-            // The full Permissions page (also in the side pane).
+            // The full Permissions page (also in the side pane) and the setup guide.
             "device/permissions",
+            SettingsRows.SETUP,
         ),
         SettingsGroup.About to listOf(
             SettingsRows.VERSION,

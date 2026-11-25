@@ -93,6 +93,7 @@ import atom.core.settings.SettingsRows
 import atom.core.settings.SettingsTree
 import atom.device.Accessibility
 import atom.device.ShellTier
+import atom.device.root.RootAccess
 import atom.general.GeneralConfig
 import atom.general.language.AppLanguage
 import atom.general.update.UpdateChecker
@@ -220,6 +221,7 @@ fun SettingsScreen(vm: SettingsViewModel, nav: SettingsNav, features: List<Featu
             SettingsRows.HARDWARE -> s.selection is EngineSelection.Local
             SettingsRows.FEEDBACK -> links.feedback != null
             SettingsRows.SOURCE_CODE -> links.source != null
+            SettingsRows.AUTO_ASSISTANT -> frameworkSeen || RootAccess.granted
             in SettingsRows.NEEDS_FRAMEWORK -> frameworkSeen
             else -> true
         }
@@ -339,6 +341,7 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
         SettingsRows.DEFAULT_EFFORT -> {
             vm.providers.collectAsStateWithLifecycle().value
             val levels = vm.reasoningLevels(s.selection)
+            val stored = s.defaultReasoning
             if (levels.size <= 1) {
                 GroupRow(
                     title = stringResource(R.string.settings_default_effort),
@@ -347,12 +350,21 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
                     enabled = false,
                 )
             } else {
-                val items = listOf(stringResource(R.string.settings_effort_default)) + levels.map { stringResource(effortLabel(it)) }
+                // A level saved for another model stays visible (and marked) instead of reading "Model default".
+                val choices: List<ReasoningEffort?> = listOf<ReasoningEffort?>(null) + levels +
+                    listOfNotNull(stored?.takeIf { it !in levels })
+                val items = choices.map { e ->
+                    when {
+                        e == null -> stringResource(R.string.settings_effort_default)
+                        e in levels -> stringResource(effortLabel(e!!))
+                        else -> stringResource(R.string.set_effort_saved_unsupported, stringResource(effortLabel(e!!)))
+                    }
+                }
                 DropdownRow(
                     title = stringResource(R.string.settings_default_effort),
                     items = items,
-                    selectedIndex = levels.indexOf(s.defaultReasoning) + 1,
-                    onSelect = { i -> vm.setDefaultReasoning(if (i == 0) null else levels[i - 1]) },
+                    selectedIndex = choices.indexOf(stored).coerceAtLeast(0),
+                    onSelect = { i -> vm.setDefaultReasoning(choices[i]) },
                     icon = Icons.Rounded.Tune,
                     enabled = s.reasoningByDefault,
                 )
@@ -431,14 +443,18 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
             icon = Icons.Rounded.Notifications,
         )
         SettingsRows.LANGUAGE -> {
-            var english by rememberSaveable { mutableStateOf(AppLanguage.current(context)?.startsWith("en") == true) }
+            // Only languages that ship: "Follow system" plus any translation in AppLanguage.available.
+            val tags = listOf<String?>(null) + AppLanguage.available
+            var current by rememberSaveable { mutableStateOf(AppLanguage.current(context)?.takeIf { it in AppLanguage.available }) }
             DropdownRow(
                 title = stringResource(R.string.set_language),
-                items = listOf(stringResource(R.string.set_language_system), stringResource(R.string.set_language_english)),
-                selectedIndex = if (english) 1 else 0,
+                items = tags.map { tag ->
+                    tag?.let { java.util.Locale.forLanguageTag(it).let { l -> l.getDisplayName(l) } } ?: stringResource(R.string.set_language_system)
+                },
+                selectedIndex = tags.indexOf(current).coerceAtLeast(0),
                 onSelect = { i ->
-                    english = i == 1
-                    AppLanguage.set(context, if (english) "en" else null)
+                    current = tags[i]
+                    AppLanguage.set(context, current)
                 },
                 icon = Icons.Rounded.Language,
             )
@@ -479,10 +495,17 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
             )
         }
         SettingsRows.ENFORCE_ACCESSIBILITY -> EnforceAccessibilityRow(Icons.Rounded.VerifiedUser)
-        SettingsRows.VERSION -> GroupRow(
+        SettingsRows.VERSION -> ArrowRow(
             title = stringResource(R.string.set_version),
-            subtitle = remember { versionLabel(context) },
+            summary = remember { versionLabel(context) },
             icon = Icons.Rounded.Info,
+            onClick = { nav.openRoute(ABOUT_ROUTE) },
+        )
+        SettingsRows.SETUP -> ArrowRow(
+            title = stringResource(R.string.settings_permissions_setup),
+            summary = stringResource(R.string.settings_setup_desc),
+            icon = Icons.Rounded.VerifiedUser,
+            onClick = nav.openSetup,
         )
         SettingsRows.CHECK_UPDATES -> UpdateRow(links, nav)
         SettingsRows.FEEDBACK -> links.feedback?.let { url ->
