@@ -117,7 +117,7 @@ data class ConversationSummary(
 data class ConversationMatch(val id: String, val snippet: String)
 
 /**
- * One JSON file per conversation under filesDir/conversations plus a small index so the drawer never has to
+ * One JSON file per conversation under filesDir/atom4_conversations plus a small index so the drawer never has to
  * parse every transcript. Image payloads are dropped on save: screenshots are large and only useful live.
  */
 class ConversationStore(private val dir: File) {

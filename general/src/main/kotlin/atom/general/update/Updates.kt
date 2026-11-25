@@ -91,6 +91,12 @@ object Releases {
         }
     }
 
+    /** The release build's id, which published APKs carry. Other builds (`.debug`) only get the release page. */
+    const val RELEASE_PACKAGE = "io.github.namanwtf.atom"
+
+    /** True when an APK from the releases can install over the running build [packageName]. */
+    fun canSelfUpdate(packageName: String): Boolean = packageName == RELEASE_PACKAGE
+
     /** Asset names the release workflow publishes: `atom-<version>.apk`. No path separators can match. */
     private val APK_NAME = Regex("atom-[0-9A-Za-z][0-9A-Za-z._+-]*\\.apk")
 
