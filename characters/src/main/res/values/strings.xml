@@ -8,9 +8,9 @@
     <string name="characters_title">Characters</string>
     <string name="characters_search">Search by name or #tag</string>
     <string name="characters_filter_all">All</string>
-    <string name="characters_filter_favourites">Favourites</string>
+    <string name="characters_filter_favourites">Favorites</string>
     <string name="characters_filter_mine">Mine</string>
-    <string name="characters_section_favourites">Favourites</string>
+    <string name="characters_section_favourites">Favorites</string>
     <string name="characters_section_mine">Mine</string>
     <string name="characters_section_imported">Imported</string>
     <string name="characters_section_results">Results</string>
