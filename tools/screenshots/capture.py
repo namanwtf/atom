@@ -202,6 +202,7 @@ def main():
         ("28_backup", "general/backup"),
         ("29_system", "vdisplay/system"),
     ]
+    EXTRA_SCROLLS = {"10_settings": 4, "16_tools": 2, "15_permissions": 1}
     only = os.environ.get("SHOT_ROUTES")
     for name, route in routes:
         if only and route not in only.split(","):
@@ -211,6 +212,11 @@ def main():
         sh("input swipe 540 1800 540 500 300")
         time.sleep(1)
         shot(p + name + "_scrolled")
+        # Long pages: keep scrolling so every group is on record.
+        for i in range(2, EXTRA_SCROLLS.get(name, 0) + 2):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(1)
+            shot(p + name + f"_scrolled{i}")
         back()
 
     if mode != "dark":
