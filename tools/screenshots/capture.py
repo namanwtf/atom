@@ -260,7 +260,7 @@ def main():
 
     # Conversation drawer.
     # Exact labels first: the closed push drawer stays composed, so loose patterns can hit its own text.
-    if tap("^Conversations$", wait=1.5) or tap("conversations|drawer|menu|sidebar", wait=1.5):
+    if tap("^Conversations$", wait=3.0) or tap("conversations|drawer|menu|sidebar", wait=3.0):
         shot(p + "03_drawer")
         back()
 
