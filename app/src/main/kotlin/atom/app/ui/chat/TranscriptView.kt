@@ -90,7 +90,16 @@ import atom.app.data.ReadingPosition
 import atom.app.ui.common.formatDuration
 import atom.app.ui.common.formatTokens
 import atom.app.ui.common.humanizeTool
+import atom.core.agent.SessionStats
+import androidx.compose.material3.minimumInteractiveComponentSize
 import atom.core.tool.Risk
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloat
 import atom.ui.components.AtomMenu
 import atom.ui.feature.RunPhase
 import atom.ui.feature.StepState
@@ -121,6 +130,11 @@ internal class MessageActions(
     val onEditInPlace: ((Int, String) -> Unit)? = null,
     /** Opens the live browser for the take-over; null hides the action on browser cards. */
     val onTakeOverBrowser: (() -> Unit)? = null,
+    /** The stats pill under the latest answer opens the session stats. */
+    val onStats: (() -> Unit)? = null,
+    val stats: SessionStats = SessionStats(),
+    /** Stored index of the user message being edited (its bubble gets an accent border). */
+    val editingIndex: Int? = null,
 )
 
 private const val PAGE = 40
@@ -144,6 +158,8 @@ internal fun TranscriptList(
     // Reverse layout keeps the newest content anchored to the bottom while it streams; scrolling up holds still.
     val reversed = remember(shown) { shown.asReversed() }
     val hasOlder = all.size > shown.size
+    // The stats pill goes under the newest answer only: the numbers are for the whole session.
+    val lastTurnKey = remember(all) { all.lastOrNull { it is ChatItem.Turn }?.key }
 
     // Older history pages in as the user nears the top.
     LaunchedEffect(listState, hasOlder, reversed.size) {
@@ -181,7 +197,7 @@ internal fun TranscriptList(
             state = listState,
             reverseLayout = true,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 16.dp, top = bars.calculateTopPadding() + 12.dp, bottom = bars.calculateBottomPadding() + 16.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = bars.calculateTopPadding() + 10.dp, bottom = bars.calculateBottomPadding() + 14.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.Bottom),
         ) {
             if (state.running) {
@@ -190,7 +206,7 @@ internal fun TranscriptList(
             items(reversed, key = { it.key }, contentType = { it::class }) { item ->
                 when (item) {
                     is ChatItem.User -> UserBubble(item, actions, state.canEdit)
-                    is ChatItem.Turn -> TurnView(item, actions, state.canEdit)
+                    is ChatItem.Turn -> TurnView(item, actions, state.canEdit, showStats = item.key == lastTurnKey && !state.running)
                     is ChatItem.Notice -> NoticeRow(item.text, item.error)
                     is ChatItem.Compacted -> CompactedRow(item.key, item.summary)
                 }
@@ -200,21 +216,17 @@ internal fun TranscriptList(
         val awayFromBottom by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 400 } }
         AnimatedVisibility(
             visible = awayFromBottom,
-            enter = fadeIn(tween(QUICK)) + scaleIn(tween(QUICK), initialScale = 0.85f),
-            exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bars.calculateBottomPadding() + 12.dp),
+            enter = fadeIn(tween(160)) + scaleIn(tween(180), initialScale = 0.82f),
+            exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.86f),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bars.calculateBottomPadding() + 8.dp),
         ) {
-            Surface(
+            GlassIconButton(
+                ChatGlyphs.ArrowDown,
+                stringResource(R.string.chat_back_to_bottom),
                 onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shadowElevation = 6.dp,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(ChatGlyphs.ArrowDown, stringResource(R.string.chat_back_to_bottom), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
-                }
-            }
+                size = 40.dp,
+                iconSize = 18.dp,
+            )
         }
     }
 }
@@ -240,8 +252,9 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var editInPlace by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 6.dp, bottomStart = 22.dp)
-    Column(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
+    val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 4.dp, bottomStart = 22.dp)
+    val editingThis = actions.editingIndex == item.index
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
         if (item.steering) {
             Text(
                 stringResource(R.string.chat_steered),
@@ -265,9 +278,10 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
                     color = colors.surfaceContainerHigh,
                     contentColor = colors.onSurface,
                     shape = shape,
+                    border = if (editingThis) androidx.compose.foundation.BorderStroke(1.dp, colors.primary) else null,
                     modifier = Modifier
-                        .padding(start = 48.dp)
-                        .widthIn(max = 340.dp)
+                        .padding(start = 40.dp)
+                        .widthIn(max = 316.dp)
                         .clip(shape)
                         .combinedClickable(
                             onClick = {},
@@ -278,7 +292,17 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
                             onLongClickLabel = stringResource(R.string.chat_message_actions),
                         ),
                 ) {
-                    Text(item.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp))
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.5.dp)) {
+                        Text(item.text, fontSize = 16.sp, lineHeight = 23.sp)
+                        if (item.edited) {
+                            Text(
+                                stringResource(R.string.chat_edited),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
             AtomMenu(expanded = menu, onDismiss = { menu = false }) {
@@ -362,8 +386,8 @@ internal fun AttachmentChip(a: Attachment, onRemove: (() -> Unit)?) {
 // ---------------------------------------------------------------- Turn
 
 @Composable
-private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
+private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean, showStats: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp)) {
         if (turn.work.isNotEmpty()) Timeline(turn)
         TurnCards(turn, actions.onTakeOverBrowser)
         turn.answerReasoning?.let { ReasoningBlock(it) }
@@ -374,7 +398,15 @@ private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Bool
                 MarkdownText(shownText, Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp, end = 4.dp))
             }
         }
-        if (turn.finished && (answer != null || turn.work.isNotEmpty())) TurnActions(turn, actions, canEdit)
+        turn.answerSuggestions?.let { SearchSuggestionsRow(it) }
+        // The action row fades in once the answer has finished revealing.
+        AnimatedVisibility(
+            visible = turn.finished && (answer != null || turn.work.isNotEmpty()),
+            enter = fadeIn(tween(160)) + expandVertically(tween(160), expandFrom = Alignment.Top),
+            exit = fadeOut(tween(100)),
+        ) {
+            TurnActions(turn, actions, canEdit, showStats)
+        }
     }
 }
 
@@ -433,11 +465,26 @@ private fun Timeline(turn: ChatItem.Turn) {
                 .padding(vertical = 6.dp, horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (summary.running) RunningDot() else Icon(ChatGlyphs.Brain, null, Modifier.size(15.dp), tint = colors.onSurfaceVariant)
-            Spacer(Modifier.width(10.dp))
-            Text(timelineLine(summary.thoughts, summary.toolCalls, summary.failed), style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+            val ink = homeInk()
+            val runningCall = remember(turn.work) {
+                turn.work.filterIsInstance<WorkEntry.Steps>().flatMap { it.calls }.lastOrNull { it.state == StepState.Running }
+            }
+            Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    when {
+                        !turn.live -> HomeGlyphs.Checklist
+                        runningCall != null -> stepIcon(runningCall)
+                        else -> HomeGlyphs.Lightbulb
+                    },
+                    null,
+                    Modifier.size(14.5.dp),
+                    tint = if (turn.live) colors.primary else ink.ink(0.50f, 0.45f),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(workHeader(turn.live, summary.toolCalls, summary.failed, runningCall), fontSize = 13.5.sp, color = ink.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(4.dp))
-            Icon(ChatGlyphs.Chevron, null, Modifier.size(14.dp).rotate(if (open) 90f else 0f), tint = colors.onSurfaceVariant)
+            Icon(ChatGlyphs.Chevron, null, Modifier.size(13.dp).rotate(if (open) 90f else 0f), tint = colors.onSurfaceVariant.copy(alpha = 0.5f))
         }
         AnimatedVisibility(
             visible = open,
@@ -464,14 +511,22 @@ private fun Timeline(turn: ChatItem.Turn) {
     }
 }
 
+/**
+ * The work header: "Analyzing task" before the first tool, "Working · step N · <tool>" while steps run, then
+ * "Completed N steps" (with failures) or "Analysis complete" when nothing was called.
+ */
 @Composable
-private fun timelineLine(thoughts: Int, calls: Int, failed: Int): String {
-    val parts = buildList {
-        if (thoughts > 0) add(pluralStringResource(R.plurals.timeline_thought, thoughts, thoughts))
-        if (calls > 0) add(pluralStringResource(R.plurals.timeline_calls, calls, calls))
-        if (failed > 0) add(stringResource(R.string.timeline_failed, failed))
+private fun workHeader(live: Boolean, calls: Int, failed: Int, running: StepCall?): String {
+    if (live) {
+        return when {
+            running != null -> stringResource(R.string.work_step_tool, calls.coerceAtLeast(1), running.argsLine.takeIf { it.isNotBlank() && it.length <= 48 } ?: humanizeTool(running.name))
+            calls > 0 -> stringResource(R.string.work_step, calls + 1)
+            else -> stringResource(R.string.work_analyzing)
+        }
     }
-    return parts.joinToString(" · ").ifEmpty { stringResource(R.string.timeline_working) }
+    if (calls == 0) return stringResource(R.string.work_done)
+    val done = pluralStringResource(R.plurals.work_completed, calls, calls)
+    return if (failed > 0) done + " · " + stringResource(R.string.timeline_failed, failed) else done
 }
 
 @Composable
@@ -498,46 +553,75 @@ private fun reasoningLabel(t: WorkEntry.Thought): String {
     return pluralStringResource(R.plurals.reasoning_done, seconds, seconds)
 }
 
-/** The answer's reasoning: the last lines while it streams, then folded to "Reasoning completed · N s". */
+/**
+ * The answer's reasoning as a card: "Reasoning…" with the last four lines while it streams, then folded to
+ * "Reasoning completed · N seconds". A tap opens it fully; the user's choice sticks.
+ */
 @Composable
 private fun ReasoningBlock(t: WorkEntry.Thought) {
     val colors = MaterialTheme.colorScheme
-    var open by rememberSaveable(t.key) { mutableStateOf(false) }
+    val ink = homeInk()
+    var chosen by rememberSaveable(t.key) { mutableStateOf<Boolean?>(null) }
+    val open = chosen ?: t.live
+    val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(enabled = !t.live) { open = !open }
-            .padding(vertical = 6.dp, horizontal = 2.dp),
+            .padding(vertical = 4.dp)
+            .clip(shape)
+            .background(colors.surface)
+            .border(0.5.dp, colors.outline.copy(alpha = 0.5f), shape),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (t.live) RunningDot() else Icon(ChatGlyphs.Brain, null, Modifier.size(15.dp), tint = colors.onSurfaceVariant)
-            Spacer(Modifier.width(10.dp))
-            Text(reasoningLabel(t), style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
-            if (!t.live) {
-                Spacer(Modifier.width(4.dp))
-                Icon(ChatGlyphs.Chevron, null, Modifier.size(14.dp).rotate(if (open) 90f else 0f), tint = colors.onSurfaceVariant)
-            }
-        }
-        if (t.live) {
-            val tail = remember(t.text) { t.text.lines().filter { it.isNotBlank() }.takeLast(3).joinToString("\n") }
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { chosen = !open }.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val bulb = if (t.live) colors.primary else colors.onSurfaceVariant
+            Icon(HomeGlyphs.Lightbulb, null, Modifier.size(15.dp).then(if (t.live) Modifier.pulsing() else Modifier), tint = bulb)
+            Spacer(Modifier.width(8.dp))
             Text(
-                tail,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant.copy(alpha = 0.8f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 25.dp, top = 4.dp),
+                reasoningLabel(t),
+                fontSize = 13.5.sp,
+                color = if (t.live) colors.onSurface else ink.muted,
+                modifier = Modifier.weight(1f, fill = false),
             )
-        } else {
-            AnimatedVisibility(visible = open, enter = fadeIn(tween(QUICK)) + expandVertically(tween(200)), exit = fadeOut(tween(150)) + shrinkVertically(tween(180))) {
+            Spacer(Modifier.width(4.dp))
+            Icon(ChatGlyphs.Chevron, null, Modifier.size(13.dp).rotate(if (open) 90f else 0f), tint = colors.onSurfaceVariant.copy(alpha = 0.5f))
+        }
+        AnimatedVisibility(visible = open, enter = fadeIn(tween(160)) + expandVertically(), exit = fadeOut(tween(120)) + shrinkVertically()) {
+            Column {
+                Box(Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(0.5.dp).background(colors.outlineVariant))
+                val body = if (t.live && chosen == null) remember(t.text) { t.text.lines().filter { it.isNotBlank() }.takeLast(4).joinToString("\n") } else t.text
                 SelectionContainer {
-                    Text(t.text, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, modifier = Modifier.padding(start = 25.dp, top = 6.dp))
+                    Text(
+                        body,
+                        fontSize = 13.5.sp,
+                        lineHeight = 21.sp,
+                        color = ink.muted,
+                        maxLines = if (t.live && chosen == null) 4 else Int.MAX_VALUE,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp),
+                    )
                 }
             }
         }
     }
+}
+
+/** Alpha 0.58 ↔ 1 over 820 ms while something is live. */
+@Composable
+private fun Modifier.pulsing(): Modifier {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+    val alpha = transition.animateFloat(
+        initialValue = 0.58f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            tween(820, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "pulseAlpha",
+    )
+    return this.graphicsLayer { this.alpha = alpha.value }
 }
 
 @Composable
@@ -633,7 +717,7 @@ private fun DetailBlock(label: String, text: String, copyLabel: String) {
         SelectionContainer {
             Text(
                 text,
-                style = MaterialTheme.extras.mono,
+                style = MaterialTheme.extras.mono.copy(fontFamily = atom.linux.ui.MonoFont.JetBrainsMono),
                 color = colors.onSurface.copy(alpha = 0.9f),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -663,7 +747,7 @@ private fun StepMark(state: StepState, awaiting: Boolean) {
     }
 }
 
-private fun stepIcon(step: StepCall): ImageVector {
+internal fun stepIcon(step: StepCall): ImageVector {
     val name = step.name.lowercase()
     return when {
         Transcript.isTerminal(name) -> AtomIcons.Terminal
@@ -674,60 +758,77 @@ private fun stepIcon(step: StepCall): ImageVector {
     }
 }
 
+/**
+ * Under the final answer: Copy, Read aloud, Edit (character replies), Regenerate, Delete, Branch, then the stats
+ * pill on the newest answer and, for character replies with alternatives, the candidate switcher on the right.
+ */
 @Composable
-private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean) {
+private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean, showStats: Boolean) {
     val copyText = actions.textAt(turn.answerIndex) ?: turn.answer
-    var more by remember { mutableStateOf(false) }
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var editInPlace by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val userIndex = turn.userIndex
-    Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    val answerIndex = turn.answerIndex
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1_400)
+            copied = false
+        }
+    }
+    // 48dp touch targets around 16dp icons, shifted left so the first icon lines up with the answer text. The row
+    // wraps, so the stats pill or the reply switcher moves to a second line on narrow screens instead of clipping.
+    FlowRow(
+        Modifier.fillMaxWidth().offset(x = (-16).dp),
+        verticalArrangement = Arrangement.Center,
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         if (copyText != null) {
-            ActionIcon(ChatGlyphs.Copy, stringResource(R.string.chat_copy)) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            ActionIcon(
+                if (copied) HomeGlyphs.Check else HomeGlyphs.Copy,
+                stringResource(if (copied) R.string.chat_copied else R.string.chat_copy_answer),
+                tint = if (copied) MaterialTheme.colorScheme.primary else null,
+            ) {
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                 actions.onCopy(copyText)
+                copied = true
             }
-        }
-        val regenerate = actions.onRegenerate
-        if (canEdit && regenerate != null && userIndex != null) {
-            ActionIcon(ChatGlyphs.Regenerate, stringResource(R.string.chat_regenerate)) {
-                if (actions.laterTurns(userIndex) > 0) confirmRegenerate = true else regenerate(turn)
-            }
-        }
-        val branch = actions.onBranch
-        if (canEdit && branch != null && turn.answerIndex != null) {
-            ActionIcon(ChatGlyphs.Branch, stringResource(R.string.chat_branch)) { branch(turn) }
         }
         val readAloud = actions.onReadAloud
         if (readAloud != null && copyText != null) {
             if (actions.readingId == turn.key) {
-                ActionIcon(ChatGlyphs.Pause, stringResource(R.string.chat_stop_reading)) { actions.onStopReading() }
+                ActionIcon(HomeGlyphs.StopLine, stringResource(R.string.chat_stop_reading)) { actions.onStopReading() }
             } else {
-                ActionIcon(ChatGlyphs.Speaker, stringResource(R.string.chat_read_aloud)) { readAloud(copyText, turn.key) }
+                ActionIcon(HomeGlyphs.Volume, stringResource(R.string.chat_read_aloud)) { readAloud(copyText, turn.key) }
             }
         }
-        val answerIndex = turn.answerIndex
         if (canEdit && answerIndex != null && actions.onEditInPlace != null && copyText != null) {
-            ActionIcon(ChatGlyphs.Edit, stringResource(R.string.chat_edit)) { editInPlace = true }
+            ActionIcon(HomeGlyphs.EditLine, stringResource(R.string.chat_edit)) { editInPlace = true }
+        }
+        val regenerate = actions.onRegenerate
+        if (canEdit && regenerate != null && userIndex != null) {
+            ActionIcon(HomeGlyphs.Refresh, stringResource(R.string.chat_regenerate)) {
+                if (actions.laterTurns(userIndex) > 0) confirmRegenerate = true else regenerate(turn)
+            }
+        }
+        if (canEdit && actions.onDeleteFrom != null && userIndex != null) {
+            ActionIcon(HomeGlyphs.Trash, stringResource(R.string.chat_delete_turn)) { confirmDelete = true }
+        }
+        val branch = actions.onBranch
+        if (canEdit && branch != null && answerIndex != null) {
+            ActionIcon(HomeGlyphs.Branch, stringResource(R.string.chat_branch)) { branch(turn) }
         }
         val set = answerIndex?.let { actions.candidates[it] }
         val pick = actions.onCandidate
         if (set != null && pick != null && answerIndex != null) {
-            Spacer(Modifier.width(4.dp))
+            // A reply with alternatives shows its switcher here; the session stats stay in the overflow menu.
             CandidateSwitcher(set, enabled = canEdit, onPrevious = { pick(answerIndex, set.selected - 1) }, onNext = { pick(answerIndex, set.selected + 1) })
-        }
-        if (canEdit && actions.onDeleteFrom != null && userIndex != null) {
-            Box {
-                ActionIcon(Icons.Filled.MoreVert, stringResource(R.string.chat_cd_more)) { more = true }
-                AtomMenu(expanded = more, onDismiss = { more = false }) {
-                    MenuAction(stringResource(R.string.chat_delete_turn), Icons.Filled.Delete) {
-                        more = false
-                        confirmDelete = true
-                    }
-                }
-            }
+        } else {
+            val onStats = actions.onStats
+            val pill = if (showStats) statsPill(actions.stats) else null
+            if (pill != null && onStats != null) StatsPill(pill, onStats)
         }
     }
     val editIndex = turn.answerIndex
@@ -821,10 +922,116 @@ private fun DeleteFromDialog(later: Int, onConfirm: () -> Unit, onDismiss: () ->
     }
 }
 
+/**
+ * Google Search suggestions attached to a grounded Gemini answer. The search provider's terms ask for them to be
+ * shown: one chip per query opening the search, or the provider's own rendered chip when no queries came with it.
+ */
 @Composable
-private fun ActionIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-        Icon(icon, description, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun SearchSuggestionsRow(s: atom.core.llm.SearchSuggestions) {
+    val colors = MaterialTheme.colorScheme
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val label = stringResource(R.string.chat_search_suggestions)
+    if (s.queries.isNotEmpty()) {
+        FlowRow(
+            Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp).semantics { contentDescription = label },
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            s.queries.forEach { q ->
+                val shape = RoundedCornerShape(10.dp)
+                Row(
+                    Modifier
+                        .clip(shape)
+                        .background(colors.surface)
+                        .border(0.5.dp, colors.outline.copy(alpha = 0.55f), shape)
+                        .clickable { runCatching { uri.openUri(s.searchUrl(q)) } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(ChatGlyphs.Search, null, Modifier.size(12.dp), tint = colors.primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(q, fontSize = 13.sp, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        return
+    }
+    val html = s.renderedContent?.takeIf { it.isNotBlank() } ?: return
+    // The provider's own markup, shown as given in a WebView with scripts off; links open in the browser.
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { context ->
+            android.webkit.WebView(context).apply {
+                settings.javaScriptEnabled = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: android.webkit.WebView, request: android.webkit.WebResourceRequest): Boolean {
+                        val url = request.url
+                        if (url.scheme == "https" || url.scheme == "http") {
+                            runCatching {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, url).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        }
+                        return true
+                    }
+                }
+                loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(64.dp).padding(vertical = 4.dp).semantics { contentDescription = label },
+    )
+}
+
+/** A 16dp line icon in summary grey inside a 48dp touch target. */
+@Composable
+private fun ActionIcon(icon: ImageVector, description: String, tint: androidx.compose.ui.graphics.Color? = null, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .minimumInteractiveComponentSize()
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = androidx.compose.material3.ripple(bounded = false, radius = 16.dp),
+                onClick = onClick,
+            )
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, null, Modifier.size(16.dp), tint = tint ?: MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f))
+    }
+}
+
+/** "TTFT 1.2 s · 48 tok/s" for the session, or null before anything was measured. */
+@Composable
+private fun statsPill(stats: SessionStats): String? {
+    val ttft = stats.averageTtftMs?.let { formatDuration(it) }
+    val speed = stats.outputTokensPerSecond?.let { String.format(java.util.Locale.getDefault(), "%.0f", it) }
+    return when {
+        ttft != null && speed != null -> stringResource(R.string.chat_stats_pill, ttft, speed)
+        ttft != null -> stringResource(R.string.chat_stats_ttft, ttft)
+        speed != null -> stringResource(R.string.chat_stats_speed, speed)
+        stats.modelTimeMs > 0 -> formatDuration(stats.modelTimeMs)
+        else -> null
+    }
+}
+
+@Composable
+private fun StatsPill(text: String, onClick: () -> Unit) {
+    val ink = homeInk()
+    val description = stringResource(R.string.menu_stats)
+    Row(
+        Modifier
+            .height(24.dp)
+            .clip(RoundedCornerShape(50))
+            .background(ink.ink(0.06f, 0.038f))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(HomeGlyphs.Gauge, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(4.dp))
+        Text(text, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 
