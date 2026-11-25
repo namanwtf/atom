@@ -96,7 +96,6 @@ import atom.core.home.ConversationGroup
 import atom.core.home.ConversationGroups
 import atom.ui.components.ArrowRow
 import atom.ui.components.AtomMenu
-import atom.ui.components.AtomSearchBar
 import atom.ui.components.Group
 import androidx.compose.material3.minimumInteractiveComponentSize
 import atom.ui.components.ScreenIcons
@@ -554,16 +553,60 @@ private fun Dock(
 
 @Composable
 private fun SearchCapsule(query: String, onQuery: (String) -> Unit, onFocus: (Boolean) -> Unit, modifier: Modifier) {
-    // The foundation's Miuix search field (search glyph, clear button while there is text).
-    var text by remember { mutableStateOf(query) }
-    LaunchedEffect(query) { if (query.isEmpty() && text.isNotEmpty()) text = "" }
-    AtomSearchBar(
-        query = text,
-        onQueryChange = {
-            text = it
-            onQuery(it)
-        },
-        label = stringResource(R.string.drawer_search),
-        modifier = modifier.onFocusChanged { onFocus(it.hasFocus) },
-    )
+    // A 44dp single-line pill: the foundation's search field wraps "Search conversations" next to two dock buttons.
+    val colors = MaterialTheme.colorScheme
+    val ink = homeInk()
+    val field = rememberTextFieldState(query)
+    var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(field) { snapshotFlow { field.text.toString() }.collect(onQuery) }
+    LaunchedEffect(query) { if (query.isEmpty() && field.text.isNotEmpty()) field.setTextAndPlaceCursorAtEnd("") }
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier
+            .height(44.dp)
+            .clip(shape)
+            .background(ink.glassButton)
+            .border(0.5.dp, ink.glassEdge, shape)
+            .clickable { focusRequester.requestFocus() },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(Modifier.width(14.dp))
+        Icon(ChatGlyphs.Search, null, Modifier.size(20.dp), tint = if (focused) colors.primary else colors.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            val style = TextStyle(fontSize = 15.sp, lineHeight = 20.sp)
+            if (field.text.isEmpty()) {
+                Text(stringResource(R.string.drawer_search), style = style, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BasicTextField(
+                state = field,
+                textStyle = style.copy(color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
+                lineLimits = TextFieldLineLimits.SingleLine,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onFocusChanged {
+                        focused = it.isFocused
+                        onFocus(it.isFocused)
+                    },
+            )
+        }
+        if (field.text.isNotEmpty()) {
+            val clear = stringResource(R.string.drawer_clear_search)
+            Box(
+                Modifier
+                    .minimumInteractiveComponentSize()
+                    .clip(CircleShape)
+                    .clickable { field.setTextAndPlaceCursorAtEnd("") }
+                    .semantics { contentDescription = clear },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Close, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            }
+        } else {
+            Spacer(Modifier.width(14.dp))
+        }
+    }
 }
