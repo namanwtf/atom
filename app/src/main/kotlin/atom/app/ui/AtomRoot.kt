@@ -16,7 +16,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import atom.device.Accessibility
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -66,9 +69,19 @@ fun AtomRoot(settings: AppSettings) {
     val context = LocalContext.current
     val graph = context.graph
     val scope = rememberCoroutineScope()
-    var stack by rememberSaveable {
-        mutableStateOf(if (settings.onboarded) listOf(Routes.CHAT) else listOf(Routes.CHAT, Routes.SETUP))
+    // Every launch opens on the home chat. Setup stays reachable from the drawer's Permissions button and the
+    // "Turn on Accessibility" nudge; the first launch is recorded so nothing that keys off it is lost.
+    var stack by rememberSaveable { mutableStateOf(listOf(Routes.CHAT)) }
+    LaunchedEffect(settings.onboarded) {
+        if (!settings.onboarded) graph.settings.setOnboarded()
     }
+    // The four items the old sidebar badge watched: background running, floating window, accessibility, notifications.
+    var permissionsNeedAttention by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        permissionsNeedAttention = PermissionAttention.needed(context)
+    }
+    val accessibilityOn by Accessibility.connected.collectAsStateWithLifecycle()
+    LaunchedEffect(accessibilityOn) { permissionsNeedAttention = PermissionAttention.needed(context) }
     val current = stack.last()
     fun push(route: String) {
         if (stack.last() != route) stack = stack + route
@@ -77,7 +90,7 @@ fun AtomRoot(settings: AppSettings) {
         if (stack.size > 1) stack = stack.dropLast(1)
     }
 
-    val canPop = stack.size > 1 && !(current == Routes.SETUP && !settings.onboarded)
+    val canPop = stack.size > 1
     val appearance = LocalAppearance.current
     // 0..1 while a predictive back gesture is in progress; the top screen follows it, then pops.
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -97,24 +110,19 @@ fun AtomRoot(settings: AppSettings) {
     }
 
     // Deep links (overlay settings links, after an import) and chat requests (notifications, shares, the
-    // overlay's "open in app") bring the right screen forward. First-run setup is never skipped.
-    val onboarded by rememberUpdatedState(settings.onboarded)
+    // overlay's "open in app") bring the right screen forward.
     LaunchedEffect(Unit) {
         NavRequests.pending.collect { request ->
             when (request) {
                 null -> Unit
-                NavRequests.Request.Reset -> if (onboarded) stack = listOf(Routes.CHAT)
-                is NavRequests.Request.Open -> if (request.route == Routes.CHAT) {
-                    if (onboarded) stack = listOf(Routes.CHAT)
-                } else {
-                    push(request.route)
-                }
+                NavRequests.Request.Reset -> stack = listOf(Routes.CHAT)
+                is NavRequests.Request.Open -> if (request.route == Routes.CHAT) stack = listOf(Routes.CHAT) else push(request.route)
             }
             if (request != null) NavRequests.consume(request)
         }
     }
     LaunchedEffect(Unit) {
-        graph.chatRequests.collect { requests -> if (requests.isNotEmpty() && onboarded) stack = listOf(Routes.CHAT) }
+        graph.chatRequests.collect { requests -> if (requests.isNotEmpty()) stack = listOf(Routes.CHAT) }
     }
 
     val chatVm = graphViewModel { ChatViewModel(it) }
@@ -163,6 +171,7 @@ fun AtomRoot(settings: AppSettings) {
                     onOpenBrowser = { push(WebFeature.ROUTE_BROWSER) },
                     onOpenCharacters = { push(CharacterRoutes.LIBRARY) },
                     onOpenPermissions = { push(DeviceFeature.ROUTE_PERMISSIONS) },
+                    permissionsNeedAttention = permissionsNeedAttention,
                     onOpenRoute = ::push,
                 )
                 Routes.MODELS -> ModelsScreen(

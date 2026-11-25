@@ -124,6 +124,13 @@ internal object CharacterImages {
 }
 
 /**
+ * A round avatar of the character for other screens (the home chat header, empty state and conversation list):
+ * the same art as the library cards, clipped to a circle.
+ */
+@Composable
+fun CharacterAvatar(character: Character, modifier: Modifier = Modifier) = CharacterArt(character, modifier, corner = 999.dp)
+
+/**
  * The character's art in a rounded card: the stored image (decoded off the main thread at display size), the orb
  * for the built-in companion, or a monogram. Static: nothing animates.
  */

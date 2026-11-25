@@ -166,17 +166,18 @@ def main():
     shot(p + "02_home")
 
     # Conversation drawer.
-    if tap("conversations|drawer|menu|sidebar", wait=1.5):
+    # Exact labels first: the closed push drawer stays composed, so loose patterns can hit its own text.
+    if tap("^Conversations$", wait=1.5) or tap("conversations|drawer|menu|sidebar", wait=1.5):
         shot(p + "03_drawer")
         back()
 
     # Overflow menu.
-    if tap("more|overflow|options", wait=1.2):
+    if tap("^More options$", wait=1.2) or tap("more|overflow|options", wait=1.2):
         shot(p + "04_overflow")
         back()
 
     # Model picker sheet from the model capsule.
-    if tap("model|DeepSeek|choose", wait=1.5):
+    if tap("^Choose model$", wait=1.5) or tap("model|DeepSeek|choose", wait=1.5):
         shot(p + "05_model_picker")
         back()
 

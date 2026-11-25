@@ -64,6 +64,7 @@ sealed interface ChatItem {
         val text: String,
         val attachments: List<Attachment>,
         val steering: Boolean,
+        val edited: Boolean = false,
     ) : ChatItem
 
     data class Turn(
@@ -131,7 +132,7 @@ object Transcript {
                 }
                 s.isVisibleUser -> {
                     close()
-                    out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering)
+                    out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering, s.edited)
                     turn = TurnBuilder("t$i", i)
                 }
                 msg.role == Role.User -> Unit
