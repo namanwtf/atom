@@ -58,6 +58,8 @@ data class StoredMessage(
     /** A user message delivered to a task while it was running. */
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    /** Changed by the user after it was first sent; the bubble shows "Edited". */
+    val edited: Boolean = false,
 ) {
     val isVisibleUser: Boolean get() = kind == EntryKind.Message && message.role == Role.User && !hidden
 
@@ -332,6 +334,7 @@ internal data class MessageDto(
     val attachments: List<Attachment> = emptyList(),
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    val edited: Boolean = false,
 )
 
 @Serializable
@@ -370,6 +373,7 @@ internal fun StoredMessage.toDto() = MessageDto(
     attachments = attachments,
     steering = steering,
     createdAt = createdAt,
+    edited = edited,
 )
 
 internal fun ConversationDto.toModel() = Conversation(
@@ -412,5 +416,6 @@ internal fun MessageDto.toModel(): StoredMessage? {
         attachments = attachments,
         steering = steering,
         createdAt = createdAt,
+        edited = edited,
     )
 }

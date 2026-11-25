@@ -68,6 +68,9 @@ class AppGraph(private val app: Application) {
     /** Reasoning levels, context window and labels of a model selection. */
     val modelInfo: ModelInfo by lazy { ModelInfo.get(app) }
 
+    /** Configured cloud providers (the same store [modelInfo] reads). */
+    val providers: atom.app.data.ProviderStore by lazy { atom.app.data.ProviderStore.get(app) }
+
     /** Per-role model choices (titles, assistant, schedules...). */
     val modelRoles: ModelRoles by lazy { ModelRoles.get(app) }
 
