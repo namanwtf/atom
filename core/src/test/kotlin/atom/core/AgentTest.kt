@@ -11,6 +11,7 @@ import atom.core.llm.LlmEngine
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmException
 import atom.core.llm.LlmRequest
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ToolCall
 import atom.core.tool.Risk
 import atom.core.tool.Tool
@@ -113,6 +114,17 @@ class AgentTest {
 
         assertEquals(StopReason.StepLimit, assertIs<AgentEvent.Done>(events.last()).reason)
         assertTrue(engine.requests.last().messages.any { it.text.contains("identical action") })
+    }
+
+    @Test
+    fun searchSuggestionsLandOnTheAnswer() = runTest {
+        val suggestions = SearchSuggestions(listOf("weather paris"), "<div>chip</div>")
+        val engine = ScriptedEngine(
+            listOf(listOf(LlmEvent.TextDelta("Sunny"), LlmEvent.Suggestions(suggestions), LlmEvent.Finished(FinishReason.Stop))),
+        )
+        val events = Agent(engine, ToolRegistry(emptyList()), config()).run(listOf(ChatMessage.user("go")), FixedContext()).toList()
+        val answer = events.filterIsInstance<AgentEvent.Appended>().single { it.message.text == "Sunny" }
+        assertEquals(suggestions, answer.info.searchSuggestions)
     }
 
     @Test

@@ -2,6 +2,7 @@ package atom.app.data
 
 import atom.core.agent.Compactor
 import atom.core.agent.SessionStats
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.ReasoningEffort
@@ -58,6 +59,11 @@ data class StoredMessage(
     /** A user message delivered to a task while it was running. */
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    /**
+     * Search suggestions the provider attached to this answer (Gemini grounding). The chat shows them under the
+     * answer: [SearchSuggestions.renderedContent] as given, or one chip per query opening [SearchSuggestions.searchUrl].
+     */
+    val searchSuggestions: SearchSuggestions? = null,
 ) {
     val isVisibleUser: Boolean get() = kind == EntryKind.Message && message.role == Role.User && !hidden
 
@@ -332,6 +338,7 @@ internal data class MessageDto(
     val attachments: List<Attachment> = emptyList(),
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    val searchSuggestions: SearchSuggestions? = null,
 )
 
 @Serializable
@@ -370,6 +377,7 @@ internal fun StoredMessage.toDto() = MessageDto(
     attachments = attachments,
     steering = steering,
     createdAt = createdAt,
+    searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
 )
 
 internal fun ConversationDto.toModel() = Conversation(
@@ -412,5 +420,6 @@ internal fun MessageDto.toModel(): StoredMessage? {
         attachments = attachments,
         steering = steering,
         createdAt = createdAt,
+        searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
     )
 }
