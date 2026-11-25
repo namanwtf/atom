@@ -113,4 +113,10 @@ interface ViewfinderSlot {
 
     @Composable
     fun Viewfinder(run: HostRun, modifier: Modifier)
+
+    /**
+     * "Open screen" on the result card of a run that used the background display: shows what it worked on.
+     * Returns false when there is nothing to show.
+     */
+    fun openScreen(context: Context, conversationId: String): Boolean = false
 }

@@ -3,6 +3,7 @@ package atom.overlay.assistant
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -64,7 +66,6 @@ import atom.overlay.R
 import atom.overlay.ui.ApprovalCard
 import atom.overlay.ui.Glass
 import atom.overlay.ui.MarkdownText
-import atom.overlay.ui.MicButton
 import atom.overlay.ui.OverlayIcons
 import atom.overlay.ui.PillComposer
 import atom.overlay.ui.RoundIcon
@@ -101,8 +102,17 @@ internal fun AssistantScreen() {
         )
         if (effects) {
             EntryHalo(c.entry)
-            if (c.voice.listening) {
-                VoiceWave(c.voice.level, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(150.dp))
+            // The coloured wave follows the voice; it fades out about a third of a second after listening stops.
+            val wave by animateFloatAsState(if (c.voice.listening) 1f else 0f, tween(if (c.voice.listening) 240 else 320), label = "wave")
+            if (wave > 0f) {
+                VoiceWave(
+                    c.voice.level,
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .graphicsLayer { alpha = wave },
+                )
             }
         }
         Column(
@@ -126,7 +136,7 @@ private fun ReplyCard(maxHeight: androidx.compose.ui.unit.Dp, live: atom.ui.feat
     val c = AssistantController
     val density = LocalDensity.current
     var pull by remember { mutableFloatStateOf(0f) }
-    val threshold = with(density) { 96.dp.toPx() }
+    val threshold = with(density) { PULL_TO_OPEN.toPx() }
     val shownPull by animateFloatAsState(pull, tween(if (pull == 0f) 180 else 0), label = "pull")
     val scroll = rememberScrollState()
     LaunchedEffect(scroll) {
@@ -147,10 +157,12 @@ private fun ReplyCard(maxHeight: androidx.compose.ui.unit.Dp, live: atom.ui.feat
             .glass(RoundedCornerShape(28.dp), blurred = false)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        Box(
+        val armed = pull >= threshold
+        val barWidth by animateDpAsState(if (armed) 52.dp else 36.dp, tween(160), label = "bar")
+        Column(
             Modifier
                 .fillMaxWidth()
-                .height(if (shownPull > 0f) 40.dp else 22.dp)
+                .heightIn(min = 38.dp)
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onDragEnd = {
@@ -163,16 +175,26 @@ private fun ReplyCard(maxHeight: androidx.compose.ui.unit.Dp, live: atom.ui.feat
                         pull = (pull - dy).coerceAtLeast(0f)
                     }
                 },
-            contentAlignment = Alignment.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            if (shownPull > 4f) {
+            Spacer(Modifier.height(10.dp))
+            Box(
+                Modifier
+                    .width(barWidth)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (armed) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.3f)),
+            )
+            if (shownPull > 4f || hasConversation) {
                 Text(
-                    stringResource(if (pull >= threshold) R.string.overlay_release_to_open else R.string.overlay_pull_to_open),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    stringResource(if (armed) R.string.overlay_release_to_open else R.string.overlay_pull_to_open),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (armed) 1f else 0.7f),
+                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
                 )
             } else {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.3f)))
+                Spacer(Modifier.height(10.dp))
             }
         }
         if (hasConversation || c.screen != null) {
@@ -274,23 +296,34 @@ private fun Chips() {
         Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        prompts.forEach { (label, prompt) ->
-            Text(
-                stringResource(label),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
+        prompts.forEachIndexed { i, (label, prompt) ->
+            // Each chip rises 10dp and fades in, a beat after the one before.
+            val rise = remember { Animatable(0f) }
+            LaunchedEffect(Unit) { rise.animateTo(1f, tween(220, delayMillis = 60 * i, easing = FastOutSlowInEasing)) }
+            Box(
+                Modifier
+                    .height(36.dp)
+                    .graphicsLayer {
+                        alpha = rise.value
+                        translationY = (1f - rise.value) * 10.dp.toPx()
+                    }
                     .clip(RoundedCornerShape(50))
                     .background(Glass.raised)
                     .clickable { AssistantController.send(context.getString(prompt)) }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-            )
+                    .padding(horizontal = 15.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            }
         }
     }
 }
+
+/** Finger travel on the handle that hands the conversation to the full app. */
+private val PULL_TO_OPEN = 48.dp
 
 @Composable
 private fun InputRow(running: Boolean) {
@@ -318,15 +351,17 @@ private fun InputRow(running: Boolean) {
         )
         return
     }
-    val context = LocalContext.current
+    var hold by remember { mutableStateOf(HoldState.None) }
     Row(
         Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        MicButton(voice.listening, voice.level, onClick = { voice.toggle(context) }, size = 48.dp)
+        HoldToTalkMic(voice, onHold = { hold = it })
         Text(
             when {
+                hold == HoldState.Holding -> stringResource(R.string.overlay_assistant_hold_hint)
+                hold == HoldState.Cancelling -> stringResource(R.string.overlay_release_to_cancel)
                 voice.partial.isNotEmpty() -> voice.partial
                 voice.listening -> stringResource(R.string.overlay_listening)
                 running -> stringResource(R.string.overlay_working_hint)

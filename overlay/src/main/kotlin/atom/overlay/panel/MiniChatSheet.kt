@@ -4,8 +4,10 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
@@ -24,56 +27,78 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import atom.overlay.Overlay
 import atom.overlay.OverlayMessage
 import atom.overlay.OverlayRuntime
 import atom.overlay.R
 import atom.overlay.ui.ApprovalCard
-import atom.overlay.ui.Glass
+import atom.overlay.ui.Glyph
+import atom.overlay.ui.GlyphIcon
 import atom.overlay.ui.MarkdownText
-import atom.overlay.ui.OverlayIcons
-import atom.overlay.ui.PillComposer
-import atom.overlay.ui.RoundIcon
 import atom.overlay.ui.StepsFold
-import atom.overlay.ui.UserBubble
-import atom.overlay.ui.glass
+import atom.overlay.ui.Warm
+import atom.overlay.ui.drawGlyph
+import atom.overlay.window.KeyboardProbe
+import atom.overlay.window.Windows
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunSource
 import atom.ui.theme.AtomMark
-import atom.ui.components.ScreenIcons
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.max
 
-/** Full-height glass sheet between the system bars; it shrinks to sit on the keyboard and grows back. */
+/**
+ * Full-height sheet between the status and navigation bars. It is top-anchored and shrinks (never slides) so the
+ * composer sits on the keyboard, then grows back when the keyboard closes.
+ */
 @Composable
 internal fun MiniChatSheet() {
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val view = LocalView.current
     val runsFlow = remember { OverlayRuntime.host()?.runs ?: MutableStateFlow(emptyList()) }
     val runs by runsFlow.collectAsState()
     val log by MiniChat.log.collectAsState()
@@ -84,116 +109,144 @@ internal fun MiniChatSheet() {
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, tween(200, easing = FastOutSlowInEasing)) }
 
+    // Keyboard: measured by the accessibility service where connected, polled only around focus changes.
+    var focused by remember { mutableStateOf(false) }
+    var probe by remember { mutableStateOf<KeyboardProbe?>(Windows.keyboardProbe()) }
+    var windowTop by remember { mutableIntStateOf(0) }
+    LaunchedEffect(focused) {
+        val until = if (focused) Long.MAX_VALUE else System.currentTimeMillis() + SETTLE_POLL_MS
+        while (System.currentTimeMillis() < until) {
+            probe = Windows.keyboardProbe()
+            val at = IntArray(2)
+            view.getLocationOnScreen(at)
+            windowTop = at[1]
+            delay(POLL_MS)
+        }
+    }
+    val bars = remember(context) { Windows.area(context) }
+
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .graphicsLayer { alpha = appear.value }
-            .background(Color.Black.copy(alpha = if (MiniChat.blurred) 0.18f else 0.45f))
+            .background(Color.Black.copy(alpha = 0.45f))
             .pointerInput(Unit) { detectTapGestures { MiniChat.close() } },
     ) {
-        val margin = with(density) { 8.dp.roundToPx() }
+        val keyboard = KeyboardFit.keyboard(
+            focused = focused,
+            measuredAvailable = probe != null,
+            measuredTop = probe?.top,
+            imeInset = WindowInsets.ime.getBottom(density),
+            windowTop = windowTop,
+            windowHeight = constraints.maxHeight,
+            displayHeight = bars.height.toInt(),
+        )
+        val margin = with(density) { 6.dp.roundToPx() }
         val fit = PanelFit.fit(
             windowHeight = constraints.maxHeight,
-            statusTop = WindowInsets.statusBars.getTop(density),
-            navBottom = WindowInsets.navigationBars.getBottom(density),
-            imeBottom = WindowInsets.ime.getBottom(density),
+            statusTop = max(WindowInsets.statusBars.getTop(density), bars.top.toInt()),
+            navBottom = max(WindowInsets.navigationBars.getBottom(density), bars.bottom.toInt()),
+            imeBottom = keyboard.height,
             margin = margin,
-            minHeight = with(density) { 220.dp.roundToPx() },
+            minHeight = with(density) { 280.dp.roundToPx() },
         )
         Column(
             Modifier
                 .offset { IntOffset(0, fit.top) }
                 .fillMaxWidth()
                 .height(with(density) { fit.height.toDp() })
-                .padding(horizontal = 8.dp)
+                .padding(horizontal = 6.dp)
                 .graphicsLayer { translationY = (1f - appear.value) * 24.dp.toPx() }
-                .glass(RoundedCornerShape(28.dp), MiniChat.blurred)
-                .pointerInput(Unit) { detectTapGestures { } },
+                .clip(RoundedCornerShape(24.dp))
+                .background(Warm.Background)
+                .border(1.dp, Warm.Outline, RoundedCornerShape(24.dp))
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
         ) {
             Header()
+            Spacer(Modifier.height(8.dp))
             ModelChip()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (log.isEmpty() && live == null) EmptyState() else Messages(log, live)
             }
             run?.pending?.let { approval ->
-                ApprovalCard(approval, onAnswer = { MiniChat.answer(approval.id, it) }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                ApprovalCard(approval, onAnswer = { MiniChat.answer(approval.id, it) }, modifier = Modifier.padding(vertical = 6.dp))
             }
             Notices()
-            val context = LocalContext.current
-            val voice = MiniChat.voice
-            PillComposer(
-                text = if (voice.listening && voice.partial.isNotEmpty()) voice.partial else MiniChat.draft,
-                onText = { MiniChat.draft = it },
-                onSend = { MiniChat.send(MiniChat.draft) },
-                onStop = MiniChat::stop,
-                running = live != null,
-                listening = voice.listening,
-                level = voice.level,
-                micAvailable = voice.available,
-                onMic = { MiniChat.listen(context, send = false) },
-                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
-            )
+            Spacer(Modifier.height(8.dp))
+            Composer(running = live != null, onFocus = { focused = it })
+        }
+    }
+}
+
+private const val POLL_MS = 150L
+private const val SETTLE_POLL_MS = 1_200L
+
+@Composable
+private fun Header() {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.overlay_title), color = Warm.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            HeaderButton(Glyph.Plus, stringResource(R.string.overlay_new_chat), MiniChat::newChat)
+            HeaderButton(Glyph.Expand, stringResource(R.string.overlay_open_app), MiniChat::expand)
+            HeaderButton(Glyph.Close, stringResource(R.string.overlay_close), MiniChat::close)
         }
     }
 }
 
 @Composable
-private fun Header() {
-    Row(
-        Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun HeaderButton(glyph: Glyph, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
     ) {
-        AtomMark(Modifier.size(22.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(stringResource(R.string.overlay_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            RoundIcon(Icons.Filled.Add, stringResource(R.string.overlay_new_chat), MiniChat::newChat, size = 38.dp)
-            RoundIcon(OverlayIcons.Expand, stringResource(R.string.overlay_open_app), MiniChat::expand, size = 38.dp)
-            RoundIcon(Icons.Filled.Close, stringResource(R.string.overlay_close), MiniChat::close, size = 38.dp)
-        }
+        GlyphIcon(glyph, Color.White.copy(alpha = 0.85f), 16.dp, 1.8.dp)
     }
 }
 
 @Composable
 private fun ModelChip() {
     val context = LocalContext.current
-    val label = remember { Overlay.hooks.modelLabel(RunSource.Bubble) } ?: stringResource(R.string.overlay_default_model)
-    val pickable = remember { Overlay.hooks.modelPickerIntent(context, RunSource.Bubble) != null }
-    Row(
-        Modifier
-            .padding(start = 14.dp, top = 2.dp, bottom = 6.dp)
-            .clip(RoundedCornerShape(50))
-            .background(Glass.raised)
+    val hooks = Overlay.hooks
+    val label = remember { hooks.modelLabel(RunSource.Bubble) ?: hooks.modelLabel(RunSource.Chat) } ?: stringResource(R.string.overlay_no_model)
+    val pickable = remember { hooks.modelPickerIntent(context, RunSource.Bubble) != null }
+    Text(
+        label,
+        color = Warm.Text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .widthIn(max = 260.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Warm.Card2)
             .clickable(enabled = pickable, onClick = MiniChat::openModelPicker)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.8f)))
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (pickable) {
-            Spacer(Modifier.width(4.dp))
-            androidx.compose.material3.Icon(ScreenIcons.ChevronDown, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
 private fun EmptyState() {
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 32.dp),
+        Modifier.fillMaxSize().padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AtomMark(Modifier.size(64.dp))
-        Spacer(Modifier.height(18.dp))
-        Text(stringResource(R.string.overlay_empty_title), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+        Box(Modifier.size(56.dp).clip(CircleShape), contentAlignment = Alignment.Center) { AtomMark(Modifier.fillMaxSize()) }
+        Spacer(Modifier.height(14.dp))
+        Text(stringResource(R.string.overlay_empty_title), color = Warm.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Text(
             stringResource(R.string.overlay_empty_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Warm.Muted,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
             textAlign = TextAlign.Center,
         )
     }
@@ -205,20 +258,37 @@ private fun Messages(log: List<OverlayMessage>, live: HostRun?) {
     LazyColumn(
         Modifier.fillMaxSize(),
         reverseLayout = true,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+        contentPadding = PaddingValues(vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
     ) {
         if (live != null) {
             item(key = "live") {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     StepsFold(live.steps, working = live.text.isEmpty())
-                    if (live.text.isNotEmpty()) MarkdownText(live.text)
+                    if (live.text.isNotEmpty()) MarkdownText(live.text, color = Warm.Text)
                 }
             }
         }
         items(log.asReversed()) { message ->
-            if (message.fromUser) UserBubble(message.text) else MarkdownText(message.text)
+            if (message.fromUser) UserMessage(message.text) else MarkdownText(message.text, Modifier.padding(horizontal = 2.dp), color = Warm.Text)
         }
+    }
+}
+
+@Composable
+private fun UserMessage(text: String) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Text(
+            text,
+            color = Warm.Text.copy(alpha = 0.95f),
+            fontSize = 15.sp,
+            lineHeight = 24.sp,
+            modifier = Modifier
+                .widthIn(max = 260.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Warm.UserBubble)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+        )
     }
 }
 
@@ -228,21 +298,105 @@ private fun Notices() {
     val error = voice.error
     val notice = MiniChat.notice
     if (error == null && notice == null) return
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            error ?: notice.orEmpty(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(error ?: notice.orEmpty(), color = Warm.HideRed, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.weight(1f, fill = false))
         if (error != null) {
             Spacer(Modifier.width(10.dp))
             Text(
                 stringResource(R.string.overlay_voice_settings),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = Warm.Bolt,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = MiniChat::openVoiceSettings).padding(6.dp),
             )
         }
     }
+}
+
+/** Pill with the text field and the mic inside it, and the round send (or stop) button outside. */
+@Composable
+private fun Composer(running: Boolean, onFocus: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val voice = MiniChat.voice
+    val text = if (voice.listening && voice.partial.isNotEmpty()) voice.partial else MiniChat.draft
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier
+                .weight(1f)
+                .heightIn(min = 46.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Warm.Card)
+                .border(1.dp, Warm.Outline, RoundedCornerShape(26.dp))
+                .padding(start = 10.dp, end = 4.dp, top = 5.dp, bottom = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 8.dp)) {
+                if (text.isEmpty()) {
+                    Text(
+                        stringResource(if (voice.listening) R.string.overlay_listening else R.string.overlay_composer_hint),
+                        color = Warm.Muted,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                    )
+                }
+                BasicTextField(
+                    value = text,
+                    onValueChange = { MiniChat.draft = it },
+                    textStyle = TextStyle(color = Warm.Text, fontSize = 14.sp, lineHeight = 20.sp),
+                    cursorBrush = SolidColor(Warm.Bolt),
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { onFocus(it.isFocused) },
+                )
+            }
+            if (voice.available) {
+                MicButton(listening = voice.listening, level = voice.level, onClick = { MiniChat.listen(context, send = false) })
+            }
+        }
+        val canSend = text.isNotBlank()
+        val stop = running && !canSend
+        SendButton(canSend = canSend, stop = stop, onClick = { if (stop) MiniChat.stop() else MiniChat.send(MiniChat.draft) })
+    }
+}
+
+@Composable
+private fun MicButton(listening: Boolean, level: Float, onClick: () -> Unit) {
+    val label = stringResource(R.string.overlay_mic)
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .drawBehind {
+                if (listening) {
+                    drawCircle(Warm.Bolt.copy(alpha = 0.18f + 0.3f * level.coerceIn(0f, 1f)))
+                }
+            }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(Glyph.Mic, if (listening) Warm.Bolt else Warm.Muted, 18.dp, 1.7.dp)
+    }
+}
+
+@Composable
+private fun SendButton(canSend: Boolean, stop: Boolean, onClick: () -> Unit, size: Dp = 46.dp) {
+    val label = stringResource(if (stop) R.string.overlay_stop else R.string.overlay_send)
+    val active = canSend || stop
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(if (canSend) Warm.Bolt else Warm.Card2)
+            .clickable(enabled = active, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
+            .drawBehind {
+                if (stop) {
+                    val s = 14.dp.toPx()
+                    drawRoundRect(Warm.Text, Offset(center.x - s / 2f, center.y - s / 2f), Size(s, s), CornerRadius(3.dp.toPx()))
+                } else {
+                    val g = 18.dp.toPx()
+                    drawGlyph(Glyph.ArrowUp, if (canSend) Color.White else Warm.Muted, 2.2.dp.toPx(), Offset(center.x - g / 2f, center.y - g / 2f), g)
+                }
+            },
+    )
 }

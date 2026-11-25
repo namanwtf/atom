@@ -1,5 +1,7 @@
 package atom.vdisplay.viewfinder
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -31,10 +33,35 @@ object BackgroundViewfinder : ViewfinderSlot {
     /** Mini view frame cap: it is a glance, not a mirror. */
     private const val MINI_FPS = 6
 
+    /** The app each run last drove on the hidden display, for "Open screen" once the run has ended. */
+    private val lastTarget = HashMap<String, String>()
+
     override fun shows(run: HostRun): Boolean = when (val s = DisplayRouter.state.value) {
-        is LeaseState.Active -> !s.lease.main
+        is LeaseState.Active -> {
+            if (!s.lease.main) s.lease.targetPackage?.let { note(run.conversationId, it) }
+            !s.lease.main
+        }
         is LeaseState.Lost -> true // shows "Display unavailable" instead of silently vanishing
         LeaseState.Idle -> false
+    }
+
+    private fun note(conversationId: String, pkg: String) {
+        synchronized(lastTarget) {
+            if (lastTarget.size > 8 && conversationId !in lastTarget) lastTarget.clear()
+            lastTarget[conversationId] = pkg
+        }
+    }
+
+    /** The live stage while the hidden display is still up; afterwards the app it worked in, on the main screen. */
+    override fun openScreen(context: Context, conversationId: String): Boolean {
+        val s = DisplayRouter.state.value
+        if (s is LeaseState.Active && !s.lease.main) {
+            Stage.show(context, conversationId)
+            return true
+        }
+        val pkg = synchronized(lastTarget) { lastTarget[conversationId] } ?: return false
+        val launch = context.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        return runCatching { context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
     }
 
     @Composable

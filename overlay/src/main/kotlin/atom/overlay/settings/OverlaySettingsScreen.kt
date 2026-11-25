@@ -67,7 +67,13 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
                             else -> R.string.overlay_bubble_hint
                         },
                     ),
-                    onClick = { toggleBubble(context, !bubbleOn, canOverlay) { enableOnReturn = true } },
+                    onClick = {
+                        if (bubbleOn && !canOverlay) {
+                            toggleBubble(context, true, canOverlay) { enableOnReturn = true }
+                        } else {
+                            toggleBubble(context, !bubbleOn, canOverlay) { enableOnReturn = true }
+                        }
+                    },
                     trailing = {
                         AtomSwitch(bubbleOn, onCheckedChange = { on -> toggleBubble(context, on, canOverlay) { enableOnReturn = true } })
                     },
@@ -154,6 +160,10 @@ internal fun OverlaySettingsScreen(nav: FeatureNav) {
     }
 }
 
+/**
+ * The switch is on by default. Without the overlay permission it stays on and says why nothing shows; tapping the
+ * row then asks for the permission, and the bubble appears on return. Turning it on asks the same way.
+ */
 private fun toggleBubble(context: Context, on: Boolean, canOverlay: Boolean, awaitPermission: () -> Unit) {
     if (on && !canOverlay) {
         awaitPermission()
