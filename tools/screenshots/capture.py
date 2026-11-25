@@ -337,7 +337,7 @@ def main():
     time.sleep(2.5)
     shot(p + "35_mini_chat")
     # Focus the composer: the panel shrinks so the composer sits on the keyboard.
-    if tap("^Ask Atom", wait=2.5):
+    if tap("^Ask Atom…$", wait=2.5):
         focus_report()
         shot(p + "37_mini_chat_keyboard")
         back(wait=1.5)
