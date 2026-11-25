@@ -43,6 +43,12 @@ interface AssistSessionHandle {
 
     /** Starts an activity the way an assistant should (also from the lock screen), then the session hides. */
     fun launch(intent: Intent)
+
+    /**
+     * True while the phone is locked: the session was opened from the lock screen (assist from the keyguard is
+     * allowed). Screen context is then empty, and an activity [launch]ed from here appears once the user unlocks.
+     */
+    fun isLocked(): Boolean = false
 }
 
 object AssistOverlay {

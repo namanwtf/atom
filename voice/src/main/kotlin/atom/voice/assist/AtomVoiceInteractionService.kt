@@ -1,5 +1,6 @@
 package atom.voice.assist
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -89,6 +90,7 @@ internal class AtomVoiceInteractionSession(context: Context) : VoiceInteractionS
             overlay.onShow(args, showFlags)
             return
         }
+        // From the lock screen the activity is started behind the keyguard and shows right after the user unlocks.
         intent(context, fromAssist = true)?.let { launch(it) }
         hide()
     }
@@ -116,6 +118,9 @@ internal class AtomVoiceInteractionSession(context: Context) : VoiceInteractionS
     }
 
     override fun sessionContext(): Context = context
+
+    override fun isLocked(): Boolean =
+        runCatching { context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true }.getOrDefault(false)
 
     override fun dismiss() {
         hide()
