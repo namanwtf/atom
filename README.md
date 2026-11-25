@@ -4,7 +4,15 @@
 
 Atom reads the screen, taps through apps, runs commands, remembers what matters and keeps working while you do something else. It runs on the phone itself, talks to the model you choose, and keeps your data between you and that model.
 
-> Screenshots of this build will be added once its interface work is finished. They will be taken from this app on an emulator.
+| Home | Hold menu | Mini chat |
+| --- | --- | --- |
+| ![Home](docs/screenshots/home.jpg) | ![The bubble's hold menu](docs/screenshots/bubble_menu.jpg) | ![The mini chat](docs/screenshots/mini_chat.jpg) |
+
+| Model providers | Settings | Light theme |
+| --- | --- | --- |
+| ![Model providers](docs/screenshots/models.jpg) | ![Settings](docs/screenshots/settings.jpg) | ![Home in the light theme](docs/screenshots/home_light.jpg) |
+
+Taken on an Android emulator by this repository's CI, on a fresh install with no API key set (hence "Not selected").
 
 ---
 
@@ -12,7 +20,7 @@ Atom reads the screen, taps through apps, runs commands, remembers what matters 
 
 ### Operates your phone
 - Drives apps through Android accessibility: reads the screen, taps, types, scrolls and swipes, then checks the screen again before it reports success. When an action can't be confirmed, Atom says so.
-- A run capsule floats over other apps while a task runs: pause, take over, add instructions mid-task or stop.
+- A run capsule floats over other apps while a task runs: pause, take over, add instructions mid-task or stop. On Android 16 the task also shows as a Live Update in the status bar.
 - With root or the LSPosed module, cross-app tasks can run on a hidden virtual display and hand the result back to your screen when you are needed, for example on a payment page or a QR code.
 
 ### Is always one tap away
@@ -49,9 +57,6 @@ Notifications (with a searchable 7-day history kept on the phone), SMS and one-t
 - **On-device models** (LiteRT-LM and llama.cpp) that work offline, with an optional cloud fallback.
 
 ### Coming
-- The full refreshed interface (theme, home, drawer, settings and bubble), being finished now.
-- In-app updates straight from this repository's Releases.
-- Live Update status-bar capsule while a task runs.
 - A second interface style (COUI).
 - ColorOS-only data sources: notes, orders, bills and system memory.
 
@@ -71,7 +76,7 @@ Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, file
 
 Download the APK from [Releases](https://github.com/namanwtf/atom/releases). Releases are built and signed by GitHub Actions when `main` changes.
 
-Installing a newer Atom over an existing one keeps your data and permissions. You never need to uninstall first.
+Installing a newer Atom over an existing one keeps your data and permissions. You never need to uninstall first. Atom checks this repository's Releases from Settings → About and installs an update only after verifying its checksum and signing key; Android asks you to confirm.
 
 ## Build
 
