@@ -59,6 +59,8 @@ data class StoredMessage(
     /** A user message delivered to a task while it was running. */
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    /** Changed by the user after it was first sent; the bubble shows "Edited". */
+    val edited: Boolean = false,
     /**
      * Search suggestions the provider attached to this answer (Gemini grounding). The chat shows them under the
      * answer: [SearchSuggestions.renderedContent] as given, or one chip per query opening [SearchSuggestions.searchUrl].
@@ -338,6 +340,7 @@ internal data class MessageDto(
     val attachments: List<Attachment> = emptyList(),
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    val edited: Boolean = false,
     val searchSuggestions: SearchSuggestions? = null,
 )
 
@@ -377,6 +380,7 @@ internal fun StoredMessage.toDto() = MessageDto(
     attachments = attachments,
     steering = steering,
     createdAt = createdAt,
+    edited = edited,
     searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
 )
 
@@ -420,6 +424,7 @@ internal fun MessageDto.toModel(): StoredMessage? {
         attachments = attachments,
         steering = steering,
         createdAt = createdAt,
+        edited = edited,
         searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
     )
 }

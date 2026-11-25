@@ -323,7 +323,7 @@ private fun ProviderRow(config: ProviderConfig, current: Boolean, onOpen: () -> 
             .alpha(if (config.enabled) 1f else 0.6f)
             .combinedClickable(onClick = onOpen, onLongClick = onLongPress),
         startAction = {
-            ProviderMark(config.id, config.displayName, 24.dp, Modifier.padding(end = 8.dp), baseUrl = config.baseUrl)
+            ProviderMark(config.presetId, config.displayName, 24.dp, Modifier.padding(end = 8.dp))
         },
         endActions = {
             AtomCheckbox(checked = current, onCheckedChange = { if (it) onSelect() }, modifier = Modifier.align(Alignment.CenterVertically))

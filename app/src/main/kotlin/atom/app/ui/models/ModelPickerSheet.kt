@@ -87,6 +87,8 @@ private data class PickerOption(
     val selection: EngineSelection,
     val baseUrl: String? = null,
     val model: String? = null,
+    /** Built-in preset id, for the brand logo (user providers never borrow one). */
+    val presetId: String? = null,
 )
 
 /**
@@ -141,6 +143,7 @@ fun ModelPickerSheet(
                         selection = EngineSelection.Cloud(p.id, m.id),
                         baseUrl = p.baseUrl,
                         model = m.id,
+                        presetId = p.presetId,
                     ),
                 )
             }
@@ -364,7 +367,7 @@ private fun OptionLogo(o: PickerOption) {
     if (o.providerId == null) {
         Icon(Icons.Rounded.Memory, null, Modifier.size(20.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantActions)
     } else {
-        ProviderMark(o.providerId, o.providerName, 20.dp, model = o.model, baseUrl = o.baseUrl)
+        ProviderMark(o.presetId, o.providerName, 20.dp, model = o.model)
     }
 }
 

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home top bar and model capsule -->
+    <string name="home_not_selected">Not selected</string>
+    <string name="home_not_set">Not set</string>
+    <string name="home_choose_model">Choose model</string>
+    <string name="home_open_character">Open character</string>
+    <string name="home_sign_in_capsule">Sign in to %1$s</string>
+    <string name="home_sign_in_needed">Sign in to %1$s in Models to use this model</string>
+    <string name="home_close_drawer">Close conversations</string>
+    <string name="chat_search_suggestions">Search suggestions</string>
+    <string name="menu_auto_read_on">Enable auto read-aloud</string>
+    <string name="menu_auto_read_off">Disable auto read-aloud</string>
+
+    <!-- Home empty state -->
+    <string name="home_story_begins">The story begins here</string>
+
+    <!-- Composer -->
+    <string name="composer_hint_character">Say something to %1$s…</string>
+    <string name="composer_stop_run">Stop the running task</string>
+    <string name="composer_context_cd">Context usage, open session stats</string>
+    <string name="composer_edit_replace">Sending will replace this message</string>
+    <string name="composer_edit_replace_later">Sending will replace this message and everything after it</string>
+    <string name="composer_cancel_edit">Cancel edit</string>
+    <string name="attach_path_hint">absolute path</string>
+
+    <!-- Messages -->
+    <string name="chat_edited">Edited</string>
+    <string name="chat_copy_answer">Copy answer</string>
+    <string name="chat_stats_pill">TTFT %1$s · %2$s tok/s</string>
+    <string name="chat_stats_ttft">TTFT %1$s</string>
+    <string name="chat_stats_speed">%1$s tok/s</string>
+    <string name="work_analyzing">Analyzing task</string>
+    <string name="work_step">Working · step %1$d</string>
+    <string name="work_step_tool">Working · step %1$d · %2$s</string>
+    <string name="work_done">Analysis complete</string>
+    <plurals name="work_completed">
+        <item quantity="one">Completed %d step</item>
+        <item quantity="other">Completed %d steps</item>
+    </plurals>
+    <string name="chat_loading">Loading…</string>
+    <string name="chat_load_failed">Load failed. Tap to retry</string>
+
+    <!-- Drawer -->
+    <string name="drawer_empty_hint">Tap the new chat button above to start</string>
+    <string name="drawer_rename_title">Rename conversation</string>
+    <string name="drawer_tools">Tools</string>
+    <string name="drawer_skills">Skills</string>
+    <string name="drawer_scheduled">Scheduled Tasks</string>
+    <string name="drawer_more">More</string>
+    <string name="drawer_clear_search">Clear</string>
+    <string name="drawer_close_search">Close search</string>
+</resources>

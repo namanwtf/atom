@@ -6,80 +6,36 @@ import java.util.Locale
  * Which brand logo identifies a provider or model. Returns a stable key ("openai", "deepseek", ...) that the app
  * maps to its bundled logo images; null means "no logo, draw a monogram".
  *
- * Provider facts win (its id, then its name, then its endpoint host). For aggregators and local servers, which host
- * many brands, the model's family is shown when it is recognisable.
+ * A provider gets a brand logo only when it is one of the built-in presets, matched by its exact preset id: a
+ * provider the user added (a LAN "OpenAI-compatible" server, a proxy) never borrows a brand by its name or URL.
+ * Aggregators and user providers show the model's family when it is recognisable.
  */
 object ProviderBrands {
     /** Every key [key] can return. */
     val KEYS: Set<String> = setOf(
-        "openai", "anthropic", "claude", "gemini", "deepseek", "qwen", "kimi", "mimo", "minimax", "stepfun",
-        "siliconflow", "openrouter", "xai", "grok", "groq", "mistral", "gemma", "meta", "ollama", "lmstudio",
-        "zhipu", "doubao",
+        "openai", "anthropic", "claude", "gemini", "deepseek", "qwen", "kimi", "minimax", "stepfun",
+        "siliconflow", "openrouter", "xai", "grok", "groq", "mistral", "gemma", "meta", "zhipu", "doubao",
     )
 
-    /** Providers that serve other brands' models: the model family is the more useful logo there. */
-    private val AGGREGATORS = setOf("openrouter", "siliconflow", "groq", "ollama", "lmstudio")
-
-    // Ordered: the first match wins, so longer or more specific tokens come first.
-    private val PROVIDER_TOKENS: List<Pair<String, String>> = listOf(
-        "openrouter" to "openrouter",
-        "siliconflow" to "siliconflow",
-        "siliconcloud" to "siliconflow",
-        "lmstudio" to "lmstudio",
-        "lm-studio" to "lmstudio",
-        "lm studio" to "lmstudio",
-        "ollama" to "ollama",
-        "anthropic" to "anthropic",
-        "claude" to "anthropic",
+    /** Built-in preset id -> brand key. MiMo has no logo that reads at capsule size, so it uses the monogram. */
+    private val PRESETS: Map<String, String> = mapOf(
         "openai" to "openai",
-        "chatgpt" to "openai",
+        "anthropic" to "anthropic",
         "gemini" to "gemini",
-        "vertex" to "gemini",
-        "google" to "gemini",
         "deepseek" to "deepseek",
-        "bailian" to "qwen",
-        "dashscope" to "qwen",
-        "alibaba" to "qwen",
         "qwen" to "qwen",
         "moonshot" to "kimi",
-        "kimi" to "kimi",
-        "xiaomi" to "mimo",
-        "mimo" to "mimo",
         "minimax" to "minimax",
         "stepfun" to "stepfun",
-        "groq" to "groq",
-        "grok" to "xai",
+        "siliconflow" to "siliconflow",
+        "openrouter" to "openrouter",
         "xai" to "xai",
-        "x.ai" to "xai",
+        "groq" to "groq",
         "mistral" to "mistral",
-        "zhipu" to "zhipu",
-        "bigmodel" to "zhipu",
-        "doubao" to "doubao",
-        "volces" to "doubao",
-        "volcengine" to "doubao",
     )
 
-    private val HOST_TOKENS: List<Pair<String, String>> = listOf(
-        "api.openai.com" to "openai",
-        "anthropic.com" to "anthropic",
-        "googleapis.com" to "gemini",
-        "deepseek.com" to "deepseek",
-        "aliyuncs.com" to "qwen",
-        "moonshot.cn" to "kimi",
-        "moonshot.ai" to "kimi",
-        "xiaomimimo.com" to "mimo",
-        "minimax" to "minimax",
-        "stepfun.com" to "stepfun",
-        "siliconflow" to "siliconflow",
-        "openrouter.ai" to "openrouter",
-        "api.x.ai" to "xai",
-        "groq.com" to "groq",
-        "mistral.ai" to "mistral",
-        "bigmodel.cn" to "zhipu",
-        "volces.com" to "doubao",
-        ":11434" to "ollama",
-        ":1234" to "lmstudio",
-    )
+    /** Presets that serve other brands' models: the model family is the more useful logo there. */
+    private val AGGREGATORS = setOf("openrouter", "siliconflow", "groq")
 
     // Model ids and display names: "gpt-5", "Claude Sonnet", "gemma-3n-e4b", "Qwen3 8B" ...
     private val MODEL_PREFIXES: List<Pair<String, String>> = listOf(
@@ -110,46 +66,58 @@ object ProviderBrands {
         "minimax" to "minimax",
         "abab" to "minimax",
         "step" to "stepfun",
-        "mimo" to "mimo",
         "doubao" to "doubao",
     )
 
-    /** The brand of a provider (by id, display name or endpoint), falling back to the model family. */
-    fun key(providerId: String?, name: String? = null, baseUrl: String? = null, model: String? = null): String? {
-        val provider = providerKey(providerId, name, baseUrl)
+    // Vendor prefixes of aggregator model ids ("anthropic/claude-…", "x-ai/grok-…"), matched exactly.
+    private val VENDORS: Map<String, String> = mapOf(
+        "openai" to "openai",
+        "anthropic" to "claude",
+        "google" to "gemini",
+        "deepseek" to "deepseek",
+        "deepseek-ai" to "deepseek",
+        "qwen" to "qwen",
+        "meta-llama" to "meta",
+        "mistralai" to "mistral",
+        "moonshotai" to "kimi",
+        "x-ai" to "grok",
+        "z-ai" to "zhipu",
+        "thudm" to "zhipu",
+        "zai-org" to "zhipu",
+        "minimax" to "minimax",
+        "minimaxai" to "minimax",
+        "stepfun-ai" to "stepfun",
+    )
+
+    /**
+     * The brand for a provider given by its exact built-in preset id ([presetId]; null or any other id for user
+     * providers), falling back to the family of [model].
+     */
+    fun key(presetId: String?, model: String? = null): String? {
+        val provider = presetKey(presetId)
         val family = model?.let(::modelKey)
         return if (provider == null || provider in AGGREGATORS) family ?: provider else provider
     }
 
-    fun providerKey(providerId: String?, name: String? = null, baseUrl: String? = null): String? {
-        for (raw in listOf(providerId, name)) {
-            val s = raw?.lowercase(Locale.ROOT)?.trim().orEmpty()
-            if (s.isEmpty()) continue
-            PROVIDER_TOKENS.firstOrNull { (token, _) -> s.contains(token) }?.let { return it.second }
-        }
-        val host = baseUrl?.lowercase(Locale.ROOT).orEmpty()
-        if (host.isNotEmpty()) HOST_TOKENS.firstOrNull { (token, _) -> host.contains(token) }?.let { return it.second }
-        return null
-    }
+    /** The brand of a built-in preset id, exact match only. */
+    fun presetKey(presetId: String?): String? = presetId?.let { PRESETS[it] }
 
     /** The family of a model id or name, e.g. "openai/gpt-5" or "Qwen3 8B Q4". */
     fun modelKey(model: String): String? {
         val s = model.lowercase(Locale.ROOT).trim()
         if (s.isEmpty()) return null
-        // "vendor/model" ids on aggregators: look at both the vendor and the model part.
-        val parts = s.split('/', ':').filter { it.isNotEmpty() }.reversed() + s
-        for (part in parts) {
+        // "vendor/model" ids on aggregators: look at the model part first, then the vendor.
+        val parts = s.split('/', ':').filter { it.isNotEmpty() }
+        for (part in parts.reversed() + s) {
             val head = part.trimStart('@', '-', '_')
             MODEL_PREFIXES.firstOrNull { (prefix, _) -> head.startsWith(prefix) && boundaryAfter(head, prefix.length) }?.let { return it.second }
         }
-        // Vendor names in a path ("anthropic/...", "x-ai/...", "google/...").
-        return parts.firstNotNullOfOrNull { p -> providerKey(p) }
+        return parts.firstNotNullOfOrNull { VENDORS[it] }
     }
 
     /** "step-2" and "step3" are StepFun, "stepwise-foo" is not: the prefix must end at a separator or a digit. */
     private fun boundaryAfter(s: String, end: Int): Boolean {
         if (end >= s.length) return true
-        val c = s[end]
-        return !c.isLetter()
+        return !s[end].isLetter()
     }
 }
