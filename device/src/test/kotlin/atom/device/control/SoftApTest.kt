@@ -49,6 +49,14 @@ class SoftApTest {
     }
 
     @Test
+    fun internetSharingNeedsATetheredWifiInterface() {
+        kotlin.test.assertTrue(SoftAp.isWifiTethered(listOf("wlan1")))
+        kotlin.test.assertTrue(SoftAp.isWifiTethered(listOf("rndis0", "ap0")))
+        kotlin.test.assertFalse(SoftAp.isWifiTethered(listOf("rndis0", "bt-pan")))
+        kotlin.test.assertFalse(SoftAp.isWifiTethered(emptyList()))
+    }
+
+    @Test
     fun bands() {
         assertEquals("2", SoftAp.bandArg(1))
         assertEquals("6", SoftAp.bandArg(4))

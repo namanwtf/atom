@@ -61,15 +61,17 @@ internal object AlarmIntents {
         return IntentSpec(AlarmClock.ACTION_SET_ALARM, extras)
     }
 
-    /** Turns off the alarm at [hour]:[minute] (24 h). The clock app may ask the user to pick when several match. */
+    /**
+     * Turns off the alarm at [hour]:[minute], the hour in 24-hour form. EXTRA_IS_PM is deliberately left out: it
+     * marks a 12-hour hour, and clock apps reject a 24-hour hour above 12 sent together with it. The clock app may
+     * ask the user to pick when several alarms match.
+     */
     fun dismissAt(hour: Int, minute: Int): IntentSpec = IntentSpec(
         AlarmClock.ACTION_DISMISS_ALARM,
         linkedMapOf(
             AlarmClock.EXTRA_ALARM_SEARCH_MODE to AlarmClock.ALARM_SEARCH_MODE_TIME,
             AlarmClock.EXTRA_HOUR to hour,
             AlarmClock.EXTRA_MINUTES to minute,
-            // Some clock apps read the hour as 12-hour with this flag; with a 24-hour hour it is consistent either way.
-            AlarmClock.EXTRA_IS_PM to (hour >= 12),
         ),
     )
 
@@ -92,10 +94,12 @@ internal object AlarmIntents {
     fun plan(action: String, from: AlarmRecord?, to: AlarmRecord?, label: String?): List<IntentSpec> = when (action) {
         "enable" -> listOf(set(requireNotNull(from).hour, from.minute, from.label.ifBlank { null }, from.days))
         "disable" -> listOf(if (from != null) dismissAt(from.hour, from.minute) else dismissLabelled(requireNotNull(label)))
+        // Only the first half: the new time is set (with [set]) once [offConfirmed] shows the old one is off, so a
+        // failed or partial dismissal never leaves two alarms.
         "change" -> {
             val old = requireNotNull(from)
-            val new = requireNotNull(to)
-            listOf(dismissAt(old.hour, old.minute), set(new.hour, new.minute, new.label.ifBlank { null }, new.days))
+            requireNotNull(to)
+            listOf(dismissAt(old.hour, old.minute))
         }
         // No delete intent exists: turn it off, then show the list so the user can delete it.
         "delete" -> listOf(if (from != null) dismissAt(from.hour, from.minute) else dismissLabelled(requireNotNull(label)), showAlarms())
@@ -104,6 +108,18 @@ internal object AlarmIntents {
         "dismiss_timer" -> listOf(dismissTimer())
         else -> throw IllegalArgumentException("Unknown action $action")
     }
+
+    /**
+     * True when the alarm at [hour]:[minute] was the next alarm before ([nextBefore], hour to minute) and no longer
+     * is ([nextAfter]): the only state Android exposes to confirm it was turned off. A repeating alarm whose next
+     * occurrence was skipped keeps its time, so it is (correctly) not confirmed as off.
+     */
+    fun offConfirmed(hour: Int, minute: Int, nextBefore: Pair<Int, Int>?, nextAfter: Pair<Int, Int>?): Boolean =
+        nextBefore == (hour to minute) && nextAfter != (hour to minute)
+
+    /** True when the alarm at [hour]:[minute] is now the next alarm, or the next alarm moved to a new time. */
+    fun setConfirmed(hour: Int, minute: Int, nextBefore: Pair<Int, Int>?, nextAfter: Pair<Int, Int>?, beforeMillis: Long?, afterMillis: Long?): Boolean =
+        nextAfter == (hour to minute) || (afterMillis != null && afterMillis != beforeMillis)
 
     val ACTIONS = listOf("enable", "disable", "change", "delete", "dismiss_next", "dismiss_all", "dismiss_timer")
 }

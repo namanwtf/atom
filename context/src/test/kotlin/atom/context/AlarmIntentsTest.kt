@@ -6,7 +6,9 @@ import atom.context.sources.AlarmRecord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AlarmIntentsTest {
     private val seven = AlarmRecord(7, 30, listOf(2, 3), "Gym")
@@ -31,21 +33,36 @@ class AlarmIntentsTest {
         assertEquals(AlarmClock.ACTION_DISMISS_ALARM, d.action)
         assertEquals(AlarmClock.ALARM_SEARCH_MODE_TIME, d.extras[AlarmClock.EXTRA_ALARM_SEARCH_MODE])
         assertEquals(7, d.extras[AlarmClock.EXTRA_HOUR])
-        assertEquals(false, d.extras[AlarmClock.EXTRA_IS_PM])
-        assertEquals(true, AlarmIntents.dismissAt(19, 0).extras[AlarmClock.EXTRA_IS_PM])
+        // 24-hour hour, never paired with EXTRA_IS_PM (clock apps reject hour > 12 with it).
+        val evening = AlarmIntents.dismissAt(19, 45)
+        assertEquals(19, evening.extras[AlarmClock.EXTRA_HOUR])
+        assertEquals(45, evening.extras[AlarmClock.EXTRA_MINUTES])
+        assertFalse(AlarmClock.EXTRA_IS_PM in evening.extras)
+        assertFalse(AlarmClock.EXTRA_IS_PM in d.extras)
         val byLabel = AlarmIntents.plan("disable", null, null, "Gym").single()
         assertEquals(AlarmClock.ALARM_SEARCH_MODE_LABEL, byLabel.extras[AlarmClock.EXTRA_ALARM_SEARCH_MODE])
         assertEquals("Gym", byLabel.extras[AlarmClock.EXTRA_MESSAGE])
     }
 
     @Test
-    fun changeIsOffThenSet() {
+    fun changeOnlyDismissesUntilTheOldAlarmIsConfirmedOff() {
+        // The new time is never sent in the same plan: it waits for offConfirmed, so no duplicate is left behind.
         val steps = AlarmIntents.plan("change", seven, seven.copy(hour = 8, minute = 5), null)
-        assertEquals(listOf(AlarmClock.ACTION_DISMISS_ALARM, AlarmClock.ACTION_SET_ALARM), steps.map { it.action })
+        assertEquals(listOf(AlarmClock.ACTION_DISMISS_ALARM), steps.map { it.action })
         assertEquals(7, steps[0].extras[AlarmClock.EXTRA_HOUR])
-        assertEquals(8, steps[1].extras[AlarmClock.EXTRA_HOUR])
-        assertEquals(5, steps[1].extras[AlarmClock.EXTRA_MINUTES])
-        assertEquals(listOf(2, 3), steps[1].extras[AlarmClock.EXTRA_DAYS])
+    }
+
+    @Test
+    fun confirmation() {
+        assertTrue(AlarmIntents.offConfirmed(7, 30, nextBefore = 7 to 30, nextAfter = 9 to 0))
+        assertTrue(AlarmIntents.offConfirmed(7, 30, nextBefore = 7 to 30, nextAfter = null))
+        // Not the next alarm: nothing to confirm with.
+        assertFalse(AlarmIntents.offConfirmed(7, 30, nextBefore = 6 to 0, nextAfter = 6 to 0))
+        // A repeating alarm whose next ring was skipped keeps its time.
+        assertFalse(AlarmIntents.offConfirmed(7, 30, nextBefore = 7 to 30, nextAfter = 7 to 30))
+        assertTrue(AlarmIntents.setConfirmed(8, 5, 7 to 30, 8 to 5, 1L, 2L))
+        assertTrue(AlarmIntents.setConfirmed(8, 5, 7 to 30, 7 to 0, 1L, 2L))
+        assertFalse(AlarmIntents.setConfirmed(8, 5, 7 to 30, 7 to 30, 1L, 1L))
     }
 
     @Test

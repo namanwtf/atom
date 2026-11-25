@@ -13,6 +13,12 @@ enum class ToolFamily {
 
     /** The run's own helpers: memory, skills, subagents, history search, giving phone control back. */
     Assistant,
+
+    /**
+     * Creating, changing or deleting scheduled tasks and automations. No capability opens it: a capability-limited
+     * run could otherwise create a new task with wider capabilities than its own.
+     */
+    Automation,
 }
 
 /** Where the app gathered a tool from. Lets the classifier tell a web "read" from a device "read". */
@@ -44,12 +50,19 @@ object CapabilityTools {
     fun allows(capabilities: Set<Capability>, family: ToolFamily): Boolean = family in families(capabilities)
 
     /**
+     * Whether the model provider may search the web itself (Gemini Google Search, OpenAI web_search) during a run
+     * limited to [capabilities]; null means an unrestricted run.
+     */
+    fun allowsHostedSearch(capabilities: Set<Capability>?): Boolean = capabilities == null || Capability.Web in capabilities
+
+    /**
      * The family of one tool. [description] is only used to recognise MCP tools ("[MCP · server] ..."); tools that
      * drive the phone UI are always [ToolFamily.AppUi], whatever module they come from.
      */
     fun classify(name: String, description: String, origin: ToolOrigin, risk: Risk, usesPhoneUi: Boolean): ToolFamily {
         if (usesPhoneUi) return ToolFamily.AppUi
         if (description.startsWith(MCP_MARK)) return ToolFamily.Mcp
+        if (AUTOMATION_PREFIXES.any { name.startsWith(it) }) return ToolFamily.Automation
         if (name in ASSISTANT_NAMES) return ToolFamily.Assistant
         if (isTerminal(name)) return ToolFamily.Terminal
         return when (origin) {
@@ -71,6 +84,7 @@ object CapabilityTools {
         name == "shell" || name == "view_image" || TERMINAL_PREFIXES.any { name.startsWith(it) }
 
     private const val MCP_MARK = "[MCP"
+    private val AUTOMATION_PREFIXES = listOf("scheduled_task_", "automation_")
     private val TERMINAL_PREFIXES = listOf("terminal_", "file_", "linux_")
     private val ASSISTANT_NAMES = setOf("history_search", "search_history", "release_phone_control")
 

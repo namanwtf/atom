@@ -26,6 +26,11 @@ internal object SoftAp {
 
     const val STOP = "cmd wifi stop-softap"
 
+    private val wifiInterface = Regex("""^(wlan|swlan|ap|softap|wigig)\d*$""")
+
+    /** True when one of the tethered interfaces ([active], the tether-state broadcast's list) is a Wi-Fi one. */
+    fun isWifiTethered(active: List<String>): Boolean = active.any { wifiInterface.matches(it.trim()) }
+
     private val stringEntry = Regex("""<string\s+name="([^"]+)"\s*>(.*?)</string>""", RegexOption.DOT_MATCHES_ALL)
     private val intEntry = Regex("""<int\s+name="([^"]+)"\s+value="(-?\d+)"\s*/>""")
 

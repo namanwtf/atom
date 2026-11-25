@@ -96,9 +96,11 @@ internal class UiTools(private val context: Context) {
         val sh = UiController.shell
         if (Accessibility.service == null && ShellUi.usable(sh)) {
             val (x, y) = if (area != null) {
+                val screen = ShellUi.lastScreen ?: area
                 val best = TapArea.best(area, ShellUi.candidates())
-                best?.let { it.box.centerX to it.box.centerY }
-                    ?: (area.centerX to area.centerY)
+                best?.let { TapArea.centre(it.box, screen) }
+                    ?: TapArea.centre(area, screen)
+                    ?: return@SimpleTool ToolResult.error("The area is outside the screen (${screen.width}x${screen.height}).")
             } else if (id != null) {
                 val b = ShellUi.boxFor(id) ?: return@SimpleTool ToolResult.error("Unknown element id '$id'. Call read_screen again.")
                 b.centerX to b.centerY

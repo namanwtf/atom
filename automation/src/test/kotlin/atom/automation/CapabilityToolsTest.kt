@@ -52,7 +52,8 @@ class CapabilityToolsTest {
         assertEquals(ToolFamily.Web, family(all[11]))
         assertEquals(ToolFamily.Mcp, family(all[12]))
         assertEquals(ToolFamily.Assistant, family(all[13]))
-        assertEquals(ToolFamily.DeviceControl, family(all[14]))
+        assertEquals(ToolFamily.Automation, family(all[14]))
+        assertEquals(ToolFamily.Automation, family(T("automation_create", ToolOrigin.Other, Risk.Sensitive)))
     }
 
     @Test
@@ -66,12 +67,22 @@ class CapabilityToolsTest {
         assertEquals(setOf("read_screen", "tap", "memory_read", "search_history"), names(setOf(Capability.AppUi)))
         assertEquals(setOf("shell", "terminal_run", "file_read", "memory_read", "search_history"), names(setOf(Capability.Terminal)))
         assertEquals(setOf("github__create_issue", "memory_read", "search_history"), names(setOf(Capability.Mcp)))
-        assertEquals(setOf("set_toggle", "scheduled_task_create", "memory_read", "search_history"), names(setOf(Capability.DeviceControl)))
+        assertEquals(setOf("set_toggle", "memory_read", "search_history"), names(setOf(Capability.DeviceControl)))
     }
 
     @Test
-    fun everythingAllowsEverything() {
-        assertEquals(all.map { it.name }.toSet(), names(Capability.entries.toSet()))
+    fun everyCapabilityAllowsEverythingButTaskCreation() {
+        assertEquals(all.map { it.name }.toSet() - "scheduled_task_create", names(Capability.entries.toSet()))
         assertTrue(CapabilityTools.allows(setOf(Capability.Web), ToolFamily.Assistant))
+        // A limited run can never create a task with wider capabilities than its own.
+        assertFalse(CapabilityTools.allows(Capability.entries.toSet(), ToolFamily.Automation))
+    }
+
+    @Test
+    fun hostedSearchNeedsTheWeb() {
+        assertTrue(CapabilityTools.allowsHostedSearch(null))
+        assertTrue(CapabilityTools.allowsHostedSearch(setOf(Capability.Web)))
+        assertFalse(CapabilityTools.allowsHostedSearch(emptySet()))
+        assertFalse(CapabilityTools.allowsHostedSearch(setOf(Capability.DeviceRead, Capability.Terminal)))
     }
 }

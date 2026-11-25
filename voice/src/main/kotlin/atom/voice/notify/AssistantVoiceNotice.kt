@@ -32,6 +32,10 @@ object AssistantVoiceNotice {
     @Volatile
     private var stopListening: (() -> Unit)? = null
 
+    /** Identifies the listening session the notice belongs to, so an older session cannot take down a newer one's. */
+    @Volatile
+    private var listeningToken = 0L
+
     fun ensureChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         runCatching { if (nm.getNotificationChannel(OLD_READ_ALOUD_CHANNEL) != null) nm.deleteNotificationChannel(OLD_READ_ALOUD_CHANNEL) }
@@ -46,10 +50,21 @@ object AssistantVoiceNotice {
         )
     }
 
-    /** Shows "Atom is listening"; [onStop] runs when the user taps Stop (on the main thread). */
-    fun showListening(context: Context, onStop: () -> Unit) {
+    /**
+     * Shows "Atom is listening"; [onStop] runs when the user taps Stop (on the main thread). Returns the token to
+     * pass to [hideListening] when that session ends.
+     */
+    fun showListening(context: Context, onStop: () -> Unit): Long {
+        val token = synchronized(this) { ++listeningToken }
         stopListening = onStop
         post(context, Mode.Listening)
+        return token
+    }
+
+    /** Hides "Atom is listening" if it still belongs to the session that got [token]. */
+    fun hideListening(context: Context, token: Long) {
+        if (token == 0L || synchronized(this) { token != listeningToken }) return
+        hide(context, Mode.Listening)
     }
 
     fun showReading(context: Context) = post(context, Mode.Reading)
