@@ -32,7 +32,7 @@
 
     <!-- Composer -->
     <string name="composer_hint">Ask Atom to do something</string>
-    <string name="composer_hint_running">Add a message to the queue</string>
+    <string name="composer_hint_running">Atom is working…</string>
     <string name="composer_queue">Queue message</string>
     <string name="composer_attach">Attach</string>
     <string name="composer_editing">Editing message. Sending replaces it and everything after it.</string>
@@ -45,8 +45,8 @@
     <string name="attach_file">File</string>
     <string name="attach_folder">Folder</string>
     <string name="attach_path">Enter path</string>
-    <string name="attach_path_title">Attach a path</string>
-    <string name="attach_path_text">Any absolute path on this phone. Atom reads it with its file and terminal tools.</string>
+    <string name="attach_path_title">input file path</string>
+    <string name="attach_path_text">Supports files and folders at any local absolute path</string>
     <string name="attach_path_add">Add</string>
     <string name="attach_image_limit">Up to %1$s images per message.</string>
     <string name="attach_too_large">That image is too large (20 MB at most).</string>
@@ -76,11 +76,15 @@
 
     <!-- Transcript -->
     <string name="chat_empty_title">How can I help you?</string>
-    <string name="chat_suggest_screen">Take a screenshot and describe what\'s on my screen</string>
+    <string name="chat_suggest_screen">Analyze current screen</string>
+    <string name="chat_suggest_screen_prompt">Take a screenshot and describe the current screen</string>
     <string name="chat_suggest_message">Open WhatsApp</string>
-    <string name="chat_suggest_web">Summarize today\'s tech news from the web</string>
-    <string name="chat_suggest_memory">Check memory pressure and explain it</string>
-    <string name="chat_configure_model">Configure a model first.</string>
+    <string name="chat_suggest_message_prompt">Open WhatsApp</string>
+    <string name="chat_suggest_web">Browse the web</string>
+    <string name="chat_suggest_web_prompt">Open Agent Browser, then search for and summarize today’s top technology news</string>
+    <string name="chat_suggest_memory">Check memory pressure</string>
+    <string name="chat_suggest_memory_prompt">Read /proc/meminfo and /proc/pressure/, focus on PSI (Pressure Stall Information), and summarize current memory pressure and system status</string>
+    <string name="chat_configure_model">Please configure the model provider and model first</string>
     <plurals name="timeline_thought">
         <item quantity="one">Thought once</item>
         <item quantity="other">Thought %d times</item>
@@ -134,7 +138,7 @@
     <string name="drawer_today">Today</string>
     <string name="drawer_yesterday">Yesterday</string>
     <string name="drawer_search">Search conversations</string>
-    <string name="drawer_no_matches">No matching conversations.</string>
+    <string name="drawer_no_matches">No matching conversations</string>
     <string name="drawer_reasoning">Atom is reasoning</string>
     <string name="drawer_using_tool">Using %1$s</string>
     <string name="drawer_pin">Pin</string>

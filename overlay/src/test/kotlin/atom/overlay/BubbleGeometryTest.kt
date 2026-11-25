@@ -39,6 +39,22 @@ class BubbleGeometryTest {
     }
 
     @Test
+    fun snapKeepsTheEdgeMarginAndSavedSpotRestoresExactly() {
+        val density = 2.625f
+        val window = 82f * density
+        val pad = (window - 74f * density) / 2f
+        val r = BubbleGeometry.range(area, window, -pad + 6f * density)
+        // The 74dp orbit box ends up 6dp from the screen edge on either side.
+        assertEquals(6f * density, r.minX + pad, 1e-3f)
+        assertEquals(1080f - 6f * density, r.maxX + window - pad, 1e-3f)
+        val docked = BubbleGeometry.snap(Pt(800f, 1500f), 0f, 0f, r, flingVelocity = 2000f)
+        val placed = BubbleGeometry.place(docked, r)
+        // Saving and restoring the dock puts the bubble back on exactly the same pixel.
+        assertEquals(placed, BubbleGeometry.place(Docked(docked.side, docked.fraction), r))
+        assertEquals(1500f, placed.y, 1e-3f)
+    }
+
+    @Test
     fun snapPicksNearestEdgeWithoutFling() {
         val r = Range(0f, 0f, 1000f, 2000f)
         assertEquals(Side.Left, BubbleGeometry.snap(Pt(300f, 500f), 0f, 0f, r, flingVelocity = 2000f).side)
@@ -72,15 +88,20 @@ class BubbleGeometryTest {
     }
 
     @Test
-    fun proximityGrowsSmoothlyTowardTheTarget() {
+    fun closenessIsLinearAndClamped() {
         val target = Pt(500f, 2000f)
-        assertEquals(0f, DismissMath.proximity(Pt(500f, 1000f), target, reach = 600f))
-        assertEquals(1f, DismissMath.proximity(target, target, reach = 600f))
-        val far = DismissMath.proximity(Pt(500f, 1600f), target, reach = 600f)
-        val near = DismissMath.proximity(Pt(500f, 1800f), target, reach = 600f)
-        assertTrue(far in 0f..1f && near in 0f..1f)
-        assertTrue(near > far)
-        assertEquals(0.5f, DismissMath.proximity(Pt(500f, 1700f), target, reach = 600f), 1e-4f)
+        assertEquals(0f, DismissMath.closeness(Pt(500f, 1000f), target, reach = 460f))
+        assertEquals(1f, DismissMath.closeness(target, target, reach = 460f))
+        assertEquals(0.5f, DismissMath.closeness(Pt(500f, 1770f), target, reach = 460f), 1e-4f)
+        assertEquals(0f, DismissMath.closeness(target, target, reach = 0f))
+    }
+
+    @Test
+    fun dropInsideTheHitRadiusIsCaptured() {
+        val target = Pt(540f, 2000f)
+        val radius = 96f * 2.625f
+        assertTrue(DismissMath.captured(Pt(540f, 2000f - radius + 1f), target, radius, wasCaptured = false))
+        assertFalse(DismissMath.captured(Pt(540f, 2000f - radius - 1f), target, radius, wasCaptured = false))
     }
 
     @Test
@@ -88,14 +109,29 @@ class BubbleGeometryTest {
         val target = Pt(0f, 0f)
         val radius = 100f
         assertTrue(DismissMath.captured(Pt(90f, 0f), target, radius, wasCaptured = false))
-        assertFalse(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = false))
-        assertTrue(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = true))
-        assertFalse(DismissMath.captured(Pt(140f, 0f), target, radius, wasCaptured = true))
+        assertFalse(DismissMath.captured(Pt(110f, 0f), target, radius, wasCaptured = false))
+        assertTrue(DismissMath.captured(Pt(110f, 0f), target, radius, wasCaptured = true))
+        assertFalse(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = true))
+    }
+
+    @Test
+    fun onlyARealLiftOnTheTargetHides() {
+        assertTrue(DismissMath.dropHides(captured = true, cancelled = false))
+        assertFalse(DismissMath.dropHides(captured = true, cancelled = true))
+        assertFalse(DismissMath.dropHides(captured = false, cancelled = false))
     }
 
     @Test
     fun targetSitsAboveTheNavigationBar() {
         assertEquals(Pt(540f, 2400f - 60f - 200f), DismissMath.target(area, lift = 200f))
+    }
+
+    @Test
+    fun targetFallsBackWhenNoNavigationInsetIsReported() {
+        val bare = Area(1080f, 2400f)
+        assertEquals(Pt(540f, 2400f - 126f - 315f), DismissMath.target(bare, lift = 315f, fallbackInset = 126f))
+        // A reported inset wins over the fallback.
+        assertEquals(Pt(540f, 2400f - 60f - 315f), DismissMath.target(area, lift = 315f, fallbackInset = 126f))
     }
 
     private fun assertMenuFits(points: List<Pt>, button: Float, area: Area) {
@@ -111,12 +147,68 @@ class BubbleGeometryTest {
     }
 
     @Test
+    fun menuAnglesAreMinus52ZeroPlus52AroundTheMid() {
+        assertEquals(listOf(-52.0, 0.0, 52.0), HoldMenuLayout.angles(Side.Left, 3))
+        assertEquals(listOf(128.0, 180.0, 232.0), HoldMenuLayout.angles(Side.Right, 3))
+    }
+
+    @Test
+    fun menuSpanNeverExceeds170Degrees() {
+        val five = HoldMenuLayout.angles(Side.Left, 5)
+        assertEquals(170.0, five.last() - five.first(), 1e-9)
+        assertEquals(listOf(0.0), HoldMenuLayout.angles(Side.Left, 1))
+        assertTrue(HoldMenuLayout.angles(Side.Left, 0).isEmpty())
+    }
+
+    @Test
+    fun menuMirrorsOnTheRightEdge() {
+        // Left edge: Hide up-right, Open chat straight right, Talk down-right.
+        val left = HoldMenuLayout.place(Pt(100f, 1200f), Side.Left, 3, radius = 346f, button = 136f, area = area)
+        assertTrue(left[0].x > 100f && left[0].y < 1200f, "Hide up-right: ${left[0]}")
+        assertEquals(1200f, left[1].y, 0.5f)
+        assertTrue(left[1].x > 100f)
+        assertTrue(left[2].x > 100f && left[2].y > 1200f, "Talk down-right: ${left[2]}")
+        // Right edge: Hide down-left, Open chat straight left, Talk up-left.
+        val right = HoldMenuLayout.place(Pt(980f, 1200f), Side.Right, 3, radius = 346f, button = 136f, area = area)
+        assertTrue(right[0].x < 980f && right[0].y > 1200f, "Hide down-left: ${right[0]}")
+        assertEquals(1200f, right[1].y, 0.5f)
+        assertTrue(right[1].x < 980f)
+        assertTrue(right[2].x < 980f && right[2].y < 1200f, "Talk up-left: ${right[2]}")
+    }
+
+    @Test
+    fun menuWindowIsCentredOnTheBubbleAndClampedOnScreen() {
+        assertEquals(Pt(540f - 451f, 1200f - 451f), HoldMenuLayout.window(Pt(540f, 1200f), 902f, 1080f, 2400f))
+        // At the right edge the window is pulled in; the bubble then sits off-centre inside it.
+        val w = HoldMenuLayout.window(Pt(1000f, 100f), 902f, 1080f, 2400f)
+        assertEquals(Pt(1080f - 902f, 0f), w)
+        val local = Pt(1000f - w.x, 100f - w.y)
+        assertTrue(local.x > 451f && local.y < 451f)
+    }
+
+    @Test
+    fun menuButtonsStayInsideTheMenuWindow() {
+        val density = 2.625f
+        val window = 344f * density
+        for (center in listOf(Pt(990f, 1890f), Pt(90f, 1890f), Pt(990f, 300f), Pt(90f, 300f))) {
+            val side = if (center.x < 540f) Side.Left else Side.Right
+            val origin = HoldMenuLayout.window(center, window, 1080f, 2400f)
+            val points = HoldMenuLayout.place(center, side, 3, radius = 132f * density, button = 52f * density, area = area)
+            val half = 26f * density
+            for (p in points) {
+                assertTrue(p.x - half >= origin.x - 0.5f && p.x + half <= origin.x + window + 0.5f, "x outside the window: $p for $center")
+                assertTrue(p.y - half >= origin.y - 0.5f && p.y + half <= origin.y + window + 0.5f, "y outside the window: $p for $center")
+            }
+        }
+    }
+
+    @Test
     fun holdMenuFansInwardFromTheRightEdge() {
         val center = Pt(1010f, 1200f)
         val points = HoldMenuLayout.place(center, Side.Right, 3, radius = 230f, button = 140f, area = area)
         assertEquals(3, points.size)
         assertTrue(points.all { it.x < center.x })
-        assertTrue(points[0].y < points[1].y && points[1].y < points[2].y, "index 0 is the top button")
+        assertTrue(points[0].y > points[1].y && points[1].y > points[2].y, "Hide is the bottom button on the right edge")
         points.forEach { assertEquals(230f, hypot(it.x - center.x, it.y - center.y), 0.5f) }
         assertMenuFits(points, 140f, area)
     }
@@ -126,7 +218,7 @@ class BubbleGeometryTest {
         val center = Pt(70f, 1200f)
         val points = HoldMenuLayout.place(center, Side.Left, 3, radius = 230f, button = 140f, area = area)
         assertTrue(points.all { it.x > center.x })
-        assertTrue(points[0].y < points[2].y)
+        assertTrue(points[0].y < points[2].y, "Hide is the top button on the left edge")
         assertMenuFits(points, 140f, area)
     }
 

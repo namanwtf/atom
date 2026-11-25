@@ -95,6 +95,14 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         store.edit { it[SELECTION] = json.encodeToString(EngineSelection.serializer(), selection) }
     }
 
+    /**
+     * New installs start with the original app's defaults: reasoning on by default. Installs that finished setup
+     * (or already chose) keep what they have.
+     */
+    suspend fun applyNewInstallDefaults() {
+        store.edit { if (it[ONBOARDED] != true && it[REASONING_DEFAULT] == null) it[REASONING_DEFAULT] = true }
+    }
+
     suspend fun setReasoningByDefault(enabled: Boolean) {
         store.edit { it[REASONING_DEFAULT] = enabled }
     }

@@ -5,10 +5,10 @@
     <string name="overlay_entry_subtitle">Bubble, run controls and the assistant overlay</string>
     <string name="overlay_settings_title">Floating assistant</string>
 
-    <string name="overlay_section_bubble">Floating bubble</string>
+    <string name="overlay_section_bubble">Bubble</string>
     <string name="overlay_bubble_switch">Floating bubble</string>
     <string name="overlay_bubble_hint">Tap it for a mini chat. Hold the bubble for actions.</string>
-    <string name="overlay_bubble_needs_permission">Allow display over other apps to show it</string>
+    <string name="overlay_bubble_needs_permission">On, but hidden: Atom isn’t allowed to display over other apps. Tap to allow it.</string>
     <string name="overlay_permission">Display over other apps</string>
     <string name="overlay_permission_granted">Allowed</string>
     <string name="overlay_permission_missing">Not allowed. Needed for the bubble and the run capsule.</string>
@@ -23,7 +23,10 @@
     <string name="overlay_capsule_overlay">Shown over other apps. Tap it to pause, steer or stop.</string>
     <string name="overlay_capsule_missing">Allow display over other apps, or turn on Atom’s accessibility service, to see run controls.</string>
 
-    <string name="overlay_section_assistant">Assistant overlay</string>
+    <string name="overlay_section_assistant">Assistant</string>
+    <string name="overlay_section_overlay">Assistant overlay</string>
+    <string name="overlay_reasoning">Reasoning level</string>
+    <string name="overlay_reasoning_hint">How hard the assistant thinks; set with its model</string>
     <string name="overlay_default_assistant">Default assistant</string>
     <string name="overlay_default_assistant_hint">Long-press power or use the assist gesture to call Atom over any app</string>
     <string name="overlay_assistant_atom">Atom</string>
@@ -34,8 +37,8 @@
     <string name="overlay_assistant_model_hint">Model and reasoning for the assistant overlay</string>
     <string name="overlay_chips">Suggestion chips</string>
     <string name="overlay_chips_hint">Summarize screen, Explain this page, Extract key info</string>
-    <string name="overlay_auto_speak">Read answers aloud</string>
-    <string name="overlay_auto_speak_hint">Speak each assistant answer when it is ready</string>
+    <string name="overlay_auto_speak">Speak answers automatically</string>
+    <string name="overlay_auto_speak_hint">Final answers to voice questions, while the assistant is open. Same switch as in Settings → Speech.</string>
     <string name="overlay_auto_speak_unavailable">Needs a voice for reading aloud (Settings → Speech)</string>
     <string name="overlay_screen_context_title">Screen context</string>
     <string name="overlay_screen_context_hint">Atom reads the screen only at the moment you call it. For this, turn on “Use text from screen” and “Use screenshot” in the system’s assistant settings.</string>
@@ -46,16 +49,18 @@
     <string name="overlay_open_chat">Open chat</string>
     <string name="overlay_talk">Talk</string>
     <string name="overlay_dismiss_target">Drop here to hide the bubble</string>
+    <string name="overlay_bubble_off">Bubble off. Turn it back on in Settings → Floating assistant.</string>
+    <string name="overlay_status_with_hint">%1$s · hold the bubble for actions</string>
 
     <!-- Mini chat -->
     <string name="overlay_title">Atom</string>
     <string name="overlay_new_chat">New chat</string>
     <string name="overlay_open_app">Open in Atom</string>
     <string name="overlay_close">Close</string>
-    <string name="overlay_default_model">Default model</string>
+    <string name="overlay_no_model">No model</string>
     <string name="overlay_empty_title">Ask Atom anything</string>
-    <string name="overlay_empty_hint">Hold the bubble for actions</string>
-    <string name="overlay_composer_hint">Message Atom</string>
+    <string name="overlay_empty_hint">Draft a reply, look something up, or hand me a task.</string>
+    <string name="overlay_composer_hint">Ask Atom…</string>
     <string name="overlay_send">Send</string>
     <string name="overlay_stop">Stop</string>
     <string name="overlay_mic">Dictate</string>
@@ -84,9 +89,12 @@
     <string name="overlay_pause">Pause</string>
     <string name="overlay_resume">Resume</string>
     <string name="overlay_add_input">Add input</string>
-    <string name="overlay_steer_hint">Tell Atom something…</string>
-    <string name="overlay_result_ready">Result ready</string>
-    <string name="overlay_result_failed">Couldn’t finish</string>
+    <string name="overlay_steer_hint">Add instructions; Atom continues the current task</string>
+    <string name="overlay_result_ready">Completed</string>
+    <string name="overlay_result_failed">Failed</string>
+    <string name="overlay_result_ready_locked">Result ready</string>
+    <string name="overlay_open_screen">Open screen</string>
+    <string name="overlay_cancel">Cancel</string>
     <string name="overlay_open_atom">Open Atom</string>
     <string name="overlay_done">Done</string>
 
@@ -97,8 +105,12 @@
     <string name="overlay_chip_explain_prompt">Explain this page to me.</string>
     <string name="overlay_chip_extract">Extract key info</string>
     <string name="overlay_chip_extract_prompt">Extract the key information from this screen.</string>
-    <string name="overlay_assistant_hint">Ask about this screen</string>
-    <string name="overlay_tap_to_speak">Tap the mic and speak</string>
+    <string name="overlay_assistant_hint">Message Atom…</string>
+    <string name="overlay_assistant_hold_hint">Release to send, slide away to cancel</string>
+    <string name="overlay_tap_to_speak">Tap to speak</string>
+    <string name="overlay_finish_and_send">Finish recording and send</string>
+    <string name="overlay_recognizing">Recognizing…</string>
+    <string name="overlay_release_to_cancel">Release to cancel</string>
     <string name="overlay_working_hint">Working on it…</string>
     <string name="overlay_use_keyboard">Type instead</string>
     <string name="overlay_pull_to_open">Pull up to open Atom</string>

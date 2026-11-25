@@ -245,6 +245,22 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
         }
     }
 
+    /**
+     * "Save configuration": stores the key being typed (edits to the other fields are saved as they are made), then
+     * makes this the current provider when it is on. Reports whether it was selected.
+     */
+    fun saveProvider(providerId: String, onDone: (selected: Boolean) -> Unit) {
+        viewModelScope.launch {
+            _keyDraft.value?.takeIf { it.first == providerId }?.let { (id, key) ->
+                if (key != graph.vault.apiKey(id).orEmpty()) graph.vault.setApiKey(id, key.ifBlank { null })
+            }
+            val config = providerStore.get(providerId)
+            val selected = config != null && config.enabled
+            if (config != null && selected) graph.settings.setSelection(EngineSelection.Cloud(config.id, config.primaryModel))
+            onDone(selected)
+        }
+    }
+
     fun setAuth(providerId: String, method: AuthMethod) = edit(providerId) { it.copy(auth = method) }
 
     fun signIn(providerId: String, method: AuthMethod, reauthorize: Boolean = false) = accounts.signIn(providerId, method, reauthorize)
@@ -318,7 +334,7 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
                     config.toProvider(),
                     key,
                     config.baseUrl,
-                    EngineOptions(headers = config.headers),
+                    EngineOptions(headers = config.headers, anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() }),
                 )
                 PullState(fresh = remote.filter { r -> config.models.none { it.id == r.id } })
             } catch (e: CancellationException) {
@@ -377,7 +393,14 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
     fun deleteModels(providerId: String, ids: Set<String>) {
         viewModelScope.launch {
             val config = providerStore.get(providerId) ?: return@launch
-            providerStore.setModels(providerId, config.models.filterNot { it.id in ids })
+            val remaining = config.models.filterNot { it.id in ids }
+            providerStore.setModels(providerId, remaining)
+            // The current model went away: use another model of this provider, or the default when none is left.
+            val current = graph.settings.current().selection as? EngineSelection.Cloud
+            if (current != null && current.providerId == providerId && current.model in ids) {
+                val next = remaining.firstOrNull()
+                graph.settings.setSelection(if (next != null) EngineSelection.Cloud(providerId, next.id) else AppSettings.DEFAULT_SELECTION)
+            }
         }
     }
 

@@ -30,6 +30,23 @@ class AtomApp : Application() {
         // so each feature's onAppCreate already sees the app's adapters.
         Integration.install(this)
         Features.all.forEach { runCatching { it.onAppCreate(this) } }
+        // Once, after the update that brought per-tool switches: build the tools (that records each one's real
+        // gate), then turn any old master switch that was off into per-tool switches. Nothing runs afterwards.
+        atom.device.switches.ToolSwitches.init(this)
+        if (atom.device.switches.ToolSwitches.needsFold()) {
+            graph.appScope.launch(Dispatchers.Default) {
+                runCatching {
+                    atom.device.DeviceTools.listing(this@AtomApp)
+                    Features.all.forEach { f -> runCatching { f.tools(this@AtomApp) } }
+                    val gates = atom.device.switches.ToolGates.snapshot()
+                    val cards = atom.device.caps.ToolCatalog.all
+                    atom.device.caps.ToolCatalog.mismatches(cards, gates).forEach { android.util.Log.w("AtomTools", it) }
+                    atom.device.switches.ToolSwitches.foldMasters(cards, gates)
+                }
+            }
+        }
+
+        graph.appScope.launch { runCatching { graph.settings.applyNewInstallDefaults() } }
 
         // Work a crash or kill cut short is restored (and marked interrupted) before anything else touches it.
         graph.appScope.launch { graph.tasks.recover() }

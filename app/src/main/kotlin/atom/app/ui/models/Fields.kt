@@ -202,22 +202,6 @@ internal fun CheckMark(visible: Boolean, contentDescription: String? = null) {
     }
 }
 
-/** Round monogram standing in for a provider logo: same graphite disc everywhere, first letter in white. */
-@Composable
-internal fun ProviderMark(name: String, modifier: Modifier = Modifier, size: Int = 34) {
-    Box(
-        modifier.size(size.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            name.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "?",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
 @Composable
 internal fun Note(text: String, modifier: Modifier = Modifier, color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = color, modifier = modifier.padding(start = 18.dp, end = 18.dp, top = 8.dp))

@@ -11,16 +11,16 @@
     <string name="mdl_follow_conversation">Follows the conversation</string>
     <string name="mdl_tab_providers">Providers</string>
     <string name="mdl_search_providers">Search providers</string>
-    <string name="mdl_search_models">Search models</string>
+    <string name="mdl_search_models">Search model</string>
     <string name="mdl_add_provider">Add new provider</string>
-    <string name="mdl_add_openai">OpenAI-compatible</string>
-    <string name="mdl_add_openai_sub">ChatGPT, DeepSeek, Kimi, GLM, Qwen, Ollama, LM Studio and others</string>
-    <string name="mdl_add_anthropic">Anthropic</string>
-    <string name="mdl_add_anthropic_sub">Official or compatible Messages API</string>
-    <string name="mdl_add_gemini">Gemini</string>
-    <string name="mdl_add_gemini_sub">Google AI Studio or Vertex AI</string>
-    <string name="mdl_add_catalog">From the models.dev catalog</string>
-    <string name="mdl_add_catalog_sub">Hundreds of providers, imported with their models</string>
+    <string name="mdl_add_openai">Add OpenAI-compatible provider</string>
+    <string name="mdl_add_openai_sub">Support ChatGPT, DeepSeek, Kimi, GLM, Qwen, etc.</string>
+    <string name="mdl_add_anthropic">Add Anthropic provider</string>
+    <string name="mdl_add_anthropic_sub">Support Anthropic Claude official or compatible API</string>
+    <string name="mdl_add_gemini">Add Gemini</string>
+    <string name="mdl_add_gemini_sub">Supports Google AI Studio and Vertex AI</string>
+    <string name="mdl_add_catalog">Add from models.dev</string>
+    <string name="mdl_add_catalog_sub">Browse the models.dev community catalog and pick models</string>
     <string name="mdl_configured">Configured providers (%1$d)</string>
     <string name="mdl_no_match">Nothing matches</string>
     <string name="mdl_no_base_url">No base URL</string>
@@ -77,8 +77,8 @@
     <string name="mdl_wire_vertex">Vertex AI</string>
 
     <!-- Provider detail -->
-    <string name="mdl_tab_settings">Settings</string>
-    <string name="mdl_tab_models">Models</string>
+    <string name="mdl_tab_settings">Configuration</string>
+    <string name="mdl_tab_models">Model</string>
     <string name="mdl_more">More</string>
     <string name="mdl_duplicate">Duplicate</string>
     <string name="mdl_copy_suffix">Copy</string>
@@ -111,7 +111,7 @@
     <string name="mdl_hosted_tools">Provider tools</string>
     <string name="mdl_hosted_search">Provider-hosted web search</string>
     <string name="mdl_hosted_search_sub">The model searches the web on the provider\'s side and cites its sources</string>
-    <string name="mdl_google_search">Google Search grounding</string>
+    <string name="mdl_google_search">Google Search</string>
     <string name="mdl_google_search_sub">Gemini grounds answers in Google Search and cites its sources</string>
     <string name="mdl_system_prompt">System prompt</string>
     <string name="mdl_system_prompt_hint">Instructions sent before every conversation with this provider</string>
@@ -156,7 +156,7 @@
     <string name="mdl_pull_models">Fetch models</string>
     <string name="mdl_pull_models_sub">Read the provider\'s model list</string>
     <string name="mdl_pull_none">No new models</string>
-    <string name="mdl_add_custom_model">Add a model by ID</string>
+    <string name="mdl_add_custom_model">Add custom model</string>
     <string name="mdl_model_id">Model ID</string>
     <string name="mdl_add">Add</string>
     <string name="mdl_no_models">No models yet. Fetch them or add one by ID.</string>

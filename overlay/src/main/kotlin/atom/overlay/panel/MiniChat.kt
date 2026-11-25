@@ -82,10 +82,11 @@ internal object MiniChat {
             @Suppress("DEPRECATION")
             softInputMode = LayoutParams.SOFT_INPUT_ADJUST_RESIZE or LayoutParams.SOFT_INPUT_STATE_HIDDEN
             if (blur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                blurBehindRadius = (36 * slot.context.resources.displayMetrics.density).roundToInt()
+                blurBehindRadius = (16 * slot.context.resources.displayMetrics.density).roundToInt()
             }
         }
         val w = OverlayWindow(slot.context, params, onBack = {
+            android.util.Log.i("AtomOverlay", "Back closes the mini chat")
             close()
             true
         }) { MiniChatSheet() }
@@ -250,7 +251,10 @@ internal object MiniChat {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 when (intent.getStringExtra("reason")) {
-                    "homekey", "recentapps", "lock" -> close()
+                    "homekey", "recentapps", "lock" -> {
+                        android.util.Log.i("AtomOverlay", "mini chat closed by system: ${intent.getStringExtra("reason")}")
+                        close()
+                    }
                 }
             }
         }
