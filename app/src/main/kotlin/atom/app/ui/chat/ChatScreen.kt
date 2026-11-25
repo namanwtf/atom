@@ -213,7 +213,11 @@ fun ChatScreen(
                     needsModel = true
                     null
                 }
-                is ChatEvent.Toast -> if (e.arg != null) context.getString(e.message, e.arg) else context.getString(e.message)
+                is ChatEvent.Toast -> when {
+                    e.arg != null && e.arg2 != null -> context.getString(e.message, e.arg, e.arg2)
+                    e.arg != null -> context.getString(e.message, e.arg)
+                    else -> context.getString(e.message)
+                }
                 is ChatEvent.Compacted -> when (val r = e.result) {
                     is CompactResult.Done -> context.getString(R.string.compact_done, r.summarized)
                     CompactResult.NothingToCompact -> context.getString(R.string.compact_nothing)
@@ -312,6 +316,8 @@ fun ChatScreen(
         onStats = { showStats = true },
         stats = state.stats,
         editingIndex = editing?.index,
+        onContinueEditing = { path -> vm.reattachImage(context, path) },
+        conversationId = state.conversationId,
     )
 
     val mic: @Composable () -> Unit = micSlot ?: {

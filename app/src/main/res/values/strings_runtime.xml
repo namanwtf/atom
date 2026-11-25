@@ -5,8 +5,12 @@
 
     <!-- Runs -->
     <string name="run_interrupted">Interrupted. Finished steps were restored; nothing was replayed.</string>
-    <string name="run_stopped">Stopped. Finished steps were kept.</string>
-    <string name="run_failed">The task failed.</string>
+    <string name="run_stopped">Stopped</string>
+    <string name="run_failed">Runtime failed</string>
+    <string name="run_no_text">The run completed without a text response.</string>
+    <string name="run_save_failed">Couldn\'t save the conversation. Please try again.</string>
+    <string name="run_regenerate_interrupted">Regeneration was interrupted. The original reply has been kept.</string>
+    <string name="run_compaction_stopped">Context compaction was stopped. The full context is kept.</string>
     <string name="run_step_limit">Stopped at the step limit before finishing.</string>
     <string name="run_model_gone">%1$s is no longer available, so this conversation uses %2$s.</string>
     <string name="run_window_unknown">This model\'s context window is unknown, so automatic compaction is off.</string>
@@ -22,13 +26,12 @@
     <string name="run_answering">Answering</string>
 
     <!-- Notifications -->
-    <string name="notif_running_tasks">Running tasks</string>
+    <string name="notif_running_tasks">Atom is running</string>
     <plurals name="notif_running_count">
-        <item quantity="one">%d task running</item>
-        <item quantity="other">%d tasks running</item>
+        <item quantity="one">%d task is running. Return to Atom to check progress.</item>
+        <item quantity="other">%d tasks are running. Return to Atom to check progress.</item>
     </plurals>
     <string name="notif_open">Open</string>
-    <string name="notif_stop_all">Stop all</string>
 
     <!-- Composer -->
     <string name="composer_hint">Ask Atom to do something</string>
@@ -36,7 +39,17 @@
     <string name="composer_queue">Queue message</string>
     <string name="composer_attach">Attach</string>
     <string name="composer_editing">Editing message. Sending replaces it and everything after it.</string>
+    <string name="queue_title">Queued</string>
     <string name="queue_label">Queued · %1$d</string>
+    <string name="queue_interrupting">Interrupting</string>
+    <plurals name="queue_images">
+        <item quantity="one">[%d image]</item>
+        <item quantity="other">[%d images]</item>
+    </plurals>
+    <plurals name="queue_files">
+        <item quantity="one">[%d file]</item>
+        <item quantity="other">[%d files]</item>
+    </plurals>
     <string name="queue_send_now">Send now</string>
     <string name="queue_next_step">At next step</string>
     <string name="queue_after_task">After this task</string>
@@ -48,6 +61,10 @@
     <string name="attach_path_title">input file path</string>
     <string name="attach_path_text">Supports files and folders at any local absolute path</string>
     <string name="attach_path_add">Add</string>
+    <string name="attach_path_added">The selected path has been added</string>
+    <string name="attach_switched">Conversation switched, selected path not added</string>
+    <string name="attach_partial">Added %1$s items; %2$s items could not be referenced</string>
+    <string name="image_reattached">Attached to input. Describe the changes you want.</string>
     <string name="attach_image_limit">Up to %1$s images per message.</string>
     <string name="attach_too_large">That image is too large (20 MB at most).</string>
     <string name="attach_unreadable">That item could not be read.</string>
@@ -181,6 +198,10 @@
     <string name="stats_cache">Prompt cache</string>
     <string name="stats_cache_value">%1$s read · %2$s written · %3$d%% hit</string>
     <string name="stats_cache_none">Not reported</string>
+    <string name="stats_cache_misses">Cache misses</string>
+    <string name="stats_cache_misses_value">%1$d of %2$d requests</string>
+    <string name="stats_subagents">Subagents</string>
+    <string name="stats_subagents_value">%1$d runs · %2$d tool calls · %3$s</string>
     <string name="stats_compactions">Compactions</string>
     <string name="stats_compactions_value">%1$d · %2$s tokens spent</string>
     <string name="stats_payback">Compaction payback</string>

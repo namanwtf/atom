@@ -71,7 +71,8 @@ class TaskNotifications(private val context: Context) {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openApp())
-            .addAction(0, context.getString(R.string.notif_stop_all), broadcast(TaskActionReceiver.ACTION_STOP_ALL, null, REQ_STOP_ALL))
+            .addAction(0, context.getString(R.string.notif_open), openApp())
+            .addAction(0, context.getString(R.string.action_stop), broadcast(TaskActionReceiver.ACTION_STOP_ALL, null, REQ_STOP_ALL))
             .build()
     }
 
@@ -149,6 +150,7 @@ class TaskNotifications(private val context: Context) {
         run.retry != null -> context.getString(R.string.run_retrying_short)
         run.compacting -> context.getString(R.string.run_compacting)
         run.currentTool != null -> humanizeTool(run.currentTool)
+        run.hostedTool != null -> context.getString(R.string.hosted_running, context.getString(atom.app.ui.chat.hostedToolRes(run.hostedTool)))
         run.phase == RunPhase.Starting -> context.getString(R.string.notif_starting)
         run.stream.text.isNotEmpty() -> context.getString(R.string.run_answering)
         else -> context.getString(R.string.notif_thinking)

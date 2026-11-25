@@ -115,6 +115,8 @@ data class ChatUiState(
     val notice: String? = null,
     val compacting: Boolean = false,
     val currentTool: String? = null,
+    /** A provider-hosted tool running right now ("Running Web search"). */
+    val hostedTool: atom.core.llm.HostedToolKind? = null,
     val engine: EngineInfo = EngineInfo(null, onDevice = false, missing = false),
     val reasoning: ReasoningUi = ReasoningUi(ReasoningSupport.None, enabled = false, effort = null),
     val queued: List<QueuedMessage> = emptyList(),
@@ -157,7 +159,7 @@ sealed interface DrawerActivity {
 }
 
 sealed interface ChatEvent {
-    data class Toast(val message: Int, val arg: String? = null) : ChatEvent
+    data class Toast(val message: Int, val arg: String? = null, val arg2: String? = null) : ChatEvent
 
     /** Sending was blocked because no usable model is selected. */
     data object NeedsModel : ChatEvent
@@ -300,6 +302,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             notice = live?.notice,
             compacting = live?.compacting == true,
             currentTool = live?.currentTool?.takeIf { running },
+            hostedTool = live?.hostedTool?.takeIf { running },
             engine = engineInfo(selection, live, ready),
             reasoning = ReasoningUi(support, enabled, effort),
             queued = queued,
@@ -527,25 +530,61 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     }
 
     fun addFiles(context: Context, uris: List<Uri>) {
+        val startedIn = selectedId.value
         viewModelScope.launch {
+            val added = mutableListOf<Attachment>()
+            var failed = 0
             for (uri in uris) {
                 when (val r = Attachments.importFile(context, uri)) {
-                    is Attachments.Outcome.Added -> _attachments.update { it + r.attachment }
-                    is Attachments.Outcome.Rejected -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+                    is Attachments.Outcome.Added -> added += r.attachment
+                    is Attachments.Outcome.Rejected -> failed++
                 }
+            }
+            // The picker returns asynchronously; a reference picked for another conversation is not attached here.
+            if (selectedId.value != startedIn) {
+                if (added.isNotEmpty() || failed > 0) emit(ChatEvent.Toast(atom.app.R.string.attach_switched))
+                return@launch
+            }
+            _attachments.update { it + added }
+            when {
+                added.isEmpty() && failed > 0 -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+                failed > 0 -> emit(ChatEvent.Toast(atom.app.R.string.attach_partial, added.size.toString(), failed.toString()))
             }
         }
     }
 
     fun addFolder(uri: Uri) {
         val folder = Attachments.importFolder(uri)
-        if (folder == null) emit(ChatEvent.Toast(atom.app.R.string.attach_folder_unsupported)) else _attachments.update { it + folder }
+        if (folder == null) {
+            emit(ChatEvent.Toast(atom.app.R.string.attach_folder_unsupported))
+        } else {
+            _attachments.update { it + folder }
+            emit(ChatEvent.Toast(atom.app.R.string.attach_path_added))
+        }
     }
 
     fun addPath(path: String): Boolean {
         val a = Attachments.fromPath(path) ?: return false
         _attachments.update { it + a }
+        emit(ChatEvent.Toast(atom.app.R.string.attach_path_added))
         return true
+    }
+
+    /** "Continue editing" from the image viewer: the picture goes back into the composer as a new attachment. */
+    fun reattachImage(context: Context, path: String) {
+        viewModelScope.launch {
+            if (_attachments.value.count { it.kind == AttachmentKind.Image } >= Attachments.MAX_IMAGES) {
+                emit(ChatEvent.Toast(atom.app.R.string.attach_image_limit, Attachments.MAX_IMAGES.toString()))
+                return@launch
+            }
+            when (val r = Attachments.importImage(context, Uri.fromFile(java.io.File(path)))) {
+                is Attachments.Outcome.Added -> {
+                    _attachments.update { it + r.attachment }
+                    emit(ChatEvent.Toast(atom.app.R.string.image_reattached))
+                }
+                is Attachments.Outcome.Rejected -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+            }
+        }
     }
 
     fun removeAttachment(a: Attachment) {

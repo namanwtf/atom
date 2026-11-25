@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -38,6 +39,8 @@ import atom.device.caps.Perms
 import atom.device.caps.StatusTone
 import atom.device.root.RootAccess
 import atom.device.root.RootStatus
+import atom.ui.components.AtomDialog
+import atom.ui.components.DialogButtons
 import atom.ui.components.CompactButton
 import atom.ui.components.Group
 import atom.ui.components.GroupRow
@@ -66,8 +69,18 @@ internal fun Context.open(intent: Intent) {
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (e: ActivityNotFoundException) {
         startActivity(Perms.appDetails(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: SecurityException) {
+        // Some system pages may only be opened by the system; the app's own settings page always works.
+        startActivity(Perms.appDetails(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
+
+/** The local-network capability ("Nearby devices" on Android 13+, "Local network" on newer releases). */
+private const val NEARBY = "nearby"
+
+/** The system page that lists Atom's permissions; [Context.open] falls back to app info if it cannot open. */
+private fun permissionsPage(context: Context): Intent =
+    Intent("android.intent.action.MANAGE_APP_PERMISSIONS").putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
 
 /**
  * Permissions and status: the twelve classic rows, each an arrow row with a coloured status on the right; tapping
@@ -82,11 +95,15 @@ fun PermissionsScreen(nav: FeatureNav) {
     var allView by rememberSaveable { mutableStateOf(false) }
     var denied by remember { mutableStateOf(setOf<String>()) }
     var pendingCap by remember { mutableStateOf<String?>(null) }
+    var explainNearby by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val cap = pendingCap
-        if (cap != null && result.values.any { !it }) denied = denied + cap
+        if (cap != null && result.values.any { !it }) {
+            denied = denied + cap
+            if (cap == NEARBY) explainNearby = true
+        }
         pendingCap = null
         tick++
     }
@@ -102,7 +119,9 @@ fun PermissionsScreen(nav: FeatureNav) {
 
     fun act(c: Capability) {
         when (val a = c.action(context)) {
-            is CapAction.Request -> if (c.id in denied) {
+            is CapAction.Request -> if (c.id == NEARBY && c.id in denied) {
+                explainNearby = true
+            } else if (c.id in denied) {
                 context.open(Perms.appDetails(context))
             } else {
                 pendingCap = c.id
@@ -110,6 +129,27 @@ fun PermissionsScreen(nav: FeatureNav) {
             }
             is CapAction.OpenSettings -> context.open(a.intent(context))
             null -> Unit
+        }
+    }
+
+    if (explainNearby) {
+        AtomDialog(show = true, onDismiss = { explainNearby = false }, title = "Local network access") {
+            Column {
+                Text(
+                    "You can allow Nearby devices for Atom in the system settings (Permissions › Nearby devices). Atom " +
+                        "needs it for models, MCP servers, the browser and terminals on your local network; internet " +
+                        "access keeps working without it.",
+                )
+                DialogButtons(
+                    confirmText = "Open settings",
+                    onConfirm = {
+                        explainNearby = false
+                        context.open(permissionsPage(context))
+                    },
+                    dismissText = "Not now",
+                    onDismiss = { explainNearby = false },
+                )
+            }
         }
     }
 
