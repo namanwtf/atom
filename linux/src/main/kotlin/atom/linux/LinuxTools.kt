@@ -109,7 +109,7 @@ private class RunTool(private val app: Context) : Tool {
             ShellEnv.Android -> ProcessRunner.run(LaunchSpec(listOf("/system/bin/sh", "-c", command), linux.hostEnv(), app.filesDir.path), timeout, LinuxEnv.OUTPUT_CAP)
             ShellEnv.Root -> {
                 if (!linux.probeRoot().root) return ToolResult.error("Root access is not available on this phone (su did not grant root).")
-                ProcessRunner.run(LaunchSpec(listOf("su", "-c", command), linux.hostEnv(), "/"), timeout, LinuxEnv.OUTPUT_CAP)
+                ProcessRunner.run(LaunchSpec(AndroidShell.rootArgv(app, command), linux.hostEnv(), "/"), timeout, LinuxEnv.OUTPUT_CAP)
             }
         }
         val body = buildString {
