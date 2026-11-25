@@ -1,6 +1,7 @@
 package atom.llm.cloud
 
 import atom.core.llm.ChatMessage
+import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ToolCall
@@ -185,6 +186,31 @@ class CustomizationTest {
         val body = server.takeRequest().json()
         assertTrue(body["tools"]!!.jsonArray.any { it.jsonObject.containsKey("googleSearch") })
         assertEquals("xhigh", body["generationConfig"]!!.jsonObject["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun geminiGroundingSurfacesSearchSuggestions() {
+        server.enqueueSse(
+            sseBody(
+                """{"candidates":[{"content":{"parts":[{"text":"Answer"}]}}]}""",
+                """{"candidates":[{"content":{"parts":[{"text":"."}]},"finishReason":"STOP","groundingMetadata":{"webSearchQueries":["weather paris","paris forecast",""],"searchEntryPoint":{"renderedContent":"<div class=\"chip\">weather paris</div>"}}}]}""",
+            ),
+        )
+        val engine = CloudEngines.create(
+            Providers.byId("gemini")!!,
+            "AIza-key-123",
+            "gemini-4-neon",
+            server.url("/v1beta").toString(),
+            EngineOptions(googleSearch = true),
+        )
+
+        val events = engine.collect(LlmRequest("gemini-4-neon", listOf(ChatMessage.user("q"))))
+        val s = events.filterIsInstance<LlmEvent.Suggestions>().single().suggestions
+        assertEquals(listOf("weather paris", "paris forecast"), s.queries)
+        assertEquals("<div class=\"chip\">weather paris</div>", s.renderedContent)
+        assertEquals("https://www.google.com/search?q=weather+paris", s.searchUrl("weather paris"))
+        // Before Finished, so the agent attaches them to the answer.
+        assertTrue(events.indexOfFirst { it is LlmEvent.Suggestions } < events.indexOfFirst { it is LlmEvent.Finished })
     }
 
     @Test

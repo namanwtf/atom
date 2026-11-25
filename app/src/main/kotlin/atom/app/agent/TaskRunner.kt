@@ -935,7 +935,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     pendingText.clear()
                     pendingReasoning.clear()
                     updateRun(id) { copy(stream = stream.copy(text = "", reasoning = "", reasoningStartedAt = null, reasoningEndedAt = null)) }
-                    StoredMessage(message, reasoning = info.reasoning, reasoningMs = info.reasoningMs, createdAt = now)
+                    StoredMessage(
+                        message,
+                        reasoning = info.reasoning,
+                        reasoningMs = info.reasoningMs,
+                        createdAt = now,
+                        searchSuggestions = info.searchSuggestions,
+                    )
                 }
                 Role.Tool -> StoredMessage(
                     message = if (info.sensitive) Scrubber.scrub(message) else stripImages(message),
