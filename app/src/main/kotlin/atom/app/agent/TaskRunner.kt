@@ -1,5 +1,6 @@
 package atom.app.agent
 
+import atom.device.switches.withoutSwitchedOff
 import android.app.Application
 import atom.app.AppGraph
 import atom.app.data.Attachment
@@ -789,7 +790,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private suspend fun buildTools(confirmAct: Boolean, shell: atom.device.ShellExecutor): List<Tool> {
             val base = DeviceTools.create(app, shell) + LinuxTools.create(app) +
                 Features.all.flatMap { f -> runCatching { f.tools(app) }.getOrDefault(emptyList()) }
-            val wrapped = base.map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
+            val wrapped = base.withoutSwitchedOff().map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
         }

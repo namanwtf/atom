@@ -1,5 +1,6 @@
 package atom.app.integration
 
+import atom.device.switches.withoutSwitchedOff
 import android.content.Context
 import atom.app.AppGraph
 import atom.app.data.Conversation
@@ -147,13 +148,15 @@ class AppToolInvoker(private val context: Context, private val graph: AppGraph) 
         }
     }
 
-    private fun featureTools(): List<Tool> = Features.all.flatMap { f -> runCatching { f.tools(context) }.getOrDefault(emptyList()) }
+    private fun featureTools(): List<Tool> =
+        Features.all.flatMap { f -> runCatching { f.tools(context) }.getOrDefault(emptyList()) }.withoutSwitchedOff()
 
     /** Without probing the shell (that is not free): enough for listing in the rule editor. */
     private fun quickTools(): List<Tool> = (LinuxTools.create(context) + featureTools()).distinctBy { it.spec.name }
 
     private suspend fun fullTools(): List<Tool> =
         (DeviceTools.create(context, graph.shell()) + LinuxTools.create(context) + featureTools())
+            .withoutSwitchedOff()
             .distinctBy { it.spec.name }
             .also { lastFull = it }
 

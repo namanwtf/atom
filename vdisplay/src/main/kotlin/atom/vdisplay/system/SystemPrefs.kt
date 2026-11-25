@@ -24,6 +24,17 @@ class SystemPrefs private constructor(context: Context) {
     private val _hooks = MutableStateFlow(HookConfig.fromMap(sp.all))
     val hooks: StateFlow<HookConfig> = _hooks.asStateFlow()
 
+    private val _frameworkSeen = MutableStateFlow(sp.getBoolean(K_FRAMEWORK_SEEN, false))
+
+    /** True once the Xposed framework has connected on this phone; the framework-only Settings rows show from then on. */
+    val frameworkSeen: StateFlow<Boolean> = _frameworkSeen.asStateFlow()
+
+    fun markFrameworkSeen() {
+        if (_frameworkSeen.value) return
+        sp.edit().putBoolean(K_FRAMEWORK_SEEN, true).apply()
+        _frameworkSeen.value = true
+    }
+
     fun setBackgroundDisplay(on: Boolean) {
         sp.edit().putBoolean(K_BG_DISPLAY, on).apply()
         _backgroundDisplay.value = on
@@ -49,6 +60,7 @@ class SystemPrefs private constructor(context: Context) {
 
     companion object {
         private const val K_BG_DISPLAY = "background_virtual_display"
+        private const val K_FRAMEWORK_SEEN = "framework_seen"
 
         @Volatile
         private var instance: SystemPrefs? = null

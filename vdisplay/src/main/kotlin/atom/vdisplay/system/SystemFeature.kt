@@ -17,6 +17,11 @@ import atom.vdisplay.route.DisplayRouter
 import atom.vdisplay.tools.BackgroundTools
 import atom.vdisplay.viewfinder.BackgroundViewfinder
 import atom.xposed.ModuleStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * System enhancements: the background virtual display (hidden-screen runs, live viewfinder, take over, present to
@@ -27,11 +32,20 @@ import atom.xposed.ModuleStatus
 object SystemFeature : AtomFeature {
     override val id = "vdisplay"
     const val ROUTE = "vdisplay/system"
+    private val seenWatcher = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onAppCreate(context: Context) {
         DisplayRouter.init(context)
         ModuleStatus.init()
-        ModuleStatus.push(SystemPrefs.get(context).hooks.value)
+        val prefs = SystemPrefs.get(context)
+        ModuleStatus.push(prefs.hooks.value)
+        // Event-driven: remember the first connection so the framework rows stay visible (greyed) when it is away.
+        if (!prefs.frameworkSeen.value) {
+            seenWatcher.launch {
+                ModuleStatus.state.first { it is ModuleStatus.Connection.Connected }
+                prefs.markFrameworkSeen()
+            }
+        }
         Overlay.viewfinder = BackgroundViewfinder
     }
 

@@ -32,8 +32,10 @@ import atom.app.ui.chat.ChatScreen
 import atom.app.ui.chat.ChatViewModel
 import atom.app.ui.common.graphViewModel
 import atom.app.ui.models.ModelsScreen
+import atom.app.ui.models.ModelsStart
 import atom.app.ui.models.ModelsViewModel
 import atom.app.ui.settings.LicensesScreen
+import atom.app.ui.settings.SettingsNav
 import atom.app.ui.settings.SettingsScreen
 import atom.app.ui.settings.SettingsViewModel
 import atom.app.ui.setup.SetupScreen
@@ -58,6 +60,12 @@ object Routes {
     const val SETTINGS = "settings"
     const val SETUP = "setup"
     const val LICENSES = "licenses"
+
+    /** Model providers opened straight on the on-device models page. */
+    const val ON_DEVICE = "models-on-device"
+
+    /** The Auto-generate titles page (part of the Models flow). */
+    const val TITLES = "settings-titles"
 }
 
 /** A tiny back stack of route strings; no navigation library needed. */
@@ -165,18 +173,29 @@ fun AtomRoot(settings: AppSettings) {
                     onOpenPermissions = { push(DeviceFeature.ROUTE_PERMISSIONS) },
                     onOpenRoute = ::push,
                 )
-                Routes.MODELS -> ModelsScreen(
+                Routes.MODELS, Routes.ON_DEVICE, Routes.TITLES -> ModelsScreen(
                     vm = graphViewModel { ModelsViewModel(context.applicationContext, it) },
                     onBack = ::pop,
+                    start = when (route) {
+                        Routes.ON_DEVICE -> ModelsStart.OnDevice
+                        Routes.TITLES -> ModelsStart.Titles
+                        else -> ModelsStart.Providers
+                    },
                 )
                 Routes.SETTINGS -> SettingsScreen(
-                    vm = graphViewModel { SettingsViewModel(it) },
-                    onBack = ::pop,
-                    onOpenModels = { push(Routes.MODELS) },
-                    onOpenSetup = { push(Routes.SETUP) },
-                    onOpenLicenses = { push(Routes.LICENSES) },
+                    vm = graphViewModel { SettingsViewModel(context.applicationContext, it) },
+                    nav = remember {
+                        SettingsNav(
+                            back = ::pop,
+                            openModels = { push(Routes.MODELS) },
+                            openOnDevice = { push(Routes.ON_DEVICE) },
+                            openTitles = { push(Routes.TITLES) },
+                            openSetup = { push(Routes.SETUP) },
+                            openLicenses = { push(Routes.LICENSES) },
+                            openRoute = ::push,
+                        )
+                    },
                     features = featureEntries,
-                    onOpenRoute = ::push,
                 )
                 Routes.SETUP -> SetupScreen(
                     firstRun = !settings.onboarded,
