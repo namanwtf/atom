@@ -53,17 +53,21 @@ object AppearanceCodec {
 
     /**
      * Never throws. Unknown or retired values fall back to the defaults: the old accents (Silver, Ember, Jade,
-     * Iris, Rose) become the default accent. Data saved before the Monet switch existed keeps wallpaper colours
+     * Iris, Rose) and the old default (Monochrome, when no Monet value is saved yet) become the default accent. Data saved before the Monet switch existed keeps wallpaper colours
      * on if the stored accent was "System" (that was how wallpaper colours were chosen then).
      */
     fun decode(m: Map<String, String>): Appearance {
         val d = Appearance()
         fun bool(k: String, def: Boolean) = m[k]?.toBooleanStrictOrNull() ?: def
+        val legacy = m[MONET] == null
         val monet = m[MONET]?.toBooleanStrictOrNull() ?: (m[ACCENT] == LEGACY_WALLPAPER_ACCENT || d.monet)
+        // Monochrome was the old default accent, saved by any edit. Keeping it would make the new Monet switch
+        // show the house style instead of wallpaper colours, so it becomes the default accent.
+        val accent = if (legacy && m[ACCENT] == LEGACY_DEFAULT_ACCENT) d.accent else enumOr(m[ACCENT], d.accent)
         return Appearance(
             mode = enumOr(m[MODE], d.mode),
             pureBlack = bool(PURE_BLACK, d.pureBlack),
-            accent = enumOr(m[ACCENT], d.accent),
+            accent = accent,
             colorStyle = enumOr(m[COLOR_STYLE], d.colorStyle),
             blur = bool(BLUR, d.blur),
             topBarBlur = enumOr(m[TOP_BAR_BLUR], d.topBarBlur),
@@ -79,13 +83,16 @@ object AppearanceCodec {
     /** Before the Monet switch, picking the "System" accent meant wallpaper colours. */
     private const val LEGACY_WALLPAPER_ACCENT = "System"
 
+    /** The default accent before the Monet switch existed. */
+    private const val LEGACY_DEFAULT_ACCENT = "Monochrome"
+
     private inline fun <reified E : Enum<E>> enumOr(name: String?, def: E): E =
         enumValues<E>().firstOrNull { it.name == name } ?: def
 }
 
-private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
+private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_appearance")
 
-/** Appearance options, persisted in their own small DataStore ("appearance"). */
+/** Appearance options, persisted in their own small DataStore ("atom4_appearance"). */
 class AppearanceStore private constructor(private val store: DataStore<Preferences>) {
 
     val appearance: Flow<Appearance> = store.data.map { p ->

@@ -35,7 +35,7 @@ enum class RootStatus {
  */
 object RootAccess {
     const val PROBE_TIMEOUT_MS = 30_000L
-    private const val PREFS = "atom_root"
+    private const val PREFS = "atom4_root"
     private const val KEY = "status"
 
     private val _status = MutableStateFlow(RootStatus.Unknown)

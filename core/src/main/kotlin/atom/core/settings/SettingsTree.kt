@@ -25,6 +25,7 @@ object SettingsRows {
     const val CTS_GESTURE_BAR = "row:cts_gesture_bar"
     const val CTS_TWO_FINGER = "row:cts_two_finger"
     const val KEEP_SCREEN_ON = "row:keep_screen_on"
+    const val LIVE_UPDATES = "row:live_updates"
     const val LANGUAGE = "row:language"
     const val OVERLAY_PERMISSION = "row:overlay_permission"
     const val ACCESSIBILITY = "row:accessibility"
@@ -106,8 +107,9 @@ object SettingsTree {
             "voice/settings",
             SettingsRows.LANGUAGE,
             "general/backup",
-            // Newer: audio chat.
+            // Newer: audio chat and the Live Update status-bar chip.
             "voice/chat",
+            SettingsRows.LIVE_UPDATES,
         ),
         SettingsGroup.Permissions to listOf(
             SettingsRows.OVERLAY_PERMISSION,

@@ -9,7 +9,7 @@ import java.io.File
 
 /** Where everything lives. All under the app's private storage except the binaries in nativeLibraryDir. */
 internal class LinuxPaths(context: Context) {
-    val base = File(context.filesDir, "linux")
+    val base = File(context.filesDir, "atom4_linux")
     val downloads = File(base, "download")
     /** Shown as /tmp (and /dev/shm under proot) inside the guest. */
     val guestTmp = File(base, "tmp")

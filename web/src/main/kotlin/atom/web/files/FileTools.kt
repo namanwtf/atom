@@ -26,7 +26,7 @@ import java.util.Locale
 internal class FileScopes(context: Context, private val priv: () -> PrivilegedFiles?) {
     private val app = context.applicationContext
     private val local = LocalFs()
-    val workspace: File get() = File(app.filesDir, "workspace").apply { mkdirs() }
+    val workspace: File get() = File(app.filesDir, "atom4_workspace").apply { mkdirs() }
 
     suspend fun fs(args: JsonObject): Fs = when (val s = args.optString("scope")?.lowercase()?.trim()) {
         null, "", "app", "android" -> local

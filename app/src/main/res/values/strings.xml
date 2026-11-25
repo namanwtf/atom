@@ -103,6 +103,9 @@
     <string name="notif_waiting_text">Tap Allow or Deny</string>
     <string name="notif_starting">Starting…</string>
     <string name="notif_thinking">Thinking…</string>
+    <!-- Live Update status-bar chip (keep very short). -->
+    <string name="live_working">Working</string>
+    <string name="live_waiting">Approve</string>
     <string name="notif_done">Task done</string>
     <string name="notif_failed">Task failed</string>
     <string name="notif_step_limit">Stopped at the step limit</string>
@@ -240,7 +243,7 @@
     <string name="legal_gpl">GNU General Public License v3.0</string>
     <string name="legal_gpl_desc">Atom\'s own license (version 3 or any later version).</string>
     <string name="legal_apache">Apache License 2.0</string>
-    <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API.</string>
+    <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API, Miuix, MaterialKolor, Haze.</string>
     <string name="legal_mit">MIT License</string>
     <string name="legal_mit_desc">llama.cpp and ggml.</string>
     <string name="legal_gpl2">GNU General Public License v2.0</string>

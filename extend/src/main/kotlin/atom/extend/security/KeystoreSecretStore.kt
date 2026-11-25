@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Default [SecretStore]: AES-256-GCM with a non-exportable Android Keystore key; ciphertext in private prefs. */
 class KeystoreSecretStore(context: Context) : SecretStore {
-    private val prefs = context.applicationContext.getSharedPreferences("extend_secrets", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences("atom4_extend_secrets", Context.MODE_PRIVATE)
 
     override suspend fun read(key: String): SecretRead = withContext(Dispatchers.IO) {
         val stored = prefs.getString(key, null) ?: return@withContext SecretRead.Missing
@@ -57,7 +57,7 @@ class KeystoreSecretStore(context: Context) : SecretStore {
     }
 
     private companion object {
-        const val ALIAS = "atom_extend_secrets"
+        const val ALIAS = "atom4_extend_secrets"
         const val TRANSFORM = "AES/GCM/NoPadding"
         const val IV = 12
     }

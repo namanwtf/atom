@@ -60,6 +60,8 @@ object ThemeSpec {
      * Key colour for the Monet palette, or null to let the library read the wallpaper palette itself.
      * System + Tonal Spot passes no key (the platform palette is already tonal spot); System with any other
      * style is seeded by the wallpaper's primary ([systemSeed], or the blue fallback without one).
+     * Note: with no key, Miuix uses the system's own palette (on Android 13+ including the system's chosen style),
+     * which is what "System colors" means.
      */
     fun keyColor(a: Appearance, systemSeed: Long?): Long? {
         if (!usesMonet(a)) return null

@@ -45,6 +45,8 @@ import atom.core.tool.schema
 import atom.device.Accessibility
 import atom.device.DeviceTools
 import atom.device.tools.ConfirmsItself
+import atom.automation.CapabilityTools
+import atom.automation.ToolOrigin
 import atom.linux.LinuxTools
 import atom.ui.feature.AgentHost
 import atom.ui.feature.HostApproval
@@ -176,16 +178,31 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         return true
     }
 
-    override fun start(prompt: String, conversationId: String?, source: RunSource, attachments: List<String>): String? {
+    override fun start(prompt: String, conversationId: String?, source: RunSource, attachments: List<String>): String? =
+        start(prompt, conversationId, source, attachments, capabilities = null)
+
+    /**
+     * Starts a run whose tool set is limited to [capabilities] (scheduled tasks, automation agent steps). Null keeps
+     * every tool; an empty set is "Chat only" and the run gets no tools at all.
+     */
+    fun start(
+        prompt: String,
+        conversationId: String?,
+        source: RunSource,
+        attachments: List<String>,
+        capabilities: Set<atom.automation.Capability>?,
+    ): String? {
         if (conversationId != null && isRunning(conversationId)) return null
         val id = conversationId ?: Conversation.newId()
-        if (attachments.isEmpty()) return launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = emptyList(), source = source))
+        if (attachments.isEmpty()) {
+            return launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = emptyList(), source = source, capabilities = capabilities))
+        }
         if (!claim(id)) return null
         scope.launch {
             // Image files are sent as pixels (downscaled copies); anything else is passed as a path reference.
             val atts = attachments.mapNotNull { Attachments.fromPathForModel(app, it) }
             release(id)
-            launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = atts, source = source))
+            launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = atts, source = source, capabilities = capabilities))
         }
         return id
     }
@@ -278,6 +295,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         val attachments: List<Attachment>,
         val source: RunSource,
         val regenerate: Regenerate? = null,
+        /** Tool families this run may use; null = all tools, empty = none. */
+        val capabilities: Set<atom.automation.Capability>? = null,
     )
 
     private fun launchTurn(request: TurnRequest): String? {
@@ -423,6 +442,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
+
+    /** False for a capability-limited run without the web: its subagents get no provider-hosted search either. */
+    fun hostedSearchOf(runId: String): Boolean = byRunId[runId]?.hostedSearchInUse ?: true
 
     /** Context window of the newest active run, for features that size themselves to it. */
     fun currentContextWindow(): Int? = byRunId.values.maxByOrNull { it.startedAt }?.windowInUse
@@ -625,6 +647,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         @Volatile
         var selectionInUse: EngineSelection? = null
 
+        val hostedSearchInUse: Boolean get() = CapabilityTools.allowsHostedSearch(request.capabilities)
+
         @Volatile
         var windowInUse: Int? = null
 
@@ -669,7 +693,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val role = roleFor(request.source)?.takeIf { conversation.selection == null }
                 val roleSelection = role?.let { r -> runCatching { graph.modelRoles.resolve(r, null) }.getOrNull() }
                 val selection = roleSelection ?: saved
-                val engine = graph.router.acquire(selection).also { routed = it }
+                // Capability-limited runs without the web get no provider-hosted search either.
+                val hostedSearch = CapabilityTools.allowsHostedSearch(request.capabilities)
+                val engine = graph.router.acquire(selection, hostedSearch = hostedSearch).also { routed = it }
                 selectionInUse = engine.selection ?: selection
                 val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
                 windowInUse = window
@@ -788,12 +814,31 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
 
         private suspend fun buildTools(confirmAct: Boolean, shell: atom.device.ShellExecutor): List<Tool> {
-            val base = DeviceTools.create(app, shell) + LinuxTools.create(app) +
-                Features.all.flatMap { f -> runCatching { f.tools(app) }.getOrDefault(emptyList()) }
+            val origin = java.util.IdentityHashMap<Tool, ToolOrigin>()
+            val gathered = DeviceTools.create(app, shell).onEach { origin[it] = ToolOrigin.Device } +
+                LinuxTools.create(app).onEach { origin[it] = ToolOrigin.Linux } +
+                Features.all.flatMap { f ->
+                    val o = originOf(f.id)
+                    runCatching { f.tools(app) }.getOrDefault(emptyList()).onEach { origin[it] = o }
+                }
+            val caps = request.capabilities
+            val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
             val wrapped = base.withoutSwitchedOff().map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
+                .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
         }
+
+        private fun originOf(featureId: String): ToolOrigin = when (featureId) {
+            "device", "context", "vdisplay" -> ToolOrigin.Device
+            "linux" -> ToolOrigin.Linux
+            "web" -> ToolOrigin.Web
+            "extend" -> ToolOrigin.Extend
+            else -> ToolOrigin.Other
+        }
+
+        private fun familyOf(tool: Tool, origin: ToolOrigin) =
+            CapabilityTools.classify(tool.spec.name, tool.spec.description, origin, tool.risk, tool.usesPhoneUi)
 
         private fun releaseTool(): Tool = object : Tool {
             override val spec = ToolSpec(
@@ -898,7 +943,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     pendingText.clear()
                     pendingReasoning.clear()
                     updateRun(id) { copy(stream = stream.copy(text = "", reasoning = "", reasoningStartedAt = null, reasoningEndedAt = null)) }
-                    StoredMessage(message, reasoning = info.reasoning, reasoningMs = info.reasoningMs, createdAt = now)
+                    StoredMessage(
+                        message,
+                        reasoning = info.reasoning,
+                        reasoningMs = info.reasoningMs,
+                        createdAt = now,
+                        searchSuggestions = info.searchSuggestions,
+                    )
                 }
                 Role.Tool -> StoredMessage(
                     message = if (info.sensitive) Scrubber.scrub(message) else stripImages(message),

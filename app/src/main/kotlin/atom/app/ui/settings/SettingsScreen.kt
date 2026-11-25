@@ -183,6 +183,10 @@ class SettingsViewModel(app: Context, private val graph: AppGraph) : ViewModel()
         viewModelScope.launch { graph.settings.setAutoCompaction(value) }
     }
 
+    fun setLiveUpdates(value: Boolean) {
+        viewModelScope.launch { graph.settings.setLiveUpdates(value) }
+    }
+
     fun setKeepScreenOn(value: Boolean) {
         viewModelScope.launch { graph.settings.setKeepScreenOn(value) }
     }
@@ -418,6 +422,13 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
             checked = s.keepScreenOn,
             onCheckedChange = vm::setKeepScreenOn,
             icon = Icons.Rounded.BrightnessHigh,
+        )
+        SettingsRows.LIVE_UPDATES -> SwitchRow(
+            title = stringResource(R.string.set_live_updates),
+            summary = stringResource(R.string.set_live_updates_sub),
+            checked = s.liveUpdates,
+            onCheckedChange = vm::setLiveUpdates,
+            icon = Icons.Rounded.Notifications,
         )
         SettingsRows.LANGUAGE -> {
             var english by rememberSaveable { mutableStateOf(AppLanguage.current(context)?.startsWith("en") == true) }

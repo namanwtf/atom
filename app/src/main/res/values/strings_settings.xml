@@ -132,4 +132,14 @@
     <string name="set_type_anthropic">Anthropic Messages</string>
     <string name="set_type_gemini">Gemini</string>
     <string name="set_type_vertex">Vertex AI</string>
+
+    <!-- Open-source notices -->
+    <string name="set_legal_ofl">SIL Open Font License 1.1</string>
+    <string name="set_legal_ofl_desc">JetBrains Mono, the terminal font.</string>
+    <string name="set_legal_lobe">MIT License (Lobe Icons)</string>
+    <string name="set_legal_lobe_desc">Provider and model brand logos. The logos are trademarks of their owners.</string>
+
+    <!-- General -->
+    <string name="set_live_updates">Live Update notification</string>
+    <string name="set_live_updates_sub">Show a running task in the status bar (Android 16 and later)</string>
 </resources>

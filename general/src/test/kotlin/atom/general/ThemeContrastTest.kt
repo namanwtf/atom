@@ -157,11 +157,16 @@ class ThemeContrastTest {
             assertFalse(m.monet, old)
             assertEquals(ColorStyle.Neutral, m.colorStyle)
         }
-        // The old house default is kept as the Monochrome choice, but stock colours stay on (Monet off).
+        // The old default accent (Monochrome) becomes the default accent, so turning Monet on gives wallpaper
+        // colours; stock colours stay on (Monet off) and the stored mode is kept.
         val mono = AppearanceCodec.decode(mapOf("accent" to "Monochrome", "mode" to "Dark"))
-        assertEquals(AccentColor.Monochrome, mono.accent)
+        assertEquals(AccentColor.System, mono.accent)
         assertFalse(mono.monet)
         assertEquals(ThemeMode.Dark, mono.mode)
+        // Once the Monet switch exists in the saved data, Monochrome is a deliberate choice and is kept.
+        val chosen = AppearanceCodec.decode(mapOf("accent" to "Monochrome", "monet" to "true"))
+        assertEquals(AccentColor.Monochrome, chosen.accent)
+        assertTrue(chosen.monet)
         // Picking "System" used to mean wallpaper colours: keep that on.
         val wall = AppearanceCodec.decode(mapOf("accent" to "System", "colorStyle" to "Vibrant"))
         assertTrue(wall.monet)

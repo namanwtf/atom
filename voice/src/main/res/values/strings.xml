@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="atom_voice_assistant_label">Atom</string>
+    <string name="atom_speech_recognition_label">Atom speech recognition</string>
     <string name="atom_voice_title">Atom</string>
     <string name="atom_voice_listening">Listening for “Hey Atom”</string>
     <string name="atom_voice_paused">“Hey Atom” paused: %1$s</string>

@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-internal val Context.vaultDataStore: DataStore<Preferences> by preferencesDataStore(name = "vault")
+internal val Context.vaultDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_vault")
 
 /**
  * Secrets (provider API keys, account sign-in tokens, Hugging Face token) encrypted with a non-exportable AES-256-GCM key in the
@@ -211,7 +211,7 @@ class KeyVault(private val store: DataStore<Preferences>) {
 
     private companion object {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val ALIAS = "atom.vault.v1"
+        const val ALIAS = "atom4.vault"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val TAG_BITS = 128
         const val API_PREFIX = "api."
