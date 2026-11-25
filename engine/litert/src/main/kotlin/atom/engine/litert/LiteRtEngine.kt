@@ -305,7 +305,7 @@ class LiteRtEngine(
 
     // ---- remembered backend (per model file, survives restarts) -------------------------------
 
-    private val prefs by lazy { appContext.getSharedPreferences("atom_litert_backend", Context.MODE_PRIVATE) }
+    private val prefs by lazy { appContext.getSharedPreferences("atom4_litert_backend", Context.MODE_PRIVATE) }
 
     private fun key(file: File) = "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 

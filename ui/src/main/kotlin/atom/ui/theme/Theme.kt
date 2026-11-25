@@ -6,6 +6,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.LocalContentColor as LocalMaterialContentColor
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -27,6 +28,7 @@ import top.yukonga.miuix.kmp.theme.Colors
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.defaultTextStyles
 import androidx.compose.material3.lightColorScheme as materialLight
 import top.yukonga.miuix.kmp.theme.darkColorScheme as miuixDark
 import top.yukonga.miuix.kmp.theme.lightColorScheme as miuixLight
@@ -81,6 +83,12 @@ fun AtomTheme(mode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit)
  */
 @Composable
 fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
+    AtomThemeImpl(if (supportsDynamicColor) appearance else appearance.copy(monet = false), content)
+}
+
+/** Monet needs wallpaper colours (Android 12+); below that the stored switch is ignored. */
+@Composable
+private fun AtomThemeImpl(appearance: Appearance, content: @Composable () -> Unit) {
     val dark = isDark(appearance.mode, isSystemInDarkTheme())
     val context = LocalContext.current
     val systemSeed = remember(context) { systemSeedColor(context) }
@@ -103,14 +111,20 @@ fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
     )
     val density = LocalDensity.current
     val scaled = remember(density, appearance.textSize) { Density(density.density, density.fontScale * appearance.textSize.scale) }
-    MiuixTheme(controller = controller) {
+    // Group titles in a medium weight (the library default is bold), matching the Atom settings pages.
+    val textStyles = remember { defaultTextStyles().let { it.copy(subtitle = it.subtitle.copy(fontWeight = FontWeight.Medium)) } }
+    MiuixTheme(controller = controller, textStyles = textStyles) {
         // The controller's colours, then Atom's adjustments (pure black, monochrome accent) on top.
         val raw = MiuixTheme.colorScheme
         val colors = adjustColors(raw, dark, ThemeSpec.pureBlack(appearance, dark), ThemeSpec.usesMonochrome(appearance))
-        val scheme = remember(colors, dark) { materialColorScheme(colors, dark) }
+        // Miuix updates its Colors object in place, so the Material scheme is keyed on the colour values themselves.
+        val scheme = remember(schemeKey(colors), dark) { materialColorScheme(colors, dark) }
         MiuixTheme(colors = colors) {
             CompositionLocalProvider(LocalAtomExtras provides extras, LocalAppearance provides appearance, LocalDensity provides scaled) {
-                MaterialTheme(colorScheme = scheme, typography = AtomTypography, shapes = AtomShapes, content = content)
+                MaterialTheme(colorScheme = scheme, typography = AtomTypography, shapes = AtomShapes) {
+                    // Material Text/Icon without an explicit colour read this; the Miuix Scaffold and Card do not set it.
+                    CompositionLocalProvider(LocalMaterialContentColor provides scheme.onSurface, content = content)
+                }
             }
         }
     }
@@ -121,40 +135,46 @@ fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
  * Without pure black, a stock surface that is already black is lifted to a near-black grey so the switch is visible.
  * Monochrome: primaries become white-on-black (dark) or near-black-on-white (light).
  */
-@Composable
-private fun adjustColors(raw: Colors, dark: Boolean, pureBlack: Boolean, monochrome: Boolean): Colors =
-    remember(raw.primary, raw.surface, raw.background, raw.surfaceContainer, dark, pureBlack, monochrome) {
-        var c = raw
-        if (dark) {
-            c = if (pureBlack) {
-                c.copy(background = Color.Black, surface = Color.Black)
-            } else if (c.surface == Color.Black) {
-                val grey = Color(AtomPalettes.Graphite)
-                c.copy(surface = grey, background = if (c.background == Color.Black) grey else c.background)
-            } else {
-                c
-            }
+private fun adjustColors(raw: Colors, dark: Boolean, pureBlack: Boolean, monochrome: Boolean): Colors {
+    var c = raw
+    if (dark) {
+        c = if (pureBlack) {
+            c.copy(background = Color.Black, surface = Color.Black)
+        } else if (c.surface == Color.Black) {
+            val grey = Color(AtomPalettes.Graphite)
+            c.copy(surface = grey, background = if (c.background == Color.Black) grey else c.background)
+        } else {
+            c
         }
-        if (monochrome) {
-            val t = if (dark) AtomPalettes.Monochrome.dark else AtomPalettes.Monochrome.light
-            val p = Color(t.primary)
-            val disabled = lerp(p, c.surfaceContainer, 0.6f)
-            c = c.copy(
-                primary = p,
-                onPrimary = Color(t.onPrimary),
-                primaryVariant = p,
-                primaryContainer = Color(t.primaryContainer),
-                onPrimaryContainer = Color(t.onPrimaryContainer),
-                tertiaryContainer = Color(t.primaryContainer),
-                onTertiaryContainer = p,
-                disabledPrimary = disabled,
-                disabledPrimaryButton = disabled,
-                disabledPrimarySlider = disabled,
-                sliderKeyPointForeground = p,
-            )
-        }
-        c
     }
+    if (monochrome) {
+        val t = if (dark) AtomPalettes.Monochrome.dark else AtomPalettes.Monochrome.light
+        val p = Color(t.primary)
+        val disabled = lerp(p, c.surfaceContainer, 0.6f)
+        c = c.copy(
+            primary = p,
+            onPrimary = Color(t.onPrimary),
+            primaryVariant = p,
+            primaryContainer = Color(t.primaryContainer),
+            onPrimaryContainer = Color(t.onPrimaryContainer),
+            tertiaryContainer = Color(t.primaryContainer),
+            onTertiaryContainer = p,
+            disabledPrimary = disabled,
+            disabledPrimaryButton = disabled,
+            disabledPrimarySlider = disabled,
+            sliderKeyPointForeground = p,
+        )
+    }
+    return c
+}
+
+/** Every Miuix colour [materialColorScheme] reads, as plain values (reading them also subscribes to changes). */
+private fun schemeKey(c: Colors): List<Color> = listOf(
+    c.primary, c.onPrimary, c.primaryVariant, c.tertiaryContainer, c.onTertiaryContainer, c.onBackgroundVariant,
+    c.surface, c.surfaceContainer, c.surfaceContainerHigh, c.surfaceContainerHighest, c.onSurfaceContainer,
+    c.error, c.onError, c.errorContainer, c.onErrorContainer, c.onSurface, c.onSurfaceVariantSummary, c.outline,
+    c.dividerLine,
+)
 
 private fun opaque(fg: Color, bg: Color): Color = if (fg.alpha < 1f) fg.compositeOver(bg) else fg
 

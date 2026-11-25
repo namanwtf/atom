@@ -116,7 +116,7 @@ class ActionReceiver : BroadcastReceiver() {
 
 /** System-held proximity alerts: no process, no polling; the location provider wakes us on enter or leave. */
 internal object Places {
-    private const val PREFS = "atom_automation_places"
+    private const val PREFS = "atom4_automation_places"
 
     private fun intent(context: Context, ruleId: String) = PendingIntent.getBroadcast(
         context,

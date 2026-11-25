@@ -75,7 +75,7 @@ object ChargeNodes {
 /** Remembers the user's limit so it can be re-applied after a reboot (sysfs resets). */
 class ChargeLimitStore(context: Context) {
     private val app = context.applicationContext
-    private val prefs = app.getSharedPreferences("atom_charge_limit", Context.MODE_PRIVATE)
+    private val prefs = app.getSharedPreferences("atom4_charge_limit", Context.MODE_PRIVATE)
 
     var limit: Int?
         get() = prefs.getInt("limit", -1).takeIf { it in 20..99 }

@@ -40,7 +40,7 @@ enum class ToolSwitch(val key: String, val title: String, val summary: String, v
  * changes these.
  */
 object ToolSwitches {
-    private const val PREFS = "atom_tool_switches"
+    private const val PREFS = "atom4_tool_switches"
     private const val K_DISABLED = "disabled_tools"
     private const val K_FOLDED = "masters_folded"
 

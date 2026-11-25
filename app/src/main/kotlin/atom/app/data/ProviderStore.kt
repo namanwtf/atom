@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-internal val Context.providersDataStore: DataStore<Preferences> by preferencesDataStore(name = "providers")
+internal val Context.providersDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_providers")
 
 @Serializable
 private data class StoredProviders(

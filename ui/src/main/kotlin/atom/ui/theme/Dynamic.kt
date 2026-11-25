@@ -3,7 +3,7 @@ package atom.ui.theme
 import android.content.Context
 import android.os.Build
 
-/** True when the device can supply wallpaper (Monet) colours. Minimum SDK is 30, so this is Android 12+. */
+/** True when the device can supply wallpaper (Monet) colours: Android 12 (API 31) and later. Minimum SDK is 30 (Android 11). */
 val supportsDynamicColor: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 /**

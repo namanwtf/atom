@@ -1,6 +1,7 @@
 package atom.core.llm
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 enum class Role { System, User, Assistant, Tool }
@@ -11,6 +12,22 @@ sealed interface ContentPart {
 }
 
 data class ToolCall(val id: String, val name: String, val argumentsJson: String)
+
+/**
+ * Search suggestions a provider attaches to a grounded answer (Gemini "Google Search suggestions"): the queries
+ * the model searched for and, when the provider sends one, the ready-made HTML/CSS chip ([renderedContent]) that
+ * the provider's terms ask apps to show under the answer, unmodified. Each query opens a web search when tapped.
+ */
+@Serializable
+data class SearchSuggestions(
+    val queries: List<String> = emptyList(),
+    val renderedContent: String? = null,
+) {
+    val isEmpty: Boolean get() = queries.isEmpty() && renderedContent.isNullOrBlank()
+
+    /** The web search link for [query], for UIs that draw their own chips. */
+    fun searchUrl(query: String): String = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(query, "UTF-8")
+}
 
 data class ChatMessage(
     val role: Role,
@@ -60,6 +77,9 @@ sealed interface LlmEvent {
         val cacheWriteTokens: Int = 0,
     ) : LlmEvent
     data class Finished(val reason: FinishReason) : LlmEvent
+
+    /** Grounding search suggestions for this response (at most one per response, before [Finished]). */
+    data class Suggestions(val suggestions: SearchSuggestions) : LlmEvent
 }
 
 data class EngineCapabilities(

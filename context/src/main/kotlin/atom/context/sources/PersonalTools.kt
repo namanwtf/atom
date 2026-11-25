@@ -2,6 +2,7 @@ package atom.context.sources
 
 import android.Manifest
 import android.app.ActivityManager
+import android.app.DownloadManager
 import android.app.usage.UsageStatsManager
 import android.content.ContentUris
 import android.content.Context
@@ -28,6 +29,8 @@ import atom.core.tool.optInt
 import atom.core.tool.optString
 import atom.core.tool.schema
 import atom.core.tool.string
+import atom.device.ShellTier
+import atom.device.Shells
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -42,6 +45,9 @@ import kotlin.coroutines.resume
 internal class PersonalTools(context: Context) {
     private val app = context.applicationContext
     private val cr get() = app.contentResolver
+
+    /** Download tasks listed with files_search kind=downloads. */
+    private val MAX_TASKS = 15
 
     /** Tools whose results are personal but not secret. */
     fun everyday(): List<Tool> = listOf(timeLocation(), contacts(), files(), usage())
@@ -328,7 +334,8 @@ internal class PersonalTools(context: Context) {
         name = "files_search",
         description = "Search the phone's shared storage, newest first: photos (file name or album path), screenshots, " +
             "videos, audio (title, file name or artist), recordings (voice and call recordings), documents, downloads, or any. " +
-            "Returns paths the file and image tools can open.",
+            "downloads also lists the system download tasks (running, paused, failed and finished; every app's with root, " +
+            "else Atom's own). Returns paths the file and image tools can open.",
         risk = Risk.Read,
         parameters = schema {
             string("kind", "What to search.", required = true, enum = kinds)
@@ -343,7 +350,61 @@ internal class PersonalTools(context: Context) {
             val (limit, offset) = limitOffset(args)
             val q = args.optString("query")?.takeIf { it.isNotBlank() }
             val days = args.optInt("days")
-            withContext(Dispatchers.IO) { searchMedia(kind, q, days, offset, limit) }
+            val tasks = if (kind == "downloads" && offset == 0) downloadTasks(q, days) else null
+            val files = withContext(Dispatchers.IO) { searchMedia(kind, q, days, offset, limit) }
+            if (tasks == null) files else files.copy(text = tasks + "\n\nfiles in Downloads:\n" + files.text)
+        }
+    }
+
+    /** DownloadManager tasks: every app's with root (downloads provider), else the ones Atom started. */
+    private suspend fun downloadTasks(q: String?, days: Int?): String {
+        val since = days?.let { System.currentTimeMillis() - it.coerceIn(1, 3650) * 86_400_000L } ?: 0L
+        val sh = runCatching { Shells.detect(app) }.getOrNull()
+        val all = if (sh != null && sh.tier == ShellTier.Root) {
+            runCatching { sh.run(DownloadTasks.queryCommand(), 15_000) }.getOrNull()
+                ?.takeIf { it.ok }?.let { DownloadTasks.parseProviderRows(it.stdout) }
+        } else {
+            null
+        }
+        val list = (all ?: withContext(Dispatchers.IO) { ownDownloadTasks() })
+            .filter { it.modifiedMillis >= since }
+            .filter { q == null || it.title.contains(q, ignoreCase = true) || it.path?.contains(q, ignoreCase = true) == true }
+            .sortedWith(compareByDescending<DownloadTask> { it.inProgress }.thenByDescending { it.modifiedMillis })
+        return buildString {
+            append("download tasks ").append(if (all != null) "(all apps, via root)" else "(Atom's own; other apps' tasks need root)").append(": ")
+            if (list.isEmpty()) append("none")
+            list.take(MAX_TASKS).forEach { t ->
+                append("\n[download:").append(t.id).append("] ").append(t.title).append(" — ").append(t.status)
+                append(", ").append(DownloadTasks.progress(t, ::human))
+                t.app?.let { append(", by ").append(it) }
+                if (t.modifiedMillis > 0) append(", ").append(When.at(t.modifiedMillis))
+                t.path?.let { append("\n    ").append(it.removePrefix("file://")) }
+            }
+            if (list.size > MAX_TASKS) append("\n… ").append(list.size - MAX_TASKS).append(" more (narrow with query or days)")
+        }
+    }
+
+    private fun ownDownloadTasks(): List<DownloadTask> {
+        val dm = app.getSystemService(DownloadManager::class.java) ?: return emptyList()
+        val c = runCatching { dm.query(DownloadManager.Query()) }.getOrNull() ?: return emptyList()
+        return c.use { cur ->
+            fun col(name: String) = cur.getColumnIndex(name)
+            val out = mutableListOf<DownloadTask>()
+            while (cur.moveToNext()) {
+                val status = cur.getInt(col(DownloadManager.COLUMN_STATUS))
+                val reason = cur.getInt(col(DownloadManager.COLUMN_REASON))
+                out += DownloadTask(
+                    id = cur.getLong(col(DownloadManager.COLUMN_ID)),
+                    title = cur.getString(col(DownloadManager.COLUMN_TITLE)).orEmpty().ifBlank { "download" },
+                    status = DownloadTasks.publicStatus(status, reason),
+                    currentBytes = cur.getLong(col(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                    totalBytes = cur.getLong(col(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+                    modifiedMillis = cur.getLong(col(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)),
+                    app = null,
+                    path = cur.getString(col(DownloadManager.COLUMN_LOCAL_URI)),
+                )
+            }
+            out
         }
     }
 

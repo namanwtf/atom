@@ -51,15 +51,15 @@ internal object ModelIds {
 /**
  * Starts unattended runs through the task runner. What the AgentHost API allows is applied for real: the model
  * (the task's pin, else the "Scheduled tasks" role), the reasoning effort and the title are written into the
- * conversation before the run starts, so the runner picks them up. Capability limits can only be stated in the
- * prompt until the runner accepts a per-run tool filter; [RunRequest.showProgress] cannot be honoured yet.
+ * conversation before the run starts, so the runner picks them up. The capability set filters the run's tool set
+ * for real ("Chat only" runs get no tools); [RunRequest.showProgress] cannot be honoured yet.
  */
 class AppRunLauncher(private val graph: AppGraph) : RunLauncher {
     override fun start(request: RunRequest): String? {
         val id = request.conversationId ?: Conversation.newId()
         if (graph.tasks.isRunning(id)) return null
         runCatching { runBlocking(Dispatchers.IO) { prepare(id, request) } }
-        return graph.tasks.start(header(request) + request.prompt, id, request.source)
+        return graph.tasks.start(header(request) + request.prompt, id, request.source, emptyList(), request.capabilities)
     }
 
     private suspend fun prepare(id: String, request: RunRequest) {
@@ -81,7 +81,8 @@ class AppRunLauncher(private val graph: AppGraph) : RunLauncher {
 
     private fun header(request: RunRequest): String {
         val allowed = Capability.describe(request.capabilities)
-        return "[${request.title} · unattended run · allowed tools: $allowed. Do not use tools outside these families.]\n"
+        // The tool set itself is filtered by the runner; this line only tells the model why some tools are absent.
+        return "[${request.title} · unattended run · allowed tools: $allowed.]\n"
     }
 }
 

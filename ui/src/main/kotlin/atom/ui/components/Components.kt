@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -41,7 +42,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import atom.ui.R
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -94,7 +94,7 @@ fun LargeTitleScreen(
     ) { padding ->
         LazyColumn(
             Modifier
-                .fillMaxHeight()
+                .fillMaxSize()
                 .scrollEndHaptic()
                 .overScrollVertical(onOffsetChanged = { behavior.state.overscrollOffset = it })
                 .nestedScroll(behavior.nestedScrollConnection),
@@ -150,20 +150,26 @@ fun CircleIconButton(
 
 // ------------------------------------------------------------------ Grouped lists
 
-/** Miuix small group title: blue-grey, 28dp from the screen edge on list pages. */
+/**
+ * Miuix small group title: blue-grey, 28dp from the screen edge on list pages. Its 16dp top padding is the gap
+ * after the previous card (groups add no space of their own).
+ */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     SmallTitle(
         text = text,
         modifier = modifier,
-        insideMargin = PaddingValues(start = 28.dp - ListSideMargin, end = 28.dp - ListSideMargin, top = 8.dp, bottom = 8.dp),
+        insideMargin = PaddingValues(start = 28.dp - ListSideMargin, end = 28.dp - ListSideMargin, top = 16.dp, bottom = 8.dp),
     )
 }
 
-/** A Miuix card holding rows, with the 12dp gap below it. Rows stack without dividers. */
+/**
+ * A Miuix card holding rows. Rows stack without dividers. It adds no outer spacing: the following [SectionLabel]
+ * provides the gap, and callers that stack cards directly add their own top padding.
+ */
 @Composable
 fun Group(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier.fillMaxWidth().padding(bottom = 12.dp), content = content)
+    Card(modifier = modifier.fillMaxWidth(), content = content)
 }
 
 /** Kept for source compatibility: Miuix cards stack rows without dividers, so this draws nothing. */
@@ -187,30 +193,79 @@ fun GroupRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val end: (@Composable RowScope.() -> Unit)? = if (trailing != null) {
+        {
+            Row(
+                Modifier.align(Alignment.CenterVertically),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { trailing() }
+        }
+    } else {
+        null
+    }
+    AtomRow(
+        title = title,
+        modifier = modifier,
+        icon = icon,
+        summary = subtitle,
+        titleColor = titleColor,
+        enabled = enabled,
+        onClick = onClick,
+        end = end,
+    )
+}
+
+/**
+ * The shared row layout (Miuix BasicComponent): 16dp padding, optional 24dp monochrome icon, a 17sp regular
+ * title, an optional 14sp grey summary and optional [end] content. Every row wrapper in this package uses it,
+ * so all rows look the same.
+ */
+@Composable
+fun AtomRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    summary: String? = null,
+    titleColor: Color = Color.Unspecified,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    role: Role? = null,
+    holdDown: Boolean = false,
+    end: (@Composable RowScope.() -> Unit)? = null,
+) {
+    val c = MiuixTheme.colorScheme
     val start: (@Composable () -> Unit)? = if (icon != null) {
         { RowIcon(icon, enabled) }
     } else {
         null
     }
-    val end: (@Composable RowScope.() -> Unit)? = if (trailing != null) {
-        { Box(Modifier.align(Alignment.CenterVertically)) { trailing() } }
-    } else {
-        null
-    }
     BasicComponent(
         modifier = modifier,
-        title = title,
-        titleColor = if (titleColor.isSpecified) {
-            BasicComponentDefaults.titleColor(color = titleColor)
-        } else {
-            BasicComponentDefaults.titleColor()
-        },
-        summary = subtitle,
         startAction = start,
         endActions = end,
         onClick = onClick,
+        role = role,
+        holdDownState = holdDown,
         enabled = enabled,
-    )
+    ) {
+        Text(
+            text = title,
+            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+            fontWeight = FontWeight.Normal,
+            color = when {
+                !enabled -> c.disabledOnSecondaryVariant
+                titleColor.isSpecified -> titleColor
+                else -> c.onBackground
+            },
+        )
+        if (summary != null) {
+            Text(
+                text = summary,
+                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                color = if (enabled) c.onSurfaceVariantSummary else c.disabledOnSecondaryVariant,
+            )
+        }
+    }
 }
 
 /** 24dp monochrome start icon of a row, with the Miuix 8dp gap after it. */

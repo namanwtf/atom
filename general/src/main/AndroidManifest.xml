@@ -1,2 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- In-app update (About > Check for updates): hands a verified release APK to the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <!-- Status of the install session the updater committed. Only the system installer, through Atom's own
+             PendingIntent, can reach it. -->
+        <receiver
+            android:name="atom.general.update.InstallStatusReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

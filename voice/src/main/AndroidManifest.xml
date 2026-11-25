@@ -45,6 +45,20 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Assist from the lock screen: asks to unlock first, then the assistant continues. Draws nothing. -->
+        <activity
+            android:name="atom.voice.assist.AssistUnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Stop button of the "Assistant voice" notification. -->
+        <receiver
+            android:name="atom.voice.notify.AssistantVoiceStopReceiver"
+            android:exported="false" />
+
         <!-- Tier 1: system digital assistant (no mic, no background work). -->
         <service
             android:name="atom.voice.assist.AtomVoiceInteractionService"
@@ -70,7 +84,7 @@
             android:name="atom.voice.assist.AtomRecognitionService"
             android:exported="true"
             tools:ignore="ExportedService"
-            android:label="@string/atom_voice_assistant_label">
+            android:label="@string/atom_speech_recognition_label">
             <intent-filter>
                 <action android:name="android.speech.RecognitionService" />
                 <category android:name="android.intent.category.DEFAULT" />

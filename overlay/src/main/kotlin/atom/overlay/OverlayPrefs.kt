@@ -74,7 +74,7 @@ internal class OverlayPrefs private constructor(private val sp: SharedPreference
 
         fun get(context: Context): OverlayPrefs = instance ?: synchronized(this) {
             instance ?: OverlayPrefs(
-                context.applicationContext.getSharedPreferences("atom_overlay", Context.MODE_PRIVATE),
+                context.applicationContext.getSharedPreferences("atom4_overlay", Context.MODE_PRIVATE),
             ).also { instance = it }
         }
     }
