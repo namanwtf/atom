@@ -4,24 +4,50 @@ import android.content.Context
 import android.content.SharedPreferences
 import atom.overlay.bubble.Docked
 import atom.overlay.bubble.Side
+import atom.voice.speech.Speech
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /** The overlay's few settings and remembered state. Tiny and synchronous, so SharedPreferences. */
 internal class OverlayPrefs private constructor(private val sp: SharedPreferences) {
-    private val _bubble = MutableStateFlow(sp.getBoolean(K_BUBBLE, false))
-    private val _autoSpeak = MutableStateFlow(sp.getBoolean(K_AUTO_SPEAK, false))
+    // On for new installs, as before; it only shows once "display over other apps" is allowed.
+    private val _bubble = MutableStateFlow(sp.getBoolean(K_BUBBLE, true))
     private val _chips = MutableStateFlow(sp.getBoolean(K_CHIPS, true))
     private val _glow = MutableStateFlow(sp.getBoolean(K_GLOW, true))
 
     val bubbleEnabled: StateFlow<Boolean> = _bubble.asStateFlow()
-    val autoSpeak: StateFlow<Boolean> = _autoSpeak.asStateFlow()
+
+    /**
+     * "Speak answers automatically" for the assistant overlay. One setting with Settings → Speech: it is stored in
+     * the speech config, and both screens read and write it there.
+     */
+    val autoSpeak: StateFlow<Boolean> get() = speakFlow
     val suggestionChips: StateFlow<Boolean> = _chips.asStateFlow()
     val edgeGlow: StateFlow<Boolean> = _glow.asStateFlow()
 
     fun setBubbleEnabled(on: Boolean) = put(K_BUBBLE, on, _bubble)
-    fun setAutoSpeak(on: Boolean) = put(K_AUTO_SPEAK, on, _autoSpeak)
+    fun setAutoSpeak(on: Boolean) {
+        Speech.update { it.copy(overlaySpeakAnswers = on) }
+        if (sp.contains(K_AUTO_SPEAK)) sp.edit().remove(K_AUTO_SPEAK).apply()
+    }
+
+    /** Moves an older overlay-only "read answers aloud" choice into the shared speech setting, once. */
+    fun migrateAutoSpeak() {
+        if (!sp.contains(K_AUTO_SPEAK)) return
+        val legacy = sp.getBoolean(K_AUTO_SPEAK, false)
+        sp.edit().remove(K_AUTO_SPEAK).apply()
+        if (legacy && !Speech.config.value.overlaySpeakAnswers) Speech.update { it.copy(overlaySpeakAnswers = true) }
+    }
+
+    /** The bubble's status line keeps its "hold the bubble for actions" hint until the hold menu was opened once. */
+    var menuDiscovered: Boolean
+        get() = sp.getBoolean(K_MENU_SEEN, false)
+        set(value) {
+            if (value != menuDiscovered) sp.edit().putBoolean(K_MENU_SEEN, value).apply()
+        }
+
     fun setSuggestionChips(on: Boolean) = put(K_CHIPS, on, _chips)
     fun setEdgeGlow(on: Boolean) = put(K_GLOW, on, _glow)
 
@@ -59,7 +85,13 @@ internal class OverlayPrefs private constructor(private val sp: SharedPreference
     }
 
     companion object {
-        const val DEFAULT_FRACTION = 0.38f
+        /** Default rest: the right edge, about 78% of the way down. */
+        const val DEFAULT_FRACTION = 0.78f
+        private val speakFlow: StateFlow<Boolean> by lazy {
+            val flow = MutableStateFlow(Speech.config.value.overlaySpeakAnswers)
+            OverlayRuntime.scope.launch { Speech.config.collect { flow.value = it.overlaySpeakAnswers } }
+            flow.asStateFlow()
+        }
         private const val K_BUBBLE = "bubble_enabled"
         private const val K_AUTO_SPEAK = "assistant_auto_speak"
         private const val K_CHIPS = "assistant_chips"
@@ -68,6 +100,7 @@ internal class OverlayPrefs private constructor(private val sp: SharedPreference
         private const val K_FRACTION = "bubble_fraction"
         private const val K_CONVERSATION = "bubble_conversation"
         private const val K_LOG = "bubble_log"
+        private const val K_MENU_SEEN = "bubble_menu_seen"
 
         @Volatile
         private var instance: OverlayPrefs? = null

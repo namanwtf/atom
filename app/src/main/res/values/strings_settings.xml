@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings page: group titles, in page order. -->
+    <string name="set_group_llm">LLM providers</string>
+    <string name="set_group_context">Context &amp; extensions</string>
+    <string name="set_group_tools">Tools</string>
+    <string name="set_group_assistant">System assistant takes over</string>
+    <string name="set_group_cts">Circle to Search</string>
+    <string name="set_group_general">General</string>
+    <string name="set_group_permissions">Permissions</string>
+    <string name="set_group_about">About</string>
+
+    <!-- LLM providers -->
+    <string name="set_not_configured">Not configured</string>
+    <string name="set_no_model">%1$s / No model selected</string>
+    <string name="set_effort_unsupported">Not supported by selected model</string>
+    <string name="set_on_device">On-device models</string>
+    <string name="set_on_device_sub">Run models on this phone (LiteRT and llama.cpp)</string>
+
+    <!-- Rows that open feature screens, with the classic titles. -->
+    <string name="set_memory">Memory</string>
+    <string name="set_subagent">Subagent</string>
+    <string name="set_skills">Skills</string>
+    <string name="set_mcp">MCP servers</string>
+    <string name="set_scheduled">Scheduled Tasks</string>
+    <string name="set_characters">Characters</string>
+    <string name="set_tool_list">Tool list</string>
+    <string name="set_web">Web search and reading</string>
+    <string name="set_images">AI image generation</string>
+    <string name="set_images_on">On · %1$s</string>
+    <string name="set_images_off">Off</string>
+    <string name="set_linux">Linux tool environment</string>
+    <string name="set_system">Root and system enhancements</string>
+    <string name="set_floating">Floating assistant</string>
+    <string name="set_appearance">Appearance &amp; Theme</string>
+    <string name="set_speech">Speech</string>
+    <string name="set_backup">Data backup</string>
+    <string name="set_all_permissions">All permissions</string>
+    <string name="set_all_permissions_sub">Every permission Atom can use, with its status</string>
+
+    <!-- General -->
+    <string name="set_language">Language</string>
+    <string name="set_language_system">Follow system</string>
+
+    <!-- Permissions -->
+    <string name="set_overlay_permission">Floating window permissions</string>
+    <string name="set_authorized">Authorized</string>
+    <string name="set_not_authorized">Not authorized</string>
+    <string name="set_accessibility">Accessibility enhancement tools</string>
+    <string name="set_enabled">Enabled</string>
+    <string name="set_disabled">Disabled</string>
+
+    <!-- About -->
+    <string name="set_version">Version</string>
+    <string name="set_check_updates">Check for updates</string>
+    <string name="set_checking">Checking…</string>
+    <string name="set_up_to_date">Already on the latest version</string>
+    <string name="set_update_failed">Update check failed. Try again later</string>
+    <string name="set_updates_not_configured">Updates are not configured in this build</string>
+    <string name="set_no_releases">No releases published yet</string>
+    <string name="set_update_available">Update available</string>
+    <string name="set_update_versions">Latest version %1$s, current version %2$s</string>
+    <string name="set_download">Download</string>
+    <string name="set_cancel">Cancel</string>
+    <string name="set_feedback">Feedback</string>
+    <string name="set_source">Source code</string>
+    <string name="set_source_sub">If Atom helps you, please star it on GitHub — it means a lot to us</string>
+
+    <!-- Auto-generate titles page -->
+    <string name="set_titles_group">General &amp; Model</string>
+    <string name="set_titles_enable">Enable auto-title</string>
+    <string name="set_titles_model">Title generation model</string>
+    <string name="set_titles_follow">Follow conversation model (%1$s)</string>
+    <string name="set_titles_follow_hint">Uses the current conversation or default model</string>
+    <string name="set_titles_reasoning">Reasoning level</string>
+    <string name="set_titles_auto">Auto (minimal / off)</string>
+    <string name="set_titles_note">A light, fast model is enough for titles and saves tokens.</string>
+
+    <!-- Model providers page -->
+    <string name="set_search_provider">Search provider</string>
+    <string name="set_add_new_provider">Add new provider</string>
+    <string name="set_configured_providers">Configured providers (%1$d)</string>
+    <string name="set_tag_current">current</string>
+    <string name="set_tag_builtin">built-in</string>
+    <string name="set_tag_disabled">Disabled</string>
+    <string name="set_no_providers">No model providers yet. Add one to get started</string>
+    <string name="set_no_matching_providers">No matching providers</string>
+    <string name="set_more_models">More</string>
+    <string name="set_remove_provider_title">Remove provider</string>
+    <string name="set_remove_provider_text">\"%1$s\" will be permanently deleted.</string>
+    <string name="set_delete">Delete</string>
+
+    <!-- Provider detail -->
+    <string name="set_tab_configuration">Configuration</string>
+    <string name="set_tab_model">Model</string>
+    <string name="set_connection">Connection</string>
+    <string name="set_preferences">Preferences and Strategies</string>
+    <string name="set_enable_provider">Enable this provider</string>
+    <string name="set_anthropic_version">anthropic-version</string>
+    <string name="set_anthropic_version_hint">2023-06-01</string>
+    <string name="set_advanced">Advanced</string>
+    <string name="set_save_configuration">Save configuration</string>
+    <string name="set_saving">Saving…</string>
+    <string name="set_saved_selected">Saved and selected as the current model provider</string>
+    <string name="set_saved_not_enabled">Saved, provider not enabled</string>
+    <string name="set_created_selected">Created and selected as the current model provider</string>
+    <string name="set_reset_builtin">Reset built-in configuration</string>
+    <string name="set_remove_this_provider">Remove provider</string>
+    <string name="set_models_title">Models (%1$d)</string>
+    <string name="set_models_match">Models (%1$d of %2$d match)</string>
+    <string name="set_model_management">Model management</string>
+    <string name="set_pull_remote">Automatically pull from remote</string>
+    <string name="set_pull_remote_sub">Read the /models list from %1$s</string>
+    <string name="set_retrieving">Retrieving…</string>
+    <string name="set_add_custom_model_sub">Manually fill in the display name and Model ID</string>
+    <string name="set_n_selected">%1$d selected</string>
+    <string name="set_select_all">Select all</string>
+    <string name="set_select_none">Select none</string>
+    <string name="set_delete_n_models">Delete %1$d models</string>
+    <string name="set_edit_model">Edit model parameters</string>
+    <string name="set_context_tag">%1$s context</string>
+    <string name="set_supports_reasoning">Supports Reasoning</string>
+
+    <!-- Model picker -->
+    <string name="set_choose_model">Choose model</string>
+    <string name="set_search_model">Search model</string>
+    <string name="set_all">All</string>
+    <string name="set_no_matching_model">No matching model found</string>
+    <string name="set_type_openai">OpenAI-compatible</string>
+    <string name="set_type_responses">OpenAI Responses</string>
+    <string name="set_type_anthropic">Anthropic Messages</string>
+    <string name="set_type_gemini">Gemini</string>
+    <string name="set_type_vertex">Vertex AI</string>
+
+    <!-- Open-source notices -->
+    <string name="set_legal_ofl">SIL Open Font License 1.1</string>
+    <string name="set_legal_ofl_desc">JetBrains Mono, the terminal font.</string>
+    <string name="set_legal_lobe">MIT License (Lobe Icons)</string>
+    <string name="set_legal_lobe_desc">Provider and model brand logos. The logos are trademarks of their owners.</string>
+
+    <!-- General -->
+    <string name="set_live_updates">Live Update notification</string>
+    <string name="set_live_updates_sub">Show a running task in the status bar (Android 16 and later)</string>
+    <string name="set_delete_current_warning">The current model is among them. Another model of this provider will be selected, or the default model if none is left.</string>
+    <string name="set_no_models_yet">No models yet. Add or enable a provider in Model providers</string>
+    <string name="set_effort_saved_unsupported">%1$s (not supported by this model)</string>
+</resources>

@@ -242,6 +242,7 @@ class EngineRouter(
             reasoning = modelConfig.reasoning,
             contextWindow = modelConfig.effectiveContextWindow,
             vision = modelConfig.vision,
+            anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() },
         )
         val engine = try {
             CloudEngines.create(provider, credential.secret, modelId, baseUrl, options)

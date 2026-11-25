@@ -27,7 +27,7 @@
 
     <!-- Content descriptions -->
     <string name="cd_back">Back</string>
-    <string name="cd_open_drawer">Open conversations</string>
+    <string name="cd_open_drawer">Conversations</string>
     <string name="cd_delete_conversation">Delete conversation</string>
     <string name="cd_dismiss">Dismiss</string>
     <string name="cd_show_secret">Show</string>
@@ -59,8 +59,8 @@
     <string name="step_result">Result</string>
     <string name="step_awaiting">Approve?</string>
     <string name="banner_busy_elsewhere">A task is running in another conversation.</string>
-    <string name="drawer_new_chat">New chat</string>
-    <string name="drawer_empty">No conversations yet.</string>
+    <string name="drawer_new_chat">New conversation</string>
+    <string name="drawer_empty">No conversations yet</string>
     <string name="drawer_untitled">Untitled</string>
     <string name="delete_conversation_title">Delete conversation?</string>
     <string name="delete_conversation_text">“%1$s” will be removed from this phone.</string>

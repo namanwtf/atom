@@ -1,5 +1,8 @@
 package atom.app.agent
 
+import atom.device.switches.ToolSwitches
+import atom.device.switches.switchChecked
+import atom.device.switches.withoutSwitchedOff
 import android.app.Application
 import atom.app.AppGraph
 import atom.app.data.Attachment
@@ -275,7 +278,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             key = m.createdAt.toString()
             assistant = m.message.role == Role.Assistant
             val msg = if (assistant) ChatMessage.assistant(clean) else ChatMessage.user(clean)
-            conv.copy(messages = conv.messages.mapIndexed { i, s -> if (i == index) s.copy(message = msg) else s }, updatedAt = System.currentTimeMillis())
+            conv.copy(messages = conv.messages.mapIndexed { i, s -> if (i == index) s.copy(message = msg, edited = true) else s }, updatedAt = System.currentTimeMillis())
         } ?: return false
         if (assistant) key?.let { runCatching { CharacterSession.replaceCandidate(saved.id, it, clean) } }
         return true
@@ -412,6 +415,25 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     /** Drops the finished state of [conversationId] (its conversation is saved). */
     fun clearFinished(conversationId: String) {
         _live.update { runs -> runs[conversationId]?.takeIf { !it.active }?.let { runs - conversationId } ?: runs }
+    }
+
+    /**
+     * "Enable auto read-aloud" (chat More menu, Speech settings): reads each finished chat answer with the
+     * configured spoken-answer service. Tagged with the answer's turn so its Read aloud button shows Stop.
+     */
+    private fun autoReadAloud(conversation: Conversation, answer: String?, answerIndex: Int?) {
+        val text = answer?.takeIf { it.isNotBlank() } ?: return
+        val speech = atom.voice.speech.Speech.config.value
+        if (!speech.autoReadAloud || !speech.ttsConfigured) return
+        // The turn that holds the spoken answer: a regenerated character reply can sit before later turns.
+        val turnKey = runCatching {
+            val turns = Transcript.of(conversation.messages).filterIsInstance<ChatItem.Turn>()
+            (answerIndex?.let { i -> turns.lastOrNull { it.answerIndex == i } } ?: turns.lastOrNull())?.key
+        }.getOrNull()
+        // ReadAloud is driven from the main thread (its UI Stop button too); runs finish on a worker thread.
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { atom.voice.tts.ReadAloud.speak(text, atom.voice.tts.ReadAloudSource.Chat, turnKey) }
+        }
     }
 
     /** Finished runs stay visible for the host's "last result", but only a few are kept in memory. */
@@ -646,7 +668,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         @Volatile
         var selectionInUse: EngineSelection? = null
 
-        val hostedSearchInUse: Boolean get() = CapabilityTools.allowsHostedSearch(request.capabilities)
+        val hostedSearchInUse: Boolean get() = hostedSearchAllowed()
 
         @Volatile
         var windowInUse: Int? = null
@@ -677,6 +699,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
 
+        /** Provider-hosted search follows the run's capabilities and the web_search switch on the Tool list. */
+        private fun hostedSearchAllowed(): Boolean =
+            CapabilityTools.allowsHostedSearch(request.capabilities) && ToolSwitches.isToolOn("web_search")
+
         private val pendingAttachments = ArrayDeque<List<Attachment>>()
 
         suspend fun run() {
@@ -693,7 +719,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val roleSelection = role?.let { r -> runCatching { graph.modelRoles.resolve(r, null) }.getOrNull() }
                 val selection = roleSelection ?: saved
                 // Capability-limited runs without the web get no provider-hosted search either.
-                val hostedSearch = CapabilityTools.allowsHostedSearch(request.capabilities)
+                val hostedSearch = hostedSearchAllowed()
                 val engine = graph.router.acquire(selection, hostedSearch = hostedSearch).also { routed = it }
                 selectionInUse = engine.selection ?: selection
                 val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
@@ -822,7 +848,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
-            val wrapped = base.map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
+            val wrapped = base.withoutSwitchedOff()
+                .map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }
+                .map(LongTools::apply)
+                // Each call re-checks the tool's own switch, so turning it off on the Tool list stops it mid-run.
+                .map { it.switchChecked() }
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
@@ -1104,6 +1134,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 )
             }
             if (outcome == RunOutcome.Completed && request.regenerate == null) titleCandidate = final
+            if (outcome == RunOutcome.Completed && request.source == RunSource.Chat) autoReadAloud(final, finalText, request.regenerate?.answerIndex)
             pruneFinished()
         }
 

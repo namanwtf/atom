@@ -17,6 +17,11 @@ import atom.vdisplay.route.DisplayRouter
 import atom.vdisplay.tools.BackgroundTools
 import atom.vdisplay.viewfinder.BackgroundViewfinder
 import atom.xposed.ModuleStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * System enhancements: the background virtual display (hidden-screen runs, live viewfinder, take over, present to
@@ -27,27 +32,40 @@ import atom.xposed.ModuleStatus
 object SystemFeature : AtomFeature {
     override val id = "vdisplay"
     const val ROUTE = "vdisplay/system"
+    private val seenWatcher = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onAppCreate(context: Context) {
         DisplayRouter.init(context)
         ModuleStatus.init()
-        ModuleStatus.push(SystemPrefs.get(context).hooks.value)
+        val prefs = SystemPrefs.get(context)
+        ModuleStatus.push(prefs.hooks.value)
+        // Event-driven: remember the first connection so the framework rows stay visible (greyed) when it is away.
+        if (!prefs.frameworkSeen.value) {
+            seenWatcher.launch {
+                ModuleStatus.state.first { it is ModuleStatus.Connection.Connected }
+                prefs.markFrameworkSeen()
+            }
+        }
         Overlay.viewfinder = BackgroundViewfinder
     }
 
     override fun tools(context: Context): List<Tool> {
-        if (!SystemPrefs.get(context).backgroundDisplay.value) return emptyList()
+        if (!backgroundUsable(context)) return emptyList()
         return BackgroundTools(context).all().map { it.gated(ToolSwitch.DeviceDirect) }
     }
 
     override fun promptHint(context: Context): String? {
-        if (!SystemPrefs.get(context).backgroundDisplay.value) return null
+        if (!backgroundUsable(context)) return null
         return "# Background display\nFor a task in another app that the user is not looking at, prefer " +
             "background_open_app: it runs on a hidden screen so the user keeps using the phone. Work there with " +
             "background_look / background_act. At a payment confirmation, a QR code or the final result, call " +
             "present_to_main_screen. \"Display unavailable\" means start again with background_open_app; never redo " +
             "those coordinates with the normal screen tools."
     }
+
+    /** The background display only acts with root: without it the tools and the prompt hint are left out. */
+    private fun backgroundUsable(context: Context): Boolean =
+        SystemPrefs.get(context).backgroundDisplay.value && atom.device.root.RootAccess.granted
 
     override val entries: List<FeatureEntry> = listOf(
         FeatureEntry(FeatureSection.System, R.string.vd_system_title, R.string.vd_system_sub, ScreenIcons.Tune, ROUTE),
