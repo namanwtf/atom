@@ -9,6 +9,9 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
+import android.os.Build
 import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -113,7 +116,7 @@ private class NewTaskUriHandler(private val context: Context) : UriHandler {
 internal class OverlayWindow(
     context: Context,
     val params: WindowManager.LayoutParams,
-    onBack: (() -> Boolean)? = null,
+    private val onBack: (() -> Boolean)? = null,
     content: @Composable () -> Unit,
 ) {
     private val wm = context.getSystemService(WindowManager::class.java)
@@ -129,6 +132,7 @@ internal class OverlayWindow(
             wm.addView(view, params)
             attached = true
             owner.resume()
+            registerBack()
             true
         } catch (e: RuntimeException) { // BadTokenException, SecurityException, IllegalStateException
             owner.destroy()
@@ -147,7 +151,41 @@ internal class OverlayWindow(
         if (hidden) owner.pause() else owner.resume()
     }
 
+    private var backCallback: Any? = null
+
+    /**
+     * The app opts into predictive back, so Back never reaches a window's views as a key event; an overlay window
+     * that handles Back registers a callback with its own dispatcher instead (older Android keeps using the key).
+     */
+    private fun registerBack() {
+        val handler = onBack ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val callback = OnBackInvokedCallback { handler() }
+        val dispatcher = view.findOnBackInvokedDispatcher()
+        if (dispatcher != null) {
+            dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+            backCallback = callback
+        } else {
+            view.post {
+                if (!attached) return@post
+                view.findOnBackInvokedDispatcher()?.let {
+                    it.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+                    backCallback = callback
+                }
+            }
+        }
+    }
+
+    private fun unregisterBack() {
+        val callback = backCallback ?: return
+        backCallback = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && callback is OnBackInvokedCallback) {
+            runCatching { view.findOnBackInvokedDispatcher()?.unregisterOnBackInvokedCallback(callback) }
+        }
+    }
+
     fun remove() {
+        unregisterBack()
         if (!attached) {
             owner.destroy()
             return
