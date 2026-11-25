@@ -14,6 +14,7 @@ import atom.core.tool.string
 import atom.device.Accessibility
 import atom.device.screen.Screenshots
 import atom.device.screen.ShellUi
+import atom.device.screen.TapArea
 import atom.device.screen.UiController
 import atom.device.screen.UiError
 
@@ -30,17 +31,23 @@ internal class UiTools(private val context: Context) {
             "enough; images are expensive.",
         risk = Risk.Read,
         parameters = schema {
-            boolean("screenshot", "Also attach a downscaled screenshot. Default false.")
+            boolean("screenshot", "Also attach a screenshot (downscaled to 1080 px on the longest side). Default false.")
+            boolean(
+                "full_resolution",
+                "With screenshot=true: send it at the screen's original resolution instead (sharper small text, " +
+                    "image pixels = tap pixels, but much more expensive). Default false.",
+            )
         },
         usesPhoneUi = true,
     ) { args, _ ->
         val wantShot = args.optBoolean("screenshot") == true
+        val full = args.optBoolean("full_resolution") == true
         val sh = UiController.shell
         if (Accessibility.service == null && ShellUi.usable(sh)) {
             return@SimpleTool try {
                 val text = ShellUi.read(context, sh!!, screenChars)
                 if (wantShot) {
-                    val shot = ShellUi.screenshot(context, sh)
+                    val shot = ShellUi.screenshot(context, sh, full)
                     ToolResult(text + "\n" + shot.note, images = listOf(shot.image))
                 } else {
                     ToolResult.ok(text)
@@ -53,12 +60,12 @@ internal class UiTools(private val context: Context) {
             val text = UiController.read(svc, screenChars)
             if (!wantShot) return@tool ToolResult.ok(text)
             try {
-                val shot = Screenshots.capture(svc)
+                val shot = Screenshots.capture(svc, full)
                 ToolResult(text + "\n" + shot.note, images = listOf(shot.image))
             } catch (e: UiError) {
                 if (ShellUi.usable(sh)) {
                     try {
-                        val shot = ShellUi.screenshot(context, sh!!)
+                        val shot = ShellUi.screenshot(context, sh!!, full)
                         return@tool ToolResult(text + "\n" + shot.note, images = listOf(shot.image))
                     } catch (_: UiError) {
                     }
@@ -71,20 +78,28 @@ internal class UiTools(private val context: Context) {
     private fun tap(long: Boolean) = SimpleTool(
         name = if (long) "long_press" else "tap",
         description = (if (long) "Long-press (press and hold)" else "Tap") +
-            " an element by id from read_screen (preferred), or a screen point x,y in pixels only when no element fits. " +
+            " an element by id from read_screen (preferred), by area (a screen region left,top,right,bottom: the best " +
+            "element inside it, else its centre), or a screen point x,y in pixels only when nothing else fits. " +
             "Waits for the screen to settle and reports done or \"submitted, unconfirmed\".",
         risk = Risk.Act,
         parameters = schema {
             string("id", "Element id from the latest read_screen, e.g. n12.")
             integer("x", "Screen x in pixels (when no id).")
             integer("y", "Screen y in pixels (when no id).")
+            string("area", "Region \"left,top,right,bottom\" in screen pixels (when no id), e.g. the bottom bar \"0,2200,1080,2400\".")
         },
         usesPhoneUi = true,
     ) { args, _ ->
         val id = args.optString("id")
+        val areaText = args.optString("area")?.takeIf { id == null && it.isNotBlank() }
+        val area = areaText?.let { TapArea.parse(it) ?: throw ToolArgumentException("area must be \"left,top,right,bottom\" in pixels.") }
         val sh = UiController.shell
         if (Accessibility.service == null && ShellUi.usable(sh)) {
-            val (x, y) = if (id != null) {
+            val (x, y) = if (area != null) {
+                val best = TapArea.best(area, ShellUi.candidates())
+                best?.let { it.box.centerX to it.box.centerY }
+                    ?: (area.centerX to area.centerY)
+            } else if (id != null) {
                 val b = ShellUi.boxFor(id) ?: return@SimpleTool ToolResult.error("Unknown element id '$id'. Call read_screen again.")
                 b.centerX to b.centerY
             } else {
@@ -98,7 +113,11 @@ internal class UiTools(private val context: Context) {
             }
         }
         UiController.tool { svc ->
-            val done = UiController.tap(svc, id, args.optInt("x"), args.optInt("y"), long)
+            val done = if (area != null) {
+                UiController.tapArea(svc, area, long)
+            } else {
+                UiController.tap(svc, id, args.optInt("x"), args.optInt("y"), long)
+            }
             UiController.outcome(svc, done)
         }
     }
