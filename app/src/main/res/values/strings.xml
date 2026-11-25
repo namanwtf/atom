@@ -103,6 +103,9 @@
     <string name="notif_waiting_text">Tap Allow or Deny</string>
     <string name="notif_starting">Starting…</string>
     <string name="notif_thinking">Thinking…</string>
+    <!-- Live Update status-bar chip (keep very short). -->
+    <string name="live_working">Working</string>
+    <string name="live_waiting">Approve</string>
     <string name="notif_done">Task done</string>
     <string name="notif_failed">Task failed</string>
     <string name="notif_step_limit">Stopped at the step limit</string>

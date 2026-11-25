@@ -73,6 +73,8 @@ data class AppSettings(
     val autoCompaction: Boolean = true,
     /** Keep the screen on while a run is active and Atom is visible (with a safety timeout). */
     val keepScreenOn: Boolean = true,
+    /** Android 16+: show a running task as a Live Update (status-bar chip). Older Androids ignore it. */
+    val liveUpdates: Boolean = true,
 ) {
     companion object {
         val DEFAULT_SELECTION = EngineSelection.Cloud(PresetCatalog.DEFAULT_PROVIDER, PresetCatalog.DEFAULT_MODEL)
@@ -111,6 +113,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     suspend fun setKeepScreenOn(enabled: Boolean) {
         store.edit { it[KEEP_SCREEN_ON] = enabled }
+    }
+
+    suspend fun setLiveUpdates(enabled: Boolean) {
+        store.edit { it[LIVE_UPDATES] = enabled }
     }
 
     suspend fun setFallback(fallback: EngineSelection.Cloud?) {
@@ -159,6 +165,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         autoTitles = p[AUTO_TITLES] ?: true,
         autoCompaction = p[AUTO_COMPACTION] ?: true,
         keepScreenOn = p[KEEP_SCREEN_ON] ?: true,
+        liveUpdates = p[LIVE_UPDATES] ?: true,
     )
 
     private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
@@ -178,5 +185,6 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val AUTO_TITLES = booleanPreferencesKey("auto_titles")
         val AUTO_COMPACTION = booleanPreferencesKey("auto_compaction")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val LIVE_UPDATES = booleanPreferencesKey("live_update_notification")
     }
 }

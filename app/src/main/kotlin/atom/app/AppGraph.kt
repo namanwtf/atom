@@ -29,6 +29,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,7 +56,11 @@ class AppGraph(private val app: Application) {
     val conversations = ConversationStore(File(app.filesDir, "conversations"))
     val journal = RunJournal(File(app.filesDir, "run-journal"))
     val runtimePrefs = RuntimePrefs(app.runtimeDataStore)
-    val notifications = TaskNotifications(app)
+    val notifications = TaskNotifications(app).also { n ->
+        appScope.launch {
+            settings.settings.map { it.liveUpdates }.distinctUntilChanged().collect { n.liveUpdates = it }
+        }
+    }
 
     val models: ModelStore by lazy { ModelStore.get(app) }
     val power: PowerGovernor by lazy { PowerGovernor(app) }
