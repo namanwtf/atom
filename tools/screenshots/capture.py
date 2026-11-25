@@ -373,7 +373,10 @@ def main():
         time.sleep(2.5)
         focus_report()
         shot(p + "37_mini_chat_keyboard")
-        back(wait=1.5)
+        # First Back closes only the keyboard: the panel must grow back to full height.
+        back(wait=2.5)
+        focus_report()
+        shot(p + "37b_keyboard_closed")
     back(wait=1.5)
     focus_report()
     if find("^Ask Atom anything$|^Ask Atom"):
@@ -383,6 +386,29 @@ def main():
     shot(p + "38_after_panel")
     after = bubble_bounds()
     print(f"[capture] bubble frame before the panel: {before}, after closing it: {after}, unchanged: {before == after}")
+    # The same keyboard round with Atom's accessibility service on, so the measured keyboard top is used.
+    service = f"{PKG}/atom.device.AtomAccessibilityService"
+    sh(f"settings put secure enabled_accessibility_services {service}")
+    sh("settings put secure accessibility_enabled 1")
+    time.sleep(4)
+    print(f"[capture] accessibility services: {sh('settings get secure enabled_accessibility_services').strip()}")
+    b2 = bubble_bounds() or after or b
+    sh(f"input tap {(b2[0] + b2[2]) // 2} {(b2[1] + b2[3]) // 2}")
+    time.sleep(2.5)
+    mic = find("^Dictate$")
+    if mic:
+        sh(f"input tap {max(60, mic[0] - 300)} {(mic[1] + mic[3]) // 2}")
+        time.sleep(2.5)
+        focus_report()
+        shot(p + "41_keyboard_measured")
+        back(wait=2.5)
+        shot(p + "42_keyboard_measured_closed")
+    back(wait=1.5)
+    if find("^Ask Atom anything$"):
+        tap("^Close$", wait=1.5)
+    sh("settings put secure enabled_accessibility_services ''")
+    sh("settings put secure accessibility_enabled 0")
+    time.sleep(2)
     # Drop on the X target: the bubble is fused with it (brace), and letting go hides it and turns the switch off.
     b = after or b
     cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2

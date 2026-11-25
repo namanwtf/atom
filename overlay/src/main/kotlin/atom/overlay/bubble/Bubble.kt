@@ -9,6 +9,7 @@ import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager.LayoutParams
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -182,6 +183,7 @@ internal object Bubble {
     /** Hide, from the menu or the dismiss target: the bubble goes away and the switch turns off. */
     private fun hide() {
         setEnabled(false)
+        runCatching { Toast.makeText(OverlayRuntime.app, R.string.overlay_bubble_off, Toast.LENGTH_LONG).show() }
     }
 
     // ------------------------------------------------------------------ Geometry
@@ -255,7 +257,7 @@ internal object Bubble {
         val params = OverlayWindow.params(
             slot.type,
             LayoutParams.WRAP_CONTENT,
-            bubble.params.height,
+            LayoutParams.WRAP_CONTENT,
             LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         )
         params.title = PILL_TITLE
@@ -264,6 +266,13 @@ internal object Bubble {
             if (text != null) StatusPill(text, statusPaused)
         }
         pw.view.setOnClickListener { MiniChat.open() }
+        // The window wraps the pill; once its height is known, centre it on the bubble.
+        pw.view.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) {
+                val b = window
+                if (pillWindow === pw && b != null && placePill(pw, b)) pw.update()
+            }
+        }
         placePill(pw, bubble)
         if (pw.show()) pillWindow = pw
     }
@@ -281,10 +290,12 @@ internal object Bubble {
         } else {
             (m.area.width - (bubble.params.x + faceInset) + gap).roundToInt()
         }
-        val changed = p.x != x || p.y != bubble.params.y || p.gravity != gravity
+        val pillHeight = pw.view.height.takeIf { it > 0 } ?: (PILL_HEIGHT_DP * m.density).roundToInt()
+        val y = bubble.params.y + (bubble.params.height - pillHeight) / 2
+        val changed = p.x != x || p.y != y || p.gravity != gravity
         p.gravity = gravity
         p.x = x
-        p.y = bubble.params.y
+        p.y = y
         return changed
     }
 
@@ -326,21 +337,31 @@ internal object Bubble {
         }
     }
 
-    private fun endDrag(w: OverlayWindow, vx: Float, vy: Float) {
+    /**
+     * A lift settles on the nearer edge (and is saved), or hides the bubble when dropped on the X. A drag the system
+     * cancelled (shade pulled, call screen, rotation) never hides it: the bubble goes back to its saved spot.
+     */
+    private fun endDrag(w: OverlayWindow, vx: Float, vy: Float, cancelled: Boolean = false) {
         val state = drag ?: run {
             w.view.alpha = 1f
             return
         }
-        if (state.captured) {
+        if (DismissMath.dropHides(state.captured, cancelled)) {
             state.onDismissed = { OverlayRuntime.main.post { hide() } }
             state.dismissing = true
             return
         }
+        state.captured = false
         val m = metrics(w)
         val rest = m.rest
-        val docked = BubbleGeometry.snap(Pt(state.pos.x, state.pos.y), vx, vy, rest, flingVelocity = 900f * m.density)
-        // Saved the moment the drag ends: this is where the bubble stays until the user moves it again.
-        prefs.dock = docked
+        val docked = if (cancelled) {
+            prefs.dock ?: Docked(Side.Right, OverlayPrefs.DEFAULT_FRACTION)
+        } else {
+            BubbleGeometry.snap(Pt(state.pos.x, state.pos.y), vx, vy, rest, flingVelocity = 900f * m.density).also {
+                // Saved the moment the drag ends: this is where the bubble stays until the user moves it again.
+                prefs.dock = it
+            }
+        }
         val target = BubbleGeometry.place(docked, rest)
         state.onSettled = {
             w.params.x = target.x.roundToInt()
@@ -527,7 +548,7 @@ internal object Bubble {
                 MotionEvent.ACTION_CANCEL -> {
                     v.removeCallbacks(longPress)
                     pressed = false
-                    if (dragging) endDrag(w, 0f, 0f)
+                    if (dragging) endDrag(w, 0f, 0f, cancelled = true)
                     release()
                 }
             }
@@ -555,6 +576,9 @@ internal object Bubble {
     private const val CLOSENESS_REACH_DP = 460f
 
     private const val PILL_GAP_DP = 6f
+
+    /** A one-line pill, until the real height is measured. */
+    private const val PILL_HEIGHT_DP = 34f
 
     /** Window titles, so the windows can be told apart in `dumpsys window`. */
     const val WINDOW_TITLE = "AtomBubble"

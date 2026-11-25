@@ -156,6 +156,7 @@ internal class OverlayWindow(
     /**
      * The app opts into predictive back, so Back never reaches a window's views as a key event; an overlay window
      * that handles Back registers a callback with its own dispatcher instead (older Android keeps using the key).
+     * Through the callback Back is always consumed, so give [onBack] only to windows that always handle it.
      */
     private fun registerBack() {
         val handler = onBack ?: return

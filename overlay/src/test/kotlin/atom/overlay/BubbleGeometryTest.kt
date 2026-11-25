@@ -115,6 +115,13 @@ class BubbleGeometryTest {
     }
 
     @Test
+    fun onlyARealLiftOnTheTargetHides() {
+        assertTrue(DismissMath.dropHides(captured = true, cancelled = false))
+        assertFalse(DismissMath.dropHides(captured = true, cancelled = true))
+        assertFalse(DismissMath.dropHides(captured = false, cancelled = false))
+    }
+
+    @Test
     fun targetSitsAboveTheNavigationBar() {
         assertEquals(Pt(540f, 2400f - 60f - 200f), DismissMath.target(area, lift = 200f))
     }

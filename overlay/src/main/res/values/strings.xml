@@ -5,7 +5,7 @@
     <string name="overlay_entry_subtitle">Bubble, run controls and the assistant overlay</string>
     <string name="overlay_settings_title">Floating assistant</string>
 
-    <string name="overlay_section_bubble">Floating bubble</string>
+    <string name="overlay_section_bubble">Bubble</string>
     <string name="overlay_bubble_switch">Floating bubble</string>
     <string name="overlay_bubble_hint">Tap it for a mini chat. Hold the bubble for actions.</string>
     <string name="overlay_bubble_needs_permission">On, but hidden: Atom isn’t allowed to display over other apps. Tap to allow it.</string>
@@ -23,7 +23,10 @@
     <string name="overlay_capsule_overlay">Shown over other apps. Tap it to pause, steer or stop.</string>
     <string name="overlay_capsule_missing">Allow display over other apps, or turn on Atom’s accessibility service, to see run controls.</string>
 
-    <string name="overlay_section_assistant">Assistant overlay</string>
+    <string name="overlay_section_assistant">Assistant</string>
+    <string name="overlay_section_overlay">Assistant overlay</string>
+    <string name="overlay_reasoning">Reasoning level</string>
+    <string name="overlay_reasoning_hint">How hard the assistant thinks; set with its model</string>
     <string name="overlay_default_assistant">Default assistant</string>
     <string name="overlay_default_assistant_hint">Long-press power or use the assist gesture to call Atom over any app</string>
     <string name="overlay_assistant_atom">Atom</string>
@@ -46,6 +49,7 @@
     <string name="overlay_open_chat">Open chat</string>
     <string name="overlay_talk">Talk</string>
     <string name="overlay_dismiss_target">Drop here to hide the bubble</string>
+    <string name="overlay_bubble_off">Bubble off. Turn it back on in Settings → Floating assistant.</string>
     <string name="overlay_status_with_hint">%1$s · hold the bubble for actions</string>
 
     <!-- Mini chat -->
@@ -88,6 +92,7 @@
     <string name="overlay_steer_hint">Add instructions; Atom continues the current task</string>
     <string name="overlay_result_ready">Completed</string>
     <string name="overlay_result_failed">Failed</string>
+    <string name="overlay_result_ready_locked">Result ready</string>
     <string name="overlay_open_screen">Open screen</string>
     <string name="overlay_cancel">Cancel</string>
     <string name="overlay_open_atom">Open Atom</string>

@@ -67,6 +67,9 @@ object DismissMath {
 
     fun distance(a: Pt, b: Pt): Float = hypot(a.x - b.x, a.y - b.y)
 
+    /** Only a real lift over the target hides the bubble; a gesture the system cancelled never does. */
+    fun dropHides(captured: Boolean, cancelled: Boolean): Boolean = captured && !cancelled
+
     /** 1 on the target, falling linearly to 0 at [reach]; drives the halo and beam strength. */
     fun closeness(bubble: Pt, target: Pt, reach: Float): Float {
         if (reach <= 0f) return 0f

@@ -1,14 +1,18 @@
 package atom.overlay.run
 
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.view.Gravity
 import android.view.WindowManager.LayoutParams
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import atom.overlay.Overlay
 import atom.overlay.OverlayRuntime
 import atom.overlay.assistant.AssistantController
@@ -95,7 +99,8 @@ internal object RunOverlays {
 
     fun onFinished(run: HostRun, presentedElsewhere: Boolean) {
         val drove = driving.remove(run.conversationId)
-        val onDisplay = usedDisplay.remove(run.conversationId) || Overlay.viewfinder?.shows(run) == true
+        // Only this run's own record counts: the display state now may belong to another run, or be lost.
+        val onDisplay = usedDisplay.remove(run.conversationId)
         if (drove && !presentedElsewhere && run.phase != RunPhase.Cancelled) {
             showResult(
                 ResultView(
@@ -189,7 +194,37 @@ internal object RunOverlays {
         resultTimer?.cancel()
         resultTimer = null
         result = null
+        unwatchUnlock()
         refresh()
+    }
+
+    /**
+     * True while the keyguard is locked. The result card may draw over the lock screen (accessibility overlay), so
+     * until the user unlocks it shows only the outcome: no answer text, no Copy, no buttons that open anything.
+     */
+    var locked by mutableStateOf(false)
+        private set
+    private var unlockReceiver: BroadcastReceiver? = null
+
+    private fun watchUnlock() {
+        val app = OverlayRuntime.app
+        locked = app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+        if (!locked || unlockReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                locked = false
+                unwatchUnlock()
+            }
+        }
+        runCatching {
+            ContextCompat.registerReceiver(app, receiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED)
+        }.onSuccess { unlockReceiver = receiver }
+    }
+
+    private fun unwatchUnlock() {
+        val receiver = unlockReceiver ?: return
+        unlockReceiver = null
+        runCatching { OverlayRuntime.app.unregisterReceiver(receiver) }
     }
 
     // ------------------------------------------------------------------ State
@@ -198,6 +233,7 @@ internal object RunOverlays {
         expanded = false
         endSteer()
         result = r
+        watchUnlock()
         resultTimer?.cancel()
         resultTimer = OverlayRuntime.scope.launch {
             delay(RESULT_MS)
@@ -256,11 +292,11 @@ internal object RunOverlays {
             y = top.roundToInt()
             softInputMode = LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
+        // The capsule takes focus only while steering, so Back reaches it only then; it always handles it.
         val w = OverlayWindow(ctx, params, onBack = {
             when {
                 steering -> endSteer()
-                expanded -> expanded = false
-                else -> return@OverlayWindow false
+                else -> expanded = false
             }
             true
         }) { RunCapsule() }
