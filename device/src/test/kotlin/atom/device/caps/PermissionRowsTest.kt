@@ -42,6 +42,8 @@ class PermissionRowsTest {
         assertEquals(StatusTone.Bad, PermissionRows.tone(CapStatus.Missing))
         assertEquals(StatusTone.Bad, PermissionRows.tone(CapStatus.NotEnabled))
         assertEquals(StatusTone.Muted, PermissionRows.tone(CapStatus.Unsupported))
+        assertEquals(StatusTone.Muted, PermissionRows.tone(CapStatus.NotEnabled, optional = true))
+        assertEquals(StatusTone.Good, PermissionRows.tone(CapStatus.Available, optional = true))
         assertEquals(listOf("Available", "Missing", "Issue", "Not enabled"), listOf(CapStatus.Available, CapStatus.Missing, CapStatus.Issue, CapStatus.NotEnabled).map { it.label })
     }
 

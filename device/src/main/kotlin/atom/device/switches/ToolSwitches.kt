@@ -44,8 +44,25 @@ object ToolSwitches {
     private const val K_DISABLED = "disabled_tools"
     private const val K_FOLDED = "masters_folded"
 
-    /** Master switches whose tools are all listed in the catalog, so per-tool switches can take over. */
-    private val FOLDABLE = listOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead, ToolSwitch.SensitiveOps, ToolSwitch.TerminalFiles)
+    /**
+     * Master switches that become per-tool switches. HostedSearch is not one: provider-hosted search is a setting
+     * of each provider.
+     */
+    private val FOLDABLE = listOf(
+        ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead, ToolSwitch.SensitiveOps, ToolSwitch.TerminalFiles,
+        ToolSwitch.Web, ToolSwitch.Memory, ToolSwitch.ImageGen,
+    )
+
+    /**
+     * What each master switch said it covered on the old Tool list, as catalog card ids. Web, Memory and image
+     * generation never gated a tool, but a user who had them off expects those tools to stay off.
+     */
+    private val VISIBLE_SCOPE: Map<ToolSwitch, Set<String>> = mapOf(
+        ToolSwitch.Web to setOf("web", "browser"),
+        ToolSwitch.Memory to setOf("memory"),
+        ToolSwitch.ImageGen to setOf("image"),
+        ToolSwitch.TerminalFiles to setOf("shell", "terminal", "files"),
+    )
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -86,23 +103,33 @@ object ToolSwitches {
     }
 
     /**
-     * Once: a master switch that was off becomes "off" on each catalog tool it covered, and the master goes back on,
-     * so the per-tool switches on the Tool list show and control the same effect. Call after every module registered
-     * its catalog cards.
+     * Once: every tool a master switch that was off really gated (its [GatedTool.requires], from [realGates]), plus
+     * the catalog tools of that switch for tools not built on this phone yet, becomes "off" on its own, and the
+     * master goes back on. The Tool list's per-tool switches then show and control the same effect. Call after
+     * the tools were built once (that records their gates) and every module registered its catalog cards.
      */
-    fun foldMasters(groups: List<ToolGroupInfo>) {
+    /** True until [foldMasters] has run once on this install. */
+    fun needsFold(): Boolean = prefs?.getBoolean(K_FOLDED, false) == false
+
+    fun foldMasters(groups: List<ToolGroupInfo>, realGates: Map<String, Set<ToolSwitch>>) {
         val p = prefs ?: return
         if (p.getBoolean(K_FOLDED, false)) return
         val offMasters = FOLDABLE.filterNot(::isOn)
-        val tools = foldedTools(groups, offMasters)
+        val tools = foldedTools(groups, realGates, offMasters)
         if (tools.isNotEmpty()) setTools(tools, on = false)
         offMasters.forEach { set(it, true) }
         p.edit().putBoolean(K_FOLDED, true).apply()
     }
 
-    /** The catalog tools covered by any of [offMasters]. */
-    fun foldedTools(groups: List<ToolGroupInfo>, offMasters: Collection<ToolSwitch>): Set<String> =
-        groups.filter { g -> g.switches.any { it in offMasters } }.flatMap { it.tools }.toSet()
+    /** The tools covered by any of [offMasters]: by their real gate, by their catalog card, or by what the switch said. */
+    fun foldedTools(groups: List<ToolGroupInfo>, realGates: Map<String, Set<ToolSwitch>>, offMasters: Collection<ToolSwitch>): Set<String> {
+        if (offMasters.isEmpty()) return emptySet()
+        val byGate = realGates.filterValues { gate -> gate.any { it in offMasters } }.keys
+        val byCard = groups.filter { g -> g.switches.any { it in offMasters } }.flatMap { it.tools }
+        val scopeIds = offMasters.flatMap { VISIBLE_SCOPE[it].orEmpty() }.toSet()
+        val byScope = groups.filter { it.id in scopeIds }.flatMap { it.tools }
+        return byGate + byCard + byScope
+    }
 
     fun offMessage(off: List<ToolSwitch>): String =
         "This tool is turned off in Settings → Tool list (" + off.joinToString(", ") { "\"${it.title}\"" } + "). " +
@@ -117,6 +144,7 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
     override val spec: ToolSpec get() = inner.spec
     override val risk: Risk get() = inner.risk
     override val usesPhoneUi: Boolean get() = inner.usesPhoneUi
+    override val timeoutMs: Long? get() = inner.timeoutMs
 
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult {
         if (!ToolSwitches.isToolOn(spec.name)) return ToolResult.error(ToolSwitches.toolOffMessage(spec.name))
@@ -126,7 +154,31 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
     }
 }
 
-fun Tool.gated(vararg switches: ToolSwitch): Tool = GatedTool(this, switches.toSet())
+fun Tool.gated(vararg switches: ToolSwitch): Tool {
+    val gate = switches.toSet()
+    ToolGates.record(spec.name, gate)
+    return GatedTool(this, gate)
+}
+
+/**
+ * The gate each gated tool really checks, recorded as tools are built. The one-time master conversion and the
+ * catalog consistency check read it.
+ */
+object ToolGates {
+    private val seen = java.util.concurrent.ConcurrentHashMap<String, Set<ToolSwitch>>()
+
+    fun record(name: String, gate: Set<ToolSwitch>) {
+        seen[name] = gate
+    }
+
+    fun snapshot(): Map<String, Set<ToolSwitch>> = HashMap(seen)
+}
+
+/**
+ * Every tool of a run, re-checked against its own Tool list switch on each call, so switching a tool off stops it
+ * mid-run (subagents included: they share the run's tools). Gated tools already check.
+ */
+fun Tool.switchChecked(): Tool = if (this is GatedTool) this else GatedTool(this, emptySet())
 
 /** True when [this] (or the tool a [GatedTool] wraps) asks the user itself with a plain-English preview. */
 fun Tool.confirmsItself(): Boolean = this is atom.device.tools.ConfirmsItself || (this is GatedTool && inner.confirmsItself())

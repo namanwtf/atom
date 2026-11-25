@@ -91,7 +91,7 @@ class SettingsTreeTest {
         val groups = placed.associate { it.group to it.keys }
         assertFalse(SettingsGroup.CircleToSearch in groups)
         assertEquals(listOf(SettingsRows.DIGITAL_ASSISTANT), groups.getValue(SettingsGroup.Assistant))
-        assertEquals(listOf(SettingsRows.OVERLAY_PERMISSION, SettingsRows.ACCESSIBILITY), groups.getValue(SettingsGroup.Permissions))
+        assertEquals(listOf(SettingsRows.OVERLAY_PERMISSION, SettingsRows.ACCESSIBILITY, SettingsRows.SETUP), groups.getValue(SettingsGroup.Permissions))
         assertTrue(placed.flatMap { it.keys }.none { !SettingsRows.isRow(it) })
     }
 

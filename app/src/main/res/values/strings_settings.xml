@@ -41,7 +41,6 @@
     <!-- General -->
     <string name="set_language">Language</string>
     <string name="set_language_system">Follow system</string>
-    <string name="set_language_english">English</string>
 
     <!-- Permissions -->
     <string name="set_overlay_permission">Floating window permissions</string>
@@ -142,4 +141,7 @@
     <!-- General -->
     <string name="set_live_updates">Live Update notification</string>
     <string name="set_live_updates_sub">Show a running task in the status bar (Android 16 and later)</string>
+    <string name="set_delete_current_warning">The current model is among them. Another model of this provider will be selected, or the default model if none is left.</string>
+    <string name="set_no_models_yet">No models yet. Add or enable a provider in Model providers</string>
+    <string name="set_effort_saved_unsupported">%1$s (not supported by this model)</string>
 </resources>

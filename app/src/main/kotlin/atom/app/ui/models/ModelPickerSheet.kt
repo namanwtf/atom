@@ -122,6 +122,7 @@ fun ModelPickerSheet(
     var show by remember { mutableStateOf(true) }
     var picked by remember { mutableStateOf<EngineSelection?>(null) }
     var following by remember { mutableStateOf(false) }
+    var managing by remember { mutableStateOf(false) }
 
     val ready: (ProviderConfig) -> Boolean = { it.keyOptional || it.id in saved || (it.auth != AuthMethod.ApiKey && it.id in signedIn) }
     val ordered = providers.filter { it.enabled && it.models.isNotEmpty() }.sortedByDescending(ready)
@@ -185,18 +186,24 @@ fun ModelPickerSheet(
         }
     }
 
-    // Close first, then report: a pick, a "follow", or a plain dismiss.
+    fun manage() {
+        managing = true
+        show = false
+    }
+
+    // Close first, then report: a pick, a "follow", "Manage models", or a plain dismiss.
     val finish = {
         val p = picked
         when {
             p != null -> onSelect(p)
+            managing -> onManage()
             following -> onFollow?.invoke() ?: onDismiss()
             else -> onDismiss()
         }
     }
 
     if (compact && all.size <= POPUP_MAX && onFollow == null) {
-        CompactPicker(all, ::isSelected, ::pick, show, onDismiss = { show = false }, onFinished = finish)
+        CompactPicker(all, ::isSelected, ::pick, show, onDismiss = { show = false }, onManage = ::manage, onFinished = finish)
         return
     }
 
@@ -236,7 +243,7 @@ fun ModelPickerSheet(
                     }
                 }
             }
-            LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
+            LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = 8.dp)) {
                 if (onFollow != null && followLabel != null && q.isEmpty() && filter == ALL) {
                     item(key = "follow") {
                         OptionRow(title = followLabel, subtitle = followHint, logo = null, selected = chosen == null || following, onClick = ::follow)
@@ -244,13 +251,7 @@ fun ModelPickerSheet(
                 }
                 if (filtered.isEmpty()) {
                     item(key = "empty") {
-                        Text(
-                            stringResource(R.string.set_no_matching_model),
-                            style = MiuixTheme.textStyles.body2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                        )
+                        EmptyText(if (all.isEmpty()) R.string.set_no_models_yet else R.string.set_no_matching_model)
                     }
                 }
                 val showHeaders = filter == ALL
@@ -279,8 +280,31 @@ fun ModelPickerSheet(
                     }
                 }
             }
+            ManageFooter(::manage, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
     }
+}
+
+/** Shown when nothing matches, or when no provider has models yet. */
+@Composable
+private fun EmptyText(text: Int) {
+    Text(
+        stringResource(text),
+        style = MiuixTheme.textStyles.body2,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+    )
+}
+
+/** "Manage models": the way to Model providers from the picker (add a provider, enable one, add models). */
+@Composable
+private fun ManageFooter(onManage: () -> Unit, modifier: Modifier = Modifier) {
+    top.yukonga.miuix.kmp.basic.TextButton(
+        text = stringResource(R.string.mdl_manage_models),
+        onClick = onManage,
+        modifier = modifier.fillMaxWidth(),
+    )
 }
 
 /** The small popup for a short list: logo, name and check per model, under the top bar. */
@@ -291,6 +315,7 @@ private fun CompactPicker(
     onPick: (PickerOption) -> Unit,
     show: Boolean,
     onDismiss: () -> Unit,
+    onManage: () -> Unit,
     onFinished: () -> Unit,
 ) {
     if (!show) {
@@ -316,7 +341,8 @@ private fun CompactPicker(
                 .background(c.surfaceContainer)
                 .padding(vertical = 6.dp),
         ) {
-            LazyColumn {
+            if (options.isEmpty()) EmptyText(R.string.set_no_models_yet)
+            LazyColumn(Modifier.weight(1f, fill = false)) {
                 items(options, key = { it.key }) { o ->
                     OptionRow(
                         title = o.title,
@@ -328,6 +354,7 @@ private fun CompactPicker(
                     )
                 }
             }
+            ManageFooter(onManage, Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
         }
     }
 }

@@ -1,5 +1,7 @@
 package atom.app.agent
 
+import atom.device.switches.ToolSwitches
+import atom.device.switches.switchChecked
 import atom.device.switches.withoutSwitchedOff
 import android.app.Application
 import atom.app.AppGraph
@@ -647,7 +649,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         @Volatile
         var selectionInUse: EngineSelection? = null
 
-        val hostedSearchInUse: Boolean get() = CapabilityTools.allowsHostedSearch(request.capabilities)
+        val hostedSearchInUse: Boolean get() = hostedSearchAllowed()
 
         @Volatile
         var windowInUse: Int? = null
@@ -678,6 +680,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
 
+        /** Provider-hosted search follows the run's capabilities and the web_search switch on the Tool list. */
+        private fun hostedSearchAllowed(): Boolean =
+            CapabilityTools.allowsHostedSearch(request.capabilities) && ToolSwitches.isToolOn("web_search")
+
         private val pendingAttachments = ArrayDeque<List<Attachment>>()
 
         suspend fun run() {
@@ -694,7 +700,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val roleSelection = role?.let { r -> runCatching { graph.modelRoles.resolve(r, null) }.getOrNull() }
                 val selection = roleSelection ?: saved
                 // Capability-limited runs without the web get no provider-hosted search either.
-                val hostedSearch = CapabilityTools.allowsHostedSearch(request.capabilities)
+                val hostedSearch = hostedSearchAllowed()
                 val engine = graph.router.acquire(selection, hostedSearch = hostedSearch).also { routed = it }
                 selectionInUse = engine.selection ?: selection
                 val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
@@ -823,7 +829,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
-            val wrapped = base.withoutSwitchedOff().map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
+            val wrapped = base.withoutSwitchedOff()
+                .map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }
+                .map(LongTools::apply)
+                // Each call re-checks the tool's own switch, so turning it off on the Tool list stops it mid-run.
+                .map { it.switchChecked() }
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }

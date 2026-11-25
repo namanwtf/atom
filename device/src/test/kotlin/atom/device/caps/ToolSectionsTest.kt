@@ -76,9 +76,54 @@ class ToolSectionsTest {
             group("screen", 10, "tap", switches = setOf(ToolSwitch.DeviceDirect)),
             group("logs", 55, "read_system_logs", switches = setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead)),
             group("shell", 90, "shell", switches = setOf(ToolSwitch.TerminalFiles)),
+            group("web", 25, "web_search", "read_page"),
+            group("memory", 85, "memory_read"),
+            group("terminal", 92, "terminal_run"),
         )
-        assertEquals(setOf("read_system_logs"), ToolSwitches.foldedTools(groups, listOf(ToolSwitch.SensitiveRead)))
-        assertEquals(setOf("tap", "read_system_logs"), ToolSwitches.foldedTools(groups, listOf(ToolSwitch.DeviceDirect)))
-        assertTrue(ToolSwitches.foldedTools(groups, emptyList()).isEmpty())
+        // Real gates win: a tool built here whose gate names the switch is folded even without a card.
+        val gates = mapOf("tap" to setOf(ToolSwitch.DeviceDirect), "hotspot" to setOf(ToolSwitch.DeviceDirect))
+        assertEquals(setOf("read_system_logs"), ToolSwitches.foldedTools(groups, gates, listOf(ToolSwitch.SensitiveRead)))
+        assertEquals(setOf("tap", "hotspot", "read_system_logs"), ToolSwitches.foldedTools(groups, gates, listOf(ToolSwitch.DeviceDirect)))
+        // Switches that never gated anything keep what they said they covered.
+        assertEquals(setOf("web_search", "read_page"), ToolSwitches.foldedTools(groups, gates, listOf(ToolSwitch.Web)))
+        assertEquals(setOf("memory_read"), ToolSwitches.foldedTools(groups, gates, listOf(ToolSwitch.Memory)))
+        assertEquals(setOf("shell", "terminal_run"), ToolSwitches.foldedTools(groups, gates, listOf(ToolSwitch.TerminalFiles)))
+        assertTrue(ToolSwitches.foldedTools(groups, gates, emptyList()).isEmpty())
+    }
+
+    /**
+     * The gates this module's tools are built with (DeviceTools, DeviceFeature and the background display), written
+     * out: every card listing one of them must name the same switches.
+     */
+    private val deviceGates: Map<String, Set<ToolSwitch>> = buildMap {
+        val dd = setOf(ToolSwitch.DeviceDirect)
+        listOf(
+            "read_screen", "tap", "long_press", "type_text", "paste_text", "scroll", "swipe", "global_action",
+            "press_key", "open_panel", "wait", "open_app", "list_apps", "open_url", "device_status", "set_clipboard",
+            "get_clipboard", "inspect_app", "battery_drain",
+            "background_open_app", "background_look", "background_act", "background_close", "present_to_main_screen",
+        ).forEach { put(it, dd) }
+        put("shell", setOf(ToolSwitch.TerminalFiles))
+        listOf("read_setting", "read_system_logs").forEach { put(it, setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveRead)) }
+        listOf("freeze_app", "unfreeze_app", "force_stop_app", "write_setting").forEach {
+            put(it, setOf(ToolSwitch.DeviceDirect, ToolSwitch.SensitiveOps))
+        }
+        listOf("app_firewall", "refresh_rate", "charge_limit", "spoof_location").forEach { put(it, setOf(ToolSwitch.SensitiveOps)) }
+    }
+
+    @Test
+    fun cardsMatchTheRealGates() {
+        assertEquals(emptyList<String>(), ToolCatalog.mismatches(ToolCatalog.all, deviceGates))
+    }
+
+    @Test
+    fun mismatchesAreReported() {
+        val cards = listOf(group("power", 60, "battery_drain", switches = setOf(ToolSwitch.SensitiveOps)))
+        val gates = mapOf("battery_drain" to setOf(ToolSwitch.DeviceDirect), "hotspot" to setOf(ToolSwitch.DeviceDirect))
+        assertEquals(2, ToolCatalog.mismatches(cards, gates).size)
+        val extra = ToolCatalog.uncardedGroup(cards, gates)
+        assertEquals(listOf("hotspot"), extra?.tools)
+        assertEquals(ToolSection.Apps, ToolSections.sectionOf(extra!!))
+        assertEquals(null, ToolCatalog.uncardedGroup(cards, mapOf("battery_drain" to emptySet())))
     }
 }

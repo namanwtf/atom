@@ -54,7 +54,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private const val ROUTE_SYSTEM = "vdisplay/system"
 
 @Composable
-internal fun statusColor(s: CapStatus): Color = when (PermissionRows.tone(s)) {
+internal fun statusColor(s: CapStatus, optional: Boolean = false): Color = when (PermissionRows.tone(s, optional)) {
     StatusTone.Good -> MaterialTheme.extras.success
     StatusTone.Warning -> MaterialTheme.extras.warning
     StatusTone.Bad -> MiuixTheme.colorScheme.error
@@ -123,6 +123,7 @@ fun PermissionsScreen(nav: FeatureNav) {
                             title = title,
                             summary = "Optional enhancement permissions",
                             status = PermissionRows.rootStatus(root),
+                            optional = true,
                             onClick = { nav.open(ROUTE_SYSTEM) },
                         )
                     } else {
@@ -150,7 +151,7 @@ fun PermissionsScreen(nav: FeatureNav) {
                 Group {
                     others.forEach { c ->
                         val st = states[c.id] ?: CapState(CapStatus.Checking)
-                        StatusRow(title = c.title, summary = summaryOf(c, st, allView), status = st.status, onClick = { act(c) })
+                        StatusRow(title = c.title, summary = summaryOf(c, st, allView), status = st.status, optional = c.optional, onClick = { act(c) })
                     }
                 }
             }
@@ -165,7 +166,7 @@ fun PermissionsScreen(nav: FeatureNav) {
                     subtitle = listOfNotNull(rs.detail, if (allView || root != RootStatus.Granted) RootAccess.HELP else null).joinToString("\n"),
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatusText(rs.status)
+                            StatusText(rs.status, optional = true)
                             when (root) {
                                 RootStatus.Checking -> Unit
                                 RootStatus.Granted, RootStatus.NotDetected -> CompactButton(
@@ -191,6 +192,7 @@ fun PermissionsScreen(nav: FeatureNav) {
                     }
                     StatusRow(
                         title = "Shizuku",
+                        optional = true,
                         summary = "ADB-level access without root: toggles, freezing apps, logs, UI-dump fallback. " + (st.detail ?: ""),
                         status = st.status,
                         onClick = {
@@ -224,14 +226,14 @@ private fun summaryOf(c: Capability, st: CapState, allView: Boolean): String = b
 
 /** Arrow row with the coloured status label at the end; tapping it acts. */
 @Composable
-private fun StatusRow(title: String, summary: String?, status: CapStatus, onClick: () -> Unit) {
+private fun StatusRow(title: String, summary: String?, status: CapStatus, onClick: () -> Unit, optional: Boolean = false) {
     GroupRow(
         title = title,
         subtitle = summary,
         onClick = onClick,
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusText(status)
+                StatusText(status, optional)
                 RowChevron()
             }
         },
@@ -239,6 +241,6 @@ private fun StatusRow(title: String, summary: String?, status: CapStatus, onClic
 }
 
 @Composable
-private fun StatusText(status: CapStatus) {
-    Text(status.label, style = MiuixTheme.textStyles.body2, color = statusColor(status), maxLines = 1)
+private fun StatusText(status: CapStatus, optional: Boolean = false) {
+    Text(status.label, style = MiuixTheme.textStyles.body2, color = statusColor(status, optional), maxLines = 1)
 }

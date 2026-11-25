@@ -59,6 +59,21 @@ object WebFeature : AtomFeature {
         ImageBackend.SiliconFlow -> "SiliconFlow"
     }
 
+    /** For the Tool list: why the web, browser or image tools are absent (feature off), or null when they are on. */
+    fun toolsOffReason(context: Context, cardId: String): String? {
+        val web = WebSettings.of(context).value
+        return when (cardId) {
+            "web" -> if (web.enabled) null else "Off in Web search and reading"
+            "browser" -> when {
+                !web.enabled -> "Off in Web search and reading"
+                !web.browserEnabled -> "Agent browser is off in Web search and reading"
+                else -> null
+            }
+            "image" -> if (ImageSettings.of(context).value.enabled) null else "Off in AI image generation"
+            else -> null
+        }
+    }
+
     /** Route of the take-over screen for the agent browser of [conversationId]. */
     fun takeOverRoute(conversationId: String) = ROUTE_SESSION + conversationId
 

@@ -50,18 +50,22 @@ object SystemFeature : AtomFeature {
     }
 
     override fun tools(context: Context): List<Tool> {
-        if (!SystemPrefs.get(context).backgroundDisplay.value) return emptyList()
+        if (!backgroundUsable(context)) return emptyList()
         return BackgroundTools(context).all().map { it.gated(ToolSwitch.DeviceDirect) }
     }
 
     override fun promptHint(context: Context): String? {
-        if (!SystemPrefs.get(context).backgroundDisplay.value) return null
+        if (!backgroundUsable(context)) return null
         return "# Background display\nFor a task in another app that the user is not looking at, prefer " +
             "background_open_app: it runs on a hidden screen so the user keeps using the phone. Work there with " +
             "background_look / background_act. At a payment confirmation, a QR code or the final result, call " +
             "present_to_main_screen. \"Display unavailable\" means start again with background_open_app; never redo " +
             "those coordinates with the normal screen tools."
     }
+
+    /** The background display only acts with root: without it the tools and the prompt hint are left out. */
+    private fun backgroundUsable(context: Context): Boolean =
+        SystemPrefs.get(context).backgroundDisplay.value && atom.device.root.RootAccess.granted
 
     override val entries: List<FeatureEntry> = listOf(
         FeatureEntry(FeatureSection.System, R.string.vd_system_title, R.string.vd_system_sub, ScreenIcons.Tune, ROUTE),

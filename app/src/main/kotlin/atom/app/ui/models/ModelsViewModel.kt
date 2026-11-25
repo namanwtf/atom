@@ -393,7 +393,14 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
     fun deleteModels(providerId: String, ids: Set<String>) {
         viewModelScope.launch {
             val config = providerStore.get(providerId) ?: return@launch
-            providerStore.setModels(providerId, config.models.filterNot { it.id in ids })
+            val remaining = config.models.filterNot { it.id in ids }
+            providerStore.setModels(providerId, remaining)
+            // The current model went away: use another model of this provider, or the default when none is left.
+            val current = graph.settings.current().selection as? EngineSelection.Cloud
+            if (current != null && current.providerId == providerId && current.model in ids) {
+                val next = remaining.firstOrNull()
+                graph.settings.setSelection(if (next != null) EngineSelection.Cloud(providerId, next.id) else AppSettings.DEFAULT_SELECTION)
+            }
         }
     }
 
