@@ -1,5 +1,6 @@
 package atom.extend.skills
 
+import atom.core.io.deleteTreeNoFollow
 import atom.extend.Files
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -92,7 +93,7 @@ class SkillStore(private val root: File, private val builtIns: BuiltInSkills) {
         if (!dir.exists()) return@withLock false
         val aside = File(trashDir, UUID.randomUUID().toString())
         trashDir.mkdirs()
-        if (!dir.renameTo(aside)) dir.deleteRecursively() else aside.deleteRecursively()
+        if (!dir.renameTo(aside)) dir.deleteTreeNoFollow() else aside.deleteTreeNoFollow()
         refresh()
         true
     }
@@ -122,7 +123,7 @@ class SkillStore(private val root: File, private val builtIns: BuiltInSkills) {
             writeState(s.copy(disabled = s.disabled - candidates.map { it.manifest.name }.toSet()))
             InstallReport(candidates.map { it.manifest.name }, skipped)
         } finally {
-            staged.forEach { stagingRoot(it.dir)?.deleteRecursively() }
+            staged.forEach { stagingRoot(it.dir)?.deleteTreeNoFollow() }
             refresh()
         }
     }
@@ -136,7 +137,7 @@ class SkillStore(private val root: File, private val builtIns: BuiltInSkills) {
 
     /** Removes a staging directory from [newStaging] that will not be installed. */
     fun discard(staging: File) {
-        stagingRoot(staging)?.deleteRecursively()
+        stagingRoot(staging)?.deleteTreeNoFollow()
     }
 
     private fun commit(staged: List<StagedSkill>) {
@@ -158,22 +159,22 @@ class SkillStore(private val root: File, private val builtIns: BuiltInSkills) {
         } catch (e: Exception) {
             rollback(entries)
             journalFile.delete()
-            tx.deleteRecursively()
+            tx.deleteTreeNoFollow()
             throw e as? SkillException ?: SkillException("Install failed and was undone: ${e.message}")
         }
         journalFile.delete()
-        tx.deleteRecursively()
+        tx.deleteTreeNoFollow()
     }
 
     private fun rollback(entries: List<JournalEntry>) {
         for (e in entries) {
             val final = userSkillDir(e.name)
             if (e.backup == null) {
-                final.deleteRecursively()
+                final.deleteTreeNoFollow()
             } else {
                 val backup = File(e.backup)
                 if (backup.exists()) {
-                    final.deleteRecursively()
+                    final.deleteTreeNoFollow()
                     backup.renameTo(final)
                 }
             }
@@ -186,8 +187,8 @@ class SkillStore(private val root: File, private val builtIns: BuiltInSkills) {
             runCatching { json.decodeFromString(Journal.serializer(), text) }.getOrNull()?.let { rollback(it.entries) }
             journalFile.delete()
         }
-        stagingDir.deleteRecursively()
-        trashDir.deleteRecursively()
+        stagingDir.deleteTreeNoFollow()
+        trashDir.deleteTreeNoFollow()
     }
 
     fun refresh() {

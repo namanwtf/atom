@@ -15,7 +15,7 @@ class GuestFsTest {
 
     @AfterTest
     fun cleanup() {
-        tmp.deleteRecursively()
+        tmp.deleteTestTree()
     }
 
     private fun fs() = GuestFs(rootfs, mapOf("/workspace" to workspace, "/workspace/mounts/dl" to shared))

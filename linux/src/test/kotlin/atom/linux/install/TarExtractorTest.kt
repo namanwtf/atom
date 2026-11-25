@@ -1,5 +1,6 @@
 package atom.linux.install
 
+import atom.linux.deleteTestTree
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -18,7 +19,7 @@ class TarExtractorTest {
 
     @AfterTest
     fun cleanup() {
-        tmp.deleteRecursively()
+        tmp.deleteTestTree()
     }
 
     /** Minimal ustar writer for test archives. */

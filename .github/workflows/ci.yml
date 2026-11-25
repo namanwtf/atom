@@ -1,0 +1,70 @@
+# Builds and tests Atom on GitHub's disposable runners. Atom is NEVER built or tested on a personal machine:
+# on 2026-11-25 a test cleanup that followed a symlink to "/" deleted the owner's files. Everything runs here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Refuse unsafe recursive deletes
+        # Kotlin's deleteRecursively() follows symlinks. Use atom.core.io.deleteTreeNoFollow() instead.
+        run: |
+          if git grep -n "deleteRecursively" -- ':!engine/llamacpp/third_party' ':!*.md' ':!.github/**' \
+               | grep -v "core/src/main/kotlin/atom/core/io/SafeFiles.kt" \
+               | grep -v "linux/src/test/kotlin/atom/linux/TestFiles.kt"; then
+            echo "::error::deleteRecursively() follows symlinks; use deleteTreeNoFollow()"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        run: sdkmanager --install "ndk;30.0.16248370" "cmake;4.1.2"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew test testDebugUnitTest --continue --stacktrace
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: atom-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 7

@@ -1,5 +1,6 @@
 package atom.web.files
 
+import atom.core.io.deleteTreeNoFollow
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
@@ -99,7 +100,7 @@ class FileOpsTest {
             assertEquals(null, fs.stat(File(root, "zzz").path))
             assertEquals(Sizes.looksBinary(File(root, "a/b/bin.dat").readBytes()), true)
         } finally {
-            root.deleteRecursively()
+            root.deleteTreeNoFollow()
         }
     }
 
