@@ -10,6 +10,7 @@ import atom.characters.prompt.Macros
 import atom.characters.prompt.PromptAssembler
 import atom.characters.session.CharacterSession
 import atom.characters.session.CharacterTools
+import atom.core.io.deleteTreeNoFollow
 import atom.core.llm.ChatMessage
 import atom.core.tool.ToolContext
 import java.io.File
@@ -32,7 +33,7 @@ class PromptAndSessionTest {
 
     @AfterTest
     fun cleanup() {
-        dir.deleteRecursively()
+        dir.deleteTreeNoFollow()
     }
 
     private val kai = Character(

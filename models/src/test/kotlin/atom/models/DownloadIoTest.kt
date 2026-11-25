@@ -1,5 +1,6 @@
 package atom.models
 
+import atom.core.io.deleteTreeNoFollow
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -24,7 +25,7 @@ class DownloadIoTest {
 
     @AfterTest
     fun cleanup() {
-        dir.deleteRecursively()
+        dir.deleteTreeNoFollow()
     }
 
     private fun hex(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

@@ -1,5 +1,6 @@
 package atom.linux.launch
 
+import atom.linux.deleteTestTree
 import atom.linux.Distro
 import atom.linux.install.DistroSources
 import atom.linux.install.RootfsSetup
@@ -175,7 +176,7 @@ class LaunchCommandsTest {
             assertEquals("", File(root, "etc/motd").readText())
             assertEquals("/bin/sh", RootfsSetup.loginShell(root))
         } finally {
-            root.deleteRecursively()
+            root.deleteTestTree()
         }
     }
 }

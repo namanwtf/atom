@@ -8,6 +8,7 @@ import atom.characters.model.CharacterOrigin
 import atom.characters.model.ChatBinding
 import atom.characters.model.Persona
 import atom.characters.png.Png
+import atom.core.io.deleteTreeNoFollow
 import java.io.File
 import java.util.Base64
 import java.util.Locale
@@ -266,7 +267,7 @@ class CharacterStore(
         mutex.withLock {
             withContext(io) {
                 val staging = File(root.parentFile, root.name + ".import")
-                staging.deleteRecursively()
+                staging.deleteTreeNoFollow()
                 File(staging, "images").mkdirs()
                 File(staging, "story").mkdirs()
                 val restored = list.map { c -> if (images.containsKey(c.id)) c.copy(image = "${c.id}.png") else c.copy(image = null) }
@@ -276,13 +277,13 @@ class CharacterStore(
                 File(staging, "persona.json").writeText(json.encodeToString(Persona.serializer(), persona))
                 File(staging, "chats.json").writeText(json.encodeToString(ListSerializer(ChatBinding.serializer()), chats))
                 val old = File(root.parentFile, root.name + ".old")
-                old.deleteRecursively()
+                old.deleteTreeNoFollow()
                 if (root.exists() && !root.renameTo(old)) error("Could not replace character data")
                 if (!staging.renameTo(root)) {
                     old.renameTo(root)
                     error("Could not replace character data")
                 }
-                old.deleteRecursively()
+                old.deleteTreeNoFollow()
                 _characters.value = sorted(restored)
                 _persona.value = persona
                 _bindings.value = chats.associateBy { it.conversationId }

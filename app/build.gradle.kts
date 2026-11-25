@@ -15,10 +15,9 @@ abstract class BundleLegalFiles : DefaultTask() {
 
     @TaskAction
     fun bundle() {
-        val dir = outputDir.get().asFile.resolve("legal").apply {
-            deleteRecursively()
-            mkdirs()
-        }
+        // Flat, non-recursive clean: this folder only ever holds the plain files written below.
+        val dir = outputDir.get().asFile.resolve("legal").apply { mkdirs() }
+        dir.listFiles().orEmpty().forEach { it.delete() }
         notice.get().asFile.copyTo(dir.resolve("NOTICE"))
         license.get().asFile.copyTo(dir.resolve("LICENSE-GPL-3.0"))
         licenses.get().asFile.listFiles { f -> f.extension == "txt" }.orEmpty().forEach {

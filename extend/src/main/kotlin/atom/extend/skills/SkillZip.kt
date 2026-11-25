@@ -1,5 +1,6 @@
 package atom.extend.skills
 
+import atom.core.io.deleteTreeNoFollow
 import java.io.File
 import java.io.FilterInputStream
 import java.io.InputStream
@@ -34,7 +35,7 @@ object SkillZip {
     }
 
     fun extract(input: InputStream, staging: File, limits: SkillLimits = SkillLimits()): StagedSkill {
-        val raw = File(staging, "raw").apply { deleteRecursively(); mkdirs() }
+        val raw = File(staging, "raw").apply { deleteTreeNoFollow(); mkdirs() }
         val base = raw.canonicalFile
         val written = mutableListOf<String>()
         var total = 0L
