@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.font.FontWeight
@@ -94,12 +95,16 @@ fun SegmentedControl(
     modifier: Modifier = Modifier,
 ) {
     val c = MiuixTheme.colorScheme
+    val dark = c.surface.luminance() < 0.5f
+    // The selected pill is always lighter than the track (dark: #505050 on #2D2D2D; light: white on #F0F0F0).
+    val track = if (dark) c.surfaceContainerHighest else c.secondaryContainer
+    val pill = if (dark) c.secondary else c.surfaceContainer
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .height(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(c.secondaryContainer)
+            .background(track)
             .padding(3.dp),
     ) {
         val segment = maxWidth / options.size
@@ -110,7 +115,7 @@ fun SegmentedControl(
                 .width(segment)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(10.dp))
-                .background(c.surfaceContainer),
+                .background(pill),
         )
         Row(Modifier.fillMaxWidth().fillMaxHeight()) {
             options.forEachIndexed { i, (label, icon) ->

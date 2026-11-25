@@ -47,9 +47,12 @@ import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /*
- * Thin wrappers over the Miuix preference rows, fields, dialogs and sheets, so screens get the Atom look without
- * depending on the library's exact signatures. Rows go inside a [Group]. Popups, dialogs and sheets open in their
- * own window, so they work on any screen (not only inside a Miuix Scaffold).
+ * Thin wrappers over the Miuix rows, fields, dialogs and sheets, so screens get the Atom look without depending on
+ * the library's exact signatures. Rows go inside a [Group].
+ *
+ * Popups, dialogs and sheets here are the Miuix Window* variants: each opens a platform dialog window, so they work
+ * on any Activity screen (not only inside a Miuix Scaffold). They are NOT for windows hosted by a service (the
+ * floating overlay, the virtual display stage): those have no Activity token, so a platform dialog cannot attach.
  */
 
 private fun optionIcon(vector: ImageVector?): (@Composable (Modifier) -> Unit)? {
@@ -179,7 +182,12 @@ fun DropdownRow(
 /** One choice in a [SpinnerRow]: title, optional summary line and optional icon. */
 data class SpinnerOption(val title: String, val summary: String? = null, val icon: ImageVector? = null)
 
-/** Like [DropdownRow], but each choice can carry a summary line and an icon. */
+/**
+ * Like [DropdownRow], but each choice can carry a summary line and an icon.
+ *
+ * Adapted from Miuix WindowDropdownPreference (Apache-2.0, compose-miuix-ui contributors): same end value text,
+ * up/down chevron, hold-down state and popup, laid out with [AtomRow] so the title matches the other rows.
+ */
 @Composable
 fun SpinnerRow(
     title: String,

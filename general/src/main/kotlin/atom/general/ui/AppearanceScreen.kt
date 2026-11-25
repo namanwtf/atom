@@ -48,6 +48,7 @@ import atom.ui.theme.TextSize
 import atom.ui.theme.ThemeMode
 import atom.ui.theme.TopBarBlur
 import atom.ui.theme.UiStyle
+import atom.ui.theme.supportsDynamicColor
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -85,12 +86,13 @@ internal fun AppearanceScreen(nav: FeatureNav) {
                 )
                 SwitchRow(
                     title = stringResource(R.string.appearance_monet),
-                    summary = stringResource(R.string.appearance_monet_sub),
-                    checked = a.monet,
+                    summary = stringResource(if (supportsDynamicColor) R.string.appearance_monet_sub else R.string.appearance_monet_unavailable),
+                    checked = a.monet && supportsDynamicColor,
                     onCheckedChange = { v -> edit { it.copy(monet = v) } },
+                    enabled = supportsDynamicColor,
                 )
                 AnimatedVisibility(
-                    visible = a.monet,
+                    visible = a.monet && supportsDynamicColor,
                     enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                     exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                 ) {
@@ -168,7 +170,8 @@ internal fun AppearanceScreen(nav: FeatureNav) {
         item(key = "l-preview") { SectionLabel(stringResource(R.string.appearance_preview)) }
         item(key = "preview") {
             // The preview always renders the chosen appearance, even before the app theme catches up.
-            AtomTheme(appearance = a) { AppearancePreview() }
+            // Text size is already applied by the app theme around this page; applying it again would square it.
+            AtomTheme(appearance = a.copy(textSize = TextSize.Default)) { AppearancePreview() }
         }
     }
 }

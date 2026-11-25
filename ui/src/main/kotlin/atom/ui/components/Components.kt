@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -94,7 +94,7 @@ fun LargeTitleScreen(
     ) { padding ->
         LazyColumn(
             Modifier
-                .fillMaxHeight()
+                .fillMaxSize()
                 .scrollEndHaptic()
                 .overScrollVertical(onOffsetChanged = { behavior.state.overscrollOffset = it })
                 .nestedScroll(behavior.nestedScrollConnection),
@@ -150,20 +150,26 @@ fun CircleIconButton(
 
 // ------------------------------------------------------------------ Grouped lists
 
-/** Miuix small group title: blue-grey, 28dp from the screen edge on list pages. */
+/**
+ * Miuix small group title: blue-grey, 28dp from the screen edge on list pages. Its 16dp top padding is the gap
+ * after the previous card (groups add no space of their own).
+ */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     SmallTitle(
         text = text,
         modifier = modifier,
-        insideMargin = PaddingValues(start = 28.dp - ListSideMargin, end = 28.dp - ListSideMargin, top = 8.dp, bottom = 8.dp),
+        insideMargin = PaddingValues(start = 28.dp - ListSideMargin, end = 28.dp - ListSideMargin, top = 16.dp, bottom = 8.dp),
     )
 }
 
-/** A Miuix card holding rows, with the 12dp gap below it. Rows stack without dividers. */
+/**
+ * A Miuix card holding rows. Rows stack without dividers. It adds no outer spacing: the following [SectionLabel]
+ * provides the gap, and callers that stack cards directly add their own top padding.
+ */
 @Composable
 fun Group(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier.fillMaxWidth().padding(bottom = 12.dp), content = content)
+    Card(modifier = modifier.fillMaxWidth(), content = content)
 }
 
 /** Kept for source compatibility: Miuix cards stack rows without dividers, so this draws nothing. */
@@ -188,7 +194,12 @@ fun GroupRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val end: (@Composable RowScope.() -> Unit)? = if (trailing != null) {
-        { Box(Modifier.align(Alignment.CenterVertically)) { trailing() } }
+        {
+            Row(
+                Modifier.align(Alignment.CenterVertically),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { trailing() }
+        }
     } else {
         null
     }
