@@ -14,6 +14,7 @@ import atom.voice.R as VoiceR
 import atom.voice.asr.VoiceInput
 import atom.voice.asr.VoiceInputOptions
 import atom.voice.asr.VoiceInputState
+import atom.voice.notify.AssistantVoiceNotice
 import atom.voice.speech.Speech
 import atom.voice.speech.SpeechError
 import atom.voice.speech.SpeechProofreader
@@ -53,6 +54,7 @@ class ModuleVoiceBridge : VoiceBridge {
         fun end() {
             done = true
             scope.cancel()
+            AssistantVoiceNotice.hide(app, AssistantVoiceNotice.Mode.Listening)
         }
         val started = input.start(VoiceInputOptions.assistant(app)) { result ->
             if (done) return@start
@@ -81,6 +83,8 @@ class ModuleVoiceBridge : VoiceBridge {
                 }
             }
         }
+        // Outside Atom's screens: "Atom is listening" with Stop, which ends capture and delivers what was heard.
+        AssistantVoiceNotice.showListening(app) { if (!done) input.finish() }
         return object : VoiceBridge.Session {
             override fun stop() {
                 if (!done) input.finish()

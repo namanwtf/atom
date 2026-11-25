@@ -1,5 +1,6 @@
 package atom.voice.tts
 
+import atom.voice.notify.AssistantVoiceNotice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -290,6 +291,7 @@ object ReadAloud {
             focus = request
             context.registerReceiver(noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), Context.RECEIVER_NOT_EXPORTED)
             receiverRegistered = true
+            if (PlaybackRules.showsAssistantVoiceNotice(source)) AssistantVoiceNotice.showReading(context)
             if (PlaybackRules.needsForegroundService(source)) {
                 ReadAloudService.start(context)
                 // Keeps synthesis of the next sentence going with the screen off; bounded, released at the end.
@@ -311,6 +313,7 @@ object ReadAloud {
             wakeLock?.let { runCatching { if (it.isHeld) it.release() } }
             wakeLock = null
             if (PlaybackRules.needsForegroundService(source)) ReadAloudService.stop()
+            if (PlaybackRules.showsAssistantVoiceNotice(source)) AssistantVoiceNotice.hide(context, AssistantVoiceNotice.Mode.Reading)
         }
     }
 }

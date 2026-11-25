@@ -45,6 +45,11 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Stop button of the "Assistant voice" notification. -->
+        <receiver
+            android:name="atom.voice.notify.AssistantVoiceStopReceiver"
+            android:exported="false" />
+
         <!-- Tier 1: system digital assistant (no mic, no background work). -->
         <service
             android:name="atom.voice.assist.AtomVoiceInteractionService"
