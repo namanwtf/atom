@@ -65,9 +65,9 @@ object AppearanceCodec {
         enumValues<E>().firstOrNull { it.name == name } ?: def
 }
 
-private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
+private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_appearance")
 
-/** Appearance options, persisted in their own small DataStore ("appearance"). */
+/** Appearance options, persisted in their own small DataStore ("atom4_appearance"). */
 class AppearanceStore private constructor(private val store: DataStore<Preferences>) {
 
     val appearance: Flow<Appearance> = store.data.map { p ->
