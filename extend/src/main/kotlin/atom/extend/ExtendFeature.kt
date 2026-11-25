@@ -16,6 +16,7 @@ import atom.extend.subagent.SubagentRoutes
 import atom.extend.subagent.SubagentRunScreen
 import atom.extend.subagent.SubagentStore
 import atom.extend.subagent.SubagentTools
+import atom.extend.subagent.SubagentViewScreen
 import atom.extend.subagent.SubagentsScreen
 import atom.ui.feature.AtomFeature
 import atom.ui.feature.FeatureEntry
@@ -129,6 +130,7 @@ object ExtendFeature : AtomFeature {
             route == SubagentRoutes.NEW -> SubagentEditScreen(ExtendRuntime.subagents, null, nav)
             route.startsWith(SubagentRoutes.EDIT) -> SubagentEditScreen(ExtendRuntime.subagents, route.removePrefix(SubagentRoutes.EDIT), nav)
             route.startsWith(SubagentRoutes.RUN) -> SubagentRunScreen(route.removePrefix(SubagentRoutes.RUN), nav)
+            route.startsWith(SubagentRoutes.VIEW) -> SubagentViewScreen(route.removePrefix(SubagentRoutes.VIEW), nav)
         }
     }
 }

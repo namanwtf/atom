@@ -32,6 +32,8 @@ data class SubagentRun(
     val toolCalls: Int = 0,
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
+    /** Input tokens served from the provider's prompt cache, summed over the run's model calls. */
+    val cachedTokens: Int = 0,
     val startedAt: Long = System.currentTimeMillis(),
     val finishedAt: Long? = null,
     val error: String? = null,
@@ -60,4 +62,22 @@ object SubagentRuns {
     fun clear() {
         _runs.update { list -> list.filter { it.status == SubagentStatus.Running } }
     }
+}
+
+/** What the details sheet shows for a run (pure, unit-tested). */
+object SubagentRunLabels {
+    /** Steps shown in full; earlier ones fold into "N earlier steps folded". */
+    const val VISIBLE_STEPS = 6
+
+    fun status(run: SubagentRun): String = when (run.status) {
+        SubagentStatus.Running -> "Running…"
+        SubagentStatus.Cancelled -> "Stopped"
+        SubagentStatus.Partial -> "Incomplete"
+        SubagentStatus.Failed -> "Failed"
+        SubagentStatus.Done -> "Completed · ${run.toolCalls} tool call" + if (run.toolCalls == 1) "" else "s"
+    }
+
+    /** The steps to show and how many earlier ones are folded away. */
+    fun visibleSteps(steps: List<SubagentStep>, keep: Int = VISIBLE_STEPS): Pair<Int, List<SubagentStep>> =
+        if (steps.size <= keep) 0 to steps else (steps.size - keep) to steps.takeLast(keep)
 }

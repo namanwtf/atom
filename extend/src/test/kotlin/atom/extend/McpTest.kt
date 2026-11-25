@@ -2,6 +2,7 @@ package atom.extend
 
 import atom.core.tool.Risk
 import atom.core.tool.ToolContext
+import atom.extend.mcp.McpCatalog
 import atom.extend.mcp.McpClient
 import atom.extend.mcp.McpException
 import atom.extend.mcp.McpHttpReply
@@ -10,6 +11,7 @@ import atom.extend.mcp.McpNaming
 import atom.extend.mcp.McpProtocol
 import atom.extend.mcp.McpTools
 import atom.extend.mcp.McpTransport
+import atom.extend.mcp.McpTruncation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -166,7 +168,7 @@ class McpTest {
         val server = FakeServer(pages = 3)
         val (tools, truncated) = McpClient(server, "https://example.com/mcp", "tok").session { listTools() }
         assertEquals(listOf("tool_1", "tool_2", "tool_3"), tools.map { it.name })
-        assertEquals(false, truncated)
+        assertNull(truncated)
         assertEquals(listOf("initialize", "notifications/initialized", "tools/list", "tools/list", "tools/list"), server.methods)
         assertEquals("Bearer tok", server.sentHeaders[0]["Authorization"])
         assertNull(server.sentHeaders[0]["Mcp-Session-Id"])
@@ -180,7 +182,21 @@ class McpTest {
         val (tools, truncated) = McpClient(FakeServer(pages = 5, sse = false, sessionId = null), "http://192.168.1.5:8080/mcp", null)
             .session { listTools(maxTools = 2) }
         assertEquals(2, tools.size)
-        assertTrue(truncated)
+        assertEquals(McpTruncation.ToolLimit, truncated)
+    }
+
+    @Test
+    fun truncationNamesTheReason(): Unit = runBlocking {
+        val pages = McpClient(FakeServer(pages = 5, sse = false, sessionId = null), "https://x/mcp", null).session { listTools(maxPages = 2) }
+        assertEquals(2, pages.first.size)
+        assertEquals(McpTruncation.PageLimit, pages.second)
+        val size = McpClient(FakeServer(pages = 3, sse = false, sessionId = null), "https://x/mcp", null).session { listTools(maxBytes = 60) }
+        assertEquals(McpTruncation.SizeBudget, size.second)
+        assertTrue(size.first.size < 3)
+        assertEquals(McpTruncation.DuplicateCursor, McpCatalog.stopReason(3, 10, 3, 64, "c1", setOf("c1")))
+        assertNull(McpCatalog.stopReason(3, 10, 3, 64, null, emptySet()))
+        assertNull(McpCatalog.stopReason(10, 10, 3, 64, null, emptySet()))
+        assertEquals(McpTruncation.ToolLimit, McpCatalog.stopReason(10, 10, 3, 64, "c2", emptySet()))
     }
 
     @Test
