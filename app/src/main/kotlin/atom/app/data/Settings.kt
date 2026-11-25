@@ -59,7 +59,7 @@ data class AppSettings(
     /** When true, Act-risk tools (taps, typing) also ask first, not only Sensitive ones. */
     val confirmActTools: Boolean = false,
     val onboarded: Boolean = false,
-    val theme: ThemeMode = ThemeMode.Dark,
+    val theme: ThemeMode = ThemeMode.System,
     /** Opt-in "Hey Atom" listener. Off by default: an open microphone is never free. */
     val heyAtom: Boolean = false,
     /** Also listen with the screen off on battery (charging always allows it). */
@@ -151,7 +151,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         wifiOnlyDownloads = p[WIFI_ONLY] ?: true,
         confirmActTools = p[CONFIRM_ACT] ?: false,
         onboarded = p[ONBOARDED] ?: false,
-        theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.Dark,
+        theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.System,
         heyAtom = p[HEY_ATOM] ?: false,
         heyAtomScreenOff = p[HEY_ATOM_SCREEN_OFF] ?: false,
         reasoningByDefault = p[REASONING_DEFAULT] ?: false,
