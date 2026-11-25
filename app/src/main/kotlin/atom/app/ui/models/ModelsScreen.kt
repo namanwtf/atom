@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -313,7 +314,7 @@ private fun ProviderRow(config: ProviderConfig, current: Boolean, onOpen: () -> 
     val c = MiuixTheme.colorScheme
     val line = listOfNotNull(
         stringResource(providerTypeLabel(config.wire)),
-        stringResource(R.string.set_models_n, config.models.size),
+        pluralStringResource(R.plurals.mdl_model_count, config.models.size, config.models.size),
         if (config.builtIn) stringResource(R.string.set_tag_builtin) else null,
         if (!config.enabled) stringResource(R.string.set_tag_disabled) else null,
     ).joinToString(" · ")

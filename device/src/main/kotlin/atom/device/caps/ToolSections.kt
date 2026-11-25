@@ -51,6 +51,9 @@ object ToolSections {
         "files" to ToolSection.Terminal,
     )
 
+    /** Needs only root or Shizuku can meet (hidden in the "Current device" view while unmet). */
+    fun needsShell(needs: Needs): Boolean = needs == Needs.Root || needs == Needs.ShizukuOrRoot
+
     fun sectionOf(group: ToolGroupInfo): ToolSection = byGroup[group.id] ?: ToolSection.Apps
 
     /**

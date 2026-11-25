@@ -72,7 +72,9 @@ fun ToolListScreen(nav: FeatureNav) {
     var info by remember { mutableStateOf<ToolRow?>(null) }
     val groups = remember { ToolCatalog.all }
     val isOn: (String) -> Boolean = { it !in disabled }
-    val sections = ToolSections.build(groups, isOn) { allView || it.needs.met(context) }
+    // "Current device" leaves out what this phone cannot gain (root or Shizuku missing); tools that only need a
+    // permission or the accessibility service stay, with their requirement line.
+    val sections = ToolSections.build(groups, isOn) { allView || it.needs.met(context) || !ToolSections.needsShell(it.needs) }
     val selected = chip?.let { name -> ToolSection.entries.firstOrNull { it.name == name } }?.takeIf { s -> sections.any { it.section == s } }
     val shown = ToolSections.filter(sections, selected)
     val (on, total) = ToolSections.totals(sections)

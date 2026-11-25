@@ -58,6 +58,14 @@ class ToolSectionsTest {
     }
 
     @Test
+    fun onlyShellNeedsHideFromTheCurrentDeviceView() {
+        assertTrue(ToolSections.needsShell(Needs.Root))
+        assertTrue(ToolSections.needsShell(Needs.ShizukuOrRoot))
+        assertTrue(!ToolSections.needsShell(Needs.Accessibility))
+        assertTrue(!ToolSections.needsShell(Needs.Permission))
+    }
+
+    @Test
     fun rowTitlesReadAsWords() {
         assertEquals("Read screen", ToolRow("read_screen", group("screen", 1, "read_screen")).title)
     }

@@ -132,5 +132,4 @@
     <string name="set_type_anthropic">Anthropic Messages</string>
     <string name="set_type_gemini">Gemini</string>
     <string name="set_type_vertex">Vertex AI</string>
-    <string name="set_models_n">%1$d models</string>
 </resources>
