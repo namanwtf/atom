@@ -34,6 +34,15 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse references to other apps
+        # Atom is presented on its own. The only allowed hit is the Greek letter in the LaTeX table.
+        run: |
+          if git grep -nIiP '\b(eta|buddy)\b' -- ':!engine/llamacpp/third_party' ':!.github/**' \
+               | grep -vF '"eta" to "η"'; then
+            echo "::error::Remove references to other apps (see lines above)"
+            exit 1
+          fi
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
