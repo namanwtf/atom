@@ -181,6 +181,9 @@ def main():
     checked_sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
     checked_sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
     sh("settings put global window_animation_scale 0.5")
+    # Start each pass from a cold app, so the light pass does not resume on the dark pass's last screen.
+    sh(f"am force-stop {PKG}")
+    sh("input keyevent KEYCODE_HOME")
     p = f"{mode}_"
 
     launch(wait=8)
