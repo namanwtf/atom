@@ -87,6 +87,13 @@ class AppGraph(private val app: Application) {
 
     fun consumeChatRequest(request: ChatRequest) = _chatRequests.update { it - request }
 
+    /**
+     * The conversation the chat screen currently shows (null on a new, empty chat). The chat screen sets it; smart
+     * correction of voice input uses that conversation's model.
+     */
+    @Volatile
+    var focusedConversationId: String? = null
+
     /** True while an activity is started; used to decide whether a finished task deserves a notification. */
     @Volatile
     var uiVisible: Boolean = false
