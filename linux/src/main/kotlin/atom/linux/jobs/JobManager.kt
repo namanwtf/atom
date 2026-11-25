@@ -180,7 +180,7 @@ class JobManager private constructor(context: Context) {
             ShellEnv.Android -> LaunchSpec(listOf("/system/bin/sh", "-c", command), hostEnv, app.filesDir.path) to null
             ShellEnv.Root -> {
                 check(linux.probeRoot().root) { "Root access is not available." }
-                LaunchSpec(listOf("su", "-c", command), hostEnv, "/") to null
+                LaunchSpec(atom.linux.AndroidShell.rootArgv(app, command), hostEnv, "/") to null
             }
             ShellEnv.Linux -> {
                 val ready = linux.state.value as? LinuxState.Ready ?: throw IllegalStateException("Linux is not installed.")

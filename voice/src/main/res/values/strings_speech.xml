@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Read aloud -->
-    <string name="speech_reading_channel">Reading aloud</string>
+    <string name="assistant_voice_channel">Assistant voice</string>
+    <string name="assistant_voice_channel_desc">Shown while Atom is listening or reading aloud outside the app, with a Stop button.</string>
+    <string name="assistant_voice_listening">Atom is listening</string>
     <string name="speech_reading_title">Atom is reading aloud</string>
     <string name="speech_stop">Stop</string>
     <string name="speech_read_aloud">Read aloud</string>

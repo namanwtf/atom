@@ -29,6 +29,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,7 +56,19 @@ class AppGraph(private val app: Application) {
     val conversations = ConversationStore(File(app.filesDir, "atom4_conversations"))
     val journal = RunJournal(File(app.filesDir, "atom4_run-journal"))
     val runtimePrefs = RuntimePrefs(app.runtimeDataStore)
-    val notifications = TaskNotifications(app)
+    val notifications = TaskNotifications(app).also { n ->
+        appScope.launch {
+            settings.settings.map { it.liveUpdates }.distinctUntilChanged().collect { on ->
+                if (n.liveUpdates == on) return@collect
+                n.liveUpdates = on
+                // Re-post a running task's notification so the switch takes effect at once.
+                runCatching {
+                    val active = tasks.liveRuns.value.values.filter { it.active }
+                    if (active.isNotEmpty()) n.notifyForeground(active)
+                }
+            }
+        }
+    }
 
     val models: ModelStore by lazy { ModelStore.get(app) }
     val power: PowerGovernor by lazy { PowerGovernor(app) }
@@ -79,6 +94,13 @@ class AppGraph(private val app: Application) {
     fun postChatRequest(request: ChatRequest) = _chatRequests.update { it + request }
 
     fun consumeChatRequest(request: ChatRequest) = _chatRequests.update { it - request }
+
+    /**
+     * The conversation the chat screen currently shows (null on a new, empty chat). The chat screen sets it; smart
+     * correction of voice input uses that conversation's model.
+     */
+    @Volatile
+    var focusedConversationId: String? = null
 
     /** True while an activity is started; used to decide whether a finished task deserves a notification. */
     @Volatile
