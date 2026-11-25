@@ -35,7 +35,6 @@ fun logoForKey(key: String?, dark: Boolean): Int? = when (key) {
     "deepseek" -> if (dark) R.drawable.logo_deepseek_dark else R.drawable.logo_deepseek_light
     "qwen" -> if (dark) R.drawable.logo_qwen_dark else R.drawable.logo_qwen_light
     "kimi" -> if (dark) R.drawable.logo_kimi_dark else R.drawable.logo_kimi_light
-    "mimo" -> if (dark) R.drawable.logo_mimo_dark else R.drawable.logo_mimo_light
     "minimax" -> if (dark) R.drawable.logo_minimax_dark else R.drawable.logo_minimax_light
     "stepfun" -> if (dark) R.drawable.logo_stepfun_dark else R.drawable.logo_stepfun_light
     "siliconflow" -> if (dark) R.drawable.logo_siliconflow_dark else R.drawable.logo_siliconflow_light
@@ -54,12 +53,13 @@ fun logoForKey(key: String?, dark: Boolean): Int? = when (key) {
 }
 
 /**
- * The logo for a provider, by its id or display name (either works: "openai", "OpenAI Copy", "Kimi (Moonshot)").
- * [model] lets aggregators and on-device models show the model family. Null when there is no logo.
+ * The logo for a provider by its built-in preset id (`ProviderConfig.presetId`; exact match, so user-added
+ * providers never borrow a brand). [model] lets aggregators, user providers and on-device models show the
+ * model family. Null when there is no logo.
  */
 @DrawableRes
-fun providerLogo(providerIdOrName: String?, dark: Boolean = true, model: String? = null, baseUrl: String? = null): Int? =
-    logoForKey(ProviderBrands.key(providerIdOrName, providerIdOrName, baseUrl, model), dark)
+fun providerLogo(presetId: String?, dark: Boolean = true, model: String? = null): Int? =
+    logoForKey(ProviderBrands.key(presetId, model), dark)
 
 /** True when the current theme draws on a dark background. */
 @Composable
@@ -70,15 +70,15 @@ fun isDarkTheme(): Boolean = MaterialTheme.colorScheme.background.luminance() < 
  * models; the home model capsule uses its own fallback.
  */
 @Composable
-fun ProviderMark(providerId: String?, name: String?, size: Dp, modifier: Modifier = Modifier, model: String? = null, baseUrl: String? = null) {
-    val res = logoForKey(ProviderBrands.key(providerId, name, baseUrl, model), isDarkTheme())
+fun ProviderMark(presetId: String?, name: String?, size: Dp, modifier: Modifier = Modifier, model: String? = null) {
+    val res = logoForKey(ProviderBrands.key(presetId, model), isDarkTheme())
     if (res != null) {
         Image(painterResource(res), contentDescription = null, modifier = modifier.size(size))
     } else {
         val colors = MaterialTheme.colorScheme
         Box(modifier.size(size).background(colors.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
             Text(
-                (name ?: providerId).orEmpty().trim().take(1).uppercase().ifEmpty { "?" },
+                (name ?: presetId).orEmpty().trim().take(1).uppercase().ifEmpty { "?" },
                 color = colors.onPrimaryContainer,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = (size.value * 0.46f).sp,

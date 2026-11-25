@@ -21,7 +21,12 @@ class SubagentBridge(private val graph: AppGraph) : ToolScope, SubagentEnginePro
 
     override suspend fun acquire(role: String, modelId: String?, parentTaskId: String): SubagentEngine {
         val parent = graph.tasks.selectionOf(parentTaskId)
-        val routed = graph.router.acquire(ModelRole.Subagent, parent, modelId?.let(::parseSelection))
+        val routed = graph.router.acquire(
+            ModelRole.Subagent,
+            parent,
+            modelId?.let(::parseSelection),
+            hostedSearch = graph.tasks.hostedSearchOf(parentTaskId),
+        )
         return SubagentEngine(
             engine = routed.engine,
             model = routed.model,

@@ -160,6 +160,6 @@ object Undo {
     }
 
     fun journal(context: Context): UndoJournal = instance ?: synchronized(this) {
-        instance ?: UndoJournal(FileJournalStore(File(context.applicationContext.filesDir, "undo_journal.json"))).also { instance = it }
+        instance ?: UndoJournal(FileJournalStore(File(context.applicationContext.filesDir, "atom4_undo_journal.json"))).also { instance = it }
     }
 }

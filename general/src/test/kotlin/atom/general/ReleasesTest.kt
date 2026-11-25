@@ -77,8 +77,10 @@ class ReleasesTest {
         assertIs<UpdateStatus.Failed>(UpdateChecker.check("not a slug", "1.0.0"))
     }
 
-    @Test fun defaultsAreEmpty() {
-        assertEquals("", GeneralConfig.DEFAULT_UPDATE_REPO)
+    @Test fun updateRepoIsTheSharedReleaseChannelAndOtherLinksAreEmpty() {
+        // The earlier app checks this same repository, which is what lets its installs reach this app.
+        assertEquals("namanwtf/atom", GeneralConfig.DEFAULT_UPDATE_REPO)
+        assertTrue(Releases.isValidSlug(GeneralConfig.DEFAULT_UPDATE_REPO))
         assertEquals("", GeneralConfig.DEFAULT_SOURCE_URL)
         assertEquals("", GeneralConfig.DEFAULT_FEEDBACK)
     }

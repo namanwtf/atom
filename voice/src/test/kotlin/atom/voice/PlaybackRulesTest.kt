@@ -53,4 +53,12 @@ class PlaybackRulesTest {
         assertFalse(PlaybackRules.needsForegroundService(ReadAloudSource.AudioChat))
         assertFalse(PlaybackRules.needsForegroundService(ReadAloudSource.Preview))
     }
+
+    @Test
+    fun onlyTheAssistantOverlayPostsTheAssistantVoiceNotice() {
+        assertTrue(PlaybackRules.showsAssistantVoiceNotice(ReadAloudSource.Overlay))
+        assertFalse(PlaybackRules.showsAssistantVoiceNotice(ReadAloudSource.Chat))
+        assertFalse(PlaybackRules.showsAssistantVoiceNotice(ReadAloudSource.AudioChat))
+        assertFalse(PlaybackRules.showsAssistantVoiceNotice(ReadAloudSource.Preview))
+    }
 }

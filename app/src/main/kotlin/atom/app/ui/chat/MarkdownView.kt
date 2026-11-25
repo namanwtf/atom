@@ -129,7 +129,7 @@ private fun InlineText(inlines: List<MdInline>, style: TextStyle, color: Color, 
                     is MdInline.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { add(node.children) }
                     is MdInline.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { add(node.children) }
                     is MdInline.Strike -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { add(node.children) }
-                    is MdInline.Code -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = style.fontSize * 0.88f, background = codeBg)) {
+                    is MdInline.Code -> withStyle(SpanStyle(fontFamily = atom.linux.ui.MonoFont.JetBrainsMono, fontSize = style.fontSize * 0.88f, background = codeBg)) {
                         append(" " + node.code + " ")
                     }
                     is MdInline.Link -> withLink(LinkAnnotation.Url(node.url, linkStyle)) { add(node.children) }
@@ -192,7 +192,7 @@ private fun CodeBlock(language: String?, code: String) {
             }
             Text(
                 code,
-                style = MaterialTheme.extras.mono,
+                style = MaterialTheme.extras.mono.copy(fontFamily = atom.linux.ui.MonoFont.JetBrainsMono),
                 color = colors.onSurface,
                 softWrap = false,
                 modifier = Modifier

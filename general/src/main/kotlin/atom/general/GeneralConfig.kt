@@ -1,13 +1,15 @@
 package atom.general
 
 /**
- * Project links. All empty by default because the new repository does not exist yet; empty values hide the
- * matching About rows ("Updates: not configured" for the update check). The app may override them once at
- * startup (e.g. from BuildConfig) before any screen opens.
+ * Project links. Empty values hide the matching About rows ("Updates: not configured" for the update check). The
+ * app may override them once at startup (e.g. from BuildConfig) before any screen opens.
  */
 object GeneralConfig {
-    /** GitHub "owner/repo" whose Releases are the update channel. Empty = updates not configured. */
-    const val DEFAULT_UPDATE_REPO = ""
+    /**
+     * GitHub "owner/repo" whose Releases are the update channel. Empty = updates not configured. It is the same
+     * repository the earlier Atom app checks, so its installs find this app's releases too (docs/UPDATES.md).
+     */
+    const val DEFAULT_UPDATE_REPO = "namanwtf/atom"
 
     /** Public source code URL (https). Empty = row hidden. */
     const val DEFAULT_SOURCE_URL = ""

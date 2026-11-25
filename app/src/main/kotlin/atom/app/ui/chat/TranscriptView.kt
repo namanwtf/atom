@@ -91,6 +91,7 @@ import atom.app.ui.common.formatDuration
 import atom.app.ui.common.formatTokens
 import atom.app.ui.common.humanizeTool
 import atom.core.agent.SessionStats
+import androidx.compose.material3.minimumInteractiveComponentSize
 import atom.core.tool.Risk
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.offset
@@ -397,6 +398,7 @@ private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Bool
                 MarkdownText(shownText, Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp, end = 4.dp))
             }
         }
+        turn.answerSuggestions?.let { SearchSuggestionsRow(it) }
         // The action row fades in once the answer has finished revealing.
         AnimatedVisibility(
             visible = turn.finished && (answer != null || turn.work.isNotEmpty()),
@@ -715,7 +717,7 @@ private fun DetailBlock(label: String, text: String, copyLabel: String) {
         SelectionContainer {
             Text(
                 text,
-                style = MaterialTheme.extras.mono,
+                style = MaterialTheme.extras.mono.copy(fontFamily = atom.linux.ui.MonoFont.JetBrainsMono),
                 color = colors.onSurface.copy(alpha = 0.9f),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -776,8 +778,13 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
             copied = false
         }
     }
-    // Shifted left so the first icon lines up with the answer text.
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp).offset(x = (-6).dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    // 48dp touch targets around 16dp icons, shifted left so the first icon lines up with the answer text. The row
+    // wraps, so the stats pill or the reply switcher moves to a second line on narrow screens instead of clipping.
+    FlowRow(
+        Modifier.fillMaxWidth().offset(x = (-16).dp),
+        verticalArrangement = Arrangement.Center,
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         if (copyText != null) {
             ActionIcon(
                 if (copied) HomeGlyphs.Check else HomeGlyphs.Copy,
@@ -813,17 +820,15 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
         if (canEdit && branch != null && answerIndex != null) {
             ActionIcon(HomeGlyphs.Branch, stringResource(R.string.chat_branch)) { branch(turn) }
         }
-        val onStats = actions.onStats
-        val pill = if (showStats) statsPill(actions.stats) else null
-        if (pill != null && onStats != null) {
-            Spacer(Modifier.width(4.dp))
-            StatsPill(pill, onStats)
-        }
         val set = answerIndex?.let { actions.candidates[it] }
         val pick = actions.onCandidate
         if (set != null && pick != null && answerIndex != null) {
-            Spacer(Modifier.weight(1f))
+            // A reply with alternatives shows its switcher here; the session stats stay in the overflow menu.
             CandidateSwitcher(set, enabled = canEdit, onPrevious = { pick(answerIndex, set.selected - 1) }, onNext = { pick(answerIndex, set.selected + 1) })
+        } else {
+            val onStats = actions.onStats
+            val pill = if (showStats) statsPill(actions.stats) else null
+            if (pill != null && onStats != null) StatsPill(pill, onStats)
         }
     }
     val editIndex = turn.answerIndex
@@ -917,14 +922,78 @@ private fun DeleteFromDialog(later: Int, onConfirm: () -> Unit, onDismiss: () ->
     }
 }
 
-/** A 28dp action with an 8dp corner and a 16dp line icon in summary grey. */
+/**
+ * Google Search suggestions attached to a grounded Gemini answer. The search provider's terms ask for them to be
+ * shown: one chip per query opening the search, or the provider's own rendered chip when no queries came with it.
+ */
+@Composable
+private fun SearchSuggestionsRow(s: atom.core.llm.SearchSuggestions) {
+    val colors = MaterialTheme.colorScheme
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val label = stringResource(R.string.chat_search_suggestions)
+    if (s.queries.isNotEmpty()) {
+        FlowRow(
+            Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp).semantics { contentDescription = label },
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            s.queries.forEach { q ->
+                val shape = RoundedCornerShape(10.dp)
+                Row(
+                    Modifier
+                        .clip(shape)
+                        .background(colors.surface)
+                        .border(0.5.dp, colors.outline.copy(alpha = 0.55f), shape)
+                        .clickable { runCatching { uri.openUri(s.searchUrl(q)) } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(ChatGlyphs.Search, null, Modifier.size(12.dp), tint = colors.primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(q, fontSize = 13.sp, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        return
+    }
+    val html = s.renderedContent?.takeIf { it.isNotBlank() } ?: return
+    // The provider's own markup, shown as given in a WebView with scripts off; links open in the browser.
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { context ->
+            android.webkit.WebView(context).apply {
+                settings.javaScriptEnabled = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                webViewClient = object : android.webkit.WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: android.webkit.WebView, request: android.webkit.WebResourceRequest): Boolean {
+                        val url = request.url
+                        if (url.scheme == "https" || url.scheme == "http") {
+                            runCatching {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, url).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        }
+                        return true
+                    }
+                }
+                loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(64.dp).padding(vertical = 4.dp).semantics { contentDescription = label },
+    )
+}
+
+/** A 16dp line icon in summary grey inside a 48dp touch target. */
 @Composable
 private fun ActionIcon(icon: ImageVector, description: String, tint: androidx.compose.ui.graphics.Color? = null, onClick: () -> Unit) {
     Box(
         Modifier
-            .size(28.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .minimumInteractiveComponentSize()
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = androidx.compose.material3.ripple(bounded = false, radius = 16.dp),
+                onClick = onClick,
+            )
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {

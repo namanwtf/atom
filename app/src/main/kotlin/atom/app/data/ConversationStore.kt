@@ -2,6 +2,7 @@ package atom.app.data
 
 import atom.core.agent.Compactor
 import atom.core.agent.SessionStats
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.ReasoningEffort
@@ -60,6 +61,11 @@ data class StoredMessage(
     val createdAt: Long = 0,
     /** Changed by the user after it was first sent; the bubble shows "Edited". */
     val edited: Boolean = false,
+    /**
+     * Search suggestions the provider attached to this answer (Gemini grounding). The chat shows them under the
+     * answer: [SearchSuggestions.renderedContent] as given, or one chip per query opening [SearchSuggestions.searchUrl].
+     */
+    val searchSuggestions: SearchSuggestions? = null,
 ) {
     val isVisibleUser: Boolean get() = kind == EntryKind.Message && message.role == Role.User && !hidden
 
@@ -119,7 +125,7 @@ data class ConversationSummary(
 data class ConversationMatch(val id: String, val snippet: String)
 
 /**
- * One JSON file per conversation under filesDir/conversations plus a small index so the drawer never has to
+ * One JSON file per conversation under filesDir/atom4_conversations plus a small index so the drawer never has to
  * parse every transcript. Image payloads are dropped on save: screenshots are large and only useful live.
  */
 class ConversationStore(private val dir: File) {
@@ -335,6 +341,7 @@ internal data class MessageDto(
     val steering: Boolean = false,
     val createdAt: Long = 0,
     val edited: Boolean = false,
+    val searchSuggestions: SearchSuggestions? = null,
 )
 
 @Serializable
@@ -374,6 +381,7 @@ internal fun StoredMessage.toDto() = MessageDto(
     steering = steering,
     createdAt = createdAt,
     edited = edited,
+    searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
 )
 
 internal fun ConversationDto.toModel() = Conversation(
@@ -417,5 +425,6 @@ internal fun MessageDto.toModel(): StoredMessage? {
         steering = steering,
         createdAt = createdAt,
         edited = edited,
+        searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
     )
 }
