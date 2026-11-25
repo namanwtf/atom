@@ -2,6 +2,30 @@ package atom.automation.ui
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import atom.automation.task.RunTimeline
+import atom.automation.task.TaskListLabels
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomRow
+import atom.ui.components.AtomTextButton
+import atom.ui.components.RowValue
+import atom.ui.components.SwitchRow
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.icon.extended.Edit
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -86,32 +110,32 @@ internal fun Context.launch(intent: Intent?) {
         .onFailure { runCatching { startActivity(Health.appSettings(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
 }
 
+/** The health banner copy and button for one failing check; null when the check passes. */
+private fun banner(h: HealthItem): Pair<String, String>? = if (h.ok) null else when (h.key) {
+    Health.KEY_BATTERY -> "Allow unrestricted background battery" to "Open settings"
+    Health.KEY_EXACT -> "Exact alarm permission not granted" to "Allow exact alarms"
+    Health.KEY_NOTIFICATIONS -> "Notifications are turned off" to "Enable notifications"
+    else -> h.title to "Fix"
+}
+
+/** Only the checks that fail, each as a banner row with its fix button. */
 @Composable
 internal fun HealthCard(items: List<HealthItem>) {
     val context = LocalContext.current
-    val bad = items.count { !it.ok }
-    Group {
-        Box(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-            StatusLine(
-                if (bad == 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.extras.warning,
-                if (bad == 0) "All good" else if (bad == 1) "1 item needs attention" else "$bad items need attention",
+    val failing = items.mapNotNull { h -> banner(h)?.let { h to it } }
+    if (failing.isEmpty()) return
+    Group(Modifier.padding(top = 12.dp)) {
+        failing.forEach { (h, copy) ->
+            AtomRow(
+                title = copy.first,
+                summary = h.detail,
+                titleColor = MaterialTheme.extras.warning,
+                end = {
+                    Box(Modifier.align(Alignment.CenterVertically)) { AtomTextButton(copy.second, { context.launch(h.fix) }, primary = true) }
+                },
             )
         }
-        items.forEach { h ->
-            GroupDivider(18.dp)
-            GroupRow(h.title, subtitle = h.detail, trailing = {
-                if (h.ok) HealthDot(true) else CompactButton("Fix", { context.launch(h.fix) })
-            })
-        }
     }
-}
-
-private fun statusLine(task: ScheduledTask, last: TaskRun?, now: Instant): String = when {
-    last?.status == RunStatus.Running -> "Running now"
-    !task.enabled && task.pausedReason != null -> task.pausedReason
-    !task.enabled -> "Off"
-    task.nextRunAt != null -> "Next " + ScheduleText.relative(Instant.ofEpochMilli(task.nextRunAt), now)
-    else -> "Finished"
 }
 
 @Composable
@@ -121,39 +145,54 @@ internal fun TasksScreen(nav: FeatureNav) {
     val health = rememberOnResume { Health.scheduled(it) }
     val now = Instant.now()
     LargeTitleScreen(
-        "Scheduled tasks",
+        "Scheduled Tasks",
         onBack = nav::back,
-        actions = { CircleIconButton(Icons.Filled.Add, "New task", { nav.open(R_TASK + "new") }, Modifier.padding(end = 8.dp)) },
+        actions = {
+            IconButton(onClick = { nav.open(R_TASK + "new") }, modifier = Modifier.padding(end = 12.dp)) {
+                Icon(MiuixIcons.Add, "New Scheduled Task", tint = MiuixTheme.colorScheme.onSurface)
+            }
+        },
     ) {
         item { HealthCard(health) }
+        item { SectionLabel("Quick start") }
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Presets.all.forEachIndexed { i, p -> PresetCard(p.title, p.blurb) { nav.open(R_TASK + "new/$i") } }
+            }
+        }
+        item {
+            Text(
+                "Atom runs these in the background at the times you set, using the tools you allow, and sends you the result. " +
+                    "Each run is kept in its own conversation so you can follow up.",
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            )
+        }
         item { SectionLabel("All tasks · ${snap.tasks.count { it.enabled }}/${snap.tasks.size} enabled") }
         item {
-            if (snap.tasks.isEmpty()) {
-                AtomCard { Text("No tasks yet. Start from a preset below or tap +.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            } else {
-                Group {
-                    snap.tasks.sortedBy { it.nextRunAt ?: Long.MAX_VALUE }.forEachIndexed { i, t ->
-                        if (i > 0) GroupDivider(18.dp)
-                        val last = snap.taskRuns.filter { it.taskId == t.id }.maxByOrNull { it.startedAt }
-                        GroupRow(
-                            t.name,
-                            subtitle = ScheduleText.describe(t.schedule) + " · " + statusLine(t, last, now) +
-                                (last?.takeIf { it.status != RunStatus.Running }?.let { " · Last: ${it.status.label}" } ?: ""),
-                            onClick = { nav.open(R_TASK + t.id) },
-                            trailing = { AtomSwitch(t.enabled, { rt.tasks.setEnabled(t.id, it) }) },
-                        )
-                    }
+            Group {
+                if (snap.tasks.isEmpty()) AtomRow(title = "No scheduled tasks", summary = "Start from a Quick start card above or tap +.")
+                snap.tasks.sortedBy { it.nextRunAt ?: Long.MAX_VALUE }.forEach { t ->
+                    val last = snap.taskRuns.filter { it.taskId == t.id }.maxByOrNull { it.startedAt }
+                    AtomRow(
+                        title = t.name,
+                        summary = TaskListLabels.summary(t, last) { at -> ScheduleText.relative(Instant.ofEpochMilli(at), now) },
+                        onClick = { nav.open(R_TASK + t.id) },
+                        end = { Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(t.enabled, { rt.tasks.setEnabled(t.id, it) }) } },
+                    )
                 }
             }
         }
-        item { SectionLabel("Quick start") }
-        item {
-            Group {
-                Presets.all.forEachIndexed { i, p ->
-                    if (i > 0) GroupDivider(18.dp)
-                    NavRow(p.title, p.blurb) { nav.open(R_TASK + "new/$i") }
-                }
-            }
+    }
+}
+
+@Composable
+private fun PresetCard(title: String, blurb: String, onClick: () -> Unit) {
+    Card(modifier = Modifier.width(220.dp), insideMargin = PaddingValues(16.dp), showIndication = true, onClick = onClick) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface, maxLines = 2)
+            Text(blurb, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, maxLines = 3)
         }
     }
 }
@@ -179,7 +218,7 @@ private fun Schedule.minuteOfDay(): Int = when (this) {
 private fun convert(s: Schedule, k: Kind, now: Long): Schedule = when (k) {
     Kind.Daily -> Schedule.Daily(s.minuteOfDay())
     Kind.Weekdays -> Schedule.Weekdays(s.minuteOfDay())
-    Kind.Weekly -> Schedule.Weekly(setOf(java.time.DayOfWeek.MONDAY), s.minuteOfDay())
+    Kind.Weekly -> Schedule.Weekly(java.time.DayOfWeek.entries.take(5).toSet(), s.minuteOfDay())
     Kind.Interval -> Schedule.Interval(60, now)
     Kind.Once -> Schedule.Once(now + 60 * 60_000L)
     Kind.Cron -> Schedule.CronSchedule("0 9 * * 1-5")
@@ -191,6 +230,7 @@ private val DELAYS = listOf(15, 30, 60, 120, 240, 480, 1440)
 @Composable
 internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNav) {
     val rt = rememberRuntime()
+    val context = LocalContext.current
     val initial = remember {
         val now = System.currentTimeMillis()
         taskId?.let { rt.state.task(it) }
@@ -208,14 +248,17 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
     val models = Automations.models
 
     LargeTitleScreen(
-        if (taskId == null) "New task" else "Edit task",
+        if (taskId == null) "New Scheduled Task" else "Edit Scheduled Task",
         onBack = nav::back,
         bottomBar = {
             BottomActionBar {
                 PrimaryButton("Save", {
                     val saved = t.copy(id = t.id.ifEmpty { UUID.randomUUID().toString() }, name = t.name.trim(), prompt = t.prompt.trim())
-                    rt.tasks.save(saved)
-                    nav.back()
+                    if (runCatching { rt.tasks.save(saved) }.isSuccess) {
+                        nav.back()
+                    } else {
+                        Toast.makeText(context, "Failed to save scheduled task", Toast.LENGTH_SHORT).show()
+                    }
                 }, enabled = valid)
             }
         },
@@ -224,7 +267,7 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
             Group {
                 AtomField(t.name, { t = t.copy(name = it) }, "Name")
                 GroupDivider(18.dp)
-                AtomField(t.prompt, { t = t.copy(prompt = it) }, "What should Atom do?", singleLine = false, minLines = 3)
+                AtomField(t.prompt, { t = t.copy(prompt = it) }, "What should Atom do", singleLine = false, minLines = 3)
             }
         }
         item { SectionLabel("Schedule") }
@@ -306,7 +349,7 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
                     },
                 )
                 GroupDivider(18.dp)
-                GroupRow("Progress notification", subtitle = "Show a notification while it runs", trailing = {
+                GroupRow("Show progress notification while running", subtitle = "Off by default; results still arrive when the run ends", trailing = {
                     AtomSwitch(t.progressNotification, { t = t.copy(progressNotification = it) })
                 })
             }
@@ -385,7 +428,7 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
 internal fun CapabilityGroup(caps: Set<Capability>, onChange: (Set<Capability>) -> Unit) {
     Group {
         GroupRow("Chat only", subtitle = "No tools; the model answers from what it knows", trailing = {
-            AtomSwitch(caps.isEmpty(), { on -> onChange(if (on) emptySet() else Capability.DEFAULT) })
+            AtomSwitch(caps.isEmpty(), { on -> onChange(if (on) emptySet() else Capability.TASK_DEFAULT) })
         })
         Capability.entries.forEach { c ->
             GroupDivider(18.dp)
@@ -401,71 +444,134 @@ internal fun CapabilityGroup(caps: Set<Capability>, onChange: (Set<Capability>) 
 @Composable
 internal fun TaskDetailScreen(taskId: String, nav: FeatureNav) {
     val rt = rememberRuntime()
+    val context = LocalContext.current
     val snap by rt.state.flow.collectAsState()
     val task = snap.tasks.firstOrNull { it.id == taskId }
     var confirmDelete by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     if (task == null) {
-        LargeTitleScreen("Task", onBack = nav::back) { item { AtomCard { Text("This task was deleted.") } } }
+        LargeTitleScreen("Task Details", onBack = nav::back) { item { Group(Modifier.padding(top = 12.dp)) { AtomRow(title = "This task was deleted.") } } }
         return
     }
     val runs = snap.taskRuns.filter { it.taskId == taskId }.sortedByDescending { it.startedAt }
     val running = runs.firstOrNull()?.status == RunStatus.Running
     val now = Instant.now()
+    val models = Automations.models
     LargeTitleScreen(
-        task.name,
+        "Task Details",
         onBack = nav::back,
-        actions = { CircleIconButton(Icons.Filled.Edit, "Edit", { nav.open(R_TASK + task.id + "/edit") }, Modifier.padding(end = 8.dp)) },
+        actions = {
+            IconButton(onClick = { nav.open(R_TASK + task.id + "/edit") }, modifier = Modifier.padding(end = 12.dp)) {
+                Icon(MiuixIcons.Edit, "Edit", tint = MiuixTheme.colorScheme.onSurface)
+            }
+        },
     ) {
         item {
-            AtomCard {
-                StatusLine(
-                    if (task.pausedReason != null && !task.enabled) MaterialTheme.extras.warning else MaterialTheme.colorScheme.onSurfaceVariant,
-                    statusLine(task, runs.firstOrNull(), now),
-                )
-                Text(ScheduleText.describe(task.schedule) + " · " + Capability.describe(task.capabilities), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CompactButton("Run now", { message = rt.tasks.runNow(task.id) }, enabled = !running)
-                    if (running) CompactButton("Stop", { rt.tasks.stop(task.id) }, primary = false)
-                    CompactButton(if (task.enabled) "Turn off" else "Turn on", { rt.tasks.setEnabled(task.id, !task.enabled) }, primary = false)
+            Group(Modifier.padding(top = 12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(task.name, style = MiuixTheme.textStyles.title4, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface)
+                    val next = task.nextRunAt?.takeIf { task.enabled }
+                    Text(
+                        when {
+                            running -> "Running in background…"
+                            next != null -> "Next run " + ScheduleText.relative(Instant.ofEpochMilli(next), now)
+                            !task.enabled -> "Currently paused" + (task.pausedReason?.let { " · $it" } ?: "")
+                            else -> "No upcoming runs"
+                        },
+                        style = MiuixTheme.textStyles.body2,
+                        color = if (!task.enabled && task.pausedReason != null) MaterialTheme.extras.warning else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (running) {
+                        AtomTextButton("Stop", {
+                            rt.tasks.stop(task.id)
+                            toast("Stopping current run…")
+                        }, Modifier.fillMaxWidth())
+                    } else {
+                        AtomTextButton("Run now", {
+                            when (val why = rt.tasks.runNow(task.id)) {
+                                null -> toast("Started background test run")
+                                "Already running" -> toast("This task is already running")
+                                else -> toast(why)
+                            }
+                        }, Modifier.fillMaxWidth(), primary = true)
+                    }
                 }
-                message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium) }
             }
         }
-        item { SectionLabel("Prompt") }
-        item { AtomCard { Text(task.prompt, style = MaterialTheme.typography.bodyLarge) } }
-        item { SectionLabel("Memo") }
         item {
-            AtomCard {
-                Text(
-                    task.memo?.take(1200) ?: "Empty. The next successful result is saved here and the run after it is compared against it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (task.memo == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            Group(Modifier.padding(top = 12.dp)) {
+                SwitchRow(
+                    title = "Enable schedule",
+                    checked = task.enabled,
+                    onCheckedChange = { rt.tasks.setEnabled(task.id, it) },
+                    summary = if (task.enabled) {
+                        "Automatically wakes Atom to run " + ScheduleText.describe(task.schedule).replaceFirstChar { it.lowercase() }
+                    } else {
+                        "Automatic triggers paused; you can still run manually anytime"
+                    },
                 )
-                if (task.memo != null) CompactButton("Clear memo", { rt.tasks.clearMemo(task.id) }, primary = false)
             }
         }
-        item { SectionLabel("Runs") }
+        item { SectionLabel("Prompt & configuration") }
         item {
             Group {
-                if (runs.isEmpty()) GroupRow("No runs yet")
-                runs.forEachIndexed { i, r ->
-                    if (i > 0) GroupDivider(18.dp)
-                    val open = r.conversationId
-                    GroupRow(
-                        r.status.label + " · " + ScheduleText.relative(Instant.ofEpochMilli(r.startedAt), now) + if (r.manual) " · manual" else "",
-                        subtitle = r.summary.take(200).ifEmpty { null },
-                        onClick = open?.let { { nav.openChat(it) } },
-                        trailing = if (open != null) { { atom.ui.components.RowChevron() } } else null,
-                    )
+                Text(
+                    task.prompt,
+                    style = MiuixTheme.textStyles.body1,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                )
+                AtomRow(title = "Model", end = { Box(Modifier.align(Alignment.CenterVertically)) { RowValue(models.label(task.modelId)) } })
+                AtomRow(
+                    title = "Notifications & session",
+                    summary = TaskListLabels.badges(task).joinToString(" · "),
+                )
+                AtomRow(title = "Capabilities", summary = Capability.describe(task.capabilities))
+            }
+        }
+        item { SectionLabel("Task memo") }
+        item {
+            Group {
+                AtomRow(
+                    title = task.memo?.take(1200) ?: "Empty",
+                    summary = if (task.memo == null) "The next successful result is saved here, and the run after it is compared against it." else null,
+                )
+                if (task.memo != null) {
+                    ArrowRow("Clear memo", {
+                        rt.tasks.clearMemo(task.id)
+                        toast("Task memo cleared")
+                    })
                 }
             }
         }
-        item { Gap(20) }
-        item { Group { GroupRow("Delete task", onClick = { confirmDelete = true }) } }
+        item { SectionLabel("Run timeline") }
+        item {
+            Group {
+                if (runs.isEmpty()) AtomRow(title = "No runs yet. Tap \"Run now\" above to test this task.")
+                runs.forEach { r ->
+                    val open = r.conversationId
+                    val summary = listOfNotNull(
+                        ScheduleText.relative(Instant.ofEpochMilli(r.startedAt), now),
+                        r.summary.take(200).ifEmpty { null },
+                        RunTimeline.tapHint(r),
+                    ).joinToString("\n")
+                    if (open != null) {
+                        ArrowRow(RunTimeline.line(r), { nav.openChat(open) }, summary = summary)
+                    } else {
+                        AtomRow(title = RunTimeline.line(r), summary = summary)
+                    }
+                }
+            }
+        }
+        item {
+            Group(Modifier.padding(top = 16.dp)) {
+                GroupRow("Delete scheduled task", titleColor = MiuixTheme.colorScheme.error, onClick = { confirmDelete = true })
+            }
+        }
     }
     if (confirmDelete) {
-        ConfirmDialog("Delete task?", "\"${task.name}\" and its run history will be removed.", "Delete", { confirmDelete = false }) {
+        ConfirmDialog("Delete scheduled task?", "\"${task.name}\" and its run history will be removed.", "Delete", { confirmDelete = false }) {
             confirmDelete = false
             rt.tasks.delete(task.id)
             nav.back()

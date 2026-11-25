@@ -93,9 +93,13 @@ internal object PhoneState {
 }
 
 /** A check on the health card, with the screen that fixes it. */
-data class HealthItem(val title: String, val ok: Boolean, val detail: String, val fix: Intent?)
+data class HealthItem(val title: String, val ok: Boolean, val detail: String, val fix: Intent?, val key: String = title)
 
 object Health {
+    const val KEY_BATTERY = "battery"
+    const val KEY_EXACT = "exact_alarms"
+    const val KEY_NOTIFICATIONS = "notifications"
+
     fun scheduled(context: Context): List<HealthItem> = listOf(battery(context), exactAlarms(context), notifications(context))
 
     fun battery(context: Context): HealthItem {
@@ -105,6 +109,7 @@ object Health {
             ok,
             if (ok) "Runs are not cut off by Doze" else "Doze can delay or cut off background runs",
             Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")),
+            KEY_BATTERY,
         )
     }
 
@@ -115,6 +120,7 @@ object Health {
             ok,
             if (ok) "Tasks start on the minute" else "Tasks may start several minutes late",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")) else null,
+            KEY_EXACT,
         )
     }
 
@@ -125,6 +131,7 @@ object Health {
             ok,
             if (ok) "Results and alerts can reach you" else "You will not see results or failures",
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            KEY_NOTIFICATIONS,
         )
     }
 
