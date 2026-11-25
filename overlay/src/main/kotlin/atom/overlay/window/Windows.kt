@@ -1,5 +1,6 @@
 package atom.overlay.window
 
+import android.accessibilityservice.AccessibilityService
 import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.res.Configuration
@@ -7,10 +8,15 @@ import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.graphics.Rect
 import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityWindowInfo
 import atom.overlay.bubble.Area
+
+/** What the accessibility service measured: the keyboard's top edge in screen px, or null when it is closed. */
+internal data class KeyboardProbe(val top: Int?)
 
 /** A context that can add overlay windows, and the window type that goes with it. */
 internal class WindowSlot(val context: Context, val type: Int)
@@ -51,6 +57,23 @@ internal object Windows {
 
     fun detachAccessibility(service: Context) {
         if (accessibility === service) accessibility = null
+    }
+
+    /**
+     * The keyboard as the accessibility service sees it: null when the service is not connected or cannot list
+     * windows; otherwise the keyboard window's top edge in screen px, or null inside when no keyboard is showing.
+     * On demand only (the service subscribes to no events for this).
+     */
+    fun keyboardProbe(): KeyboardProbe? {
+        val service = accessibility as? AccessibilityService ?: return null
+        // The service subscribes to no window events while idle, so its cached window list can be stale.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) runCatching { service.clearCache() }
+        // An empty list means the service could not see the windows this time: unknown, not "no keyboard".
+        val windows = runCatching { service.windows }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return KeyboardProbe(null)
+        val r = Rect()
+        ime.getBoundsInScreen(r)
+        return KeyboardProbe(if (r.height() > 0) r.top else null)
     }
 
     /** Called on rotation, resolution or density changes while any overlay listens. */

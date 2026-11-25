@@ -41,7 +41,7 @@ object Overlay {
     @Volatile
     var viewfinder: ViewfinderSlot? = null
 
-    /** The "Read answers aloud" switch of the assistant overlay. */
+    /** "Speak answers automatically" (assistant overlay), the same setting as in Settings → Speech. */
     fun autoSpeakAnswers(context: Context): StateFlow<Boolean> = OverlayPrefs.get(context).autoSpeak
 
     /**
@@ -109,6 +109,7 @@ internal object OverlayRuntime {
         ready = true
         // After Application.onCreate returns, so the agent host is installed by then.
         main.post {
+            prefs.migrateAutoSpeak()
             RunHub.start()
             Bubble.sync()
         }
