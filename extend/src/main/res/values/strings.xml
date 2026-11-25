@@ -52,7 +52,7 @@
     <string name="sk_how">Ask Atom to install skills from any public GitHub repository, folder or SKILL.md link, for example “install the skills from github.com/anthropics/skills”. Scripts in skills never run on their own.</string>
     <string name="sk_builtin">Built-in</string>
     <string name="sk_installed">Installed by you</string>
-    <string name="sk_none">No Skills installed yet</string>
+    <string name="sk_none">No skills installed yet</string>
     <string name="sk_delete_title">Delete %1$s?</string>
     <string name="sk_delete_body">The skill and all of its files are removed from this phone.</string>
     <string name="sk_replace_title">Replace %1$s?</string>
@@ -82,6 +82,11 @@
     <string name="mcp_enable_tool_title">Enable this tool?</string>
     <string name="mcp_enable_tool_body">\"%1$s\" is not marked read-only, so it may modify data or call an external service. Atom still asks before each use.</string>
     <string name="mcp_enable_tool_ok">Enable</string>
+    <string name="mcp_enable_all_title">Enable all tools?</string>
+    <plurals name="mcp_enable_all_body">
+        <item quantity="one">%1$d tool is not marked read-only and may modify data or call an external service. Atom still asks before each use.</item>
+        <item quantity="other">%1$d tools are not marked read-only and may modify data or call an external service. Atom still asks before each use.</item>
+    </plurals>
     <string name="mcp_truncated_tools">Only part of this server\'s tools are listed: it offers more than the limit of 2,048 tools.</string>
     <string name="mcp_truncated_pages">Only part of this server\'s tools are listed: the tool list ran past the limit of 64 pages.</string>
     <string name="mcp_truncated_size">Only part of this server\'s tools are listed: the tool definitions exceed Atom\'s size budget.</string>
@@ -137,8 +142,8 @@
         <item quantity="other">%1$d earlier steps folded</item>
     </plurals>
     <string name="sa_enable">Enable Subagent</string>
-    <string name="sa_enable_sub">Atom can hand self-contained tasks to helpers that work in their own context, also several at once. They run only inside a task you started.</string>
-    <string name="sa_unavailable">Not available: this build provides no model for subagents.</string>
+    <string name="sa_enable_sub">Atom can hand self-contained tasks to Subagents that work in their own context, also several at once. They run only inside a task you started.</string>
+    <string name="sa_unavailable">Not available: this build provides no model for Subagents.</string>
     <string name="sa_model">Subagent model</string>
     <string name="sa_follow_main">Follow main model</string>
     <string name="sa_reasoning">Reasoning effort</string>
@@ -160,7 +165,7 @@
     <string name="sa_instructions">System instructions</string>
     <string name="sa_instructions_hint">How it should work and what it should return</string>
     <string name="sa_delete_title">Delete %1$s?</string>
-    <string name="sa_delete_body">This custom subagent is removed. Built-in subagents are not affected.</string>
+    <string name="sa_delete_body">This custom Subagent is removed. Built-in Subagents are not affected.</string>
     <string name="sa_edit_title">Edit Subagent</string>
     <string name="sa_new_title">New Subagent</string>
     <string name="sa_run_title">Subagent run</string>
@@ -168,13 +173,15 @@
     <string name="sa_steps">Steps</string>
     <string name="sa_summary">Summary</string>
     <string name="sa_live">Streaming</string>
-    <string name="sa_stats">%1$d tool calls · %2$d in / %3$d out tokens</string>
     <string name="sa_run_missing">This run is no longer kept.</string>
-    <string name="sa_status_running">Running</string>
-    <string name="sa_status_done">Finished</string>
-    <string name="sa_status_partial">Partial</string>
+    <string name="sa_status_running">Running…</string>
+    <plurals name="sa_status_done">
+        <item quantity="one">Completed · %1$d tool call</item>
+        <item quantity="other">Completed · %1$d tool calls</item>
+    </plurals>
+    <string name="sa_status_partial">Incomplete</string>
     <string name="sa_status_failed">Failed</string>
-    <string name="sa_status_cancelled">Cancelled</string>
+    <string name="sa_status_cancelled">Stopped</string>
     <string name="sa_cat_read">Read</string>
     <string name="sa_cat_web">Web</string>
     <string name="sa_cat_file">Files</string>

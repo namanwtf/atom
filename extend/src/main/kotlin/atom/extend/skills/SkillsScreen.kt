@@ -128,11 +128,12 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
         item {
             Group {
                 builtIn.forEach { s ->
-                    SwitchRow(
+                    // Tapping the row shows the full description; the switch turns the skill on or off.
+                    AtomRow(
                         title = s.name,
-                        checked = s.enabled,
-                        onCheckedChange = { toggle(s, it) },
                         summary = s.manifest.description.oneLine(),
+                        onClick = { describing = s },
+                        end = { Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(s.enabled, { toggle(s, it) }) } },
                     )
                 }
             }
@@ -156,7 +157,11 @@ internal fun SkillsScreen(store: SkillStore, installer: SkillInstaller, nav: Fea
     describing?.let { s ->
         InfoDialog(
             title = s.name,
-            text = s.manifest.description + "\n\n" + stringResource(R.string.sk_files, s.fileCount, formatBytes(s.sizeBytes)),
+            text = if (s.origin == SkillOrigin.User) {
+                s.manifest.description + "\n\n" + stringResource(R.string.sk_files, s.fileCount, formatBytes(s.sizeBytes))
+            } else {
+                s.manifest.description
+            },
             onDismiss = { describing = null },
         )
     }

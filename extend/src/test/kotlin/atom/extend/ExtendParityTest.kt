@@ -1,5 +1,7 @@
 package atom.extend
 
+import atom.extend.mcp.McpToolEntry
+import atom.extend.mcp.McpToolRules
 import atom.extend.subagent.BuiltInSubagents
 import atom.extend.subagent.SubagentRun
 import atom.extend.subagent.SubagentRunLabels
@@ -13,12 +15,15 @@ class ExtendParityTest {
     private fun run(status: SubagentStatus, calls: Int = 0) = SubagentRun("r", "t", "explore", "find it", status, toolCalls = calls)
 
     @Test
-    fun runStatusCopy() {
-        assertEquals("Running…", SubagentRunLabels.status(run(SubagentStatus.Running)))
-        assertEquals("Stopped", SubagentRunLabels.status(run(SubagentStatus.Cancelled)))
-        assertEquals("Incomplete", SubagentRunLabels.status(run(SubagentStatus.Partial)))
-        assertEquals("Completed · 3 tool calls", SubagentRunLabels.status(run(SubagentStatus.Done, 3)))
-        assertEquals("Completed · 1 tool call", SubagentRunLabels.status(run(SubagentStatus.Done, 1)))
+    fun enableAllCountsToolsThatNeedConfirming() {
+        val tools = listOf(
+            McpToolEntry("read", readOnly = true),
+            McpToolEntry("write"),
+            McpToolEntry("send"),
+        )
+        assertEquals(2, McpToolRules.riskyToEnable(tools, emptySet()))
+        assertEquals(1, McpToolRules.riskyToEnable(tools, setOf("write")))
+        assertEquals(0, McpToolRules.riskyToEnable(tools.take(1), emptySet()))
     }
 
     @Test

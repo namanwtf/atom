@@ -161,3 +161,10 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
     private fun load(): List<McpServer> =
         Files.readOrNull(file)?.let { runCatching { McpProtocol.json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
 }
+
+/** Pure rules for switching MCP tools on (unit-tested). */
+object McpToolRules {
+    /** How many tools "Enable all" would switch on that are not marked read-only (and so need confirming). */
+    fun riskyToEnable(tools: List<McpToolEntry>, enabled: Set<String>): Int =
+        tools.count { !it.readOnly && it.name !in enabled }
+}

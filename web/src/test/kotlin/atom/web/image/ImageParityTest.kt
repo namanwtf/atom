@@ -27,6 +27,10 @@ class ImageParityTest {
         val spec = ImageJobs.parseLive(text)!!
         assertEquals(ImageJobs.LiveSpec(edit = false, count = 3, sinceMs = 1_000), spec)
         assertEquals(ImageJobs.LiveSpec(true, 1, 0), ImageJobs.parseLive(ImageJobs.liveCardText("edit_image", "{}", null)!!))
+        assertEquals(
+            ImageJobs.LiveSpec(false, 1, 5, "conv-1"),
+            ImageJobs.parseLive(ImageJobs.liveCardText("generate_image", "{}", 5, "conv-1")!!),
+        )
         assertEquals("Generating 3 images", ImageJobs.placeholder(spec).title)
 
         val call = ImageJobs.LiveSpec(edit = false, count = 3, sinceMs = 10_000)
@@ -35,5 +39,12 @@ class ImageParityTest {
         val edit = ImageJob("c", null, true, 1, "p", "m", startedAt = 10_500)
         assertEquals("b", ImageJobs.liveJob(call, listOf(older, mine, edit))?.id)
         assertNull(ImageJobs.liveJob(call, listOf(older, edit)))
+        // No start time: never borrow another job, show the placeholder.
+        assertNull(ImageJobs.liveJob(call.copy(sinceMs = 0), listOf(older, mine, edit)))
+        // Another conversation's job is not this call's.
+        val other = mine.copy(id = "d", conversationId = "conv-2")
+        val own = mine.copy(id = "e", conversationId = "conv-1", startedAt = 10_100)
+        assertEquals("e", ImageJobs.liveJob(call.copy(conversationId = "conv-1"), listOf(other, own))?.id)
+        assertNull(ImageJobs.liveJob(call.copy(conversationId = "conv-1"), listOf(other)))
     }
 }

@@ -260,9 +260,16 @@ private fun AddFolderDialog(onDismiss: () -> Unit, onAdd: (String, String) -> St
     var name by rememberSaveable { mutableStateOf("") }
     var nameEdited by rememberSaveable { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    val listing = remember(path) {
-        File(path).listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() }
+    // Listed off the main thread; null until read, and also when the folder cannot be opened.
+    var loaded by remember { mutableStateOf<Pair<String, List<File>?>?>(null) }
+    LaunchedEffect(path) {
+        val dirs = withContext(Dispatchers.IO) {
+            File(path).listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() }
+        }
+        loaded = path to dirs
     }
+    val ready = loaded?.takeIf { it.first == path }
+    val listing = ready?.second
     LaunchedEffect(path) { if (!nameEdited) name = if (path == STORAGE_ROOT) "" else SharedFolderRules.suggestName(path) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         val p = uri?.let { SharedFolderRules.pathFromTreeUri(it.toString()) } ?: return@rememberLauncherForActivityResult
@@ -287,6 +294,7 @@ private fun AddFolderDialog(onDismiss: () -> Unit, onAdd: (String, String) -> St
                     PickerRow("..", onClick = { path = up })
                 }
                 when {
+                    ready == null -> PickerNote("…")
                     listing == null -> PickerNote(stringResource(R.string.folders_cannot_open))
                     listing.isEmpty() -> PickerNote(stringResource(R.string.folders_no_subfolders))
                     else -> listing.forEach { d -> PickerRow(d.name + "/", onClick = { path = d.path }) }

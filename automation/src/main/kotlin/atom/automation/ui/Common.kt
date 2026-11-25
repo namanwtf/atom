@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -94,11 +95,13 @@ internal fun AtomField(
 /** A row whose value is picked from the Miuix dropdown. */
 @Composable
 internal fun <T> ChoiceRow(title: String, value: T, options: List<T>, label: (T) -> String, onPick: (T) -> Unit, subtitle: String? = null) {
+    // A stored value that is no longer offered (a removed model, an unknown field value) still shows its label.
+    val shown = if (value in options) options else options + value
     SpinnerRow(
         title = title,
-        options = options.map { SpinnerOption(label(it)) },
-        selectedIndex = options.indexOf(value),
-        onSelect = { i -> options.getOrNull(i)?.let(onPick) },
+        options = shown.map { SpinnerOption(label(it)) },
+        selectedIndex = shown.indexOf(value),
+        onSelect = { i -> shown.getOrNull(i)?.let(onPick) },
         summary = subtitle,
     )
 }
@@ -174,7 +177,25 @@ internal fun Note(text: String, modifier: Modifier = Modifier, warning: Boolean 
 @Composable
 internal fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
-        DialogButtons(confirmText = confirm, onConfirm = onConfirm, dismissText = "Cancel", onDismiss = onDismiss)
+        DangerButtons(confirm, onConfirm, onDismiss)
+    }
+}
+
+/** The Miuix dialog button pair with the confirm button in the error colour, for deletes and clears. */
+@Composable
+private fun DangerButtons(confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        top.yukonga.miuix.kmp.basic.TextButton(text = "Cancel", onClick = onDismiss, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
+        top.yukonga.miuix.kmp.basic.TextButton(
+            text = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error,
+                textColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onError,
+            ),
+        )
     }
 }
 

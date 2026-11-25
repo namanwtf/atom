@@ -133,7 +133,7 @@ object JobRules {
         append('\n').append(NOTIFICATION_HINT)
     }
 
-    const val NOTIFICATION_HINT = "View status and logs under background tasks in Terminal"
+    const val NOTIFICATION_HINT = "View status and logs under Background tasks in Terminal"
 
     /** A short title for a command: its first line, at most 60 characters. */
     fun titleFor(command: String): String {

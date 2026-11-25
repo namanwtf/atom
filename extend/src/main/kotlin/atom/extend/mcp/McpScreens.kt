@@ -1,5 +1,10 @@
 package atom.extend.mcp
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,6 +157,7 @@ internal fun McpServerScreen(manager: McpManager, id: String, nav: FeatureNav) {
     var editingToken by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmTool by remember { mutableStateOf<McpToolEntry?>(null) }
+    var confirmAll by remember { mutableStateOf(0) }
     val refreshed = stringResource(R.string.mcp_refreshed)
 
     LaunchedEffect(id, server?.hasToken) { tokenState = runCatching { manager.tokenState(id) }.getOrNull() }
@@ -204,14 +210,16 @@ internal fun McpServerScreen(manager: McpManager, id: String, nav: FeatureNav) {
             message?.let { Notice(it.text, it.error) }
         }
         item { SectionLabel(stringResource(R.string.mcp_tools_count, server.tools.size)) }
-        item {
+        item(key = "tools-header") {
             val cut = server.truncation
             if (cut != null) {
                 Hint(stringResource(truncationText(cut)), Modifier.padding(bottom = 8.dp), color = MiuixTheme.colorScheme.error)
             } else if (server.truncated) {
                 Hint(stringResource(R.string.mcp_truncated_old), Modifier.padding(bottom = 8.dp), color = MiuixTheme.colorScheme.error)
             }
-            Group {
+            // The tools are one lazy item each (a catalog can hold 2,048), drawn as one card: the header takes the
+            // top corners and the last tool the bottom ones.
+            CardPiece(top = true, bottom = server.tools.isEmpty()) {
                 if (server.tools.isEmpty()) {
                     AtomRow(title = stringResource(R.string.mcp_no_tools))
                 } else {
@@ -222,13 +230,24 @@ internal fun McpServerScreen(manager: McpManager, id: String, nav: FeatureNav) {
                                 val allOn = server.enabledCount == server.tools.size
                                 AtomTextButton(
                                     stringResource(if (allOn) R.string.mcp_disable_all else R.string.mcp_enable_all),
-                                    { manager.setAllTools(id, !allOn) },
+                                    {
+                                        val risky = McpToolRules.riskyToEnable(server.tools, server.enabledTools)
+                                        when {
+                                            allOn -> manager.setAllTools(id, false)
+                                            risky > 0 -> confirmAll = risky
+                                            else -> manager.setAllTools(id, true)
+                                        }
+                                    },
                                 )
                             }
                         },
                     )
                 }
-                server.tools.forEach { t -> ToolRow(t, t.name in server.enabledTools) { toggleTool(t, it) } }
+            }
+        }
+        itemsIndexed(server.tools, key = { _, t -> t.name }) { i, t ->
+            CardPiece(top = false, bottom = i == server.tools.lastIndex) {
+                ToolRow(t, t.name in server.enabledTools) { toggleTool(t, it) }
             }
         }
         item {
@@ -268,6 +287,19 @@ internal fun McpServerScreen(manager: McpManager, id: String, nav: FeatureNav) {
             onConfirm = {
                 manager.setToolEnabled(id, t.name, true)
                 confirmTool = null
+            },
+        )
+    }
+
+    if (confirmAll > 0) {
+        ConfirmDialog(
+            title = stringResource(R.string.mcp_enable_all_title),
+            text = pluralStringResource(R.plurals.mcp_enable_all_body, confirmAll, confirmAll),
+            confirm = stringResource(R.string.mcp_enable_all),
+            onDismiss = { confirmAll = 0 },
+            onConfirm = {
+                manager.setAllTools(id, true)
+                confirmAll = 0
             },
         )
     }
@@ -347,4 +379,17 @@ private fun ToolRow(tool: McpToolEntry, enabled: Boolean, onToggle: (Boolean) ->
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
     }
+}
+
+/** One piece of a card split across lazy items: [top] / [bottom] round those corners. */
+@Composable
+private fun CardPiece(top: Boolean, bottom: Boolean, content: @Composable () -> Unit) {
+    val r = 16.dp
+    val shape = RoundedCornerShape(
+        topStart = if (top) r else 0.dp,
+        topEnd = if (top) r else 0.dp,
+        bottomStart = if (bottom) r else 0.dp,
+        bottomEnd = if (bottom) r else 0.dp,
+    )
+    Column(Modifier.fillMaxWidth().clip(shape).background(MiuixTheme.colorScheme.surfaceContainer)) { content() }
 }

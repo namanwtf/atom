@@ -117,7 +117,13 @@ internal fun StoryMemoryScreen(id: String, nav: FeatureNav) {
     DisposableEffect(id) {
         onDispose {
             val t = latest ?: return@onDispose
-            if (!latestConflict && t != latestSaved && t.toByteArray().size <= CharacterStore.STORY_LIMIT) SaveScope.scope.launch { store.setStoryMemory(id, t) }
+            val base = latestSaved ?: return@onDispose
+            if (!latestConflict && t != base && t.toByteArray().size <= CharacterStore.STORY_LIMIT) {
+                SaveScope.scope.launch {
+                    // A chat may have written story memory since the editor last looked: keep that version then.
+                    if (StoryDraft.check(base, store.storyMemory(id), t) != StoryDraft.Result.Conflict) store.setStoryMemory(id, t)
+                }
+            }
         }
     }
 
