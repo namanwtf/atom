@@ -9,6 +9,7 @@ import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.Role
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ToolCall
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -237,6 +238,8 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
     private var calls = 0
     private var usage: LlmEvent.Usage? = null
     private val sources = LinkedHashMap<String, String>()
+    private val searchQueries = LinkedHashSet<String>()
+    private var searchEntry: String? = null
 
     fun onData(data: String): List<LlmEvent> {
         val chunk = parseJsonOrNull(data) as? JsonObject
@@ -264,6 +267,10 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
                 else -> part.str("text")?.takeIf { it.isNotEmpty() }?.let { out += LlmEvent.TextDelta(it) }
             }
         }
+        candidate.obj("groundingMetadata")?.let { g ->
+            g.arr("webSearchQueries").forEach { q -> (q as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() }?.let(searchQueries::add) }
+            g.obj("searchEntryPoint")?.str("renderedContent")?.takeIf { it.isNotBlank() }?.let { searchEntry = it }
+        }
         candidate.obj("groundingMetadata")?.arr("groundingChunks")?.forEach { chunk ->
             val web = chunk.asObject()?.obj("web") ?: return@forEach
             val uri = web.str("uri") ?: return@forEach
@@ -277,6 +284,9 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
         val reason = finish ?: throw errors.stream("stream ended before the response completed", retryable = true)
         val out = mutableListOf<LlmEvent>()
         if (sources.isNotEmpty()) out += LlmEvent.TextDelta(formatSources(sources))
+        if (searchQueries.isNotEmpty() || searchEntry != null) {
+            out += LlmEvent.Suggestions(SearchSuggestions(searchQueries.toList(), searchEntry))
+        }
         usage?.let { out += it }
         out += LlmEvent.Finished(if (calls > 0 && reason == FinishReason.Stop) FinishReason.ToolCalls else reason)
         return out

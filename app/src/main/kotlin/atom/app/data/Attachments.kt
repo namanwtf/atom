@@ -33,9 +33,9 @@ object Attachments {
     enum class Reason { TooLarge, Unreadable }
 
     /** Where copies of shared files land; the agent can read them without extra permissions. */
-    fun sharedDir(context: Context): File = File(context.filesDir, "shared").apply { mkdirs() }
+    fun sharedDir(context: Context): File = File(context.filesDir, "atom4_shared").apply { mkdirs() }
 
-    private fun imageDir(context: Context): File = File(context.filesDir, "attachments").apply { mkdirs() }
+    private fun imageDir(context: Context): File = File(context.filesDir, "atom4_attachments").apply { mkdirs() }
 
     suspend fun importImage(context: Context, uri: Uri): Outcome = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver

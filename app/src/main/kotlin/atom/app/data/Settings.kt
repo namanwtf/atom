@@ -22,7 +22,7 @@ import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.PresetCatalog
 import atom.ui.theme.ThemeMode
 
-internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_settings")
 
 /** Hardware path for on-device inference. GGUF models only distinguish GPU offload from CPU. */
 @Serializable
@@ -59,7 +59,7 @@ data class AppSettings(
     /** When true, Act-risk tools (taps, typing) also ask first, not only Sensitive ones. */
     val confirmActTools: Boolean = false,
     val onboarded: Boolean = false,
-    val theme: ThemeMode = ThemeMode.Dark,
+    val theme: ThemeMode = ThemeMode.System,
     /** Opt-in "Hey Atom" listener. Off by default: an open microphone is never free. */
     val heyAtom: Boolean = false,
     /** Also listen with the screen off on battery (charging always allows it). */
@@ -73,6 +73,8 @@ data class AppSettings(
     val autoCompaction: Boolean = true,
     /** Keep the screen on while a run is active and Atom is visible (with a safety timeout). */
     val keepScreenOn: Boolean = true,
+    /** Android 16+: show a running task as a Live Update (status-bar chip). Older Androids ignore it. */
+    val liveUpdates: Boolean = true,
 ) {
     companion object {
         val DEFAULT_SELECTION = EngineSelection.Cloud(PresetCatalog.DEFAULT_PROVIDER, PresetCatalog.DEFAULT_MODEL)
@@ -113,6 +115,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         store.edit { it[KEEP_SCREEN_ON] = enabled }
     }
 
+    suspend fun setLiveUpdates(enabled: Boolean) {
+        store.edit { it[LIVE_UPDATES] = enabled }
+    }
+
     suspend fun setFallback(fallback: EngineSelection.Cloud?) {
         store.edit {
             if (fallback == null) it.remove(FALLBACK)
@@ -151,7 +157,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         wifiOnlyDownloads = p[WIFI_ONLY] ?: true,
         confirmActTools = p[CONFIRM_ACT] ?: false,
         onboarded = p[ONBOARDED] ?: false,
-        theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.Dark,
+        theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.System,
         heyAtom = p[HEY_ATOM] ?: false,
         heyAtomScreenOff = p[HEY_ATOM_SCREEN_OFF] ?: false,
         reasoningByDefault = p[REASONING_DEFAULT] ?: false,
@@ -159,6 +165,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         autoTitles = p[AUTO_TITLES] ?: true,
         autoCompaction = p[AUTO_COMPACTION] ?: true,
         keepScreenOn = p[KEEP_SCREEN_ON] ?: true,
+        liveUpdates = p[LIVE_UPDATES] ?: true,
     )
 
     private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
@@ -178,5 +185,6 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val AUTO_TITLES = booleanPreferencesKey("auto_titles")
         val AUTO_COMPACTION = booleanPreferencesKey("auto_compaction")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val LIVE_UPDATES = booleanPreferencesKey("live_update_notification")
     }
 }

@@ -18,6 +18,25 @@ data class GithubRelease(
     val draft: Boolean = false,
     val prerelease: Boolean = false,
     @SerialName("published_at") val publishedAt: String? = null,
+    val assets: List<GithubAsset> = emptyList(),
+)
+
+/** One file attached to a GitHub release. */
+@Serializable
+data class GithubAsset(
+    val name: String,
+    @SerialName("browser_download_url") val downloadUrl: String = "",
+    val size: Long = 0,
+    /** "uploaded" once the file is complete; "open" while an upload is still running. */
+    val state: String = "uploaded",
+)
+
+/** The APK of a release and its published SHA-256 file, both already checked to come from the update repo. */
+data class ReleaseApk(
+    val name: String,
+    val url: String,
+    val size: Long,
+    val sha256Url: String,
 )
 
 sealed interface UpdateStatus {
@@ -25,7 +44,15 @@ sealed interface UpdateStatus {
     data object NotConfigured : UpdateStatus
     data object NoReleases : UpdateStatus
     data class UpToDate(val current: String) : UpdateStatus
-    data class Available(val latest: String, val current: String, val releaseUrl: String) : UpdateStatus
+
+    /** [apk] is null when the release has no usable `atom-<version>.apk` + `.sha256` pair: only the page opens. */
+    data class Available(
+        val latest: String,
+        val current: String,
+        val releaseUrl: String,
+        val apk: ReleaseApk? = null,
+    ) : UpdateStatus
+
     data class Failed(val reason: String) : UpdateStatus
 }
 
@@ -58,10 +85,38 @@ object Releases {
         val latestLabel = latest?.toString() ?: release.tagName.trim()
         val newer = if (latest != null && mine != null) latest > mine else latestLabel != current.trim()
         return if (newer) {
-            UpdateStatus.Available(latestLabel, current, releasePage(slug, release))
+            UpdateStatus.Available(latestLabel, current, releasePage(slug, release), pickApk(slug, release))
         } else {
             UpdateStatus.UpToDate(current)
         }
+    }
+
+    /** The release build's id, which published APKs carry. Other builds (`.debug`) only get the release page. */
+    const val RELEASE_PACKAGE = "io.github.namanwtf.atom"
+
+    /** True when an APK from the releases can install over the running build [packageName]. */
+    fun canSelfUpdate(packageName: String): Boolean = packageName == RELEASE_PACKAGE
+
+    /** Asset names the release workflow publishes: `atom-<version>.apk`. No path separators can match. */
+    private val APK_NAME = Regex("atom-[0-9A-Za-z][0-9A-Za-z._+-]*\\.apk")
+
+    /** Largest APK the updater will download. Atom with its native engines is far below this. */
+    const val MAX_APK_BYTES = 2L * 1024 * 1024 * 1024
+
+    /**
+     * Picks the release's APK and its `.sha256` file. Both must be complete uploads of this repository's release
+     * (download links under `https://github.com/<slug>/releases/download/`). With several APKs, only the one named
+     * after the tag's version is accepted; anything ambiguous or incomplete returns null (open the page instead).
+     */
+    fun pickApk(slug: String, release: GithubRelease): ReleaseApk? {
+        val prefix = "https://github.com/${slug.trim()}/releases/download/"
+        fun usable(a: GithubAsset) = a.state == "uploaded" && a.downloadUrl.startsWith(prefix) &&
+            !a.downloadUrl.substring(prefix.length).contains("..")
+        val apks = release.assets.filter { APK_NAME.matches(it.name) && usable(it) && it.size in 1..MAX_APK_BYTES }
+        val version = SemVer.parse(release.tagName)?.toString()
+        val apk = apks.firstOrNull { version != null && it.name == "atom-$version.apk" } ?: apks.singleOrNull() ?: return null
+        val sha = release.assets.firstOrNull { it.name == apk.name + ".sha256" && usable(it) } ?: return null
+        return ReleaseApk(apk.name, apk.downloadUrl, apk.size, sha.downloadUrl)
     }
 }
 
