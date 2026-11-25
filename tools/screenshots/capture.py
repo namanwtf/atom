@@ -207,6 +207,8 @@ def main():
     sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
     sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
     sh("settings put global window_animation_scale 0.5")
+    # The emulator has a hardware keyboard; show the on-screen one anyway so keyboard layouts can be checked.
+    sh("settings put secure show_ime_with_hard_keyboard 1")
     p = f"{mode}_"
 
     launch(wait=8)
@@ -303,7 +305,7 @@ def main():
     sh(f"input tap {cx} {cy}")
     time.sleep(1.2)
     # Mid-drag towards the dismiss target (stopping short of its 96dp hit radius).
-    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} 540 1750 5000"])
+    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} 380 1750 5000"])
     time.sleep(4)
     shot(p + "33_drag_dismiss")
     time.sleep(3)
@@ -333,6 +335,18 @@ def main():
     shot(p + "38_after_panel")
     after = bubble_bounds()
     print(f"[capture] bubble frame before the panel: {before}, after closing it: {after}, unchanged: {before == after}")
+    # Drop on the X target: the bubble is fused with it (brace), and letting go hides it and turns the switch off.
+    b = after or b
+    cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+    subprocess.Popen(["adb", "shell", f"input swipe {cx} {cy} 540 2010 4000"])
+    time.sleep(3.6)
+    shot(p + "39_drag_fused")
+    time.sleep(2.5)
+    window_frames()
+    print(f"[capture] bubble after dropping on the target: {bubble_bounds()}")
+    launch("overlay/settings", wait=3)
+    print(f"[capture] Floating bubble switch after the drop: {switch_checked('Floating bubble')}")
+    shot(p + "40_switch_after_drop")
 
 
 if __name__ == "__main__":

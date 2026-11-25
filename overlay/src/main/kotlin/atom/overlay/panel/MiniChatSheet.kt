@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -113,6 +114,17 @@ internal fun MiniChatSheet() {
     var focused by remember { mutableStateOf(false) }
     var probe by remember { mutableStateOf<KeyboardProbe?>(Windows.keyboardProbe()) }
     var windowTop by remember { mutableIntStateOf(0) }
+    // The 32% estimate is a last resort: only once focus has settled and this window never received IME insets,
+    // so a keyboard that is still animating in does not make the panel jump.
+    var focusSettled by remember { mutableStateOf(false) }
+    var insetsSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        focusSettled = false
+        if (focused) {
+            delay(ESTIMATE_AFTER_MS)
+            focusSettled = true
+        }
+    }
     LaunchedEffect(focused) {
         val until = if (focused) Long.MAX_VALUE else System.currentTimeMillis() + SETTLE_POLL_MS
         while (System.currentTimeMillis() < until) {
@@ -132,11 +144,13 @@ internal fun MiniChatSheet() {
             .background(Color.Black.copy(alpha = 0.45f))
             .pointerInput(Unit) { detectTapGestures { MiniChat.close() } },
     ) {
+        val ime = WindowInsets.ime.getBottom(density)
+        SideEffect { if (ime > 0 && !insetsSeen) insetsSeen = true }
         val keyboard = KeyboardFit.keyboard(
-            focused = focused,
+            focused = focused && focusSettled && !insetsSeen,
             measuredAvailable = probe != null,
             measuredTop = probe?.top,
-            imeInset = WindowInsets.ime.getBottom(density),
+            imeInset = ime,
             windowTop = windowTop,
             windowHeight = constraints.maxHeight,
             displayHeight = bars.height.toInt(),
@@ -181,6 +195,7 @@ internal fun MiniChatSheet() {
 
 private const val POLL_MS = 150L
 private const val SETTLE_POLL_MS = 1_200L
+private const val ESTIMATE_AFTER_MS = 450L
 
 @Composable
 private fun Header() {
