@@ -127,7 +127,7 @@ object CloudEngines {
                 errors,
                 Request.Builder().url(url)
                     .header("x-api-key", apiKey)
-                    .header("anthropic-version", AnthropicEngine.ANTHROPIC_VERSION)
+                    .header("anthropic-version", AnthropicEngine.versionHeader(options))
                     .apply { RequestCustomizer.applyHeaders(this, options) }
                     .build(),
             )

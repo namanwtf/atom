@@ -91,6 +91,44 @@ object ToolCatalog {
                 "shell", "Terminal", "Shell commands as the app user, Shizuku or root.", listOf("shell"), Needs.Nothing,
                 setOf(ToolSwitch.TerminalFiles), 90,
             ),
+            // Tools from modules that do not depend on this one; listed by name so each gets its own switch.
+            ToolGroupInfo(
+                "web", "Web search and reading", "Search the web and read pages with the service set in Web search and reading.",
+                listOf("web_search", "read_page"), Needs.Nothing, emptySet(), 25,
+            ),
+            ToolGroupInfo(
+                "browser", "Agent browser", "Open, read and operate web pages in Atom's own browser; you can take over any time.",
+                listOf(
+                    "browser_open", "browser_navigate", "browser_extract", "browser_find", "browser_click", "browser_type",
+                    "browser_submit", "browser_scroll", "browser_screenshot", "browser_wait",
+                ),
+                Needs.Nothing, emptySet(), 26,
+            ),
+            ToolGroupInfo(
+                "image", "AI image generation", "Generate and edit images with the service set in AI image generation.",
+                listOf("generate_image", "edit_image"), Needs.Nothing, emptySet(), 27,
+            ),
+            ToolGroupInfo(
+                "vision", "Document vision", "Look at local images, screenshots and scanned documents.",
+                listOf("view_image"), Needs.Nothing, emptySet(), 80,
+            ),
+            ToolGroupInfo(
+                "memory", "Memory", "Read and update Atom's long-term memory (MEMORY.md).",
+                listOf("memory_read", "memory_append", "memory_update", "memory_clear"), Needs.Nothing, emptySet(), 85,
+            ),
+            ToolGroupInfo(
+                "terminal", "Linux terminal", "Run commands and background jobs in the Linux environment.",
+                listOf(
+                    "terminal_run", "terminal_session", "terminal_session_read", "terminal_job_start", "terminal_job_info",
+                    "terminal_job_stop", "terminal_root_check",
+                ),
+                Needs.Nothing, emptySet(), 92,
+            ),
+            ToolGroupInfo(
+                "files", "Files", "List, read, write, edit and search files in the workspace and shared storage.",
+                listOf("file_list", "file_read", "file_write", "file_edit", "file_find", "file_grep", "file_info"),
+                Needs.Nothing, emptySet(), 94,
+            ),
         )
     }
 }

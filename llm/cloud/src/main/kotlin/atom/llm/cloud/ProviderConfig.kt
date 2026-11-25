@@ -69,6 +69,8 @@ data class ProviderConfig(
     val vertexLocation: String = "global",
     val hostedWebSearch: Boolean = false,
     val googleSearch: Boolean = false,
+    /** Anthropic only: the "anthropic-version" header; blank uses [AnthropicEngine.ANTHROPIC_VERSION]. */
+    val anthropicVersion: String = "",
     val auth: AuthMethod = AuthMethod.ApiKey,
     val keyHelpUrl: String? = null,
     val supportsModelList: Boolean = true,

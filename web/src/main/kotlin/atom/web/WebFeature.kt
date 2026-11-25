@@ -10,6 +10,7 @@ import atom.ui.feature.FeatureSection
 import atom.web.browser.BrowserTools
 import atom.web.files.FileTools
 import atom.web.files.ViewImage
+import atom.web.image.ImageBackend
 import atom.web.image.ImageGenerator
 import atom.web.image.ImageSettings
 import atom.web.image.ImageTools
@@ -23,6 +24,8 @@ import atom.web.ui.UserBrowserScreen
 import atom.web.ui.WebIcons
 import atom.web.ui.WebSearchSettingsScreen
 import atom.web.ui.decodeRouteUrl
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /** Files, web search and reading, the agent browser and AI image generation. */
 object WebFeature : AtomFeature {
@@ -42,6 +45,19 @@ object WebFeature : AtomFeature {
 
     /** Route that opens the user browser at [url] (e.g. for external links). */
     fun browserRoute(url: String) = ROUTE_OPEN + java.net.URLEncoder.encode(url, "UTF-8")
+
+    /** For the Settings row: the image backend's short name while AI image generation is on, null while it is off. */
+    fun imageBackendName(context: Context): Flow<String?> =
+        ImageSettings.of(context).flow.map { if (it.enabled) shortName(it.backend) else null }
+
+    private fun shortName(backend: ImageBackend): String = when (backend) {
+        ImageBackend.Gemini -> "Gemini"
+        ImageBackend.OpenAI -> "OpenAI"
+        ImageBackend.Xai -> "Grok"
+        ImageBackend.Seedream -> "Seedream"
+        ImageBackend.Qwen -> "Qwen"
+        ImageBackend.SiliconFlow -> "SiliconFlow"
+    }
 
     /** Route of the take-over screen for the agent browser of [conversationId]. */
     fun takeOverRoute(conversationId: String) = ROUTE_SESSION + conversationId

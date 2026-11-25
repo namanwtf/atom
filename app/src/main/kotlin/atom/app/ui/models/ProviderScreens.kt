@@ -2,6 +2,20 @@
 
 package atom.app.ui.models
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomCheckbox
+import atom.ui.components.AtomSearchBar
+import atom.ui.components.AtomTextButton
+import atom.ui.components.DropdownRow
+import atom.ui.components.SwitchRow
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -121,42 +135,66 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
+    var selected by remember(providerId) { mutableStateOf(emptySet<String>()) }
     val copySuffix = stringResource(R.string.mdl_copy_suffix)
+    BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
     LargeTitleScreen(
-        title = config.displayName,
-        onBack = onBack,
+        title = if (selected.isNotEmpty()) stringResource(R.string.set_n_selected, selected.size) else config.displayName,
+        onBack = if (selected.isNotEmpty()) ({ selected = emptySet() }) else onBack,
         actions = {
-            Box {
-                CircleIconButton(Icons.Filled.MoreVert, stringResource(R.string.mdl_more), { menu = true }, modifier = Modifier.padding(end = 8.dp))
-                AtomMenu(expanded = menu, onDismiss = { menu = false }) {
-                    AtomMenuItem(stringResource(R.string.mdl_duplicate), checked = false) {
-                        menu = false
-                        vm.duplicateProvider(providerId, copySuffix) { nav.replaceWith(ModelsPage.Provider(it)) }
-                    }
-                    if (config.builtIn) {
-                        AtomMenuItem(stringResource(R.string.mdl_reset), checked = false) {
+            if (selected.isNotEmpty()) {
+                val all = config.models.map { it.id }.toSet()
+                val allSelected = selected.containsAll(all)
+                AtomTextButton(
+                    stringResource(if (allSelected) R.string.set_select_none else R.string.set_select_all),
+                    onClick = { selected = if (allSelected) emptySet() else all },
+                    modifier = Modifier.padding(end = 12.dp),
+                )
+            } else {
+                Box {
+                    CircleIconButton(Icons.Filled.MoreVert, stringResource(R.string.mdl_more), { menu = true }, modifier = Modifier.padding(end = 8.dp))
+                    AtomMenu(expanded = menu, onDismiss = { menu = false }) {
+                        AtomMenuItem(stringResource(R.string.mdl_duplicate), checked = false) {
                             menu = false
-                            confirm = "reset"
+                            vm.duplicateProvider(providerId, copySuffix) { nav.replaceWith(ModelsPage.Provider(it)) }
                         }
                     }
-                    AtomMenuItem(stringResource(R.string.mdl_remove_provider), checked = false) {
-                        menu = false
-                        confirm = "remove"
+                }
+            }
+        },
+        bottomBar = {
+            if (selected.isNotEmpty()) {
+                BottomActionBar {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AtomTextButton(stringResource(R.string.action_cancel), onClick = { selected = emptySet() }, modifier = Modifier.weight(1f))
+                        AtomTextButton(
+                            stringResource(R.string.set_delete_n_models, selected.size),
+                            onClick = { confirm = "deleteModels" },
+                            modifier = Modifier.weight(1f),
+                            primary = true,
+                        )
                     }
                 }
             }
         },
     ) {
         item(key = "tabs") {
-            SegmentedControl(
-                listOf(stringResource(R.string.mdl_tab_settings) to ScreenIcons.Tune, stringResource(R.string.mdl_tab_models) to AtomIcons.Chip),
-                tab,
-                onSelect = { tab = it },
-                modifier = Modifier.padding(top = 4.dp),
+            TabRow(
+                tabs = listOf(stringResource(R.string.set_tab_configuration), stringResource(R.string.set_tab_model)),
+                selectedTabIndex = tab,
+                onTabSelected = {
+                    tab = it
+                    selected = emptySet()
+                },
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 12.dp),
             )
         }
-        if (tab == 0) providerSettingsItems(vm, config) else providerModelItems(vm, nav, config)
+        if (tab == 0) {
+            providerSettingsItems(vm, config, onRemove = { confirm = "remove" }, onReset = { confirm = "reset" })
+        } else {
+            providerModelItems(vm, nav, config, selected, onSelected = { selected = it })
+        }
     }
 
     when (confirm) {
@@ -177,23 +215,27 @@ internal fun ProviderScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: Str
             onConfirm = { vm.resetProvider(providerId) },
             onDismiss = { confirm = null },
         )
+        "deleteModels" -> ConfirmDialog(
+            title = pluralStringResource(R.plurals.mdl_delete_models_title, selected.size, selected.size),
+            text = stringResource(R.string.mdl_delete_models_text),
+            confirm = stringResource(R.string.action_delete),
+            onConfirm = {
+                vm.deleteModels(providerId, selected)
+                selected = emptySet()
+            },
+            onDismiss = { confirm = null },
+        )
     }
 }
 
-private fun LazyListScope.providerSettingsItems(vm: ModelsViewModel, config: ProviderConfig) {
+private fun LazyListScope.providerSettingsItems(vm: ModelsViewModel, config: ProviderConfig, onRemove: () -> Unit, onReset: () -> Unit) {
     val id = config.id
     val preset = config.preset
 
-    item(key = "g-basic") {
+    item(key = "h-conn") { SectionLabel(stringResource(R.string.set_connection)) }
+    item(key = "g-name") {
         var name by remember(id) { mutableStateOf(config.displayName) }
-        Group(Modifier.padding(top = 18.dp)) {
-            GroupRow(
-                title = stringResource(R.string.mdl_enabled),
-                subtitle = stringResource(R.string.mdl_enabled_sub),
-                onClick = { vm.edit(id) { it.copy(enabled = !it.enabled) } },
-                trailing = { AtomSwitch(checked = config.enabled, onCheckedChange = { on -> vm.edit(id) { it.copy(enabled = on) } }) },
-            )
-            GroupDivider(inset = 18.dp)
+        Group {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FieldLabel(stringResource(R.string.mdl_display_name))
                 AtomTextField(
@@ -210,46 +252,83 @@ private fun LazyListScope.providerSettingsItems(vm: ModelsViewModel, config: Pro
 
     val methods = preset?.authMethods ?: listOf(AuthMethod.ApiKey)
     if (methods.size > 1) {
-        item(key = "h-auth") { SectionLabel(stringResource(R.string.mdl_auth_method)) }
         item(key = "auth") {
-            val labels = methods.map { stringResource(authLabel(it)) to null }
-            SegmentedControl(labels, methods.indexOf(config.auth).coerceAtLeast(0), onSelect = { vm.setAuth(id, methods[it]) })
+            Group {
+                DropdownRow(
+                    title = stringResource(R.string.mdl_auth_method),
+                    items = methods.map { stringResource(authLabel(it)) },
+                    selectedIndex = methods.indexOf(config.auth).coerceAtLeast(0),
+                    onSelect = { vm.setAuth(id, methods[it]) },
+                )
+            }
         }
     }
 
+    item(key = "g-conn") { ConnectionGroup(vm, config) }
     if (config.auth == AuthMethod.ApiKey) {
-        item(key = "h-key") { SectionLabel(stringResource(R.string.cloud_api_key)) }
         item(key = "g-key") { KeyGroup(vm, config) }
     } else {
-        item(key = "h-account") { SectionLabel(stringResource(R.string.mdl_account)) }
         item(key = "g-account") { AccountGroup(vm, config) }
     }
 
-    item(key = "h-conn") { SectionLabel(stringResource(R.string.mdl_connection)) }
-    item(key = "g-conn") { ConnectionGroup(vm, config) }
+    if (config.wire == Wire.Anthropic) {
+        item(key = "g-anthropic-version") {
+            var version by remember(id) { mutableStateOf(config.anthropicVersion) }
+            Group {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FieldLabel(stringResource(R.string.set_anthropic_version))
+                    AtomTextField(
+                        value = version,
+                        onValueChange = {
+                            version = it
+                            vm.edit(id) { c -> c.copy(anthropicVersion = it.trim()) }
+                        },
+                        placeholder = stringResource(R.string.set_anthropic_version_hint),
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
+                    )
+                }
+            }
+        }
+    }
 
     val responses = config.wire == Wire.OpenAiResponses && config.auth == AuthMethod.ApiKey
     val gemini = config.wire.protocol == Protocol.Gemini
     if (responses || gemini || config.auth == AuthMethod.ChatGpt) {
-        item(key = "h-search") { SectionLabel(stringResource(R.string.mdl_hosted_tools)) }
         item(key = "g-search") {
             Group {
                 if (gemini) {
-                    GroupRow(
+                    SwitchRow(
                         title = stringResource(R.string.mdl_google_search),
-                        subtitle = stringResource(R.string.mdl_google_search_sub),
-                        onClick = { vm.edit(id) { it.copy(googleSearch = !it.googleSearch) } },
-                        trailing = { AtomSwitch(checked = config.googleSearch, onCheckedChange = { on -> vm.edit(id) { it.copy(googleSearch = on) } }) },
+                        summary = stringResource(R.string.mdl_google_search_sub),
+                        checked = config.googleSearch,
+                        onCheckedChange = { on -> vm.edit(id) { it.copy(googleSearch = on) } },
                     )
                 } else {
-                    GroupRow(
+                    SwitchRow(
                         title = stringResource(R.string.mdl_hosted_search),
-                        subtitle = stringResource(R.string.mdl_hosted_search_sub),
-                        onClick = { vm.edit(id) { it.copy(hostedWebSearch = !it.hostedWebSearch) } },
-                        trailing = { AtomSwitch(checked = config.hostedWebSearch, onCheckedChange = { on -> vm.edit(id) { it.copy(hostedWebSearch = on) } }) },
+                        summary = stringResource(R.string.mdl_hosted_search_sub),
+                        checked = config.hostedWebSearch,
+                        onCheckedChange = { on -> vm.edit(id) { it.copy(hostedWebSearch = on) } },
                     )
                 }
             }
+        }
+    }
+
+    item(key = "test") { TestBlock(vm, config) }
+
+    item(key = "h-headers") { SectionLabel(stringResource(R.string.mdl_headers)) }
+    item(key = "g-headers") { HeadersGroup(vm, config) }
+
+    item(key = "h-prefs") { SectionLabel(stringResource(R.string.set_preferences)) }
+    item(key = "g-prefs") {
+        Group {
+            SwitchRow(
+                title = stringResource(R.string.set_enable_provider),
+                summary = stringResource(R.string.mdl_enabled_sub),
+                checked = config.enabled,
+                onCheckedChange = { on -> vm.edit(id) { it.copy(enabled = on) } },
+            )
         }
     }
 
@@ -271,9 +350,6 @@ private fun LazyListScope.providerSettingsItems(vm: ModelsViewModel, config: Pro
         }
     }
     item(key = "n-prompt") { Note(stringResource(R.string.mdl_system_prompt_note)) }
-
-    item(key = "h-headers") { SectionLabel(stringResource(R.string.mdl_headers)) }
-    item(key = "g-headers") { HeadersGroup(vm, config) }
 
     item(key = "h-body") { SectionLabel(stringResource(R.string.mdl_extra_body)) }
     item(key = "g-body") {
@@ -301,7 +377,54 @@ private fun LazyListScope.providerSettingsItems(vm: ModelsViewModel, config: Pro
         )
     }
 
-    item(key = "test") { TestBlock(vm, config) }
+    item(key = "buttons") { SaveButtons(vm, config, onRemove, onReset) }
+}
+
+/**
+ * "Save configuration" (saves the key being typed, then makes this the current provider when it is on), and below it
+ * "Reset built-in configuration" or "Remove provider". The outcome shows under the buttons.
+ */
+@Composable
+private fun SaveButtons(vm: ModelsViewModel, config: ProviderConfig, onRemove: () -> Unit, onReset: () -> Unit) {
+    var saving by remember(config.id) { mutableStateOf(false) }
+    var outcome by remember(config.id) { mutableStateOf<Int?>(null) }
+    Column(Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AtomTextButton(
+            stringResource(if (saving) R.string.set_saving else R.string.set_save_configuration),
+            onClick = {
+                saving = true
+                vm.saveProvider(config.id) { selected ->
+                    saving = false
+                    outcome = if (selected) R.string.set_saved_selected else R.string.set_saved_not_enabled
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            primary = true,
+            enabled = !saving,
+        )
+        if (config.builtIn) {
+            DestructiveButton(stringResource(R.string.set_reset_builtin), onReset)
+        }
+        DestructiveButton(stringResource(R.string.set_remove_this_provider), onRemove)
+        outcome?.let {
+            Text(
+                stringResource(it),
+                style = MiuixTheme.textStyles.footnote2,
+                color = if (it == R.string.set_saved_selected) MaterialTheme.extras.success else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DestructiveButton(text: String, onClick: () -> Unit) {
+    top.yukonga.miuix.kmp.basic.TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        text = text,
+        colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(textColor = MiuixTheme.colorScheme.error),
+    )
 }
 
 private fun authLabel(method: AuthMethod) = when (method) {
@@ -623,97 +746,99 @@ private fun TestBlock(vm: ModelsViewModel, config: ProviderConfig) {
     }
 }
 
-// ================================================================ Models tab
+// ================================================================ Model tab
 
-private fun LazyListScope.providerModelItems(vm: ModelsViewModel, nav: ModelsNav, config: ProviderConfig) {
-    item(key = "models-body") { ProviderModels(vm, nav, config) }
+private fun LazyListScope.providerModelItems(
+    vm: ModelsViewModel,
+    nav: ModelsNav,
+    config: ProviderConfig,
+    selected: Set<String>,
+    onSelected: (Set<String>) -> Unit,
+) {
+    item(key = "models-body") { ProviderModels(vm, nav, config, selected, onSelected) }
 }
 
 @Composable
-private fun ProviderModels(vm: ModelsViewModel, nav: ModelsNav, config: ProviderConfig) {
+private fun ProviderModels(vm: ModelsViewModel, nav: ModelsNav, config: ProviderConfig, selected: Set<String>, onSelected: (Set<String>) -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val pulls by vm.pulls.collectAsStateWithLifecycle()
     val pull = pulls[config.id]
     var query by rememberSaveable(config.id) { mutableStateOf("") }
-    var selected by remember(config.id) { mutableStateOf(emptySet<String>()) }
     var adding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
     val current = settings?.selection as? EngineSelection.Cloud
     val q = query.trim().lowercase()
     val shown = config.models.filter { q.isEmpty() || it.id.lowercase().contains(q) || it.displayName.lowercase().contains(q) }
+    val selecting = selected.isNotEmpty()
 
     Column {
-        SearchField(query, { query = it }, stringResource(R.string.mdl_search_models), Modifier.padding(top = 14.dp))
-
-        SectionLabel(stringResource(R.string.mdl_manage_models))
-        Group(Modifier.animateContentSize(tween(200))) {
-            if (config.toProvider().supportsModelList && config.auth == AuthMethod.ApiKey) {
-                GroupRow(
-                    title = stringResource(R.string.mdl_pull_models),
-                    subtitle = stringResource(R.string.mdl_pull_models_sub),
-                    icon = Icons.Filled.Refresh,
-                    enabled = pull?.loading != true,
-                    onClick = { vm.pullModels(config.id) },
-                    trailing = if (pull?.loading == true) {
-                        { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    } else {
-                        null
-                    },
-                )
-                pull?.error?.let { Note(it, Modifier.padding(start = 40.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.error) }
-                pull?.fresh?.let { fresh ->
-                    GroupDivider(inset = 18.dp)
-                    if (fresh.isEmpty()) {
-                        GroupRow(title = stringResource(R.string.mdl_pull_none))
-                    } else {
-                        GroupRow(
-                            title = pluralStringResource(R.plurals.mdl_new_models, fresh.size, fresh.size),
-                            onClick = { picking = true },
-                            trailing = {
-                                CompactButton(
-                                    pluralStringResource(R.plurals.mdl_add_n, fresh.size, fresh.size),
-                                    onClick = { vm.addPulled(config.id, fresh.map { it.id }.toSet()) },
-                                )
-                            },
+        AnimatedVisibility(!selecting) {
+            Column {
+                SectionLabel(stringResource(R.string.set_model_management))
+                Group {
+                    if (config.toProvider().supportsModelList && config.auth == AuthMethod.ApiKey) {
+                        ArrowRow(
+                            title = stringResource(if (pull?.loading == true) R.string.set_retrieving else R.string.set_pull_remote),
+                            summary = stringResource(R.string.set_pull_remote_sub, config.baseUrl.ifEmpty { "—" }),
+                            icon = Icons.Filled.Refresh,
+                            enabled = pull?.loading != true,
+                            onClick = { vm.pullModels(config.id) },
                         )
+                        pull?.error?.let { Note(it, Modifier.padding(start = 40.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.error) }
+                        pull?.fresh?.let { fresh ->
+                            if (fresh.isEmpty()) {
+                                GroupRow(title = stringResource(R.string.mdl_pull_none))
+                            } else {
+                                GroupRow(
+                                    title = pluralStringResource(R.plurals.mdl_new_models, fresh.size, fresh.size),
+                                    onClick = { picking = true },
+                                    trailing = {
+                                        CompactButton(
+                                            pluralStringResource(R.plurals.mdl_add_n, fresh.size, fresh.size),
+                                            onClick = { vm.addPulled(config.id, fresh.map { it.id }.toSet()) },
+                                        )
+                                    },
+                                )
+                            }
+                        }
                     }
+                    ArrowRow(
+                        title = stringResource(R.string.mdl_add_custom_model),
+                        summary = stringResource(R.string.set_add_custom_model_sub),
+                        icon = Icons.Filled.Add,
+                        onClick = { adding = true },
+                    )
                 }
-                GroupDivider(inset = 0.dp)
-            }
-            GroupRow(
-                title = stringResource(R.string.mdl_add_custom_model),
-                icon = Icons.Filled.Add,
-                onClick = { adding = true },
-                trailing = { RowChevron() },
-            )
-        }
-
-        if (selected.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 18.dp, start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(pluralStringResource(R.plurals.mdl_selected, selected.size, selected.size), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                CompactButton(stringResource(R.string.mdl_select_all), onClick = { selected = shown.map { it.id }.toSet() }, primary = false)
-                Spacer(Modifier.width(8.dp))
-                CompactButton(stringResource(R.string.action_cancel), onClick = { selected = emptySet() }, primary = false)
-                Spacer(Modifier.width(8.dp))
-                CompactButton(stringResource(R.string.action_delete), onClick = { confirmDelete = true }, icon = Icons.Filled.Delete, contentColor = MaterialTheme.colorScheme.error, primary = false)
             }
         }
 
-        SectionLabel(pluralStringResource(R.plurals.mdl_model_count, config.models.size, config.models.size))
+        AtomSearchBar(
+            query = query,
+            onQueryChange = { query = it },
+            label = stringResource(R.string.mdl_search_models),
+            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+        )
+
+        SectionLabel(
+            if (q.isEmpty()) {
+                stringResource(R.string.set_models_title, config.models.size)
+            } else {
+                stringResource(R.string.set_models_match, shown.size, config.models.size)
+            },
+        )
         Group {
-            if (shown.isEmpty()) GroupRow(title = stringResource(if (config.models.isEmpty()) R.string.mdl_no_models else R.string.mdl_no_match))
-            shown.forEachIndexed { i, model ->
-                if (i > 0) GroupDivider(inset = 18.dp)
+            if (shown.isEmpty()) GroupRow(title = stringResource(if (config.models.isEmpty()) R.string.mdl_no_models else R.string.mdl_no_match), enabled = false)
+            shown.forEach { model ->
                 ModelRow(
                     model = model,
                     current = current?.providerId == config.id && current.model == model.id,
-                    selecting = selected.isNotEmpty(),
+                    selecting = selecting,
                     selected = model.id in selected,
                     onClick = {
-                        if (selected.isNotEmpty()) selected = selected.toggle(model.id) else nav.open(ModelsPage.Model(config.id, model.id))
+                        if (selecting) onSelected(selected.toggle(model.id)) else vm.setDefault(EngineSelection.Cloud(config.id, model.id))
                     },
-                    onLongClick = { selected = selected.toggle(model.id) },
+                    onLongClick = { onSelected(selected.toggle(model.id)) },
+                    onEdit = { nav.open(ModelsPage.Model(config.id, model.id)) },
                 )
             }
         }
@@ -728,58 +853,79 @@ private fun ProviderModels(vm: ModelsViewModel, nav: ModelsNav, config: Provider
             onDismiss = { picking = false },
         )
     }
-    if (confirmDelete) {
-        ConfirmDialog(
-            title = pluralStringResource(R.plurals.mdl_delete_models_title, selected.size, selected.size),
-            text = stringResource(R.string.mdl_delete_models_text),
-            confirm = stringResource(R.string.action_delete),
-            onConfirm = {
-                vm.deleteModels(config.id, selected)
-                selected = emptySet()
-            },
-            onDismiss = { confirmDelete = false },
-        )
-    }
 }
 
 private fun Set<String>.toggle(id: String) = if (id in this) this - id else this + id
 
+/**
+ * A model: name (accent when current), id, tag chips ("current", "<N> context", "Supports Reasoning"), and the
+ * pencil that opens its parameters. Tap makes it current; long-press starts multi-select.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ModelRow(model: ModelConfig, current: Boolean, selecting: Boolean, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val c = MaterialTheme.colorScheme
+private fun ModelRow(
+    model: ModelConfig,
+    current: Boolean,
+    selecting: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val c = MiuixTheme.colorScheme
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(model.displayName, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                model.displayName,
+                style = MiuixTheme.textStyles.headline1,
+                fontWeight = FontWeight.Medium,
+                color = if (current) c.primary else c.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (model.displayName != model.id) {
-                Text(model.id, style = MaterialTheme.extras.mono, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(model.id, style = MiuixTheme.textStyles.body2, color = c.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                model.effectiveContextWindow?.let { QuietPill(formatTokens(it)) }
-                if (model.reasoning.supported) QuietPill(stringResource(R.string.mdl_badge_reasoning))
-                if (model.vision == true) QuietPill(stringResource(R.string.badge_vision))
-                if (model.builtIn) QuietPill(stringResource(R.string.mdl_badge_builtin))
-                if (model.fromAccount) QuietPill(stringResource(R.string.mdl_badge_account))
+            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (current) CurrentTag()
+                model.effectiveContextWindow?.let { QuietTag(stringResource(R.string.set_context_tag, formatTokens(it))) }
+                if (model.reasoning.supported) QuietTag(stringResource(R.string.set_supports_reasoning))
+                if (model.vision == true) QuietTag(stringResource(R.string.badge_vision))
+                if (model.fromAccount) QuietTag(stringResource(R.string.mdl_badge_account))
             }
         }
-        Spacer(Modifier.width(12.dp))
-        when {
-            selecting -> CheckBoxMark(selected)
-            current -> CheckMark(true, stringResource(R.string.mdl_badge_current))
-            else -> RowChevron()
+        Spacer(Modifier.width(8.dp))
+        if (selecting) {
+            AtomCheckbox(checked = selected, onCheckedChange = { onClick() })
+        } else {
+            IconButton(onClick = onEdit) {
+                Icon(ScreenIcons.Tune, stringResource(R.string.set_edit_model), Modifier.size(22.dp), tint = c.onSurfaceVariantActions)
+            }
         }
     }
 }
 
+/** A grey tag chip (same shape as "current"). */
 @Composable
-private fun CheckBoxMark(checked: Boolean) {
-    if (checked) CheckMark(true) else Box(Modifier.size(24.dp).border(1.5.dp, MaterialTheme.colorScheme.outline, CircleShape))
+private fun QuietTag(text: String) {
+    val c = MiuixTheme.colorScheme
+    Text(
+        text,
+        style = MiuixTheme.textStyles.footnote2,
+        color = c.onSurfaceVariantSummary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(c.secondaryContainer)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 @Composable
@@ -1205,6 +1351,7 @@ internal fun CatalogModelsScreen(vm: ModelsViewModel, nav: ModelsNav, catalogId:
         }
         return
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var chosen by rememberSaveable(catalogId) { mutableStateOf(provider.models.filter { it.toolCall }.map { it.id }.toSet().ifEmpty { provider.models.map { it.id }.toSet() }) }
     var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim().lowercase()
@@ -1218,7 +1365,14 @@ internal fun CatalogModelsScreen(vm: ModelsViewModel, nav: ModelsNav, catalogId:
                 PrimaryButton(
                     pluralStringResource(R.plurals.mdl_import_n, chosen.size, chosen.size),
                     enabled = chosen.isNotEmpty(),
-                    onClick = { vm.importFromCatalog(provider, chosen) { id -> nav.replaceWith(ModelsPage.Provider(id)) } },
+                    onClick = {
+                        vm.importFromCatalog(provider, chosen) { id ->
+                            nav.replaceWith(ModelsPage.Provider(id))
+                            vm.saveProvider(id) { selected ->
+                                if (selected) android.widget.Toast.makeText(context, R.string.set_created_selected, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                 )
             }
         },

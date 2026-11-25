@@ -30,6 +30,11 @@ class AtomApp : Application() {
         // so each feature's onAppCreate already sees the app's adapters.
         Integration.install(this)
         Features.all.forEach { runCatching { it.onAppCreate(this) } }
+        // Every catalog card is registered now: turn any old master switch that was off into per-tool switches.
+        runCatching {
+            atom.device.switches.ToolSwitches.init(this)
+            atom.device.switches.ToolSwitches.foldMasters(atom.device.caps.ToolCatalog.all)
+        }
 
         // Work a crash or kill cut short is restored (and marked interrupted) before anything else touches it.
         graph.appScope.launch { graph.tasks.recover() }
