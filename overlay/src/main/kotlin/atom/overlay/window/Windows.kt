@@ -66,6 +66,8 @@ internal object Windows {
      */
     fun keyboardProbe(): KeyboardProbe? {
         val service = accessibility as? AccessibilityService ?: return null
+        // The service subscribes to no window events while idle, so its cached window list can be stale.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) runCatching { service.clearCache() }
         // An empty list means the service could not see the windows this time: unknown, not "no keyboard".
         val windows = runCatching { service.windows }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
         val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return KeyboardProbe(null)

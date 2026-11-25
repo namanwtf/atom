@@ -58,20 +58,20 @@ object KeyboardFit {
     /**
      * How much of the bottom of the panel window the keyboard covers, in px. Overlay windows do not receive IME
      * insets on some ROMs, so the order is:
-     * 1. the keyboard top measured by the accessibility service;
-     * 2. a measured "keyboard gone" (the service or the visible frame showed it and now does not) clears everything
-     *    below: a stale inset that was never re-delivered, and the estimate;
+     * 1. a measured "keyboard gone" (the service, the insets or the visible frame showed it and now do not) clears
+     *    everything below: a stale reading, an inset that was never re-delivered, and the estimate;
+     * 2. the keyboard top measured by the accessibility service;
      * 3. the IME inset;
      * 4. the visible display frame;
      * 5. [ESTIMATE_FRACTION] of the display, only while the composer has focus and no source has ever worked.
      */
     fun keyboard(s: KeyboardSignals): KeyboardFitResult {
         val windowBottom = s.windowTop + s.windowHeight
+        if (gone(s)) return KeyboardFitResult(0, KeyboardSource.None)
         val top = s.serviceTop
         if (top != null && top < windowBottom) {
             return KeyboardFitResult((windowBottom - top).coerceIn(0, s.windowHeight), KeyboardSource.Measured)
         }
-        if (gone(s)) return KeyboardFitResult(0, KeyboardSource.None)
         if (s.imeInset > 0) return KeyboardFitResult(s.imeInset.coerceAtMost(s.windowHeight), KeyboardSource.Insets)
         val frame = s.frameKeyboard
         if (frame != null && frame > 0) return KeyboardFitResult(frame.coerceAtMost(s.windowHeight), KeyboardSource.Frame)
@@ -81,8 +81,12 @@ object KeyboardFit {
         return KeyboardFitResult((s.displayHeight * ESTIMATE_FRACTION).toInt(), KeyboardSource.Estimate)
     }
 
-    /** A source that showed the keyboard this session now measures none: the keyboard is closed. */
-    fun gone(s: KeyboardSignals): Boolean = (s.serviceSawKeyboard && s.serviceTop == null) || s.frameKeyboard == 0
+    /**
+     * A source that showed the keyboard this session now measures none: the keyboard is closed. Any one such
+     * source wins over a reading that still shows it (the service's window list can lag behind).
+     */
+    fun gone(s: KeyboardSignals): Boolean =
+        (s.serviceSawKeyboard && s.serviceTop == null) || s.frameKeyboard == 0 || (s.insetsWork && s.imeInset == 0)
 
     /**
      * Keyboard overlap read from the visible display frame: [windowBottom] minus the frame's [visibleBottom]. It
