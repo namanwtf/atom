@@ -113,6 +113,28 @@ object JobRules {
         }
     }
 
+    /** Notification title for a finished job, by outcome. */
+    fun notificationTitle(r: JobRecord): String {
+        val what = if (r.kind == JobKind.Daemon) "Background service" else "Background command"
+        return when (r.state) {
+            JobState.Running -> "$what is running"
+            JobState.Completed -> "$what completed"
+            JobState.Failed -> "$what failed"
+            JobState.TimedOut -> "$what timed out"
+            JobState.Stopped -> "$what stopped"
+            JobState.Interrupted -> "$what interrupted"
+        }
+    }
+
+    /** Notification body: the name, the exit code when there is one, and where to look next. */
+    fun notificationText(r: JobRecord): String = buildString {
+        append(r.name)
+        r.exitCode?.let { append(" · Exit code ").append(it) }
+        append('\n').append(NOTIFICATION_HINT)
+    }
+
+    const val NOTIFICATION_HINT = "View status and logs under background tasks in Terminal"
+
     /** A short title for a command: its first line, at most 60 characters. */
     fun titleFor(command: String): String {
         val first = command.trim().lineSequence().firstOrNull()?.trim().orEmpty()

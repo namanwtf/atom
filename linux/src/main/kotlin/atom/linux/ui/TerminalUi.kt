@@ -84,34 +84,54 @@ import atom.ui.components.CircleIconButton
 import atom.ui.components.SegmentedControl
 import atom.linux.TerminalText
 import atom.ui.theme.extras
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.vector.ImageVector
+import atom.linux.Distro
+import atom.linux.term.SessionStatus
+import atom.linux.term.SessionStatuses
+import atom.ui.components.AtomDialog
+import atom.ui.components.AtomRow
+import atom.ui.components.AtomTextButton
+import atom.ui.theme.AtomIcons
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.GridView
+import top.yukonga.miuix.kmp.icon.extended.ListView
+import top.yukonga.miuix.kmp.icon.extended.Tasks
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Full-screen terminal with Console (PTY) and Simple (blocks) modes and up to six sessions per mode. */
+/**
+ * Full-screen terminal with Console (PTY) and Simple (blocks) modes and up to six sessions per mode. The toolbar
+ * has the environment switch (Android / the Linux distribution) on the left and Sessions, Background tasks and the
+ * Console / Simple toggle on the right.
+ */
 @Composable
-fun TerminalScreen(onBack: () -> Unit) {
+fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
     val context = LocalContext.current
     val linux = remember { LinuxEnv.get(context) }
     val linuxState by linux.state.collectAsStateWithLifecycle()
     val sessions by TerminalSessions.sessions.collectAsStateWithLifecycle()
     var modeIndex by rememberSaveable { mutableStateOf(0) }
     val mode = if (modeIndex == 0) SessionMode.Console else SessionMode.Simple
+    // Which side of the environment switch is selected; null until the first visit decides.
+    var linuxSide by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var selectedConsole by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSimple by rememberSaveable { mutableStateOf<String?>(null) }
     var fontSize by rememberSaveable { mutableFloatStateOf(TerminalText.clamp(linux.config.value.terminalFontSp)) }
     var rootAvailable by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var grid by remember { mutableStateOf(80 to 24) }
-    var autoOpened by rememberSaveable { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var showSessions by remember { mutableStateOf(false) }
     val mods = remember { Modifiers() }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var keyboardShown by remember { mutableStateOf(true) }
 
-    // Remember the size (pinch or A−/A+) once it settles; nothing runs while it is unchanged.
+    // Remember the size (pinch) once it settles; nothing runs while it is unchanged.
     LaunchedEffect(fontSize) {
         delay(600)
         withContext(Dispatchers.IO) { linux.setTerminalFontSp(fontSize) }
@@ -122,29 +142,60 @@ fun TerminalScreen(onBack: () -> Unit) {
         if (linux.state.value is LinuxState.Ready) linux.refresh()
     }
 
-    val inMode = sessions.filter { it.mode == mode }
-    val selectedId = if (mode == SessionMode.Console) selectedConsole else selectedSimple
-    val selected = inMode.firstOrNull { it.id == selectedId } ?: inMode.lastOrNull()
+    val ready = linuxState as? LinuxState.Ready
+    val linuxUsable = ready != null && !ready.rootLost
+    val distroName = (ready?.distro ?: (linuxState as? LinuxState.Installing)?.distro ?: Distro.Debian).shortName
+    val onLinux = linuxSide ?: false
 
-    fun open(env: ShellEnv) {
+    fun sideOf(e: SessionEntry) = e.env == ShellEnv.Linux
+    val inMode = sessions.filter { it.mode == mode }
+    val onSide = inMode.filter { sideOf(it) == onLinux }
+    val selectedId = if (mode == SessionMode.Console) selectedConsole else selectedSimple
+    val selected = onSide.firstOrNull { it.id == selectedId } ?: onSide.lastOrNull()
+
+    fun select(e: SessionEntry) {
+        if (mode == SessionMode.Console) selectedConsole = e.id else selectedSimple = e.id
+        linuxSide = sideOf(e)
+    }
+
+    fun openSession(env: ShellEnv) {
         error = null
         try {
-            val e = TerminalSessions.open(context, mode, env, grid.first, grid.second)
-            if (mode == SessionMode.Console) selectedConsole = e.id else selectedSimple = e.id
+            select(TerminalSessions.open(context, mode, env, grid.first, grid.second))
         } catch (e: Exception) {
             error = e.message ?: e.javaClass.simpleName
         }
     }
 
-    fun select(id: String) {
-        if (mode == SessionMode.Console) selectedConsole = id else selectedSimple = id
+    fun restart(e: SessionEntry) = TerminalSessions.restart(context, e.id, grid.first, grid.second)
+
+    // The first visit picks Linux when it is usable and opens one session so the screen is never empty.
+    LaunchedEffect(rootAvailable) {
+        if (rootAvailable == null || linuxSide != null) return@LaunchedEffect
+        val wantLinux = linux.state.value.let { it is LinuxState.Ready && !it.rootLost }
+        linuxSide = wantLinux
+        if (sessions.none { it.mode == mode && sideOf(it) == wantLinux }) openSession(if (wantLinux) ShellEnv.Linux else ShellEnv.Android)
     }
 
-    // The first visit opens one session so the screen is never empty.
-    LaunchedEffect(mode, rootAvailable) {
-        if (!autoOpened && inMode.isEmpty() && rootAvailable != null) {
-            autoOpened = true
-            open(if (linux.state.value is LinuxState.Ready && !(linux.state.value as LinuxState.Ready).rootLost) ShellEnv.Linux else ShellEnv.Android)
+    // Coming back to a session that ended in the meantime reconnects it.
+    LaunchedEffect(selected?.id) {
+        val e = selected ?: return@LaunchedEffect
+        if (e.terminal?.exitCode?.value != null) {
+            restart(e)
+            Toast.makeText(context, context.getString(R.string.terminal_reconnected), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun switchSide(toLinux: Boolean) {
+        if (toLinux == onLinux) return
+        linuxSide = toLinux
+        val label = if (toLinux) distroName else ShellEnv.Android.label
+        Toast.makeText(context, context.getString(R.string.terminal_switched, label), Toast.LENGTH_SHORT).show()
+        val existing = inMode.lastOrNull { sideOf(it) == toLinux }
+        when {
+            existing != null -> select(existing)
+            toLinux && !linuxUsable -> Unit // the body explains and offers the install
+            TerminalSessions.canOpen(mode) -> openSession(if (toLinux) ShellEnv.Linux else ShellEnv.Android)
         }
     }
 
@@ -159,48 +210,50 @@ fun TerminalScreen(onBack: () -> Unit) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             CircleIconButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.terminal_cd_back), onBack, size = 40.dp)
             SegmentedControl(
-                options = listOf(stringResource(R.string.terminal_mode_console) to null, stringResource(R.string.terminal_mode_simple) to null),
-                selected = modeIndex,
-                onSelect = { modeIndex = it },
-                modifier = Modifier.weight(1f),
+                options = listOf(ShellEnv.Android.label to null, distroName to null),
+                selected = if (onLinux) 1 else 0,
+                onSelect = { switchSide(it == 1) },
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            IconButton(onClick = { fontSize = (fontSize - 1f).coerceAtLeast(MIN_FONT) }, modifier = Modifier.size(36.dp)) {
-                Text("A−", color = TerminalColors.foreground, fontSize = 13.sp)
-            }
-            IconButton(onClick = { fontSize = (fontSize + 1f).coerceAtMost(MAX_FONT) }, modifier = Modifier.size(36.dp)) {
-                Text("A+", color = TerminalColors.foreground, fontSize = 13.sp)
+            ToolbarIcon(MiuixIcons.GridView, stringResource(R.string.terminal_cd_sessions)) { showSessions = true }
+            ToolbarIcon(MiuixIcons.Tasks, stringResource(R.string.terminal_cd_jobs)) { openRoute(LinuxFeature.ROUTE_JOBS) }
+            if (mode == SessionMode.Console) {
+                ToolbarIcon(MiuixIcons.ListView, stringResource(R.string.terminal_cd_simple)) { modeIndex = 1 }
+            } else {
+                ToolbarIcon(AtomIcons.Terminal, stringResource(R.string.terminal_cd_console)) { modeIndex = 0 }
             }
         }
-
-        SessionTabs(
-            sessions = inMode,
-            selected = selected,
-            canOpen = TerminalSessions.canOpen(mode),
-            rootAvailable = rootAvailable == true,
-            linuxAvailable = (linuxState as? LinuxState.Ready)?.rootLost == false,
-            onSelect = { select(it.id) },
-            onOpen = ::open,
-            onRestart = { TerminalSessions.restart(context, it.id, grid.first, grid.second) },
-            onClose = { TerminalSessions.close(it.id) },
-        )
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val entry = selected
             when {
-                entry == null -> {
-                    Text(
-                        error?.let { stringResource(R.string.terminal_error, it) } ?: stringResource(R.string.terminal_empty),
-                        color = if (error != null) MaterialTheme.colorScheme.error else TerminalColors.foreground.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                    )
+                entry == null && onLinux && !linuxUsable -> {
                     // Measure anyway so the first session starts at the right size.
                     TerminalGrid(Screen.EMPTY, fontSize, onGridSize = { c, r -> grid = c to r }, onTap = {}, onZoom = {}, modifier = Modifier.fillMaxSize())
+                    LinuxMissing(
+                        state = linuxState,
+                        onInstall = { openRoute(LinuxFeature.ROUTE_HOME) },
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+                entry == null -> {
+                    TerminalGrid(Screen.EMPTY, fontSize, onGridSize = { c, r -> grid = c to r }, onTap = {}, onZoom = {}, modifier = Modifier.fillMaxSize())
+                    Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            error?.let { stringResource(R.string.terminal_error, it) } ?: stringResource(R.string.terminal_empty),
+                            color = if (error != null) MaterialTheme.colorScheme.error else TerminalColors.foreground.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (TerminalSessions.canOpen(mode)) {
+                            Spacer(Modifier.height(12.dp))
+                            AtomTextButton(stringResource(R.string.terminal_new_session), { openSession(if (onLinux) ShellEnv.Linux else ShellEnv.Android) }, primary = true)
+                        }
+                    }
                 }
                 mode == SessionMode.Console -> ConsoleView(
                     entry = entry,
@@ -215,9 +268,9 @@ fun TerminalScreen(onBack: () -> Unit) {
                         keyboardShown = true
                     },
                     onZoom = { z -> fontSize = (fontSize * z).coerceIn(MIN_FONT, MAX_FONT) },
-                    onRestart = { TerminalSessions.restart(context, entry.id, grid.first, grid.second) },
+                    onRestart = { restart(entry) },
                 )
-                else -> SimpleView(entry, fontSize, onRestart = { TerminalSessions.restart(context, entry.id, grid.first, grid.second) })
+                else -> SimpleView(entry, fontSize, onRestart = { restart(entry) })
             }
             if (error != null && entry != null) {
                 Text(
@@ -229,8 +282,8 @@ fun TerminalScreen(onBack: () -> Unit) {
             }
         }
 
-        if (mode == SessionMode.Console) {
-            val terminal = selected?.terminal
+        if (mode == SessionMode.Console && selected != null) {
+            val terminal = selected.terminal
             KeyBar(
                 mods = mods,
                 appCursor = { terminal?.screen?.value?.applicationCursorKeys == true },
@@ -253,9 +306,29 @@ fun TerminalScreen(onBack: () -> Unit) {
                 onBytes = { terminal?.write(it) },
                 appCursor = { terminal?.screen?.value?.applicationCursorKeys == true },
             )
-            LaunchedEffect(selected?.id) { runCatching { focus.requestFocus() } }
+            LaunchedEffect(selected.id) { runCatching { focus.requestFocus() } }
         }
     }
+
+    SessionsDialog(
+        show = showSessions,
+        sessions = inMode,
+        current = selected,
+        canOpen = TerminalSessions.canOpen(mode),
+        rootAvailable = rootAvailable == true,
+        newEnv = if (onLinux && linuxUsable) ShellEnv.Linux else ShellEnv.Android,
+        onDismiss = { showSessions = false },
+        onSelect = {
+            showSessions = false
+            select(it)
+        },
+        onNew = { env ->
+            showSessions = false
+            openSession(env)
+        },
+        onRestart = { restart(it) },
+        onClose = { TerminalSessions.close(it.id) },
+    )
 }
 
 private const val MIN_FONT = TerminalText.MIN_SP
@@ -272,86 +345,96 @@ internal fun copyText(context: Context, text: String) {
 }
 
 @Composable
-private fun SessionTabs(
+private fun ToolbarIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(icon, description, Modifier.size(22.dp), tint = TerminalColors.foreground)
+    }
+}
+
+/** Shown on the Linux side of the switch while Linux cannot start: not installed, installing, or root lost. */
+@Composable
+private fun LinuxMissing(state: LinuxState, onInstall: () -> Unit, modifier: Modifier = Modifier) {
+    val text = when {
+        state is LinuxState.Installing -> stringResource(R.string.terminal_installing)
+        state is LinuxState.Ready && state.rootLost -> stringResource(R.string.terminal_root_lost)
+        else -> stringResource(R.string.terminal_not_installed)
+    }
+    val button = if (state is LinuxState.NotInstalled || state is LinuxState.Failed) R.string.terminal_install_now else R.string.terminal_open_linux
+    Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text, color = TerminalColors.foreground, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+        AtomTextButton(stringResource(button), onInstall, primary = true)
+    }
+}
+
+/** "Sessions": New session, then one row per session with its labels (Current / Running / Idle / Exited). */
+@Composable
+private fun SessionsDialog(
+    show: Boolean,
     sessions: List<SessionEntry>,
-    selected: SessionEntry?,
+    current: SessionEntry?,
     canOpen: Boolean,
     rootAvailable: Boolean,
-    linuxAvailable: Boolean,
+    newEnv: ShellEnv,
+    onDismiss: () -> Unit,
     onSelect: (SessionEntry) -> Unit,
-    onOpen: (ShellEnv) -> Unit,
+    onNew: (ShellEnv) -> Unit,
     onRestart: (SessionEntry) -> Unit,
     onClose: (SessionEntry) -> Unit,
 ) {
-    var newMenu by remember { mutableStateOf(false) }
-    var actionsFor by remember { mutableStateOf<SessionEntry?>(null) }
-    val c = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        for (s in sessions) {
-            val active = s === selected
-            val ended = s.terminal?.exitCode?.collectAsStateWithLifecycle()?.value != null
-            Box {
-                Row(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (active) c.surfaceContainerHighest else c.surfaceContainer)
-                        .combinedClickable(onClick = { onSelect(s) }, onLongClick = { actionsFor = s })
-                        .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        s.title + if (ended) " ·" else "",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (active) c.onSurface else c.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+    AtomDialog(show = show, onDismiss = onDismiss, title = stringResource(R.string.terminal_sessions)) {
+        Column {
+            AtomTextButton(stringResource(R.string.terminal_new_session), { onNew(newEnv) }, Modifier.fillMaxWidth(), primary = true, enabled = canOpen)
+            if (rootAvailable) {
+                Spacer(Modifier.height(8.dp))
+                AtomTextButton(stringResource(R.string.terminal_new_root_session), { onNew(ShellEnv.Root) }, Modifier.fillMaxWidth(), enabled = canOpen)
+            }
+            if (!canOpen) {
+                Text(
+                    stringResource(R.string.terminal_limit, TerminalSessions.MAX_PER_MODE),
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            if (sessions.isEmpty()) {
+                Text(stringResource(R.string.terminal_no_sessions), style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            }
+            val now = System.currentTimeMillis()
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                for (s in sessions) {
+                    val exited = s.terminal?.exitCode?.collectAsStateWithLifecycle()?.value != null
+                    val labels = SessionStatuses.of(current = s === current, exited = exited, busy = s.busy(now))
+                    val summary = labels.map { statusLabel(it) }.joinToString(" · ")
+                    AtomRow(
+                        title = s.title,
+                        summary = summary,
+                        onClick = { onSelect(s) },
+                        end = {
+                            Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                AtomTextButton(stringResource(R.string.terminal_restart), { onRestart(s) })
+                                AtomTextButton(stringResource(R.string.terminal_close), { onClose(s) })
+                            }
+                        },
                     )
-                    IconButton(onClick = { actionsFor = s }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.MoreVert, null, Modifier.size(16.dp), tint = c.onSurfaceVariant)
-                    }
-                }
-                AtomMenu(expanded = actionsFor === s, onDismiss = { actionsFor = null }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.terminal_restart)) }, onClick = { actionsFor = null; onRestart(s) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.terminal_close)) }, onClick = { actionsFor = null; onClose(s) })
                 }
             }
-        }
-        Box {
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(c.surfaceContainer)
-                    .combinedClickable(enabled = canOpen, onClick = { newMenu = true })
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.Add, null, Modifier.size(16.dp), tint = if (canOpen) c.onSurface else c.onSurfaceVariant)
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.terminal_new), style = MaterialTheme.typography.labelLarge, color = if (canOpen) c.onSurface else c.onSurfaceVariant)
-            }
-            AtomMenu(expanded = newMenu, onDismiss = { newMenu = false }) {
-                DropdownMenuItem(text = { Text(ShellEnv.Android.label) }, onClick = { newMenu = false; onOpen(ShellEnv.Android) })
-                DropdownMenuItem(
-                    text = { Text(if (rootAvailable) ShellEnv.Root.label else stringResource(R.string.terminal_root_unavailable)) },
-                    enabled = rootAvailable,
-                    onClick = { newMenu = false; onOpen(ShellEnv.Root) },
-                )
-                DropdownMenuItem(
-                    text = { Text(if (linuxAvailable) ShellEnv.Linux.label else stringResource(R.string.terminal_linux_unavailable)) },
-                    enabled = linuxAvailable,
-                    onClick = { newMenu = false; onOpen(ShellEnv.Linux) },
-                )
-            }
-        }
-        if (!canOpen) {
-            Text(stringResource(R.string.terminal_limit, TerminalSessions.MAX_PER_MODE), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+            AtomTextButton(stringResource(R.string.terminal_done), onDismiss, Modifier.fillMaxWidth())
         }
     }
 }
+
+@Composable
+private fun statusLabel(s: SessionStatus): String = stringResource(
+    when (s) {
+        SessionStatus.Current -> R.string.terminal_status_current
+        SessionStatus.Running -> R.string.terminal_status_running
+        SessionStatus.Idle -> R.string.terminal_status_idle
+        SessionStatus.Exited -> R.string.terminal_status_exited
+    },
+)
 
 @Composable
 private fun ConsoleView(
@@ -384,7 +467,7 @@ private fun ExitBar(code: Int, onRestart: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = onRestart) { Text(stringResource(R.string.terminal_restart)) }
+        TextButton(onClick = onRestart) { Text(stringResource(R.string.terminal_reconnect)) }
     }
 }
 
