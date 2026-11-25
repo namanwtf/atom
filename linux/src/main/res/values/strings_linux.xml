@@ -199,10 +199,10 @@
 
     <!-- Workspace -->
     <string name="workspace_title">Workspace and files</string>
-    <string name="workspace_private">Private: /workspace</string>
-    <string name="workspace_private_body">Atom\'s own folder, always available to Linux. %1$s used.</string>
-    <string name="workspace_public">Public: /sdcard</string>
-    <string name="workspace_public_granted">Shared storage is readable and writable from Linux.</string>
+    <string name="workspace_private">Private workspace</string>
+    <string name="workspace_private_body">/workspace, Atom\'s own folder, always available to Linux. %1$s used.</string>
+    <string name="workspace_public">Public directory access</string>
+    <string name="workspace_public_granted">Authorized; the terminal can access public directories</string>
     <string name="workspace_public_denied">Not allowed yet. Linux sees an empty /sdcard until you allow all-files access.</string>
     <string name="workspace_allow">Allow access</string>
     <string name="workspace_import">Import files</string>
@@ -210,8 +210,8 @@
     <string name="workspace_imported">Imported %1$d file(s).</string>
     <string name="workspace_too_big">%1$s is larger than 32 MiB and was skipped.</string>
     <string name="workspace_export">Export</string>
-    <string name="workspace_files">Files in /workspace</string>
-    <string name="workspace_none">No files yet.</string>
+    <string name="workspace_files">Workspace files</string>
+    <string name="workspace_none">No files · Import files or generate them through terminal tasks</string>
     <string name="workspace_exported">Exported.</string>
 
     <!-- Jobs -->
