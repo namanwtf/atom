@@ -64,6 +64,14 @@ class KeyboardFitTest {
     }
 
     @Test
+    fun closedInsetsWinOverALaggingServiceReading() {
+        // Insets work here and say closed; the service still lists the keyboard window from a stale cache.
+        val r = fit(signals(serviceTop = 1500, serviceSawKeyboard = true, imeInset = 0, insetsWork = true))
+        assertEquals(0, r.height)
+        assertTrue(KeyboardFit.gone(signals(serviceTop = 1500, serviceSawKeyboard = true, imeInset = 0, insetsWork = true)))
+    }
+
+    @Test
     fun visibleFrameMeasuresWhenInsetsAreMissing() {
         val r = fit(signals(frameKeyboard = 900))
         assertEquals(KeyboardSource.Frame, r.source)
