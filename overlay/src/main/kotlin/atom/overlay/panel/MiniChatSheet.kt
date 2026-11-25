@@ -1,5 +1,6 @@
 package atom.overlay.panel
 
+import android.graphics.Rect
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -55,7 +56,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -82,7 +85,6 @@ import atom.overlay.ui.MarkdownText
 import atom.overlay.ui.StepsFold
 import atom.overlay.ui.Warm
 import atom.overlay.ui.drawGlyph
-import atom.overlay.window.KeyboardProbe
 import atom.overlay.window.Windows
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunSource
@@ -110,32 +112,65 @@ internal fun MiniChatSheet() {
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, tween(200, easing = FastOutSlowInEasing)) }
 
-    // Keyboard: measured by the accessibility service where connected, polled only around focus changes.
+    // Keyboard. Sources: the accessibility service's keyboard window, IME insets, the visible display frame and, as a
+    // last resort, an estimate. Polled quickly around focus and inset changes, then slowly once readings are stable.
+    val focusManager = LocalFocusManager.current
+    val configuration = LocalConfiguration.current
+    val bars = remember(context, configuration) { Windows.area(context) }
     var focused by remember { mutableStateOf(false) }
-    var probe by remember { mutableStateOf<KeyboardProbe?>(Windows.keyboardProbe()) }
-    var windowTop by remember { mutableIntStateOf(0) }
-    // The 32% estimate is a last resort: only once focus has settled and this window never received IME insets,
-    // so a keyboard that is still animating in does not make the panel jump.
+    // The estimate waits for focus to settle, so a keyboard that is still animating in does not make the panel jump.
     var focusSettled by remember { mutableStateOf(false) }
     var insetsSeen by remember { mutableStateOf(false) }
+    var serviceTop by remember { mutableStateOf<Int?>(null) }
+    var serviceSaw by remember { mutableStateOf(false) }
+    var frameKeyboard by remember { mutableStateOf<Int?>(null) }
+    var windowTop by remember { mutableIntStateOf(0) }
+    var seenThisFocus by remember { mutableStateOf(false) }
+    val ime = WindowInsets.ime.getBottom(density)
+    SideEffect {
+        if (ime > 0 && !insetsSeen) insetsSeen = true
+        if (ime > 0 && focused && !seenThisFocus) seenThisFocus = true
+    }
     LaunchedEffect(focused) {
         focusSettled = false
+        if (focused) seenThisFocus = false
         if (focused) {
             delay(ESTIMATE_AFTER_MS)
             focusSettled = true
         }
     }
-    LaunchedEffect(focused) {
-        val until = if (focused) Long.MAX_VALUE else System.currentTimeMillis() + SETTLE_POLL_MS
-        while (System.currentTimeMillis() < until) {
-            probe = Windows.keyboardProbe()
+    LaunchedEffect(focused, ime > 0, bars) {
+        val threshold = with(density) { FRAME_THRESHOLD.roundToPx() }
+        var frameSeen = frameKeyboard != null
+        var last: List<Int?>? = null
+        var stable = 0
+        while (true) {
+            val probe = Windows.keyboardProbe()
             val at = IntArray(2)
             view.getLocationOnScreen(at)
+            val frame = Rect()
+            view.getWindowVisibleDisplayFrame(frame)
+            val windowBottom = at[1] + view.height
+            val fromFrame = KeyboardFit.frameKeyboard(windowBottom, frame.bottom, bars.bottom.toInt(), threshold, frameSeen)
+            if (fromFrame != null && fromFrame > 0 || probe?.top != null) seenThisFocus = true
+            if (fromFrame != null && fromFrame > 0) frameSeen = true
+            if (probe?.top != null) serviceSaw = true
+            serviceTop = probe?.top
+            frameKeyboard = fromFrame
             windowTop = at[1]
-            delay(POLL_MS)
+            val reading = listOf(probe?.top, fromFrame, at[1])
+            stable = if (reading == last) stable + 1 else 0
+            last = reading
+            if (stable == STABLE_READS && focused && seenThisFocus) {
+                // A keyboard closed with Back leaves the field focused: drop focus so the panel grows back and the
+                // next tap on the field starts measuring again.
+                val signals = KeyboardSignals(focused, serviceTop, serviceSaw, ime, insetsSeen, frameKeyboard, windowTop, view.height, bars.height.toInt())
+                if (KeyboardFit.gone(signals)) focusManager.clearFocus()
+            }
+            if (!focused && stable >= STABLE_READS) break
+            delay(if (stable >= STABLE_READS) SLOW_POLL_MS else POLL_MS)
         }
     }
-    val bars = remember(context) { Windows.area(context) }
 
     BoxWithConstraints(
         Modifier
@@ -144,16 +179,18 @@ internal fun MiniChatSheet() {
             .background(Color.Black.copy(alpha = 0.45f))
             .pointerInput(Unit) { detectTapGestures { MiniChat.close() } },
     ) {
-        val ime = WindowInsets.ime.getBottom(density)
-        SideEffect { if (ime > 0 && !insetsSeen) insetsSeen = true }
         val keyboard = KeyboardFit.keyboard(
-            focused = focused && focusSettled && !insetsSeen,
-            measuredAvailable = probe != null,
-            measuredTop = probe?.top,
-            imeInset = ime,
-            windowTop = windowTop,
-            windowHeight = constraints.maxHeight,
-            displayHeight = bars.height.toInt(),
+            KeyboardSignals(
+                focused = focused && focusSettled,
+                serviceTop = serviceTop,
+                serviceSawKeyboard = serviceSaw,
+                imeInset = ime,
+                insetsWork = insetsSeen,
+                frameKeyboard = frameKeyboard,
+                windowTop = windowTop,
+                windowHeight = constraints.maxHeight,
+                displayHeight = bars.height.toInt(),
+            ),
         )
         val margin = with(density) { 6.dp.roundToPx() }
         val fit = PanelFit.fit(
@@ -174,7 +211,8 @@ internal fun MiniChatSheet() {
                 .clip(RoundedCornerShape(24.dp))
                 .background(Warm.Background)
                 .border(1.dp, Warm.Outline, RoundedCornerShape(24.dp))
-                .pointerInput(Unit) { detectTapGestures { } }
+                // A tap on the sheet outside the composer hands focus back (and with it any keyboard estimate).
+                .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
                 .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
         ) {
             Header()
@@ -194,8 +232,14 @@ internal fun MiniChatSheet() {
 }
 
 private const val POLL_MS = 150L
-private const val SETTLE_POLL_MS = 1_200L
+private const val SLOW_POLL_MS = 1_000L
+
+/** About a second of identical readings counts as stable. */
+private const val STABLE_READS = 6
 private const val ESTIMATE_AFTER_MS = 450L
+
+/** The visible frame must lose this much more than the navigation bar to count as a keyboard. */
+private val FRAME_THRESHOLD = 80.dp
 
 @Composable
 private fun Header() {

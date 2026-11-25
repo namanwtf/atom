@@ -66,7 +66,8 @@ internal object Windows {
      */
     fun keyboardProbe(): KeyboardProbe? {
         val service = accessibility as? AccessibilityService ?: return null
-        val windows = runCatching { service.windows }.getOrNull() ?: return null
+        // An empty list means the service could not see the windows this time: unknown, not "no keyboard".
+        val windows = runCatching { service.windows }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
         val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return KeyboardProbe(null)
         val r = Rect()
         ime.getBoundsInScreen(r)

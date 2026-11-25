@@ -356,6 +356,7 @@ private fun TextAction(text: String, color: Color, onClick: () -> Unit) {
 @Composable
 internal fun ResultCard() {
     val r = RunOverlays.result ?: return
+    val locked = RunOverlays.locked
     val context = LocalContext.current
     val density = LocalDensity.current
     val rise = remember(r) { Animatable(0f) }
@@ -397,16 +398,23 @@ internal fun ResultCard() {
             PhaseIndicator(if (r.ok) Phase.Finished else Phase.Failed, accent)
             Spacer(Modifier.width(8.dp))
             Text(
-                stringResource(if (r.ok) R.string.overlay_result_ready else R.string.overlay_result_failed),
+                stringResource(
+                    when {
+                        !r.ok -> R.string.overlay_result_failed
+                        locked -> R.string.overlay_result_ready_locked
+                        else -> R.string.overlay_result_ready
+                    },
+                ),
                 color = accent,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(accent.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 4.dp),
             )
             Spacer(Modifier.weight(1f))
-            if (r.text.isNotBlank()) RoundCopy(onClick = { RunOverlays.copy(context, r.text) })
+            if (r.text.isNotBlank() && !locked) RoundCopy(onClick = { RunOverlays.copy(context, r.text) })
         }
-        if (r.text.isNotBlank()) {
+        // Over the lock screen only the outcome shows: no answer text, no Copy, nothing that opens the app.
+        if (r.text.isNotBlank() && !locked) {
             Text(
                 r.text,
                 style = MaterialTheme.typography.bodyMedium,
@@ -416,6 +424,7 @@ internal fun ResultCard() {
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PillButton(stringResource(R.string.overlay_done), onClick = RunOverlays::dismissResult, primary = false)
+            if (locked) return@Row
             if (r.source == RunSource.Bubble) {
                 PillButton(stringResource(R.string.overlay_open_chat), onClick = RunOverlays::openResult, primary = true)
             } else {

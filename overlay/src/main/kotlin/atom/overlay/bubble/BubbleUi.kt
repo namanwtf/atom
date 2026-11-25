@@ -17,7 +17,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -197,7 +196,8 @@ internal fun BubbleContent(mood: BubbleMood, pressed: Boolean) {
 /** The status pill beside the face, in its own small window so the bubble window never resizes. */
 @Composable
 internal fun StatusPill(text: String, paused: Boolean) {
-    Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+    // The window wraps exactly this pill, so no transparent margin can catch taps meant for the app below.
+    Box {
         Text(
             text,
             color = Warm.Text,
@@ -394,18 +394,22 @@ internal class MenuState(val bubble: Offset, val centers: List<Offset>) {
 internal val MENU_BUTTON = 52.dp
 internal val MENU_WINDOW = 344.dp
 internal val MENU_RADIUS = 132.dp
+private const val MENU_PULSES = 3
 
 /** The halo around the bubble and the three icon-only actions on their arc. Taps anywhere else close it. */
 @Composable
 internal fun HoldMenu(state: MenuState, onAction: (MenuAction) -> Unit, onDismiss: () -> Unit) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) { progress.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 380f)) }
-    val ring by rememberInfiniteTransition(label = "ring").animateFloat(
-        0f,
-        1f,
-        infiniteRepeatable(tween(1400, easing = LinearEasing)),
-        label = "pulse",
-    )
+    // The pulse ring runs a few times and then rests, so a menu left open requests no frames.
+    val pulse = remember { Animatable(1f) }
+    LaunchedEffect(Unit) {
+        repeat(MENU_PULSES) {
+            pulse.snapTo(0f)
+            pulse.animateTo(1f, tween(1400, easing = LinearEasing))
+        }
+    }
+    val ring = pulse.value
     val density = LocalDensity.current
     val button = with(density) { MENU_BUTTON.toPx() }
     Box(

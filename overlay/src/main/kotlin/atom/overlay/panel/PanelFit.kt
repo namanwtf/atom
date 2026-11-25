@@ -22,44 +22,81 @@ object PanelFit {
 }
 
 /** Where the keyboard height came from. */
-enum class KeyboardSource { None, Measured, Insets, Estimate }
+enum class KeyboardSource { None, Measured, Insets, Frame, Estimate }
 
 data class KeyboardFitResult(val height: Int, val source: KeyboardSource)
+
+/**
+ * What the panel knows about the keyboard right now. Each source counts as "unknown" until it has shown a
+ * keyboard during this panel session, because on some ROMs a source never reports one at all.
+ *
+ * @property serviceTop the keyboard window's top edge (screen px) as the accessibility service reads it; null when
+ *   it lists no keyboard window, or is not connected.
+ * @property serviceSawKeyboard the service reported a keyboard window during this panel session, so its "no
+ *   keyboard" can be trusted.
+ * @property imeInset the window's IME inset.
+ * @property insetsWork IME insets arrived for this window during this session, so a zero inset means closed.
+ * @property frameKeyboard keyboard overlap from the window's visible display frame (it includes the navigation
+ *   bar, like an IME inset): null while the frame has never shown a keyboard this session, 0 when it shows none now.
+ */
+data class KeyboardSignals(
+    val focused: Boolean,
+    val serviceTop: Int? = null,
+    val serviceSawKeyboard: Boolean = false,
+    val imeInset: Int = 0,
+    val insetsWork: Boolean = false,
+    val frameKeyboard: Int? = null,
+    val windowTop: Int = 0,
+    val windowHeight: Int,
+    val displayHeight: Int,
+)
 
 object KeyboardFit {
     /** Last-resort keyboard height as a share of the display, used only when nothing measured it. */
     const val ESTIMATE_FRACTION = 0.32f
 
     /**
-     * How much of the bottom of the panel window the keyboard covers, in px.
-     *
-     * Overlay windows do not receive IME insets on some ROMs, so the order is:
-     * 1. the keyboard window's top edge measured by the accessibility service ([measuredTop], screen px) while the
-     *    service is connected ([measuredAvailable]); with the service connected, no keyboard window means none;
-     * 2. the window's IME inset ([imeInset]);
-     * 3. [ESTIMATE_FRACTION] of [displayHeight], only while the composer has focus and nothing above could tell.
-     *
-     * [windowTop] and [windowHeight] place the panel window on screen. A window the system already shrank for the
-     * keyboard ([windowHeight] well short of [displayHeight]) needs no further room.
+     * How much of the bottom of the panel window the keyboard covers, in px. Overlay windows do not receive IME
+     * insets on some ROMs, so the order is:
+     * 1. the keyboard top measured by the accessibility service;
+     * 2. a measured "keyboard gone" (the service or the visible frame showed it and now does not) clears everything
+     *    below: a stale inset that was never re-delivered, and the estimate;
+     * 3. the IME inset;
+     * 4. the visible display frame;
+     * 5. [ESTIMATE_FRACTION] of the display, only while the composer has focus and no source has ever worked.
      */
-    fun keyboard(
-        focused: Boolean,
-        measuredAvailable: Boolean,
-        measuredTop: Int?,
-        imeInset: Int,
-        windowTop: Int,
-        windowHeight: Int,
-        displayHeight: Int,
-    ): KeyboardFitResult {
-        val windowBottom = windowTop + windowHeight
-        if (measuredAvailable && measuredTop != null && measuredTop < windowBottom) {
-            return KeyboardFitResult((windowBottom - measuredTop).coerceIn(0, windowHeight), KeyboardSource.Measured)
+    fun keyboard(s: KeyboardSignals): KeyboardFitResult {
+        val windowBottom = s.windowTop + s.windowHeight
+        val top = s.serviceTop
+        if (top != null && top < windowBottom) {
+            return KeyboardFitResult((windowBottom - top).coerceIn(0, s.windowHeight), KeyboardSource.Measured)
         }
-        if (imeInset > 0) return KeyboardFitResult(imeInset.coerceAtMost(windowHeight), KeyboardSource.Insets)
-        if (measuredAvailable || !focused) return KeyboardFitResult(0, KeyboardSource.None)
+        if (gone(s)) return KeyboardFitResult(0, KeyboardSource.None)
+        if (s.imeInset > 0) return KeyboardFitResult(s.imeInset.coerceAtMost(s.windowHeight), KeyboardSource.Insets)
+        val frame = s.frameKeyboard
+        if (frame != null && frame > 0) return KeyboardFitResult(frame.coerceAtMost(s.windowHeight), KeyboardSource.Frame)
+        if (!s.focused || s.insetsWork) return KeyboardFitResult(0, KeyboardSource.None)
         // Already resized by the system for the keyboard (adjustResize honoured): nothing to add.
-        if (displayHeight > 0 && windowHeight < displayHeight * RESIZED_FRACTION) return KeyboardFitResult(0, KeyboardSource.None)
-        return KeyboardFitResult((displayHeight * ESTIMATE_FRACTION).toInt(), KeyboardSource.Estimate)
+        if (s.displayHeight > 0 && s.windowHeight < s.displayHeight * RESIZED_FRACTION) return KeyboardFitResult(0, KeyboardSource.None)
+        return KeyboardFitResult((s.displayHeight * ESTIMATE_FRACTION).toInt(), KeyboardSource.Estimate)
+    }
+
+    /** A source that showed the keyboard this session now measures none: the keyboard is closed. */
+    fun gone(s: KeyboardSignals): Boolean = (s.serviceSawKeyboard && s.serviceTop == null) || s.frameKeyboard == 0
+
+    /**
+     * Keyboard overlap read from the visible display frame: [windowBottom] minus the frame's [visibleBottom]. It
+     * counts as a keyboard only above [navBottom] plus [threshold]; [seen] says whether the frame has shown one this
+     * session (until then the answer is unknown, null).
+     */
+    fun frameKeyboard(windowBottom: Int, visibleBottom: Int, navBottom: Int, threshold: Int, seen: Boolean): Int? {
+        val overlap = max(0, windowBottom - visibleBottom)
+        val showing = overlap > navBottom + threshold
+        return when {
+            showing -> overlap
+            seen -> 0
+            else -> null
+        }
     }
 
     private const val RESIZED_FRACTION = 0.85f
