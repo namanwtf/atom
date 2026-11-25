@@ -58,7 +58,15 @@ class AppGraph(private val app: Application) {
     val runtimePrefs = RuntimePrefs(app.runtimeDataStore)
     val notifications = TaskNotifications(app).also { n ->
         appScope.launch {
-            settings.settings.map { it.liveUpdates }.distinctUntilChanged().collect { n.liveUpdates = it }
+            settings.settings.map { it.liveUpdates }.distinctUntilChanged().collect { on ->
+                if (n.liveUpdates == on) return@collect
+                n.liveUpdates = on
+                // Re-post a running task's notification so the switch takes effect at once.
+                runCatching {
+                    val active = tasks.liveRuns.value.values.filter { it.active }
+                    if (active.isNotEmpty()) n.notifyForeground(active)
+                }
+            }
         }
     }
 

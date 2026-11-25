@@ -45,8 +45,8 @@ interface AssistSessionHandle {
     fun launch(intent: Intent)
 
     /**
-     * True while the phone is locked: the session was opened from the lock screen (assist from the keyguard is
-     * allowed). Screen context is then empty, and an activity [launch]ed from here appears once the user unlocks.
+     * True while the phone is locked. The session never shows its UI then (it asks the user to unlock first), so a
+     * UI only sees this turn true if the phone locks while it is open; it should then stop and not reveal anything.
      */
     fun isLocked(): Boolean = false
 }
