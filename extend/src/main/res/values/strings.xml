@@ -20,7 +20,7 @@
     <string name="ext_entry_subagents_sub">Helpers that work on a task in their own context</string>
 
     <!-- Memory -->
-    <string name="mem_use">Use memory</string>
+    <string name="mem_use">Enable memory</string>
     <string name="mem_use_sub">When off, Atom neither reads nor writes MEMORY.md. The file is kept.</string>
     <string name="mem_preview">Preview</string>
     <string name="mem_edit">Edit</string>
@@ -39,7 +39,7 @@
     <string name="mem_conflict_keep">Keep mine</string>
     <string name="mem_unsaved_title">Discard your edits?</string>
     <string name="mem_unsaved_body">Your changes to MEMORY.md have not been saved.</string>
-    <string name="mem_empty">Memory is empty.</string>
+    <string name="mem_empty">No memories yet</string>
 
     <!-- Skills -->
     <string name="sk_import">Import from ZIP</string>
