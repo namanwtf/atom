@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,6 +25,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.style.TextAlign
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomRow
+import atom.ui.components.AtomTextButton
+import atom.ui.components.SpinnerOption
+import atom.ui.components.SpinnerRow
+import atom.ui.components.SwitchRow
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import atom.core.llm.ReasoningEffort
 import atom.extend.Extend
 import atom.extend.R
@@ -57,6 +73,7 @@ internal object SubagentRoutes {
     const val EDIT = "extend/subagents/edit/"
     const val NEW = "extend/subagents/new"
     const val RUN = "extend/subagents/run/"
+    const val VIEW = "extend/subagents/view/"
 }
 
 @Composable
@@ -65,105 +82,102 @@ internal fun SubagentsScreen(store: SubagentStore, nav: FeatureNav) {
     val custom by store.custom.collectAsState()
     val runs by SubagentRuns.runs.collectAsState()
     val available = Extend.engines != null
-    var modelMenu by remember { mutableStateOf(false) }
-    var effortMenu by remember { mutableStateOf(false) }
     val followMain = stringResource(R.string.sa_follow_main)
     val modelDefault = stringResource(R.string.sa_model_default)
+    val on = available && settings.enabled
 
-    LargeTitleScreen(title = stringResource(R.string.ext_entry_subagents), onBack = nav::back) {
+    LargeTitleScreen(
+        title = stringResource(R.string.sa_title),
+        onBack = nav::back,
+        actions = {
+            IconButton(onClick = { nav.open(SubagentRoutes.NEW) }, modifier = Modifier.padding(end = 12.dp)) {
+                Icon(MiuixIcons.Add, stringResource(R.string.sa_new), tint = MiuixTheme.colorScheme.onSurface)
+            }
+        },
+    ) {
+        item { SectionLabel(stringResource(R.string.sa_general)) }
         item {
             Group {
-                GroupRow(
+                SwitchRow(
                     title = stringResource(R.string.sa_enable),
-                    subtitle = stringResource(if (available) R.string.sa_enable_sub else R.string.sa_unavailable),
+                    checked = settings.enabled && available,
+                    onCheckedChange = { v -> store.updateSettings { it.copy(enabled = v) } },
+                    summary = stringResource(if (available) R.string.sa_enable_sub else R.string.sa_unavailable),
                     enabled = available,
-                    trailing = { AtomSwitch(settings.enabled && available, { v -> store.updateSettings { it.copy(enabled = v) } }, enabled = available) },
                 )
-                GroupDivider(18.dp)
-                Box {
-                    GroupRow(
-                        title = stringResource(R.string.sa_model),
-                        enabled = available && settings.enabled,
-                        onClick = { modelMenu = true },
-                        trailing = { RowValue(settings.modelLabel ?: settings.modelId ?: followMain) },
-                    )
-                    AtomMenu(modelMenu, { modelMenu = false }) {
-                        AtomMenuItem(followMain, settings.modelId == null) {
-                            modelMenu = false
-                            store.updateSettings { it.copy(modelId = null, modelLabel = null) }
+                val models = Extend.engines?.models().orEmpty()
+                // A saved model that is no longer offered still shows (last), so the row never reads blank.
+                val missing = settings.modelId?.takeIf { id -> models.none { it.id == id } }
+                SpinnerRow(
+                    title = stringResource(R.string.sa_model),
+                    options = listOf(SpinnerOption(followMain)) + models.map { SpinnerOption(it.label) } +
+                        listOfNotNull(missing?.let { SpinnerOption(settings.modelLabel ?: it) }),
+                    selectedIndex = when {
+                        settings.modelId == null -> 0
+                        missing != null -> models.size + 1
+                        else -> models.indexOfFirst { it.id == settings.modelId } + 1
+                    },
+                    onSelect = { i ->
+                        if (i <= models.size) {
+                            val m = models.getOrNull(i - 1)
+                            store.updateSettings { it.copy(modelId = m?.id, modelLabel = m?.label) }
                         }
-                        Extend.engines?.models().orEmpty().forEach { m ->
-                            AtomMenuItem(m.label, settings.modelId == m.id) {
-                                modelMenu = false
-                                store.updateSettings { it.copy(modelId = m.id, modelLabel = m.label) }
-                            }
-                        }
-                    }
-                }
-                GroupDivider(18.dp)
-                Box {
-                    GroupRow(
-                        title = stringResource(R.string.sa_reasoning),
-                        enabled = available && settings.enabled,
-                        onClick = { effortMenu = true },
-                        trailing = { RowValue(settings.reasoning?.name ?: modelDefault) },
-                    )
-                    AtomMenu(effortMenu, { effortMenu = false }) {
-                        AtomMenuItem(modelDefault, settings.reasoning == null) {
-                            effortMenu = false
-                            store.updateSettings { it.copy(reasoning = null) }
-                        }
-                        ReasoningEffort.entries.forEach { e ->
-                            AtomMenuItem(e.name, settings.reasoning == e) {
-                                effortMenu = false
-                                store.updateSettings { it.copy(reasoning = e) }
-                            }
-                        }
-                    }
-                }
+                    },
+                    enabled = on,
+                )
+                val efforts = ReasoningEffort.entries
+                SpinnerRow(
+                    title = stringResource(R.string.sa_reasoning),
+                    options = listOf(SpinnerOption(modelDefault)) + efforts.map { SpinnerOption(it.name) },
+                    selectedIndex = settings.reasoning?.let { efforts.indexOf(it) + 1 } ?: 0,
+                    onSelect = { i -> store.updateSettings { it.copy(reasoning = efforts.getOrNull(i - 1)) } },
+                    enabled = on,
+                )
             }
         }
         item { SectionLabel(stringResource(R.string.sa_builtin)) }
         item {
             Group {
-                BuiltInSubagents.all.forEachIndexed { i, d ->
-                    if (i > 0) GroupDivider(18.dp)
-                    GroupRow(title = d.name, subtitle = d.description + " " + d.whenToUse)
+                BuiltInSubagents.all.forEach { d ->
+                    ArrowRow(title = d.name, onClick = { nav.open(SubagentRoutes.VIEW + d.name) }, summary = d.description)
                 }
             }
         }
         item { SectionLabel(stringResource(R.string.sa_custom)) }
         item {
-            if (custom.isEmpty()) {
-                Hint(stringResource(R.string.sa_none))
-            } else {
-                Group {
-                    custom.forEachIndexed { i, d ->
-                        if (i > 0) GroupDivider(18.dp)
-                        GroupRow(
-                            title = d.name,
-                            subtitle = d.description.ifBlank { d.whenToUse },
-                            onClick = { nav.open(SubagentRoutes.EDIT + d.name) },
-                            trailing = { RowChevron() },
+            Group {
+                if (custom.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.sa_none), style = MiuixTheme.textStyles.headline1, color = MiuixTheme.colorScheme.onSurface)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.sa_none_body),
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            textAlign = TextAlign.Center,
                         )
+                        Spacer(Modifier.height(12.dp))
+                        AtomTextButton(stringResource(R.string.sa_new), { nav.open(SubagentRoutes.NEW) }, primary = true)
                     }
                 }
-            }
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-                CompactButton(stringResource(R.string.sa_new), onClick = { nav.open(SubagentRoutes.NEW) }, primary = false)
+                custom.forEach { d ->
+                    ArrowRow(
+                        title = d.name,
+                        onClick = { nav.open(SubagentRoutes.EDIT + d.name) },
+                        summary = d.description.ifBlank { d.whenToUse },
+                    )
+                }
             }
         }
         if (runs.isNotEmpty()) {
             item { SectionLabel(stringResource(R.string.sa_recent)) }
             item {
                 Group {
-                    runs.asReversed().take(10).forEachIndexed { i, r ->
-                        if (i > 0) GroupDivider(18.dp)
-                        GroupRow(
-                            title = "${r.agent} · ${statusLabel(r.status)}",
-                            subtitle = r.prompt.lineSequence().firstOrNull().orEmpty().take(90),
+                    runs.asReversed().take(10).forEach { r ->
+                        ArrowRow(
+                            title = r.agent,
                             onClick = { nav.open(SubagentRoutes.RUN + r.id) },
-                            trailing = { RowChevron() },
+                            summary = runStatus(r) + " · " + r.prompt.lineSequence().firstOrNull().orEmpty().take(90),
                         )
                     }
                 }
@@ -172,16 +186,45 @@ internal fun SubagentsScreen(store: SubagentStore, nav: FeatureNav) {
     }
 }
 
+/** Read-only view of a built-in subagent: what it is for, its tools and its instructions. */
 @Composable
-private fun statusLabel(s: SubagentStatus): String = stringResource(
-    when (s) {
-        SubagentStatus.Running -> R.string.sa_status_running
-        SubagentStatus.Done -> R.string.sa_status_done
-        SubagentStatus.Partial -> R.string.sa_status_partial
-        SubagentStatus.Failed -> R.string.sa_status_failed
-        SubagentStatus.Cancelled -> R.string.sa_status_cancelled
-    },
-)
+internal fun SubagentViewScreen(name: String, nav: FeatureNav) {
+    val def = BuiltInSubagents.all.firstOrNull { it.name == name }
+    LargeTitleScreen(title = def?.name ?: stringResource(R.string.sa_title), onBack = nav::back) {
+        if (def == null) {
+            item { Hint(stringResource(R.string.sa_run_missing), Modifier.padding(top = 12.dp)) }
+            return@LargeTitleScreen
+        }
+        item { SectionLabel(stringResource(R.string.sa_builtin_one)) }
+        item {
+            Group {
+                AtomRow(title = stringResource(R.string.sa_description), summary = def.description)
+                AtomRow(title = stringResource(R.string.sa_when), summary = def.whenToUse)
+                val toolNames = buildList {
+                    for (key in def.tools) {
+                        val res = CATEGORIES.firstOrNull { it.first == key }?.second
+                        add(if (res != null) stringResource(res) else key)
+                    }
+                }
+                AtomRow(title = stringResource(R.string.sa_tools), summary = toolNames.joinToString())
+                if (def.readOnly) AtomRow(title = stringResource(R.string.sa_read_only), summary = stringResource(R.string.sa_read_only_sub))
+            }
+        }
+        item { SectionLabel(stringResource(R.string.sa_instructions)) }
+        item {
+            Group {
+                SelectionContainer {
+                    Text(
+                        def.instructions,
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 private val CATEGORIES = listOf(
     "read" to R.string.sa_cat_read,
@@ -285,15 +328,19 @@ internal fun SubagentRunScreen(id: String, nav: FeatureNav) {
     val run = runs.firstOrNull { it.id == id }
     LargeTitleScreen(title = run?.agent ?: stringResource(R.string.sa_run_title), onBack = nav::back) {
         item {
-            if (run == null) Hint(stringResource(R.string.sa_run_missing)) else SubagentRunDetails(run)
+            if (run == null) Hint(stringResource(R.string.sa_run_missing)) else SubagentRunDetails(run, Modifier.padding(top = 12.dp))
         }
     }
 }
 
-/** The details sheet body: task, live steps, streamed text, summary, tool calls and token usage. */
+/**
+ * The details sheet body: status, token chips (In / Cached / Out), "Prompt", the latest steps (earlier ones
+ * folded), "Streaming" while it runs, then "Summary".
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SubagentRunDetails(run: SubagentRun, modifier: Modifier = Modifier) {
-    val c = MaterialTheme.colorScheme
+    val c = MiuixTheme.colorScheme
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusDot(
@@ -305,55 +352,98 @@ fun SubagentRunDetails(run: SubagentRun, modifier: Modifier = Modifier) {
                 },
             )
             Spacer(Modifier.width(10.dp))
-            Text(statusLabel(run.status), style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                stringResource(R.string.sa_stats, run.toolCalls, run.inputTokens, run.outputTokens) + (run.model?.let { " · $it" } ?: ""),
-                style = MaterialTheme.typography.labelMedium,
-                color = c.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(runStatus(run), style = MiuixTheme.textStyles.body1, color = c.onSurface)
+            run.model?.let {
+                Spacer(Modifier.width(10.dp))
+                Text(it, style = MiuixTheme.textStyles.footnote1, color = c.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-        AtomCard {
-            Text(stringResource(R.string.sa_prompt), style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
-            SelectionContainer { Text(run.prompt, style = MaterialTheme.typography.bodyMedium) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TokenChip(stringResource(R.string.sa_tokens_in), run.inputTokens)
+            TokenChip(stringResource(R.string.sa_tokens_cached), run.cachedTokens)
+            TokenChip(stringResource(R.string.sa_tokens_out), run.outputTokens)
+        }
+        DetailCard(stringResource(R.string.sa_prompt)) {
+            SelectionContainer { Text(run.prompt, style = MiuixTheme.textStyles.body2, color = c.onSurface) }
         }
         if (run.steps.isNotEmpty()) {
-            AtomCard {
-                Text(stringResource(R.string.sa_steps), style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
-                run.steps.forEach { s ->
+            val (folded, shown) = SubagentRunLabels.visibleSteps(run.steps)
+            DetailCard(stringResource(R.string.sa_steps)) {
+                if (folded > 0) {
+                    Text(
+                        pluralStringResource(R.plurals.sa_steps_folded, folded, folded),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = c.onSurfaceVariantSummary,
+                    )
+                }
+                shown.forEach { s ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         StatusDot(
                             when (s.state) {
                                 SubagentStepState.Done -> MaterialTheme.extras.success
                                 SubagentStepState.Failed -> c.error
-                                SubagentStepState.Running -> c.onSurfaceVariant
+                                SubagentStepState.Running -> c.onSurfaceVariantSummary
                             },
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(s.tool, style = MaterialTheme.extras.mono)
+                            Text(s.tool, style = MaterialTheme.extras.mono, color = c.onSurface)
                             if (s.arguments.isNotBlank() && s.arguments != "{}") {
-                                Text(s.arguments, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(s.arguments, style = MiuixTheme.textStyles.footnote1, color = c.onSurfaceVariantSummary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        s.durationMs?.let { Text("${it} ms", style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant) }
+                        s.durationMs?.let { Text("$it ms", style = MiuixTheme.textStyles.footnote2, color = c.onSurfaceVariantSummary) }
                     }
                 }
             }
         }
         if (run.status == SubagentStatus.Running && run.text.isNotBlank()) {
-            AtomCard {
-                Text(stringResource(R.string.sa_live), style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
-                Text(run.text, style = MaterialTheme.typography.bodyMedium)
-            }
+            DetailCard(stringResource(R.string.sa_live)) { Text(run.text, style = MiuixTheme.textStyles.body2, color = c.onSurface) }
         }
         run.summary?.let { summary ->
-            AtomCard {
-                Text(stringResource(R.string.sa_summary), style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant)
-                SelectionContainer { Text(summary, style = MaterialTheme.typography.bodyMedium) }
+            DetailCard(stringResource(R.string.sa_summary)) {
+                SelectionContainer { Text(summary, style = MiuixTheme.textStyles.body2, color = c.onSurface) }
             }
         }
     }
+}
+
+/** Running… / Stopped / Incomplete / Failed / Completed · N tool calls. */
+@Composable
+private fun runStatus(run: SubagentRun): String = when (run.status) {
+    SubagentStatus.Running -> stringResource(R.string.sa_status_running)
+    SubagentStatus.Cancelled -> stringResource(R.string.sa_status_cancelled)
+    SubagentStatus.Partial -> stringResource(R.string.sa_status_partial)
+    SubagentStatus.Failed -> stringResource(R.string.sa_status_failed)
+    SubagentStatus.Done -> pluralStringResource(R.plurals.sa_status_done, run.toolCalls, run.toolCalls)
+}
+
+@Composable
+private fun DetailCard(label: String, content: @Composable () -> Unit) {
+    Group {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(label, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun TokenChip(label: String, value: Int) {
+    Text(
+        "$label ${formatTokens(value)}",
+        style = MiuixTheme.textStyles.footnote1,
+        color = MiuixTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MiuixTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+private fun formatTokens(n: Int): String = when {
+    n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+    n >= 10_000 -> "${n / 1000}k"
+    n >= 1_000 -> "%.1fk".format(n / 1000.0)
+    else -> n.toString()
 }

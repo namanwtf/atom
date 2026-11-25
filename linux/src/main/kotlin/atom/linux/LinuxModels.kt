@@ -11,6 +11,19 @@ enum class Distro(
 
     /** glibc + apt: the widest package selection. */
     Debian("Debian", 91_000_000L, 420_000_000L),
+    ;
+
+    /** The one-word name used in the terminal's environment switch and toasts. */
+    val shortName: String get() = when (this) {
+        Alpine -> "Alpine"
+        Debian -> "Debian"
+    }
+
+    companion object {
+        /** The distribution to preselect: Debian, unless only Alpine is already installed. */
+        fun preferred(installed: Collection<Distro>): Distro =
+            if (Alpine in installed && Debian !in installed) Alpine else Debian
+    }
 }
 
 /** How the distro's processes are run. */
@@ -71,4 +84,21 @@ enum class ShellEnv(val label: String) {
 
     /** The installed Linux distro. */
     Linux("Linux"),
+}
+
+/** How far the Linux environment has come; decides the status card's one main action and which sections show. */
+enum class LinuxStage {
+    NotInstalled, Installing, RootLost, BaseReady, ToolsReady;
+
+    companion object {
+        fun of(state: LinuxState): LinuxStage = when (state) {
+            is LinuxState.Installing -> Installing
+            is LinuxState.Ready -> when {
+                state.rootLost -> RootLost
+                !state.toolsInstalled -> BaseReady
+                else -> ToolsReady
+            }
+            else -> NotInstalled
+        }
+    }
 }

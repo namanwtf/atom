@@ -44,6 +44,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.res.pluralStringResource
+import atom.characters.data.CharacterNotes
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomDialog
+import atom.ui.components.AtomRow
+import atom.ui.components.AtomTextButton
+import atom.ui.components.SwitchRow
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import atom.characters.R
 import atom.characters.model.Character
 import atom.characters.model.CharacterOrigin
@@ -83,6 +93,8 @@ internal fun DetailScreen(id: String, nav: FeatureNav) {
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
+    var reading by remember { mutableStateOf<String?>(null) }
+    var showNotes by remember { mutableStateOf(false) }
 
     val story by produceState("", id, c?.updatedAt) { value = store.storyMemory(id) }
 
@@ -114,146 +126,161 @@ internal fun DetailScreen(id: String, nav: FeatureNav) {
     val greetings = c.greetings
     val personaName = PromptAssembler.userName(if (usePersona && !persona.isEmpty) persona else null)
     val personaReady = !persona.isEmpty
+    val notes = remember(c) { CharacterNotes.compatibility(c) }
 
-    LargeTitleScreen(
-        title = c.displayName,
-        onBack = nav::back,
-        actions = {
-            CircleIconButton(
-                if (c.favourite) Icons.Filled.Favorite else CharactersScreens.FavouriteOutline,
-                stringResource(if (c.favourite) R.string.characters_unfavourite else R.string.characters_favourite),
-                { scope.launch { store.setFavourite(id, !c.favourite) } },
-            )
-            Spacer(Modifier.size(8.dp))
-            CircleIconButton(Icons.Filled.Edit, stringResource(R.string.characters_edit), { nav.open(CharacterRoutes.edit(id)) })
-            Spacer(Modifier.size(8.dp))
-            Box(Modifier.padding(end = 8.dp)) {
-                CircleIconButton(Icons.Filled.MoreVert, stringResource(R.string.characters_more), { menu = true })
-                AtomMenu(expanded = menu, onDismiss = { menu = false }) {
-                    MenuItem(stringResource(R.string.characters_duplicate)) {
-                        menu = false
-                        scope.launch { store.duplicate(id)?.let { nav.open(CharacterRoutes.detail(it.id)) } }
-                    }
-                    MenuItem(stringResource(R.string.characters_change_image)) {
-                        menu = false
-                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }
-                    if (c.image != null) {
-                        MenuItem(stringResource(R.string.characters_remove_image)) {
-                            menu = false
-                            scope.launch { store.setImage(id, null) }
-                        }
-                    }
-                    MenuItem(stringResource(R.string.characters_export_png)) {
-                        menu = false
-                        exportPng.launch(fileName(c, "png"))
-                    }
-                    MenuItem(stringResource(R.string.characters_export_json)) {
-                        menu = false
-                        exportJson.launch(fileName(c, "json"))
-                    }
-                    MenuItem(stringResource(R.string.characters_delete), destructive = true) {
-                        menu = false
-                        confirmDelete = true
-                    }
-                }
-            }
-        },
-        bottomBar = {
-            BottomActionBar {
-                PrimaryButton(
-                    text = stringResource(R.string.characters_start_chat),
-                    enabled = !starting,
-                    onClick = {
-                        starting = true
-                        scope.launch {
-                            val convo = CharacterSession.startChat(id, greeting, usePersona && personaReady)
-                            starting = false
-                            if (convo != null) nav.openChat(convo)
-                        }
-                    },
-                )
-            }
-        },
-    ) {
+    LargeTitleScreen(title = stringResource(R.string.characters_details_title), onBack = nav::back) {
+        // ---------------- hero: avatar with "Change avatar", name, "By <creator>", Favorite
         item {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CharacterArt(c, Modifier.widthIn(max = 360.dp).fillMaxWidth(0.72f).aspectRatio(0.75f), corner = 28.dp)
-            }
-        }
-        item {
-            Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CharacterArt(c, Modifier.size(112.dp), corner = 56.dp)
+                AtomTextButton(stringResource(R.string.characters_change_avatar), {
+                    pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                })
+                Text(c.displayName, fontSize = MiuixTheme.textStyles.title3.fontSize, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface)
                 val meta = listOfNotNull(
                     c.creator.ifBlank { null }?.let { stringResource(R.string.characters_by, it) },
                     c.version.ifBlank { null }?.let { "v$it" },
                     if (c.origin == CharacterOrigin.BuiltIn) stringResource(R.string.characters_builtin) else null,
                 ).joinToString(" · ")
-                if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (meta.isNotEmpty()) Text(meta, style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 if (c.tags.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         c.tags.take(4).forEach { Pill(it, MaterialTheme.colorScheme.surfaceContainerHigh) }
                     }
                 }
+                AtomTextButton(
+                    stringResource(if (c.favourite) R.string.characters_unfavourite else R.string.characters_favourite),
+                    { scope.launch { store.setFavourite(id, !c.favourite) } },
+                    primary = !c.favourite,
+                )
             }
         }
 
+        // ---------------- greeting chooser
         item { SectionLabel(stringResource(R.string.characters_choose_greeting)) }
         item {
-            if (greetings.isEmpty()) {
-                AtomCard { Text(stringResource(R.string.characters_no_greeting), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            } else {
-                Group {
-                    greetings.forEachIndexed { i, text ->
-                        if (i > 0) GroupDivider(inset = 18.dp)
-                        GreetingRow(
-                            title = if (i == 0) stringResource(R.string.characters_greeting_default) else stringResource(R.string.characters_greeting_alt, i),
-                            text = Macros.apply(text, c.displayName, personaName),
-                            selected = greeting == i,
-                            onClick = { greeting = i },
-                        )
-                    }
+            Group {
+                if (greetings.isEmpty()) {
+                    AtomRow(title = stringResource(R.string.characters_no_greeting))
+                }
+                greetings.forEachIndexed { i, text ->
+                    val shown = Macros.apply(text, c.displayName, personaName)
+                    GreetingRow(
+                        title = if (i == 0) stringResource(R.string.characters_greeting_default) else stringResource(R.string.characters_greeting_alt, i),
+                        text = shown,
+                        selected = greeting == i,
+                        onClick = { greeting = i },
+                        onReadFull = { reading = shown },
+                    )
                 }
             }
         }
 
-        item { Spacer(Modifier.height(14.dp)) }
+        // ---------------- start chat
         item {
-            Group {
-                GroupRow(
+            PrimaryButton(
+                text = stringResource(R.string.characters_start_chat),
+                enabled = !starting,
+                modifier = Modifier.padding(top = 16.dp),
+                onClick = {
+                    starting = true
+                    scope.launch {
+                        val convo = CharacterSession.startChat(id, greeting, usePersona && personaReady)
+                        starting = false
+                        if (convo != null) nav.openChat(convo)
+                    }
+                },
+            )
+        }
+
+        // ---------------- persona
+        item {
+            Group(Modifier.padding(top = 16.dp)) {
+                SwitchRow(
                     title = stringResource(R.string.characters_use_persona),
-                    subtitle = if (personaReady) stringResource(R.string.characters_use_persona_subtitle, persona.name.ifBlank { PromptAssembler.DEFAULT_USER_NAME }) else stringResource(R.string.characters_use_persona_unset),
-                    onClick = { if (personaReady) usePersona = !usePersona else nav.open(CharacterRoutes.PERSONA) },
-                    trailing = { AtomSwitch(checked = usePersona && personaReady, onCheckedChange = if (personaReady) ({ usePersona = it }) else null, enabled = personaReady) },
+                    checked = usePersona && personaReady,
+                    onCheckedChange = { if (personaReady) usePersona = it else nav.open(CharacterRoutes.PERSONA) },
+                    summary = if (personaReady) stringResource(R.string.characters_use_persona_subtitle, persona.name.ifBlank { PromptAssembler.DEFAULT_USER_NAME }) else stringResource(R.string.characters_use_persona_unset),
                 )
-                GroupDivider(inset = 18.dp)
-                GroupRow(
-                    title = stringResource(R.string.characters_story_memory),
-                    subtitle = story.trim().lineSequence().lastOrNull { it.isNotBlank() }?.take(80) ?: stringResource(R.string.characters_story_memory_empty),
-                    onClick = { nav.open(CharacterRoutes.story(id)) },
-                    trailing = { RowChevron() },
-                )
+                ArrowRow(stringResource(R.string.characters_edit_persona), { nav.open(CharacterRoutes.PERSONA) })
             }
         }
 
+        // ---------------- profile
         val profile = Macros.apply(c.profile, c.displayName, personaName).trim()
         if (profile.isNotEmpty()) {
-            item { SectionLabel(stringResource(R.string.characters_about)) }
-            item { AtomCard { ExpandableText(profile) } }
+            item { SectionLabel(stringResource(R.string.characters_profile_section)) }
+            item { Group { Box(Modifier.padding(16.dp)) { ExpandableText(profile) } } }
         }
-        val notes = c.creatorNotes.trim()
-        if (notes.isNotEmpty()) {
+        val creatorNotes = c.creatorNotes.trim()
+        if (creatorNotes.isNotEmpty()) {
             item { SectionLabel(stringResource(R.string.characters_creator_notes)) }
-            item { AtomCard { ExpandableText(notes) } }
+            item { Group { Box(Modifier.padding(16.dp)) { ExpandableText(creatorNotes) } } }
         }
-        val entries = c.worldbook?.entries?.size ?: 0
-        if (entries > 0) {
-            item {
-                Text(
-                    stringResource(R.string.characters_worldbook_entries, entries),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 18.dp, top = 14.dp),
+
+        // ---------------- manage
+        item { SectionLabel(stringResource(R.string.characters_manage)) }
+        item {
+            Group {
+                ArrowRow(stringResource(R.string.characters_edit_character), { nav.open(CharacterRoutes.edit(id)) })
+                ArrowRow(
+                    stringResource(R.string.characters_story_memory),
+                    { nav.open(CharacterRoutes.story(id)) },
+                    summary = story.trim().lineSequence().lastOrNull { it.isNotBlank() }?.take(80) ?: stringResource(R.string.characters_story_memory_empty),
                 )
+                val entries = c.worldbook?.entries?.size ?: 0
+                if (entries > 0) {
+                    ArrowRow(stringResource(R.string.characters_worldbook), { nav.open(CharacterRoutes.worldbook(id)) }, summary = stringResource(R.string.characters_worldbook_entries, entries))
+                }
+                ArrowRow(stringResource(R.string.characters_duplicate_character), {
+                    scope.launch { store.duplicate(id)?.let { nav.open(CharacterRoutes.detail(it.id)) } }
+                })
+                if (c.image != null) {
+                    ArrowRow(stringResource(R.string.characters_remove_image), { scope.launch { store.setImage(id, null) } })
+                }
+                ArrowRow(stringResource(R.string.characters_export_png_card), { exportPng.launch(fileName(c, "png")) })
+                ArrowRow(stringResource(R.string.characters_export_json_card), { exportJson.launch(fileName(c, "json")) })
+                ArrowRow(
+                    stringResource(R.string.characters_compat_notes),
+                    { showNotes = true },
+                    summary = if (notes.isEmpty()) stringResource(R.string.characters_compat_none) else pluralStringResource(R.plurals.characters_compat_count, notes.size, notes.size),
+                )
+                GroupRow(stringResource(R.string.characters_delete_character), titleColor = MiuixTheme.colorScheme.error, onClick = { confirmDelete = true })
+            }
+        }
+    }
+
+    reading?.let { text ->
+        AtomDialog(show = true, onDismiss = { reading = null }, title = stringResource(R.string.characters_read_full)) {
+            Column {
+                Text(
+                    text,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                )
+                AtomTextButton(stringResource(R.string.characters_got_it), { reading = null }, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
+            }
+        }
+    }
+
+    if (showNotes) {
+        AtomDialog(
+            show = true,
+            onDismiss = { showNotes = false },
+            title = stringResource(R.string.characters_compat_notes),
+            summary = if (notes.isEmpty()) stringResource(R.string.characters_compat_none_body) else null,
+        ) {
+            Column {
+                if (notes.isNotEmpty()) {
+                    Text(
+                        notes.joinToString("\n\n"),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    )
+                }
+                AtomTextButton(stringResource(R.string.characters_got_it), { showNotes = false }, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
             }
         }
     }
@@ -276,18 +303,28 @@ internal fun DetailScreen(id: String, nav: FeatureNav) {
     }
 }
 
+/** One greeting: tap to choose it (a check marks the chosen one); "Read full text" opens all of it. */
 @Composable
-private fun GreetingRow(title: String, text: String, selected: Boolean, onClick: () -> Unit) {
-    GroupRow(
-        title = title,
-        subtitle = text,
-        onClick = onClick,
-        trailing = {
-            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                if (selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
-            }
-        },
-    )
+private fun GreetingRow(title: String, text: String, selected: Boolean, onClick: () -> Unit, onReadFull: () -> Unit) {
+    val c = MiuixTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, fontSize = MiuixTheme.textStyles.headline1.fontSize, color = c.onSurface)
+            Text(text, style = MiuixTheme.textStyles.body2, color = c.onSurfaceVariantSummary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(
+                stringResource(R.string.characters_read_full),
+                style = MiuixTheme.textStyles.body2,
+                color = c.primary,
+                modifier = Modifier.clickable(onClick = onReadFull).padding(vertical = 2.dp),
+            )
+        }
+        Box(Modifier.padding(start = 12.dp).size(24.dp), contentAlignment = Alignment.Center) {
+            if (selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = c.primary)
+        }
+    }
 }
 
 @Composable

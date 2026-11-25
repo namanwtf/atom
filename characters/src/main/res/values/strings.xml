@@ -8,9 +8,9 @@
     <string name="characters_title">Characters</string>
     <string name="characters_search">Search by name or #tag</string>
     <string name="characters_filter_all">All</string>
-    <string name="characters_filter_favourites">Favourites</string>
+    <string name="characters_filter_favourites">Favorites</string>
     <string name="characters_filter_mine">Mine</string>
-    <string name="characters_section_favourites">Favourites</string>
+    <string name="characters_section_favourites">Favorites</string>
     <string name="characters_section_mine">Mine</string>
     <string name="characters_section_imported">Imported</string>
     <string name="characters_section_results">Results</string>
@@ -26,15 +26,15 @@
     <string name="characters_imported">Imported %1$s</string>
     <string name="characters_restored">Restored %1$s</string>
     <string name="characters_more">More</string>
-    <string name="characters_favourite">Favourite</string>
-    <string name="characters_unfavourite">Remove from favourites</string>
+    <string name="characters_favourite">Favorite</string>
+    <string name="characters_unfavourite">Remove from favorites</string>
     <string name="characters_builtin">Built-in</string>
 
     <string name="characters_start_chat">Start chat</string>
     <string name="characters_choose_greeting">Greeting</string>
     <string name="characters_greeting_default">Default</string>
     <string name="characters_greeting_alt">Alternate %1$d</string>
-    <string name="characters_no_greeting">This character has no greeting. The chat starts with your first message.</string>
+    <string name="characters_no_greeting">No preset greeting — you start the conversation</string>
     <string name="characters_use_persona">Use my persona</string>
     <string name="characters_use_persona_subtitle">Introduce yourself as %1$s</string>
     <string name="characters_use_persona_unset">Set up your persona first</string>
@@ -58,7 +58,7 @@
     <string name="characters_export_failed">Export failed</string>
     <string name="characters_image_failed">Could not read that image</string>
     <string name="characters_worldbook_entries">%1$d worldbook entries</string>
-    <string name="characters_by">by %1$s</string>
+    <string name="characters_by">By %1$s</string>
     <string name="characters_not_found">This character no longer exists.</string>
 
     <string name="characters_new">New character</string>
@@ -150,4 +150,27 @@
     <string name="characters_story_too_long">Story memory is limited to 64 KiB</string>
     <string name="characters_clear">Clear</string>
     <string name="characters_saved">Saved</string>
+    <string name="characters_details_title">Character details</string>
+    <string name="characters_change_avatar">Change avatar</string>
+    <string name="characters_read_full">Read full text</string>
+    <string name="characters_got_it">Got it</string>
+    <string name="characters_edit_persona">Edit my persona</string>
+    <string name="characters_profile_section">Character profile</string>
+    <string name="characters_manage">Manage</string>
+    <string name="characters_edit_character">Edit character</string>
+    <string name="characters_duplicate_character">Duplicate character</string>
+    <string name="characters_export_png_card">Export PNG character card</string>
+    <string name="characters_export_json_card">Export JSON character card</string>
+    <string name="characters_compat_notes">Compatibility notes</string>
+    <string name="characters_compat_none">None</string>
+    <string name="characters_compat_none_body">Everything in this character card is supported.</string>
+    <plurals name="characters_compat_count">
+        <item quantity="one">%1$d note</item>
+        <item quantity="other">%1$d notes</item>
+    </plurals>
+    <string name="characters_delete_character">Delete character</string>
+    <string name="characters_story_reload">Reload</string>
+    <string name="characters_story_save">Save memory</string>
+    <string name="characters_story_conflict">Story memory was updated by a conversation. Your draft is preserved; reload to see the new version, or save to keep your draft.</string>
+    <string name="characters_editor_scripts_note">Third-party scripts and extension UIs in character cards are not executed, and their data is preserved when exporting.</string>
 </resources>

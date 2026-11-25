@@ -914,7 +914,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     updateRun(id) {
                         copy(
                             currentTool = event.call.name,
-                            stream = stream.copy(runningCallId = event.call.id, runningSince = System.currentTimeMillis()),
+                            stream = stream.copy(runningCallId = event.call.id, runningSince = System.currentTimeMillis(), conversationId = id),
                         )
                     }
                 }

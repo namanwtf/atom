@@ -27,6 +27,9 @@ object GeneralHooks {
     /** True while any agent task runs; imports are refused until it returns false. */
     @Volatile var tasksRunning: () -> Boolean = { false }
 
+    /** True while conversations are still being written to disk; imports are refused until it returns false. */
+    @Volatile var conversationsSaving: () -> Boolean = { false }
+
     /** Optional "stop all tasks" action offered when an import is blocked by running tasks. */
     @Volatile var stopTasks: (() -> Unit)? = null
 

@@ -85,6 +85,7 @@ internal object Integration {
         AppBackups.register(app, graph)
         GeneralHooks.tasksRunning = { graph.tasks.isRunning }
         GeneralHooks.stopTasks = { graph.tasks.stopAll() }
+        GeneralHooks.conversationsSaving = { graph.conversations.isSaving }
         GeneralHooks.onImported = {
             // Settings flows refresh themselves; Hey Atom must be re-applied by hand (it owns a service).
             graph.appScope.launch {
