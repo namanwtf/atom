@@ -211,7 +211,7 @@ internal fun LinuxHomeScreen(onBack: () -> Unit, open: (String) -> Unit) {
                 if (ready != null) {
                     ArrowRow(stringResource(R.string.linux_health), { open(LinuxFeature.ROUTE_HEALTH) }, summary = stringResource(R.string.linux_health_body))
                     if (ready.pendingSteps.isNotEmpty()) ArrowRow(stringResource(R.string.linux_continue), env::continueInstall, enabled = installing == null)
-                    if (ready.toolsInstalled) ArrowRow(stringResource(R.string.linux_upgrade), env::upgrade, enabled = installing == null)
+                    ArrowRow(stringResource(R.string.linux_upgrade), env::upgrade, enabled = installing == null)
                 }
                 val size = config.terminalFontSp
                 AtomRow(

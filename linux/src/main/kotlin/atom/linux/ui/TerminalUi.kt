@@ -151,7 +151,15 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
     val inMode = sessions.filter { it.mode == mode }
     val onSide = inMode.filter { sideOf(it) == onLinux }
     val selectedId = if (mode == SessionMode.Console) selectedConsole else selectedSimple
-    val selected = onSide.firstOrNull { it.id == selectedId } ?: onSide.lastOrNull()
+    // While Linux cannot start, its side shows the install / root notice instead of a dead session.
+    val selected = if (onLinux && !linuxUsable) null else onSide.firstOrNull { it.id == selectedId } ?: onSide.lastOrNull()
+
+    /** A session can (re)start only when its environment is usable now. */
+    fun canStart(e: SessionEntry): Boolean = when (e.env) {
+        ShellEnv.Linux -> linuxUsable
+        ShellEnv.Root -> rootAvailable == true
+        ShellEnv.Android -> true
+    }
 
     fun select(e: SessionEntry) {
         if (mode == SessionMode.Console) selectedConsole = e.id else selectedSimple = e.id
@@ -162,12 +170,19 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
         error = null
         try {
             select(TerminalSessions.open(context, mode, env, grid.first, grid.second))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             error = e.message ?: e.javaClass.simpleName
         }
     }
 
-    fun restart(e: SessionEntry) = TerminalSessions.restart(context, e.id, grid.first, grid.second)
+    /** Restarts [e]; a failure (Linux gone, su missing...) is shown instead of crashing. Returns true on success. */
+    fun restart(e: SessionEntry): Boolean {
+        error = null
+        return runCatching { TerminalSessions.restart(context, e.id, grid.first, grid.second) }
+            .onFailure { error = it.message ?: it.javaClass.simpleName }
+            .isSuccess
+    }
 
     // The first visit picks Linux when it is usable and opens one session so the screen is never empty.
     LaunchedEffect(rootAvailable) {
@@ -180,8 +195,7 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
     // Coming back to a session that ended in the meantime reconnects it.
     LaunchedEffect(selected?.id) {
         val e = selected ?: return@LaunchedEffect
-        if (e.terminal?.exitCode?.value != null) {
-            restart(e)
+        if (e.terminal?.exitCode?.value != null && canStart(e) && restart(e)) {
             Toast.makeText(context, context.getString(R.string.terminal_reconnected), Toast.LENGTH_SHORT).show()
         }
     }
@@ -193,8 +207,8 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
         Toast.makeText(context, context.getString(R.string.terminal_switched, label), Toast.LENGTH_SHORT).show()
         val existing = inMode.lastOrNull { sideOf(it) == toLinux }
         when {
-            existing != null -> select(existing)
             toLinux && !linuxUsable -> Unit // the body explains and offers the install
+            existing != null -> select(existing)
             TerminalSessions.canOpen(mode) -> openSession(if (toLinux) ShellEnv.Linux else ShellEnv.Android)
         }
     }
@@ -401,7 +415,14 @@ private fun SessionsDialog(
             if (sessions.isEmpty()) {
                 Text(stringResource(R.string.terminal_no_sessions), style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
             }
-            val now = System.currentTimeMillis()
+            // Re-evaluated every second while the dialog is open, so Running / Idle stays current.
+            var now by remember { mutableStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(show) {
+                while (show) {
+                    now = System.currentTimeMillis()
+                    delay(1_000)
+                }
+            }
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 for (s in sessions) {
                     val exited = s.terminal?.exitCode?.collectAsStateWithLifecycle()?.value != null

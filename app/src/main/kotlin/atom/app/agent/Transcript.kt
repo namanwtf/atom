@@ -105,6 +105,8 @@ data class StreamState(
     val runningCallId: String? = null,
     val runningSince: Long? = null,
     val awaitingApproval: Boolean = false,
+    /** The conversation of the running call, so a live image card only shows that conversation's job. */
+    val conversationId: String? = null,
 ) {
     val isEmpty: Boolean get() = text.isEmpty() && reasoning.isEmpty()
 }
@@ -254,12 +256,13 @@ object Transcript {
                             if (c.state != StepState.Unknown) return@map c
                             val running = stream?.runningCallId == c.callId
                             val since = if (running) stream.runningSince else null
+                            val conversation = if (running) stream.conversationId else null
                             c.copy(
                                 state = StepState.Running,
                                 startedAt = since,
                                 awaitingApproval = running && stream.awaitingApproval,
                                 // Image calls get their card while they run ("Generating N images", live timer).
-                                card = c.card ?: atom.web.image.ImageJobs.liveCardText(c.name, c.argsFull, since)?.let { StepCard.Image(it) },
+                                card = c.card ?: atom.web.image.ImageJobs.liveCardText(c.name, c.argsFull, since, conversation)?.let { StepCard.Image(it) },
                             )
                         },
                     )

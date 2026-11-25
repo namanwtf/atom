@@ -131,11 +131,13 @@ fun ImageJobCard(job: ImageJob, modifier: Modifier = Modifier) {
                             }
                         }
                     }
-                    if (job.prompt.isNotBlank()) {
-                        Column(Modifier.fillMaxWidth().clickable { showPrompt = true }) {
-                            Text("Prompt", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
-                            Text(job.prompt, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
+                }
+                // The prompt sits under the thumbnails, as a sibling in the card's Column. Inside the thumbnails'
+                // Row a full-width child would be measured first and leave the weighted thumbnails no width.
+                if (job.prompt.isNotBlank()) {
+                    Column(Modifier.fillMaxWidth().clickable { showPrompt = true }) {
+                        Text("Prompt", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+                        Text(job.prompt, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -135,14 +135,34 @@ internal fun ConfirmDialog(
     destructive: Boolean = false,
     dismiss: String? = null,
 ) {
-    // Miuix dialog: the confirm button is the primary one either way ([destructive] is kept for callers); the
-    // title says what is removed.
     AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
-        DialogButtons(
-            confirmText = confirm,
-            onConfirm = onConfirm,
-            dismissText = dismiss ?: stringResource(R.string.ext_cancel),
-            onDismiss = onDismiss,
+        if (destructive) {
+            DangerButtons(confirm, onConfirm, dismiss ?: stringResource(R.string.ext_cancel), onDismiss)
+        } else {
+            DialogButtons(
+                confirmText = confirm,
+                onConfirm = onConfirm,
+                dismissText = dismiss ?: stringResource(R.string.ext_cancel),
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+/** The Miuix dialog button pair with the confirm button in the error colour, for deletes. */
+@Composable
+internal fun DangerButtons(confirm: String, onConfirm: () -> Unit, dismiss: String, onDismiss: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        top.yukonga.miuix.kmp.basic.TextButton(text = dismiss, onClick = onDismiss, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+        top.yukonga.miuix.kmp.basic.TextButton(
+            text = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error,
+                textColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onError,
+            ),
         )
     }
 }

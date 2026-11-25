@@ -54,32 +54,46 @@ object ImageJobs {
     const val LIVE_MARKER = "image_live:"
 
     /** What a running image call's card needs: whether it edits, how many images, and when the call started. */
-    data class LiveSpec(val edit: Boolean, val count: Int, val sinceMs: Long)
+    data class LiveSpec(val edit: Boolean, val count: Int, val sinceMs: Long, val conversationId: String? = null)
 
     /**
      * Card text for a running call of [tool] (null for other tools), from its JSON arguments and start time, so the
      * chat shows "Generating N images" with a ticking timer before the tool returns.
      */
-    fun liveCardText(tool: String, argsJson: String, sinceMs: Long?): String? {
+    fun liveCardText(tool: String, argsJson: String, sinceMs: Long?, conversationId: String? = null): String? {
         val edit = when (tool) {
             "generate_image" -> false
             "edit_image" -> true
             else -> return null
         }
         val count = Regex("\"count\"\\s*:\\s*\"?(\\d+)").find(argsJson)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(1, 4) ?: 1
-        return "$LIVE_MARKER${if (edit) 1 else 0}:$count:${sinceMs ?: 0}"
+        return "$LIVE_MARKER${if (edit) 1 else 0}:$count:${sinceMs ?: 0}:${conversationId.orEmpty()}"
     }
 
     fun parseLive(text: String): LiveSpec? {
         if (!text.startsWith(LIVE_MARKER)) return null
         val parts = text.removePrefix(LIVE_MARKER).split(':')
         if (parts.size < 3) return null
-        return LiveSpec(parts[0] == "1", parts[1].toIntOrNull()?.coerceIn(1, 4) ?: 1, parts[2].toLongOrNull() ?: 0)
+        return LiveSpec(
+            parts[0] == "1",
+            parts[1].toIntOrNull()?.coerceIn(1, 4) ?: 1,
+            parts[2].toLongOrNull() ?: 0,
+            parts.getOrNull(3)?.takeIf { it.isNotEmpty() },
+        )
     }
 
-    /** The job a live card stands for: the newest one of that kind started since the call began. */
-    fun liveJob(spec: LiveSpec, jobs: Collection<ImageJob>): ImageJob? =
-        jobs.filter { it.edit == spec.edit && (spec.sinceMs <= 0 || it.startedAt >= spec.sinceMs - 2_000) }.maxByOrNull { it.startedAt }
+    /**
+     * The job a live card stands for: the newest one of that kind, in the same conversation, started since the call
+     * began. Without a start time (a queued or parallel call) nothing matches and the placeholder shows.
+     */
+    fun liveJob(spec: LiveSpec, jobs: Collection<ImageJob>): ImageJob? {
+        if (spec.sinceMs <= 0) return null
+        return jobs.filter {
+            it.edit == spec.edit &&
+                it.startedAt >= spec.sinceMs - 2_000 &&
+                (spec.conversationId == null || it.conversationId == spec.conversationId)
+        }.maxByOrNull { it.startedAt }
+    }
 
     /** Shown until the generator registers its job: the right title and a timer from the call's start. */
     fun placeholder(spec: LiveSpec): ImageJob =

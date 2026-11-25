@@ -106,15 +106,23 @@ internal fun SubagentsScreen(store: SubagentStore, nav: FeatureNav) {
                     enabled = available,
                 )
                 val models = Extend.engines?.models().orEmpty()
+                // A saved model that is no longer offered still shows (last), so the row never reads blank.
+                val missing = settings.modelId?.takeIf { id -> models.none { it.id == id } }
                 SpinnerRow(
                     title = stringResource(R.string.sa_model),
-                    options = listOf(SpinnerOption(followMain)) + models.map { SpinnerOption(it.label) },
-                    selectedIndex = settings.modelId?.let { id -> models.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.plus(1) } ?: 0,
-                    onSelect = { i ->
-                        val m = models.getOrNull(i - 1)
-                        store.updateSettings { it.copy(modelId = m?.id, modelLabel = m?.label) }
+                    options = listOf(SpinnerOption(followMain)) + models.map { SpinnerOption(it.label) } +
+                        listOfNotNull(missing?.let { SpinnerOption(settings.modelLabel ?: it) }),
+                    selectedIndex = when {
+                        settings.modelId == null -> 0
+                        missing != null -> models.size + 1
+                        else -> models.indexOfFirst { it.id == settings.modelId } + 1
                     },
-                    summary = if (settings.modelId != null && models.none { it.id == settings.modelId }) settings.modelLabel ?: settings.modelId else null,
+                    onSelect = { i ->
+                        if (i <= models.size) {
+                            val m = models.getOrNull(i - 1)
+                            store.updateSettings { it.copy(modelId = m?.id, modelLabel = m?.label) }
+                        }
+                    },
                     enabled = on,
                 )
                 val efforts = ReasoningEffort.entries
@@ -169,7 +177,7 @@ internal fun SubagentsScreen(store: SubagentStore, nav: FeatureNav) {
                         ArrowRow(
                             title = r.agent,
                             onClick = { nav.open(SubagentRoutes.RUN + r.id) },
-                            summary = SubagentRunLabels.status(r) + " · " + r.prompt.lineSequence().firstOrNull().orEmpty().take(90),
+                            summary = runStatus(r) + " · " + r.prompt.lineSequence().firstOrNull().orEmpty().take(90),
                         )
                     }
                 }
@@ -344,7 +352,7 @@ fun SubagentRunDetails(run: SubagentRun, modifier: Modifier = Modifier) {
                 },
             )
             Spacer(Modifier.width(10.dp))
-            Text(SubagentRunLabels.status(run), style = MiuixTheme.textStyles.body1, color = c.onSurface)
+            Text(runStatus(run), style = MiuixTheme.textStyles.body1, color = c.onSurface)
             run.model?.let {
                 Spacer(Modifier.width(10.dp))
                 Text(it, style = MiuixTheme.textStyles.footnote1, color = c.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -398,6 +406,16 @@ fun SubagentRunDetails(run: SubagentRun, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/** Running… / Stopped / Incomplete / Failed / Completed · N tool calls. */
+@Composable
+private fun runStatus(run: SubagentRun): String = when (run.status) {
+    SubagentStatus.Running -> stringResource(R.string.sa_status_running)
+    SubagentStatus.Cancelled -> stringResource(R.string.sa_status_cancelled)
+    SubagentStatus.Partial -> stringResource(R.string.sa_status_partial)
+    SubagentStatus.Failed -> stringResource(R.string.sa_status_failed)
+    SubagentStatus.Done -> pluralStringResource(R.plurals.sa_status_done, run.toolCalls, run.toolCalls)
 }
 
 @Composable

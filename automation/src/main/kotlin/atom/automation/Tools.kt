@@ -49,7 +49,7 @@ internal object AutomationTools {
                 string("prompt", "What Atom should do on each run", required = true)
                 string("schedule", "When to run", required = true)
                 string("notify", "When to notify", enum = listOf("every_run", "on_change", "silent"))
-                string("capabilities", "Comma list from web, device_read, device_control, terminal, mcp, app_ui; empty for chat only")
+                string("capabilities", "Comma list from web, device_read, device_control, terminal, mcp, app_ui; empty for chat only. Omitted: web and device_read only")
                 boolean("quiet_hours", "Defer runs between 23:00 and 07:30")
             },
             Risk.Sensitive,
@@ -57,7 +57,7 @@ internal object AutomationTools {
             val now = Instant.now()
             val schedule = ScheduleText.parse(a.string("schedule"), now)
             schedule.problem(now)?.let { return@SimpleTool ToolResult.error(it) }
-            val caps = a.optString("capabilities")?.split(',')?.mapNotNull { Capability.fromTag(it) }?.toSet() ?: Capability.TASK_DEFAULT
+            val caps = a.optString("capabilities")?.split(',')?.mapNotNull { Capability.fromTag(it) }?.toSet() ?: Capability.DEFAULT
             val task = ScheduledTask(
                 id = UUID.randomUUID().toString(),
                 name = a.string("name").take(60),

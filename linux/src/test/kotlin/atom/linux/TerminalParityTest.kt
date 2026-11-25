@@ -65,6 +65,6 @@ class TerminalParityTest {
         assertEquals("Background service failed", JobRules.notificationTitle(job(JobState.Failed, 1, JobKind.Daemon)))
         val text = JobRules.notificationText(job(JobState.Failed, 2))
         assertTrue(text.startsWith("build · Exit code 2\n"))
-        assertTrue(text.endsWith("View status and logs under background tasks in Terminal"))
+        assertTrue(text.endsWith("View status and logs under Background tasks in Terminal"))
     }
 }
