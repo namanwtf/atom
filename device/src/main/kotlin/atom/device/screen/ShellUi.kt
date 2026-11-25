@@ -18,6 +18,10 @@ internal object ShellUi {
     @Volatile
     private var boxes: Map<String, Box> = emptyMap()
 
+    /** Ids of the latest dump whose element is clickable (or long-clickable). */
+    @Volatile
+    private var actionable: Set<String> = emptySet()
+
     private fun cacheDir(context: Context): File? = context.externalCacheDir?.also { it.mkdirs() }
 
     fun usable(sh: ShellExecutor?): Boolean = sh != null && sh.tier != ShellTier.App
@@ -33,6 +37,13 @@ internal object ShellUi {
             val screen = parsed.screen
             val result = ScreenRenderer.render(parsed.roots, screen, maxChars)
             boxes = result.ids.mapValues { (_, handle) -> parsed.bounds[handle] ?: Box(0, 0, 0, 0) }
+            val clickable = HashSet<Int>()
+            fun walk(n: UiNode) {
+                if (n.clickable || n.longClickable) clickable += n.handle
+                n.children.forEach(::walk)
+            }
+            parsed.roots.forEach(::walk)
+            actionable = result.ids.filterValues { it in clickable }.keys
             return buildString {
                 append("app: ").append(parsed.packageName ?: "unknown")
                 append("  screen: ").append(screen.width).append('x').append(screen.height)
@@ -51,6 +62,9 @@ internal object ShellUi {
         return boxes[key]
     }
 
+    /** Elements of the latest dump, for tap by area. */
+    fun candidates(): List<TapArea.Candidate> = boxes.map { (id, box) -> TapArea.Candidate(id, box, clickable = id in actionable) }
+
     suspend fun tap(sh: ShellExecutor, x: Int, y: Int, long: Boolean): Boolean {
         val cmd = if (long) "input swipe $x $y $x $y 700" else "input tap $x $y"
         return sh.run(cmd, 10_000).ok
@@ -59,14 +73,14 @@ internal object ShellUi {
     suspend fun swipe(sh: ShellExecutor, x1: Int, y1: Int, x2: Int, y2: Int, ms: Long): Boolean =
         sh.run("input swipe $x1 $y1 $x2 $y2 $ms", 10_000).ok
 
-    suspend fun screenshot(context: Context, sh: ShellExecutor): Screenshots.Shot {
+    suspend fun screenshot(context: Context, sh: ShellExecutor, fullResolution: Boolean = false): Screenshots.Shot {
         val dir = cacheDir(context) ?: throw UiError("No external cache directory for the screenshot.")
         val file = File(dir, "atom_shot_${System.nanoTime()}.png")
         try {
             val r = sh.run("screencap -p ${shQuote(file.absolutePath)}", 20_000)
             val bmp = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.absolutePath) }
                 ?: throw UiError("screencap failed: ${(r.stderr.ifBlank { r.stdout }).take(200)}")
-            val shot = withContext(Dispatchers.Default) { Screenshots.encodeBitmap(bmp) }
+            val shot = withContext(Dispatchers.Default) { Screenshots.encodeBitmap(bmp, fullResolution) }
             return Screenshots.Shot(shot.image, shot.note.replace("attached", "attached (taken by ${if (sh.tier == ShellTier.Root) "root" else "Shizuku"})"))
         } finally {
             withContext(Dispatchers.IO) { file.delete() }
