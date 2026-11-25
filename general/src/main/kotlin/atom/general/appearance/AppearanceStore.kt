@@ -28,8 +28,13 @@ object AppearanceCodec {
     const val PREDICTIVE_BACK = "predictiveBack"
     const val SWIPE_BACK = "swipeBackAnywhere"
     const val TEXT_SIZE = "textSize"
+    const val MONET = "monet"
+    const val UI_STYLE = "uiStyle"
 
-    val KEYS = listOf(MODE, PURE_BLACK, ACCENT, COLOR_STYLE, BLUR, TOP_BAR_BLUR, PROGRESSIVE_BLUR, PREDICTIVE_BACK, SWIPE_BACK, TEXT_SIZE)
+    val KEYS = listOf(
+        MODE, PURE_BLACK, ACCENT, COLOR_STYLE, BLUR, TOP_BAR_BLUR, PROGRESSIVE_BLUR, PREDICTIVE_BACK, SWIPE_BACK, TEXT_SIZE,
+        MONET, UI_STYLE,
+    )
 
     fun encode(a: Appearance): Map<String, String> = linkedMapOf(
         MODE to a.mode.name,
@@ -42,15 +47,27 @@ object AppearanceCodec {
         PREDICTIVE_BACK to a.predictiveBack.toString(),
         SWIPE_BACK to a.swipeBackAnywhere.toString(),
         TEXT_SIZE to a.textSize.name,
+        MONET to a.monet.toString(),
+        UI_STYLE to a.uiStyle.name,
     )
 
+    /**
+     * Never throws. Unknown or retired values fall back to the defaults: the old accents (Silver, Ember, Jade,
+     * Iris, Rose) and the old default (Monochrome, when no Monet value is saved yet) become the default accent. Data saved before the Monet switch existed keeps wallpaper colours
+     * on if the stored accent was "System" (that was how wallpaper colours were chosen then).
+     */
     fun decode(m: Map<String, String>): Appearance {
         val d = Appearance()
         fun bool(k: String, def: Boolean) = m[k]?.toBooleanStrictOrNull() ?: def
+        val legacy = m[MONET] == null
+        val monet = m[MONET]?.toBooleanStrictOrNull() ?: (m[ACCENT] == LEGACY_WALLPAPER_ACCENT || d.monet)
+        // Monochrome was the old default accent, saved by any edit. Keeping it would make the new Monet switch
+        // show the house style instead of wallpaper colours, so it becomes the default accent.
+        val accent = if (legacy && m[ACCENT] == LEGACY_DEFAULT_ACCENT) d.accent else enumOr(m[ACCENT], d.accent)
         return Appearance(
             mode = enumOr(m[MODE], d.mode),
             pureBlack = bool(PURE_BLACK, d.pureBlack),
-            accent = enumOr(m[ACCENT], d.accent),
+            accent = accent,
             colorStyle = enumOr(m[COLOR_STYLE], d.colorStyle),
             blur = bool(BLUR, d.blur),
             topBarBlur = enumOr(m[TOP_BAR_BLUR], d.topBarBlur),
@@ -58,8 +75,16 @@ object AppearanceCodec {
             predictiveBack = bool(PREDICTIVE_BACK, d.predictiveBack),
             swipeBackAnywhere = bool(SWIPE_BACK, d.swipeBackAnywhere),
             textSize = enumOr(m[TEXT_SIZE], d.textSize),
+            monet = monet,
+            uiStyle = enumOr(m[UI_STYLE], d.uiStyle),
         )
     }
+
+    /** Before the Monet switch, picking the "System" accent meant wallpaper colours. */
+    private const val LEGACY_WALLPAPER_ACCENT = "System"
+
+    /** The default accent before the Monet switch existed. */
+    private const val LEGACY_DEFAULT_ACCENT = "Monochrome"
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, def: E): E =
         enumValues<E>().firstOrNull { it.name == name } ?: def
