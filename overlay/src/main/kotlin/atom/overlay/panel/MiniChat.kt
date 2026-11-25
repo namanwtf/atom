@@ -86,6 +86,7 @@ internal object MiniChat {
             }
         }
         val w = OverlayWindow(slot.context, params, onBack = {
+            android.util.Log.i("AtomOverlay", "Back closes the mini chat")
             close()
             true
         }) { MiniChatSheet() }
@@ -250,7 +251,10 @@ internal object MiniChat {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 when (intent.getStringExtra("reason")) {
-                    "homekey", "recentapps", "lock" -> close()
+                    "homekey", "recentapps", "lock" -> {
+                        android.util.Log.i("AtomOverlay", "mini chat closed by system: ${intent.getStringExtra("reason")}")
+                        close()
+                    }
                 }
             }
         }

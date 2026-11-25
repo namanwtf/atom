@@ -72,6 +72,14 @@ class KeyboardFitTest {
     }
 
     @Test
+    fun focusIsDroppedOnlyWhenNoSourceStillShowsTheKeyboard() {
+        assertTrue(KeyboardFit.closedEverywhere(signals(serviceSawKeyboard = true, serviceTop = null, insetsWork = true, imeInset = 0)))
+        assertFalse(KeyboardFit.closedEverywhere(signals(serviceSawKeyboard = true, serviceTop = 1500, insetsWork = true, imeInset = 0)))
+        assertFalse(KeyboardFit.closedEverywhere(signals(serviceSawKeyboard = true, serviceTop = null, imeInset = 800)))
+        assertFalse(KeyboardFit.closedEverywhere(signals(frameKeyboard = 0, imeInset = 800)))
+    }
+
+    @Test
     fun visibleFrameMeasuresWhenInsetsAreMissing() {
         val r = fit(signals(frameKeyboard = 900))
         assertEquals(KeyboardSource.Frame, r.source)

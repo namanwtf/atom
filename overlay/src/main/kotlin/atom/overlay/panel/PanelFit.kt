@@ -103,5 +103,12 @@ object KeyboardFit {
         }
     }
 
+    /**
+     * Stricter than [gone], for dropping focus: one source saw the keyboard close and no source still shows it
+     * (no service window, no IME inset, no frame overlap).
+     */
+    fun closedEverywhere(s: KeyboardSignals): Boolean =
+        gone(s) && s.serviceTop == null && s.imeInset == 0 && (s.frameKeyboard ?: 0) == 0
+
     private const val RESIZED_FRACTION = 0.85f
 }
