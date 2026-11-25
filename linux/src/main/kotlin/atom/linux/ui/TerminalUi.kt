@@ -82,7 +82,12 @@ import atom.linux.term.TerminalSessions
 import atom.ui.components.AtomMenu
 import atom.ui.components.CircleIconButton
 import atom.ui.components.SegmentedControl
+import atom.linux.TerminalText
+import atom.ui.theme.extras
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Full-screen terminal with Console (PTY) and Simple (blocks) modes and up to six sessions per mode. */
 @Composable
@@ -95,7 +100,7 @@ fun TerminalScreen(onBack: () -> Unit) {
     val mode = if (modeIndex == 0) SessionMode.Console else SessionMode.Simple
     var selectedConsole by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSimple by rememberSaveable { mutableStateOf<String?>(null) }
-    var fontSize by rememberSaveable { mutableFloatStateOf(13f) }
+    var fontSize by rememberSaveable { mutableFloatStateOf(TerminalText.clamp(linux.config.value.terminalFontSp)) }
     var rootAvailable by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var grid by remember { mutableStateOf(80 to 24) }
@@ -105,6 +110,12 @@ fun TerminalScreen(onBack: () -> Unit) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var keyboardShown by remember { mutableStateOf(true) }
+
+    // Remember the size (pinch or A−/A+) once it settles; nothing runs while it is unchanged.
+    LaunchedEffect(fontSize) {
+        delay(600)
+        withContext(Dispatchers.IO) { linux.setTerminalFontSp(fontSize) }
+    }
 
     LaunchedEffect(Unit) {
         rootAvailable = linux.probeRoot().root
@@ -247,8 +258,8 @@ fun TerminalScreen(onBack: () -> Unit) {
     }
 }
 
-private const val MIN_FONT = 7f
-private const val MAX_FONT = 28f
+private const val MIN_FONT = TerminalText.MIN_SP
+private const val MAX_FONT = TerminalText.MAX_SP
 
 internal fun clipboardText(context: Context): String? {
     val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip ?: return null
@@ -504,7 +515,7 @@ private fun BlockCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = when {
                         block.running -> c.onSurfaceVariant
-                        block.exitCode == 0 -> Color(0xFF7FD6AE)
+                        block.exitCode == 0 -> MaterialTheme.extras.success
                         else -> c.error
                     },
                 )

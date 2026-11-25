@@ -46,5 +46,8 @@ class AutomationFeature : AtomFeature {
         const val ID = "automation"
         const val ROUTE_TASKS = "$ID/tasks"
         const val ROUTE_RULES = "$ID/rules"
+
+        /** String extra on result notifications' launch intent: the conversation to open. */
+        const val EXTRA_CONVERSATION_ID = atom.automation.system.Notifier.EXTRA_CONVERSATION_ID
     }
 }

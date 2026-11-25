@@ -312,9 +312,11 @@ internal fun FilesScreen(onBack: () -> Unit) {
 private const val MAX_IMPORT = 32L * 1024 * 1024
 
 @Composable
-internal fun WorkspaceScreen(onBack: () -> Unit) {
+internal fun WorkspaceScreen(onBack: () -> Unit, open: (String) -> Unit = {}) {
     val context = LocalContext.current
     val env = remember { LinuxEnv.get(context) }
+    val linuxState by env.state.collectAsStateWithLifecycle()
+    val config by env.config.collectAsStateWithLifecycle()
     val dir = remember { env.paths.workspace.apply { mkdirs() } }
     val scope = rememberCoroutineScope()
     var files by remember { mutableStateOf(listOf<File>()) }
@@ -417,6 +419,24 @@ internal fun WorkspaceScreen(onBack: () -> Unit) {
                             })
                         }
                     },
+                )
+            }
+        }
+        item {
+            Group(Modifier.padding(top = 12.dp)) {
+                GroupRow(
+                    title = stringResource(R.string.linux_folders),
+                    subtitle = stringResource(R.string.workspace_folders_body, config.sharedFolders.size),
+                    onClick = { open(LinuxFeature.ROUTE_FOLDERS) },
+                    trailing = { RowChevron() },
+                )
+                GroupDivider(inset = 18.dp)
+                GroupRow(
+                    title = stringResource(R.string.workspace_browse),
+                    subtitle = stringResource(if (linuxState is LinuxState.Ready) R.string.workspace_browse_body else R.string.terminal_linux_unavailable),
+                    enabled = linuxState is LinuxState.Ready,
+                    onClick = { open(LinuxFeature.ROUTE_FILES) },
+                    trailing = { RowChevron() },
                 )
             }
         }

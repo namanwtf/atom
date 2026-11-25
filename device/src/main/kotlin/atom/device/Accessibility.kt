@@ -30,6 +30,32 @@ object Accessibility {
 
     internal val settle = SettleDetector()
 
+    /** Lets other modules (overlay windows) follow the service's lifetime. Set once by the app. */
+    interface ServiceHook {
+        fun onConnected(service: android.accessibilityservice.AccessibilityService)
+        fun onDisconnected(service: android.accessibilityservice.AccessibilityService)
+    }
+
+    /**
+     * Foreground-app changes for automations. While [watching] is true the service also subscribes to
+     * window-state events when no task runs; call [refreshEventMask] whenever [watching] may have changed.
+     */
+    interface AppOpenHook {
+        val watching: Boolean
+        fun onAppOpened(packageName: String)
+    }
+
+    @Volatile
+    var serviceHook: ServiceHook? = null
+
+    @Volatile
+    var appOpenHook: AppOpenHook? = null
+
+    /** Re-applies the event subscription (after [appOpenHook]'s interest changed). */
+    fun refreshEventMask() {
+        service?.applyEventMask(taskActive)
+    }
+
     /** Whether the user has switched the service on in system settings (it may not be bound yet). */
     fun isEnabled(context: Context): Boolean {
         appPackage = context.packageName

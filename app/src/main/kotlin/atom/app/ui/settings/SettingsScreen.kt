@@ -35,6 +35,44 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.outlined.AdminPanelSettings
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.BatteryChargingFull
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.BubbleChart
+import androidx.compose.material.icons.outlined.DeveloperBoard
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Gavel
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.TheaterComedy
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material.icons.outlined.Widgets
+import atom.core.llm.ReasoningEffort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -123,6 +161,28 @@ class SettingsViewModel(private val graph: AppGraph) : ViewModel() {
     fun setTheme(mode: ThemeMode) {
         viewModelScope.launch { graph.settings.setTheme(mode) }
     }
+
+    fun modelLabel(selection: EngineSelection): String = graph.modelInfo.label(selection)
+
+    fun setReasoningByDefault(value: Boolean) {
+        viewModelScope.launch { graph.settings.setReasoningByDefault(value) }
+    }
+
+    fun setDefaultReasoning(value: ReasoningEffort?) {
+        viewModelScope.launch { graph.settings.setDefaultReasoning(value) }
+    }
+
+    fun setAutoTitles(value: Boolean) {
+        viewModelScope.launch { graph.settings.setAutoTitles(value) }
+    }
+
+    fun setAutoCompaction(value: Boolean) {
+        viewModelScope.launch { graph.settings.setAutoCompaction(value) }
+    }
+
+    fun setKeepScreenOn(value: Boolean) {
+        viewModelScope.launch { graph.settings.setKeepScreenOn(value) }
+    }
 }
 
 @Composable
@@ -138,30 +198,14 @@ fun SettingsScreen(
     onOpenRoute: (String) -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val installed by vm.installed.collectAsStateWithLifecycle()
     val savedKeys by vm.savedKeys.collectAsStateWithLifecycle()
     val tier by vm.shellTier.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val s = settings ?: AppSettings()
     val selection = s.selection
-
-    val (engineTitle, engineSubtitle) = when (selection) {
-        null -> stringResource(R.string.engine_none) to stringResource(R.string.settings_engine_none_sub)
-        is EngineSelection.Cloud -> selection.model to (
-            ProviderResolver.resolve(selection.providerId, selection.baseUrl, selection.model)?.displayName ?: selection.providerId
-            )
-        is EngineSelection.Local -> (
-            installed.firstOrNull { it.id == selection.installedModelId }?.name ?: stringResource(R.string.engine_model_missing)
-            ) to stringResource(R.string.badge_on_device)
-    }
     val fallback = s.cloudFallback
     val fallbackTitle = fallback?.let { ProviderResolver.resolve(it.providerId, it.baseUrl, it.model)?.displayName ?: it.providerId }
-    val fallbackNone = stringResource(R.string.settings_fallback_none)
-    val fallbackDesc = stringResource(R.string.settings_fallback_desc)
-    val confirmTitle = stringResource(R.string.settings_confirm_act)
-    val confirmDesc = stringResource(R.string.settings_confirm_act_desc)
-    val successColor = MaterialTheme.extras.success
-    val idleColor = MaterialTheme.colorScheme.outline
+    val tierDot = if (tier == ShellTier.Root || tier == ShellTier.Shizuku) MaterialTheme.extras.success else MaterialTheme.colorScheme.outline
     val tierLabel = stringResource(
         when (tier) {
             ShellTier.Root -> R.string.settings_tier_root
@@ -170,17 +214,17 @@ fun SettingsScreen(
             null -> R.string.settings_shell_not_checked
         },
     )
-    val tierDot = if (tier == ShellTier.Root || tier == ShellTier.Shizuku) successColor else idleColor
+    fun entries(section: FeatureSection) = features.filter { it.section == section }
 
     LargeTitleScreen(title = stringResource(R.string.screen_settings), onBack = onBack) {
-        // ---------------------------------------------------------------- Model
-        item(key = "l-model") { SectionLabel(stringResource(R.string.settings_engine)) }
-        item(key = "g-model") {
+        // ---------------------------------------------------------------- LLM providers
+        item(key = "l-llm") { SectionLabel(stringResource(R.string.settings_llm_providers)) }
+        item(key = "g-llm") {
             Group {
                 GroupRow(
-                    title = engineTitle,
-                    subtitle = engineSubtitle,
-                    icon = if (selection is EngineSelection.Cloud) AtomIcons.Cloud else AtomIcons.Chip,
+                    title = stringResource(R.string.settings_model_providers),
+                    subtitle = selection?.let { vm.modelLabel(it) } ?: stringResource(R.string.settings_engine_none_sub),
+                    icon = Icons.Outlined.Hub,
                     onClick = onOpenModels,
                     trailing = { RowChevron() },
                 )
@@ -189,7 +233,7 @@ fun SettingsScreen(
                     MenuRow(
                         title = stringResource(R.string.settings_backend),
                         subtitle = stringResource(R.string.settings_backend_desc),
-                        icon = ScreenIcons.Tune,
+                        icon = Icons.Outlined.Memory,
                         value = backendLabel(selection.backend),
                         options = LocalBackend.entries.map { it to backendLabelRes(it) },
                         selected = selection.backend,
@@ -197,40 +241,69 @@ fun SettingsScreen(
                     )
                 }
                 GroupDivider()
+                GroupRow(
+                    title = stringResource(R.string.settings_reasoning_default),
+                    icon = Icons.Outlined.Psychology,
+                    onClick = { vm.setReasoningByDefault(!s.reasoningByDefault) },
+                    trailing = { AtomSwitch(s.reasoningByDefault, vm::setReasoningByDefault) },
+                )
+                GroupDivider()
+                MenuRow(
+                    title = stringResource(R.string.settings_default_effort),
+                    subtitle = null,
+                    icon = Icons.Outlined.Tune,
+                    value = stringResource(effortLabel(s.defaultReasoning)),
+                    options = (listOf<ReasoningEffort?>(null) + ReasoningEffort.entries).map { it to effortLabel(it) },
+                    selected = s.defaultReasoning,
+                    onSelect = vm::setDefaultReasoning,
+                )
+                GroupDivider()
                 FallbackRow(
                     title = stringResource(R.string.settings_fallback),
-                    subtitle = fallback?.let { "$fallbackTitle · ${it.model}" } ?: fallbackDesc,
-                    value = if (fallback == null) fallbackNone else null,
+                    subtitle = fallback?.let { "$fallbackTitle · ${it.model}" } ?: stringResource(R.string.settings_fallback_desc),
+                    value = if (fallback == null) stringResource(R.string.settings_fallback_none) else null,
                     savedKeys = savedKeys,
                     current = fallback?.providerId,
                     onSelect = vm::setFallbackProvider,
                     onAddKey = onOpenModels,
                 )
+                EntryRows(entries(FeatureSection.Models), onOpenRoute, leadingDivider = true)
             }
         }
-        item(key = "n-fallback") { FootNote(stringResource(R.string.cloud_fallback_explain)) }
 
-        // ---------------------------------------------------------------- Behaviour
-        item(key = "l-behaviour") { SectionLabel(stringResource(R.string.settings_behaviour)) }
-        item(key = "g-behaviour") {
+        // ---------------------------------------------------------------- Context & extensions
+        item(key = "l-context") { SectionLabel(stringResource(R.string.settings_section_context)) }
+        item(key = "g-context") {
             Group {
                 GroupRow(
-                    title = confirmTitle,
-                    subtitle = confirmDesc,
-                    icon = AtomIcons.Touch,
-                    onClick = { vm.setConfirmAct(!s.confirmActTools) },
-                    trailing = { AtomSwitch(checked = s.confirmActTools, onCheckedChange = vm::setConfirmAct) },
+                    title = stringResource(R.string.settings_auto_compaction),
+                    icon = Icons.Outlined.Layers,
+                    onClick = { vm.setAutoCompaction(!s.autoCompaction) },
+                    trailing = { AtomSwitch(s.autoCompaction, vm::setAutoCompaction) },
                 )
                 GroupDivider()
-                MenuRow(
-                    title = stringResource(R.string.settings_theme),
-                    subtitle = null,
-                    icon = ScreenIcons.Contrast,
-                    value = stringResource(themeLabelRes(s.theme)),
-                    options = listOf(ThemeMode.Dark, ThemeMode.Light, ThemeMode.System).map { it to themeLabelRes(it) },
-                    selected = s.theme,
-                    onSelect = vm::setTheme,
+                GroupRow(
+                    title = stringResource(R.string.settings_auto_titles),
+                    icon = Icons.Outlined.AutoAwesome,
+                    onClick = { vm.setAutoTitles(!s.autoTitles) },
+                    trailing = { AtomSwitch(s.autoTitles, vm::setAutoTitles) },
                 )
+                EntryRows(entries(FeatureSection.Context), onOpenRoute, leadingDivider = true)
+            }
+        }
+
+        // ---------------------------------------------------------------- Tools
+        item(key = "l-tools") { SectionLabel(stringResource(R.string.settings_section_tools)) }
+        item(key = "g-tools") {
+            Group {
+                GroupRow(
+                    title = stringResource(R.string.settings_confirm_act),
+                    subtitle = stringResource(R.string.settings_confirm_act_desc),
+                    icon = Icons.Outlined.TouchApp,
+                    onClick = { vm.setConfirmAct(!s.confirmActTools) },
+                    trailing = { AtomSwitch(s.confirmActTools, vm::setConfirmAct) },
+                )
+                EntryRows(entries(FeatureSection.Tools), onOpenRoute, leadingDivider = true)
             }
         }
 
@@ -239,16 +312,15 @@ fun SettingsScreen(
         item(key = "g-system") {
             Group {
                 GroupRow(
-                    title = stringResource(R.string.screen_setup),
-                    subtitle = stringResource(R.string.settings_setup_desc),
-                    icon = Icons.Filled.Settings,
+                    title = stringResource(R.string.settings_permissions_setup),
+                    icon = Icons.Outlined.VerifiedUser,
                     onClick = onOpenSetup,
                     trailing = { RowChevron() },
                 )
                 GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.settings_shell_row),
-                    icon = ScreenIcons.Shield,
+                    icon = Icons.Outlined.AdminPanelSettings,
                     onClick = onOpenSetup,
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -258,95 +330,97 @@ fun SettingsScreen(
                         }
                     },
                 )
-                GroupDivider()
-                GroupRow(
-                    title = stringResource(R.string.settings_terminal_row),
-                    subtitle = stringResource(R.string.settings_terminal_row_desc),
-                    icon = AtomIcons.Terminal,
-                    onClick = onOpenTerminal,
-                    trailing = { RowChevron() },
-                )
-                GroupDivider()
-                GroupRow(
-                    title = stringResource(R.string.settings_linux_row),
-                    subtitle = stringResource(R.string.settings_linux_row_desc),
-                    icon = ScreenIcons.Storage,
-                    onClick = onOpenLinux,
-                    trailing = { RowChevron() },
-                )
+                EntryRows(entries(FeatureSection.System), onOpenRoute, leadingDivider = true)
             }
         }
 
-        // ---------------------------------------------------------------- Voice
-        item(key = "l-voice") { SectionLabel(stringResource(R.string.settings_voice)) }
-        item(key = "g-voice") {
+        // ---------------------------------------------------------------- General
+        item(key = "l-general") { SectionLabel(stringResource(R.string.settings_section_general)) }
+        item(key = "g-general") {
             Group {
                 GroupRow(
-                    title = stringResource(R.string.voice_hey_atom),
-                    subtitle = stringResource(R.string.voice_hey_atom_text),
-                    icon = AtomIcons.Mic,
-                    onClick = onOpenSetup,
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            RowValue(stringResource(if (s.heyAtom) R.string.settings_hey_atom_on else R.string.status_off))
-                            RowChevron()
-                        }
-                    },
+                    title = stringResource(R.string.settings_keep_screen_on),
+                    subtitle = stringResource(R.string.settings_keep_screen_on_sub),
+                    icon = Icons.Outlined.LightMode,
+                    onClick = { vm.setKeepScreenOn(!s.keepScreenOn) },
+                    trailing = { AtomSwitch(s.keepScreenOn, vm::setKeepScreenOn) },
                 )
-            }
-        }
-
-        // ---------------------------------------------------------------- Feature modules
-        FeatureSection.entries.forEach { section ->
-            val rows = features.filter { it.section == section }
-            if (rows.isNotEmpty()) {
-                item(key = "l-f-${section.name}") { SectionLabel(stringResource(featureSectionLabel(section))) }
-                item(key = "g-f-${section.name}") {
-                    Group {
-                        rows.forEachIndexed { i, entry ->
-                            if (i > 0) GroupDivider()
-                            GroupRow(
-                                title = stringResource(entry.title),
-                                subtitle = entry.subtitle?.let { stringResource(it) },
-                                icon = entry.icon,
-                                onClick = { onOpenRoute(entry.route) },
-                                trailing = { RowChevron() },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---------------------------------------------------------------- About
-        item(key = "l-about") { SectionLabel(stringResource(R.string.settings_about)) }
-        item(key = "g-about") {
-            Group {
-                GroupRow(
-                    title = stringResource(R.string.app_name),
-                    icon = Icons.Filled.Info,
-                    trailing = { RowValue(stringResource(R.string.about_version, versionName(context))) },
-                )
-                GroupDivider()
-                GroupRow(
-                    title = stringResource(R.string.settings_license_row),
-                    subtitle = stringResource(R.string.about_license),
-                    icon = ScreenIcons.Document,
-                    onClick = onOpenLicenses,
-                    trailing = { RowChevron() },
-                )
+                EntryRows(entries(FeatureSection.General), onOpenRoute, leadingDivider = true)
                 GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.screen_licenses),
-                    subtitle = stringResource(R.string.about_notices_desc),
-                    icon = Icons.AutoMirrored.Filled.List,
+                    subtitle = stringResource(R.string.about_license),
+                    icon = Icons.Outlined.Gavel,
                     onClick = onOpenLicenses,
                     trailing = { RowChevron() },
                 )
             }
         }
-        item(key = "n-trademark") { FootNote(stringResource(R.string.about_trademark), Modifier.padding(top = 4.dp)) }
+        item(key = "n-version") {
+            FootNote(stringResource(R.string.about_version, versionName(context)) + " · " + stringResource(R.string.about_trademark), Modifier.padding(top = 4.dp))
+        }
     }
+}
+
+/** Feature rows inside a group, each with an icon (the feature's own, or one picked from what the row is about). */
+@Composable
+private fun EntryRows(rows: List<FeatureEntry>, onOpen: (String) -> Unit, leadingDivider: Boolean) {
+    val context = LocalContext.current
+    rows.forEachIndexed { i, entry ->
+        if (leadingDivider || i > 0) GroupDivider()
+        GroupRow(
+            title = stringResource(entry.title),
+            subtitle = entry.subtitle?.let { stringResource(it) },
+            icon = entry.icon ?: iconFor(context, entry),
+            onClick = { onOpen(entry.route) },
+            trailing = { RowChevron() },
+        )
+    }
+}
+
+private fun iconFor(context: Context, entry: FeatureEntry): ImageVector {
+    val key = (runCatching { context.resources.getResourceEntryName(entry.title) }.getOrDefault("") + " " + entry.route).lowercase()
+    return ICONS.firstOrNull { (words, _) -> words.any { it in key } }?.second ?: Icons.Outlined.Settings
+}
+
+private val ICONS: List<Pair<List<String>, ImageVector>> = listOf(
+    listOf("memory") to Icons.AutoMirrored.Outlined.MenuBook,
+    listOf("skill") to Icons.Outlined.Extension,
+    listOf("mcp") to Icons.Outlined.Hub,
+    listOf("subagent") to Icons.Outlined.Groups,
+    listOf("character") to Icons.Outlined.TheaterComedy,
+    listOf("tasks", "schedule") to Icons.Outlined.Schedule,
+    listOf("rules", "automation") to Icons.Outlined.Bolt,
+    listOf("history", "notification") to Icons.Outlined.NotificationsNone,
+    listOf("tool_list") to Icons.Outlined.Widgets,
+    listOf("permission") to Icons.Outlined.Shield,
+    listOf("gallery") to Icons.Outlined.PhotoLibrary,
+    listOf("images", "image") to Icons.Outlined.AutoAwesome,
+    listOf("search") to Icons.Outlined.TravelExplore,
+    listOf("browser") to Icons.Outlined.Public,
+    listOf("terminal") to Icons.Outlined.Terminal,
+    listOf("linux") to Icons.Outlined.Dns,
+    listOf("workspace") to Icons.Outlined.FolderOpen,
+    listOf("vd_", "system_title", "enhance") to Icons.Outlined.DeveloperBoard,
+    listOf("changes", "undo") to Icons.AutoMirrored.Outlined.Undo,
+    listOf("power") to Icons.Outlined.BatteryChargingFull,
+    listOf("appearance") to Icons.Outlined.Palette,
+    listOf("language") to Icons.Outlined.Translate,
+    listOf("backup") to Icons.Outlined.Backup,
+    listOf("about") to Icons.Outlined.Info,
+    listOf("audio_chat") to Icons.Outlined.GraphicEq,
+    listOf("speech", "voice") to Icons.Outlined.RecordVoiceOver,
+    listOf("overlay", "bubble", "floating") to Icons.Outlined.BubbleChart,
+)
+
+private fun effortLabel(effort: ReasoningEffort?): Int = when (effort) {
+    null -> R.string.settings_effort_default
+    ReasoningEffort.Off -> R.string.settings_effort_off
+    ReasoningEffort.Low -> R.string.settings_effort_low
+    ReasoningEffort.Medium -> R.string.settings_effort_medium
+    ReasoningEffort.High -> R.string.settings_effort_high
+    ReasoningEffort.XHigh -> R.string.settings_effort_xhigh
+    ReasoningEffort.Max -> R.string.settings_effort_max
 }
 
 /** A row that shows its current value and opens a small menu of choices, the selected one checked. */

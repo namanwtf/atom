@@ -29,6 +29,15 @@ import atom.core.llm.ReasoningEffort
 import atom.core.llm.ReasoningSupport
 import atom.core.runtime.QueuedMessage
 import atom.ui.feature.RunPhase
+import atom.app.data.StoredMessage
+import atom.characters.model.CandidateSet
+import atom.characters.model.ChatBinding
+import atom.characters.session.CharacterSession
+import atom.core.llm.Role
+import atom.extend.subagent.SubagentRun
+import atom.extend.subagent.SubagentRuns
+import atom.voice.tts.ReadAloud
+import atom.voice.tts.ReadAloudSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +88,14 @@ data class ChatUiState(
     val pinned: Boolean = false,
     val canEdit: Boolean = true,
     val selection: EngineSelection? = null,
+    /** The live or last run of this conversation (subagents are filed under it). */
+    val runId: String? = null,
+    /** A character chat: regenerate makes switchable candidates, edits keep later turns. */
+    val characterChat: Boolean = false,
+    /** "<name> is replying…" while a character reply streams. */
+    val replyingLabel: String? = null,
+    /** Reply candidates by stored message index (character chats). */
+    val candidates: Map<Int, CandidateSet> = emptyMap(),
 )
 
 /** A drawer row: the stored summary plus what a live run is doing right now. */
@@ -95,6 +112,8 @@ sealed interface ChatEvent {
     data class Toast(val message: Int, val arg: String? = null) : ChatEvent
     data class Compacted(val result: CompactResult) : ChatEvent
 }
+
+private data class Selected(val id: String?, val stored: Conversation?, val draft: Conversation, val bindings: Map<String, ChatBinding>)
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class ChatViewModel(private val graph: AppGraph) : ViewModel() {
@@ -152,17 +171,26 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
 
     private val settingsFlow = graph.settings.settings
 
+    private val bindings: StateFlow<Map<String, ChatBinding>> =
+        runCatching { CharacterSession.bindings }.getOrElse { MutableStateFlow(emptyMap()) }
+
+    /** Subagent runs of the selected conversation's current or last run (in memory only). */
+    val subagents: StateFlow<List<SubagentRun>> = combine(selectedId, runner.liveRuns, SubagentRuns.runs) { id, runs, all ->
+        val runId = id?.let { runs[it]?.runId } ?: return@combine emptyList()
+        all.filter { it.parentTaskId == runId }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // Converting a stored conversation is O(messages); redo it only when the record or the stream changes.
     private var memoKey: Any? = null
     private var memoItems: List<ChatItem> = emptyList()
 
     val state: StateFlow<ChatUiState> = combine(
-        combine(selectedId, loaded, draft) { id, stored, d -> Triple(id, stored, d) },
+        combine(selectedId, loaded, draft, bindings) { id, stored, d, b -> Selected(id, stored, d, b) },
         runner.liveRuns,
         settingsFlow,
         queue,
         graph.models.installed,
-    ) { (id, stored, d), runs, settings, queued, _ ->
+    ) { (id, stored, d, b), runs, settings, queued, _ ->
         val live = id?.let { runs[it] }
         // A finished run's copy is newer than the file until the saved version has been read back.
         val conversation: Conversation = when {
@@ -199,6 +227,10 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             pinned = conversation.pinned,
             canEdit = !running,
             selection = selection,
+            runId = live?.runId,
+            characterChat = id != null && b.containsKey(id),
+            replyingLabel = live?.replyingLabel?.takeIf { running },
+            candidates = if (id != null) candidatesOf(conversation, b[id]) else emptyMap(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -214,6 +246,22 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         viewModelScope.launch {
             graph.chatRequests.collect { requests -> requests.forEach { handle(it) } }
         }
+        viewModelScope.launch { runCatching { CharacterSession.store.load() } }
+    }
+
+    /**
+     * Share-to-Atom: starts a new conversation with [text] in the composer and [uris] attached (images as images,
+     * anything else as a path). Call from the activity that received the share, while its URI grants are valid.
+     */
+    fun prefillShared(context: Context, text: String, uris: List<Uri>) {
+        newChat()
+        if (text.isNotBlank()) _prefill.value = text
+        if (uris.isEmpty()) return
+        val app = context.applicationContext
+        val mimes = uris.map { runCatching { app.contentResolver.getType(it) }.getOrNull().orEmpty() }
+        val images = uris.filterIndexed { i, _ -> mimes[i].startsWith("image/") }
+        addImages(app, images)
+        addFiles(app, uris - images.toSet())
     }
 
     private fun handle(request: ChatRequest) {
@@ -237,9 +285,29 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         selectedId.value = id
         loaded.value = null
         viewModelScope.launch {
-            loaded.value = graph.conversations.load(id)
+            loaded.value = graph.conversations.load(id) ?: startCharacterChat(id)
             graph.runtimePrefs.readingPosition(id)?.let { _restore.value = id to it }
         }
+    }
+
+    /** A character chat opened for the first time: "The story begins here", then the chosen greeting. */
+    private suspend fun startCharacterChat(id: String): Conversation? {
+        if (runner.isRunning(id)) return null
+        val opening = runCatching { CharacterSession.opening(id) }.getOrNull() ?: return null
+        val now = System.currentTimeMillis()
+        val c = Conversation(
+            id = id,
+            title = opening.characterName,
+            createdAt = now,
+            updatedAt = now,
+            messages = listOf(
+                StoredMessage.notice(opening.marker, now),
+                StoredMessage(ChatMessage.assistant(opening.text), createdAt = now + 1),
+            ),
+            titleSource = TitleSource.User,
+        )
+        graph.conversations.save(c)
+        return c
     }
 
     fun newChat() {
@@ -425,6 +493,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             }
             runner.clearFinished(id)
             runner.queue(id).clear()
+            runCatching { CharacterSession.forget(id) }
             graph.conversations.load(id)?.let { c -> Attachments.deleteImages(c.messages.flatMap { it.attachments }) }
             graph.conversations.delete(id)
             graph.runtimePrefs.setReadingPosition(id, null)
@@ -449,8 +518,12 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun regenerate(turn: ChatItem.Turn) {
         val c = currentConversation() ?: return
-        val u = turn.userIndex ?: return
         if (runner.isRunning(c.id)) return
+        if (state.value.characterChat) {
+            turn.answerIndex?.let { runner.regenerateCharacterReply(c, it) }
+            return
+        }
+        val u = turn.userIndex ?: return
         val truncated = c.copy(messages = c.messages.take(u + 1))
         viewModelScope.launch {
             graph.conversations.save(truncated)
@@ -501,6 +574,29 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         }
     }
 
+    /** Character chats: shows reply candidate [index] for the message at stored [answerIndex]. */
+    fun selectCandidate(answerIndex: Int, index: Int) {
+        val id = selectedId.value ?: return
+        viewModelScope.launch {
+            if (runner.selectCandidate(id, answerIndex, index)) loaded.value = graph.conversations.load(id)
+        }
+    }
+
+    /** Character chats: edits a user or character message in place; later turns stay. */
+    fun editInPlace(index: Int, text: String) {
+        val id = selectedId.value ?: return
+        viewModelScope.launch {
+            if (runner.editInPlace(id, index, text)) loaded.value = graph.conversations.load(id)
+        }
+    }
+
+    /** Reads an answer aloud (Markdown filtered by the speech settings); [messageId] tags it for a stop button. */
+    fun readAloud(text: String, messageId: String) {
+        ReadAloud.speak(text, ReadAloudSource.Chat, messageId)
+    }
+
+    fun stopReading() = ReadAloud.stop()
+
     /** Raw text of an answer or message, Markdown and LaTeX source kept. */
     fun textAt(index: Int?): String? = index?.let { currentConversation()?.messages?.getOrNull(it)?.message?.text }
 
@@ -521,6 +617,15 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             memoItems = Transcript.of(conversation.messages, stream)
         }
         return memoItems
+    }
+
+    private fun candidatesOf(conversation: Conversation, binding: ChatBinding?): Map<Int, CandidateSet> {
+        if (binding == null || binding.candidates.isEmpty()) return emptyMap()
+        val out = HashMap<Int, CandidateSet>()
+        conversation.messages.forEachIndexed { i, m ->
+            if (m.message.role == Role.Assistant) binding.candidates[m.createdAt.toString()]?.takeIf { it.texts.size > 1 }?.let { out[i] = it }
+        }
+        return out
     }
 
     private fun engineInfo(selection: EngineSelection?, live: LiveRun?): EngineInfo {

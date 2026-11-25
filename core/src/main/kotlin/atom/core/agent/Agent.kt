@@ -386,10 +386,11 @@ class Agent(
             return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
         }
 
+        val limit = tool.timeoutMs?.takeIf { it > 0 } ?: config.toolTimeoutMs
         return try {
-            withTimeout(config.toolTimeoutMs) { tool.run(args, ctx) }
+            withTimeout(limit) { tool.run(args, ctx) }
         } catch (e: TimeoutCancellationException) {
-            ToolResult.error("'${call.name}' timed out after ${config.toolTimeoutMs / 1000}s. Its outcome is unknown; check the state before retrying.")
+            ToolResult.error("'${call.name}' timed out after ${limit / 1000}s. Its outcome is unknown; check the state before retrying.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: ToolArgumentException) {

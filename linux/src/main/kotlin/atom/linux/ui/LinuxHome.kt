@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +33,7 @@ import atom.linux.LinuxEnv
 import atom.linux.LinuxState
 import atom.linux.R
 import atom.linux.RunMode
+import atom.linux.TerminalText
 import atom.linux.install.Profile
 import atom.ui.components.AtomCard
 import atom.ui.components.CompactButton
@@ -71,6 +72,7 @@ internal fun LinuxHomeScreen(onBack: () -> Unit, open: (String) -> Unit) {
     var removing by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var rootOk by remember { mutableStateOf<Boolean?>(null) }
+    var confirmProfile by remember { mutableStateOf<Profile?>(null) }
 
     LaunchedEffect(state is LinuxState.Ready) {
         if (state is LinuxState.Ready || config.preferredMode == RunMode.Chroot) env.refresh()
@@ -231,12 +233,34 @@ internal fun LinuxHomeScreen(onBack: () -> Unit, open: (String) -> Unit) {
                                 if (p in ready.profiles) {
                                     Pill(stringResource(R.string.linux_installed), MaterialTheme.colorScheme.surfaceContainerHighest, contentColor = MaterialTheme.extras.success)
                                 } else {
-                                    CompactButton(stringResource(R.string.linux_install), { env.installProfiles(setOf(p)) }, primary = false)
+                                    CompactButton(
+                                        stringResource(R.string.linux_install),
+                                        { if (p == Profile.ApkAnalysis) confirmProfile = p else env.installProfiles(setOf(p)) },
+                                        primary = false,
+                                    )
                                 }
                             },
                         )
                     }
                 }
+            }
+        }
+
+        // ---------------- terminal
+        item {
+            SectionLabel(stringResource(R.string.linux_terminal_section))
+            Group {
+                val size = config.terminalFontSp
+                GroupRow(
+                    title = stringResource(R.string.linux_text_size),
+                    subtitle = stringResource(R.string.linux_text_size_body, size.toInt().toString()),
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CompactButton("A−", { env.setTerminalFontSp(size - 1f) }, primary = false, enabled = size > TerminalText.MIN_SP)
+                            CompactButton("A+", { env.setTerminalFontSp(size + 1f) }, primary = false, enabled = size < TerminalText.MAX_SP)
+                        }
+                    },
+                )
             }
         }
 
@@ -252,7 +276,7 @@ internal fun LinuxHomeScreen(onBack: () -> Unit, open: (String) -> Unit) {
                 GroupDivider()
                 GroupRow(stringResource(R.string.linux_workspace), icon = Icons.Filled.Refresh, subtitle = stringResource(R.string.linux_workspace_body), onClick = { open(LinuxFeature.ROUTE_WORKSPACE) }, trailing = { RowChevron() })
                 GroupDivider()
-                GroupRow(stringResource(R.string.linux_jobs), icon = Icons.Filled.List, subtitle = stringResource(R.string.linux_jobs_body), onClick = { open(LinuxFeature.ROUTE_JOBS) }, trailing = { RowChevron() })
+                GroupRow(stringResource(R.string.linux_jobs), icon = Icons.AutoMirrored.Filled.List, subtitle = stringResource(R.string.linux_jobs_body), onClick = { open(LinuxFeature.ROUTE_JOBS) }, trailing = { RowChevron() })
                 GroupDivider()
                 GroupRow(stringResource(R.string.terminal_title), icon = AtomIcons.Terminal, onClick = { open(LinuxFeature.ROUTE_TERMINAL) }, trailing = { RowChevron() })
             }
@@ -271,6 +295,21 @@ internal fun LinuxHomeScreen(onBack: () -> Unit, open: (String) -> Unit) {
                 }
             }
         }
+    }
+
+    confirmProfile?.let { p ->
+        AlertDialog(
+            onDismissRequest = { confirmProfile = null },
+            title = { Text(stringResource(R.string.linux_profile_confirm_title, p.title)) },
+            text = { Text(stringResource(R.string.linux_profile_confirm_body, formatBytes(p.approxBytes), formatBytes(env.freeBytes()))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmProfile = null
+                    env.installProfiles(setOf(p))
+                }) { Text(stringResource(R.string.linux_profile_confirm_ok)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmProfile = null }) { Text(stringResource(R.string.linux_cancel)) } },
+        )
     }
 
     if (confirmUninstall && ready != null) {

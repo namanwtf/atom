@@ -38,12 +38,22 @@ class AtomNotificationListener : NotificationListenerService() {
         val record = toRecord(this, sbn) ?: return
         val app = applicationContext
         writer.execute { runCatching { Notifications.history(app).record(record) } }
+        postedHook?.let { runCatching { it.onPosted(record) } }
+    }
+
+    /** Another consumer of new notifications (automation triggers). Called on the main thread; must return fast. */
+    fun interface PostedHook {
+        fun onPosted(record: NotificationRecord)
     }
 
     companion object {
         @Volatile
         var instance: AtomNotificationListener? = null
             private set
+
+        /** Set once by the app. */
+        @Volatile
+        var postedHook: PostedHook? = null
 
         fun component(context: Context) = ComponentName(context, AtomNotificationListener::class.java)
 

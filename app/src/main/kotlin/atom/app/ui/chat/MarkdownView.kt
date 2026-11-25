@@ -80,25 +80,21 @@ private fun Block(block: MdBlock, style: TextStyle, color: Color) {
     val colors = MaterialTheme.colorScheme
     when (block) {
         is MdBlock.Paragraph -> InlineText(block.inlines, style, color)
-        is MdBlock.Heading -> InlineText(
-            block.inlines,
-            style.copy(
-                fontSize = when (block.level) {
-                    1 -> 22.sp
-                    2 -> 19.sp
-                    3 -> 17.sp
-                    else -> style.fontSize
-                },
-                lineHeight = when (block.level) {
-                    1 -> 30.sp
-                    2 -> 27.sp
-                    else -> style.lineHeight
-                },
-                fontWeight = FontWeight.SemiBold,
-            ),
-            color,
-            Modifier.padding(top = if (block.level <= 2) 6.dp else 2.dp),
-        )
+        is MdBlock.Heading -> {
+            // Typography roles, so the global font-size setting and the user's font scale both apply.
+            val t = MaterialTheme.typography
+            val role = when (block.level) {
+                1 -> t.titleLarge
+                2 -> t.titleMedium
+                else -> style
+            }
+            InlineText(
+                block.inlines,
+                style.copy(fontSize = role.fontSize, lineHeight = role.lineHeight, fontWeight = FontWeight.SemiBold),
+                color,
+                Modifier.padding(top = if (block.level <= 2) 6.dp else 2.dp),
+            )
+        }
         is MdBlock.Code -> CodeBlock(block.language, block.code)
         is MdBlock.Math -> MathBlock(block.tex)
         is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
@@ -196,7 +192,7 @@ private fun CodeBlock(language: String?, code: String) {
             }
             Text(
                 code,
-                style = MaterialTheme.extras.mono.copy(fontSize = 12.5.sp, lineHeight = 18.sp),
+                style = MaterialTheme.extras.mono,
                 color = colors.onSurface,
                 softWrap = false,
                 modifier = Modifier

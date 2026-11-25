@@ -24,7 +24,18 @@ data class LinuxConfig(
     val lastResultAtMs: Long = 0,
     /** Set when the rootfs was used in chroot mode, so its files may be root-owned. */
     val usedChroot: Boolean = false,
+    /** Terminal text size in sp (pinch or the setting); compact by default. */
+    val terminalFontSp: Float = TerminalText.DEFAULT_SP,
 )
+
+/** Bounds for the terminal text size. */
+object TerminalText {
+    const val DEFAULT_SP = 12f
+    const val MIN_SP = 7f
+    const val MAX_SP = 28f
+
+    fun clamp(sp: Float): Float = if (sp.isNaN()) DEFAULT_SP else sp.coerceIn(MIN_SP, MAX_SP)
+}
 
 internal class LinuxConfigStore(private val file: File) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }

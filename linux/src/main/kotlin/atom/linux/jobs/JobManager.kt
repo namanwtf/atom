@@ -49,6 +49,19 @@ class JobManager private constructor(context: Context) {
 
         private const val CHANNEL = "atom_linux_jobs"
         const val LOG_TAIL = 64 * 1024
+
+        /**
+         * At app start: if the last process left jobs marked running, load the manager now (on a background
+         * thread) so they are reconciled and the user is told they were interrupted. Otherwise nothing happens.
+         */
+        fun reconcileOnStart(context: Context) {
+            val app = context.applicationContext
+            Thread({
+                val f = File(LinuxPaths(app).jobs, "jobs.json")
+                val pending = runCatching { f.isFile && f.readText().contains("\"Running\"") }.getOrDefault(false)
+                if (pending) get(app)
+            }, "atom-jobs-reconcile").apply { isDaemon = true }.start()
+        }
     }
 
     private val app = context.applicationContext
@@ -225,7 +238,15 @@ class JobManager private constructor(context: Context) {
             stillAlive = { r -> r.pid > 0 && r.pidStartTicks > 0 && startTicks(r.pid) == r.pidStartTicks },
             kill = { r -> Pty.signal(r.pid, Pty.SIGKILL, group = true) },
         )
-        if (reconciled != records) save(reconciled)
+        if (reconciled != records) {
+            save(reconciled)
+            // Tell the user about work that the restart cut short.
+            val wasRunning = records.filter { it.state == JobState.Running }.map { it.id }.toSet()
+            reconciled.filter { it.id in wasRunning && it.state == JobState.Interrupted }.forEach { r ->
+                runCatching { File(r.logPath).appendText("\n[${JobRules.describe(r)}]\n") }
+                notifyFinished(r)
+            }
+        }
         return reconciled
     }
 

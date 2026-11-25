@@ -15,10 +15,16 @@ class AtomAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         Accessibility.attach(this)
         applyEventMask(Accessibility.taskActive)
+        Accessibility.serviceHook?.let { runCatching { it.onConnected(this) } }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            // Automation "app opened" triggers (cheap: returns at once when nobody watches).
+            val pkg = event.packageName?.toString()
+            if (pkg != null) Accessibility.appOpenHook?.let { if (it.watching) runCatching { it.onAppOpened(pkg) } }
+        }
         // Our own UI (chat streaming, overlays) must not keep the screen from "settling".
         if (event.packageName == packageName) return
         when (event.eventType) {
@@ -30,12 +36,14 @@ class AtomAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: Intent?): Boolean {
+        Accessibility.serviceHook?.let { runCatching { it.onDisconnected(this) } }
         Accessibility.detach(this)
         UiController.reset()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        Accessibility.serviceHook?.let { runCatching { it.onDisconnected(this) } }
         Accessibility.detach(this)
         UiController.reset()
         super.onDestroy()
@@ -44,7 +52,8 @@ class AtomAccessibilityService : AccessibilityService() {
     internal fun applyEventMask(active: Boolean) {
         mainExecutor.execute {
             val info = serviceInfo ?: return@execute
-            val wanted = if (active) ACTIVE_EVENTS else 0
+            val appWatch = Accessibility.appOpenHook?.watching == true
+            val wanted = (if (active) ACTIVE_EVENTS else 0) or (if (appWatch) AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED else 0)
             if (info.eventTypes == wanted && info.notificationTimeout == NOTIFICATION_TIMEOUT_MS) return@execute
             info.eventTypes = wanted
             info.notificationTimeout = NOTIFICATION_TIMEOUT_MS

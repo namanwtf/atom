@@ -5,6 +5,11 @@
     <string name="linux_entry_subtitle">Alpine or Debian, tools, workspace, background tasks</string>
     <string name="terminal_entry_title">Terminal</string>
     <string name="terminal_entry_subtitle">Android shell, root shell and Linux</string>
+    <string name="workspace_entry_title">Workspace &amp; files</string>
+    <string name="workspace_entry_subtitle">/workspace, shared folders, import and export</string>
+    <string name="workspace_browse">Browse Linux files</string>
+    <string name="workspace_browse_body">Read-only, with text previews</string>
+    <string name="workspace_folders_body">%1$d shared · apply from the next session</string>
 
     <!-- Terminal -->
     <string name="terminal_title">Terminal</string>
@@ -88,6 +93,12 @@
     <string name="linux_profile_ssh">Full OpenSSH server (port 8022, keys only)</string>
     <string name="linux_profile_apk">OpenJDK 25, JADX, Apktool, smali, baksmali. Needs about 768 MB. Rebuilding APKs is not supported.</string>
     <string name="linux_more">More</string>
+    <string name="linux_terminal_section">Terminal</string>
+    <string name="linux_text_size">Text size</string>
+    <string name="linux_text_size_body">%1$s sp. Pinch the terminal to change it too.</string>
+    <string name="linux_profile_confirm_title">Install %1$s?</string>
+    <string name="linux_profile_confirm_body">This needs about %1$s of storage (%2$s free now). Rebuilding APKs with Apktool is not supported.</string>
+    <string name="linux_profile_confirm_ok">Install</string>
     <string name="linux_open_terminal">Open terminal</string>
     <string name="linux_health">Health check</string>
     <string name="linux_health_body">Core commands, /workspace, /sdcard, free space</string>

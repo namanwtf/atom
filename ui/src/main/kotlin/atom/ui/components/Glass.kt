@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import atom.ui.theme.glassBlurEnabled
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -44,9 +45,11 @@ fun Modifier.glassBar(state: HazeState, edge: GlassEdge): Modifier {
     val base = MaterialTheme.colorScheme.background
     val hairline = MaterialTheme.colorScheme.outlineVariant
     val powerSave = rememberPowerSaveMode()
-    val style = remember(base, powerSave) {
+    // Appearance > Blur off: a plain translucent tint, like battery saver.
+    val blur = glassBlurEnabled() && !powerSave
+    val style = remember(base, blur) {
         HazeBlurStyle {
-            blurEnabled(!powerSave)
+            blurEnabled(blur)
             blurRadius(26.dp)
             noiseFactor(0f)
             backgroundColor(base)

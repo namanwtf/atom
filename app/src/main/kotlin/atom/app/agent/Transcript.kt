@@ -28,7 +28,17 @@ data class StepCall(
     val awaitingApproval: Boolean = false,
     /** Last line of terminal output, shown on the collapsed row. */
     val lastLine: String? = null,
+    /** A result the chat shows as a card under the timeline (generated image, browser preview). */
+    val card: StepCard? = null,
 )
+
+/** Tool results with their own chat card; [text] is what the card composable parses. */
+sealed interface StepCard {
+    val text: String
+
+    data class Image(override val text: String) : StepCard
+    data class Browser(override val text: String) : StepCard
+}
 
 sealed interface WorkEntry {
     val key: String
@@ -189,6 +199,7 @@ object Transcript {
                 result = preview(text),
                 risk = s.risk,
                 lastLine = if (isTerminal(entry.value.name)) text.lineSequence().lastOrNull { it.isNotBlank() }?.trim()?.take(160) else null,
+                card = if (s.isError) null else cardFor(text),
             )
             calls[entry.key] = updated
             replaceStep(updated)
@@ -270,6 +281,16 @@ object Transcript {
             )
         }
     }
+
+    /** Image jobs carry an `image_job:` marker; browser steps end with a `Preview: <path>` line. */
+    fun cardFor(text: String): StepCard? {
+        if (IMAGE_MARKER in text) return StepCard.Image(text.take(8_000))
+        val preview = text.lineSequence().lastOrNull { it.startsWith(BROWSER_PREVIEW) } ?: return null
+        return StepCard.Browser(preview)
+    }
+
+    private val IMAGE_MARKER = atom.web.image.ImageJobs.MARKER
+    private val BROWSER_PREVIEW = atom.web.browser.BrowserCards.PREVIEW
 
     fun isTerminal(tool: String): Boolean {
         val n = tool.lowercase()

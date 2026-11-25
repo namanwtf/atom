@@ -1,6 +1,7 @@
 package atom.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,13 +11,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import atom.app.data.AppSettings
 import atom.app.feature.Features
@@ -30,20 +37,27 @@ import atom.app.ui.settings.LicensesScreen
 import atom.app.ui.settings.SettingsScreen
 import atom.app.ui.settings.SettingsViewModel
 import atom.app.ui.setup.SetupScreen
-import atom.app.ui.terminal.LinuxScreen
-import atom.app.ui.terminal.TerminalScreen
+import atom.app.integration.NavRequests
+import atom.characters.ui.CharacterRoutes
+import atom.device.feature.DeviceFeature
+import atom.linux.ui.LinuxFeature
 import atom.ui.feature.FeatureNav
+import atom.ui.theme.LocalAppearance
+import atom.ui.theme.swipeBackAnywhere
+import atom.web.WebFeature
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
 
-/** Built-in screens. Feature modules add their own routes ("<featureId>/<screen>"). */
+/**
+ * Built-in screens. Feature modules add their own routes ("<featureId>/<screen>"); Terminal, Linux and
+ * Workspace are LinuxFeature routes ("linux/...").
+ */
 object Routes {
     const val CHAT = "chat"
     const val MODELS = "models"
     const val SETTINGS = "settings"
     const val SETUP = "setup"
     const val LICENSES = "licenses"
-    const val TERMINAL = "terminal"
-    const val LINUX = "linux"
 }
 
 /** A tiny back stack of route strings; no navigation library needed. */
@@ -63,7 +77,45 @@ fun AtomRoot(settings: AppSettings) {
         if (stack.size > 1) stack = stack.dropLast(1)
     }
 
-    BackHandler(enabled = stack.size > 1 && !(current == Routes.SETUP && !settings.onboarded)) { pop() }
+    val canPop = stack.size > 1 && !(current == Routes.SETUP && !settings.onboarded)
+    val appearance = LocalAppearance.current
+    // 0..1 while a predictive back gesture is in progress; the top screen follows it, then pops.
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    if (appearance.predictiveBack) {
+        PredictiveBackHandler(enabled = canPop) { events ->
+            try {
+                events.collect { backProgress = it.progress }
+                pop()
+                backProgress = 0f
+            } catch (e: CancellationException) {
+                backProgress = 0f
+                throw e
+            }
+        }
+    } else {
+        BackHandler(enabled = canPop) { pop() }
+    }
+
+    // Deep links (overlay settings links, after an import) and chat requests (notifications, shares, the
+    // overlay's "open in app") bring the right screen forward. First-run setup is never skipped.
+    val onboarded by rememberUpdatedState(settings.onboarded)
+    LaunchedEffect(Unit) {
+        NavRequests.pending.collect { request ->
+            when (request) {
+                null -> Unit
+                NavRequests.Request.Reset -> if (onboarded) stack = listOf(Routes.CHAT)
+                is NavRequests.Request.Open -> if (request.route == Routes.CHAT) {
+                    if (onboarded) stack = listOf(Routes.CHAT)
+                } else {
+                    push(request.route)
+                }
+            }
+            if (request != null) NavRequests.consume(request)
+        }
+    }
+    LaunchedEffect(Unit) {
+        graph.chatRequests.collect { requests -> if (requests.isNotEmpty() && onboarded) stack = listOf(Routes.CHAT) }
+    }
 
     val chatVm = graphViewModel { ChatViewModel(it) }
     val nav = remember(chatVm) {
@@ -79,18 +131,39 @@ fun AtomRoot(settings: AppSettings) {
     }
     val featureEntries = remember { Features.all.flatMap { it.entries } }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .swipeBackAnywhere(enabled = canPop, rtl = rtl, onBack = ::pop),
+    ) {
         AnimatedContent(
             targetState = current,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
             label = "screen",
         ) { route ->
+            Box(
+                Modifier.fillMaxSize().graphicsLayer {
+                    val p = if (route == current) backProgress else 0f
+                    if (p > 0f) {
+                        translationX = (if (rtl) -1f else 1f) * size.width * 0.08f * p
+                        scaleX = 1f - 0.06f * p
+                        scaleY = 1f - 0.06f * p
+                    }
+                },
+            ) {
             when (route) {
                 Routes.CHAT -> ChatScreen(
                     vm = chatVm,
                     onOpenModels = { push(Routes.MODELS) },
                     onOpenSettings = { push(Routes.SETTINGS) },
                     onOpenSetup = { push(Routes.SETUP) },
+                    onOpenTerminal = { push(LinuxFeature.ROUTE_TERMINAL) },
+                    onOpenBrowser = { push(WebFeature.ROUTE_BROWSER) },
+                    onOpenCharacters = { push(CharacterRoutes.LIBRARY) },
+                    onOpenPermissions = { push(DeviceFeature.ROUTE_PERMISSIONS) },
+                    onOpenRoute = ::push,
                 )
                 Routes.MODELS -> ModelsScreen(
                     vm = graphViewModel { ModelsViewModel(context.applicationContext, it) },
@@ -102,8 +175,6 @@ fun AtomRoot(settings: AppSettings) {
                     onOpenModels = { push(Routes.MODELS) },
                     onOpenSetup = { push(Routes.SETUP) },
                     onOpenLicenses = { push(Routes.LICENSES) },
-                    onOpenTerminal = { push(Routes.TERMINAL) },
-                    onOpenLinux = { push(Routes.LINUX) },
                     features = featureEntries,
                     onOpenRoute = ::push,
                 )
@@ -118,9 +189,8 @@ fun AtomRoot(settings: AppSettings) {
                     },
                 )
                 Routes.LICENSES -> LicensesScreen(onBack = ::pop)
-                Routes.TERMINAL -> TerminalScreen(onBack = ::pop)
-                Routes.LINUX -> LinuxScreen(onBack = ::pop, onOpenTerminal = { push(Routes.TERMINAL) })
                 else -> Features.forRoute(route)?.Screen(route, nav) ?: pop()
+            }
             }
         }
     }

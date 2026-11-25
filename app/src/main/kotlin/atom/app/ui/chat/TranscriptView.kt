@@ -76,6 +76,12 @@ import androidx.compose.ui.unit.dp
 import atom.app.R
 import atom.app.agent.ChatItem
 import atom.app.agent.StepCall
+import atom.app.agent.StepCard
+import atom.characters.model.CandidateSet
+import atom.web.ui.BrowserPreviewCard
+import atom.web.ui.ImageResultCard
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import atom.app.agent.Transcript
 import atom.app.agent.WorkEntry
 import atom.app.data.Attachment
@@ -101,9 +107,20 @@ internal class MessageActions(
     val onBranch: ((ChatItem.Turn) -> Unit)?,
     val onDeleteFrom: ((Int) -> Unit)?,
     val onEdit: ((ChatItem.User) -> Unit)?,
-    val onReadAloud: ((String) -> Unit)?,
+    /** Text and message id (the turn key). */
+    val onReadAloud: ((String, String) -> Unit)?,
     val laterTurns: (Int) -> Int,
     val textAt: (Int?) -> String?,
+    /** Id of the message being read aloud, for a stop button on it. */
+    val readingId: String? = null,
+    val onStopReading: () -> Unit = {},
+    /** Character chats: reply candidates by stored index, and switching between them. */
+    val candidates: Map<Int, CandidateSet> = emptyMap(),
+    val onCandidate: ((Int, Int) -> Unit)? = null,
+    /** Character chats: edit a message in place (later turns stay). */
+    val onEditInPlace: ((Int, String) -> Unit)? = null,
+    /** Opens the live browser for the take-over; null hides the action on browser cards. */
+    val onTakeOverBrowser: (() -> Unit)? = null,
 )
 
 private const val PAGE = 40
@@ -222,6 +239,7 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var editInPlace by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 6.dp, bottomStart = 22.dp)
     Column(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
         if (item.steering) {
@@ -269,7 +287,12 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
                     actions.onCopy(item.text)
                 }
                 val edit = actions.onEdit
-                if (canEdit && edit != null) {
+                if (canEdit && actions.onEditInPlace != null) {
+                    MenuAction(stringResource(R.string.chat_edit), ChatGlyphs.Edit) {
+                        menu = false
+                        editInPlace = true
+                    }
+                } else if (canEdit && edit != null) {
                     MenuAction(stringResource(R.string.chat_edit), ChatGlyphs.Edit) {
                         menu = false
                         edit(item)
@@ -283,6 +306,9 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
                 }
             }
         }
+    }
+    if (editInPlace) {
+        EditInPlaceDialog(item.text, onSave = { actions.onEditInPlace?.invoke(item.index, it) }, onDismiss = { editInPlace = false })
     }
     if (confirmDelete) {
         DeleteFromDialog(
@@ -339,6 +365,7 @@ internal fun AttachmentChip(a: Attachment, onRemove: (() -> Unit)?) {
 private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
         if (turn.work.isNotEmpty()) Timeline(turn)
+        TurnCards(turn, actions.onTakeOverBrowser)
         turn.answerReasoning?.let { ReasoningBlock(it) }
         val answer = turn.answer
         if (answer != null) {
@@ -348,6 +375,31 @@ private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Bool
             }
         }
         if (turn.finished && (answer != null || turn.work.isNotEmpty())) TurnActions(turn, actions, canEdit)
+    }
+}
+
+/**
+ * Generated images (every one) and the latest browser preview of the turn, shown outside the folded timeline so
+ * results stay visible.
+ */
+@Composable
+private fun TurnCards(turn: ChatItem.Turn, onTakeOver: (() -> Unit)?) {
+    val cards = remember(turn.work) {
+        val all = turn.work.filterIsInstance<WorkEntry.Steps>().flatMap { g -> g.calls.mapNotNull { c -> c.card?.let { c.key to it } } }
+        val images = all.filter { it.second is StepCard.Image }
+        val browser = all.lastOrNull { it.second is StepCard.Browser }
+        images + listOfNotNull(browser)
+    }
+    if (cards.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        cards.forEach { (key, card) ->
+            androidx.compose.runtime.key(key) {
+                when (card) {
+                    is StepCard.Image -> ImageResultCard(card.text, Modifier.widthIn(max = 420.dp))
+                    is StepCard.Browser -> BrowserPreviewCard(card.text, onTakeOver = if (turn.live) onTakeOver else null, modifier = Modifier.widthIn(max = 280.dp))
+                }
+            }
+        }
     }
 }
 
@@ -628,6 +680,7 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
     var more by remember { mutableStateOf(false) }
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var editInPlace by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val userIndex = turn.userIndex
     Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -649,7 +702,21 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
         }
         val readAloud = actions.onReadAloud
         if (readAloud != null && copyText != null) {
-            ActionIcon(ChatGlyphs.Speaker, stringResource(R.string.chat_read_aloud)) { readAloud(copyText) }
+            if (actions.readingId == turn.key) {
+                ActionIcon(ChatGlyphs.Pause, stringResource(R.string.chat_stop_reading)) { actions.onStopReading() }
+            } else {
+                ActionIcon(ChatGlyphs.Speaker, stringResource(R.string.chat_read_aloud)) { readAloud(copyText, turn.key) }
+            }
+        }
+        val answerIndex = turn.answerIndex
+        if (canEdit && answerIndex != null && actions.onEditInPlace != null && copyText != null) {
+            ActionIcon(ChatGlyphs.Edit, stringResource(R.string.chat_edit)) { editInPlace = true }
+        }
+        val set = answerIndex?.let { actions.candidates[it] }
+        val pick = actions.onCandidate
+        if (set != null && pick != null && answerIndex != null) {
+            Spacer(Modifier.width(4.dp))
+            CandidateSwitcher(set, enabled = canEdit, onPrevious = { pick(answerIndex, set.selected - 1) }, onNext = { pick(answerIndex, set.selected + 1) })
         }
         if (canEdit && actions.onDeleteFrom != null && userIndex != null) {
             Box {
@@ -662,6 +729,10 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
                 }
             }
         }
+    }
+    val editIndex = turn.answerIndex
+    if (editInPlace && editIndex != null && copyText != null) {
+        EditInPlaceDialog(copyText, onSave = { actions.onEditInPlace?.invoke(editIndex, it) }, onDismiss = { editInPlace = false })
     }
     if (confirmRegenerate && userIndex != null) {
         val later = actions.laterTurns(userIndex)
@@ -689,6 +760,44 @@ private fun TurnActions(turn: ChatItem.Turn, actions: MessageActions, canEdit: B
             },
             onDismiss = { confirmDelete = false },
         )
+    }
+}
+
+/** "‹ 2 / 3 ›" for a character reply with alternatives. */
+@Composable
+private fun CandidateSwitcher(set: CandidateSet, enabled: Boolean, onPrevious: () -> Unit, onNext: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrevious, enabled = enabled && set.hasPrevious, modifier = Modifier.size(32.dp)) {
+            Icon(ChatGlyphs.Chevron, stringResource(R.string.chat_candidate_previous), Modifier.size(14.dp).rotate(180f), tint = colors.onSurfaceVariant)
+        }
+        Text(set.position, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, maxLines = 1)
+        IconButton(onClick = onNext, enabled = enabled && set.hasNext, modifier = Modifier.size(32.dp)) {
+            Icon(ChatGlyphs.Chevron, stringResource(R.string.chat_candidate_next), Modifier.size(14.dp), tint = colors.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EditInPlaceDialog(original: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    val field = rememberTextFieldState()
+    LaunchedEffect(original) { field.setTextAndPlaceCursorAtEnd(original) }
+    AtomDialog(
+        onDismissRequest = onDismiss,
+        icon = ChatGlyphs.Edit,
+        title = stringResource(R.string.chat_edit_in_place_title),
+        dismissLabel = stringResource(R.string.action_cancel),
+        onDismiss = onDismiss,
+        confirmLabel = stringResource(R.string.action_save_edit),
+        confirmEnabled = field.text.isNotBlank(),
+        onConfirm = {
+            onSave(field.text.toString())
+            onDismiss()
+        },
+    ) {
+        Text(stringResource(R.string.chat_edit_in_place_text), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        DialogField(field, "", singleLine = false)
     }
 }
 
@@ -781,6 +890,7 @@ private fun WorkingRow(state: ChatUiState, onPause: () -> Unit, onResume: () -> 
         state.compacting -> stringResource(R.string.run_compacting)
         state.currentTool != null -> humanizeTool(state.currentTool)
         state.phase == RunPhase.Starting -> stringResource(R.string.status_preparing)
+        state.replyingLabel != null -> state.replyingLabel
         else -> stringResource(R.string.status_thinking)
     }
     Column(Modifier.padding(top = 12.dp, bottom = 4.dp, start = 2.dp)) {

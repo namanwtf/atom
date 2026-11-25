@@ -233,6 +233,11 @@ class LinuxEnv private constructor(context: Context) {
 
     fun setJobCapMinutes(minutes: Int) = updateConfig { it.copy(jobCapMinutes = minutes.coerceIn(0, 24 * 60)) }
 
+    fun setTerminalFontSp(sp: Float) {
+        val v = TerminalText.clamp(sp)
+        if (store.get().terminalFontSp != v) updateConfig { it.copy(terminalFontSp = v) }
+    }
+
     /** Adds a shared folder (applies from the next session). Returns an error message, or null. */
     fun addSharedFolder(name: String, hostPath: String): String? {
         val folder = SharedFolder(name.trim(), SharedFolderRules.normalize(hostPath.trim()) ?: hostPath.trim())

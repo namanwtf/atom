@@ -52,6 +52,12 @@ interface Tool {
      */
     val usesPhoneUi: Boolean get() = false
 
+    /**
+     * How long one call may run before it is cut off, overriding the run's default tool timeout. Long tools
+     * (subagents, downloads, builds) return their own limit; null uses the default.
+     */
+    val timeoutMs: Long? get() = null
+
     suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult
 }
 

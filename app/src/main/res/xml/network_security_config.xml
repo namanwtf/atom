@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cloud providers are all HTTPS. Cleartext exists only for servers the user adds by hand: a local model server or
+  MCP server on this phone (localhost, 127.0.0.1, the Linux environment) or on the home network (a LAN IP).
+  Android cannot scope cleartext to "private IP ranges", so the base config permits it and the app never sends
+  anything to an http:// URL the user did not type. System CAs only; user-installed CAs are not trusted.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

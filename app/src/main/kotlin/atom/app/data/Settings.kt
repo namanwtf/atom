@@ -69,6 +69,10 @@ data class AppSettings(
     /** Effort used when reasoning is on; null means the model's own default. */
     val defaultReasoning: ReasoningEffort? = null,
     val autoTitles: Boolean = true,
+    /** Summarise older turns automatically at ~85% of the model's context window. */
+    val autoCompaction: Boolean = true,
+    /** Keep the screen on while a run is active and Atom is visible (with a safety timeout). */
+    val keepScreenOn: Boolean = true,
 ) {
     companion object {
         val DEFAULT_SELECTION = EngineSelection.Cloud(PresetCatalog.DEFAULT_PROVIDER, PresetCatalog.DEFAULT_MODEL)
@@ -99,6 +103,14 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     suspend fun setAutoTitles(enabled: Boolean) {
         store.edit { it[AUTO_TITLES] = enabled }
+    }
+
+    suspend fun setAutoCompaction(enabled: Boolean) {
+        store.edit { it[AUTO_COMPACTION] = enabled }
+    }
+
+    suspend fun setKeepScreenOn(enabled: Boolean) {
+        store.edit { it[KEEP_SCREEN_ON] = enabled }
     }
 
     suspend fun setFallback(fallback: EngineSelection.Cloud?) {
@@ -145,6 +157,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         reasoningByDefault = p[REASONING_DEFAULT] ?: false,
         defaultReasoning = p[REASONING_EFFORT]?.let { name -> ReasoningEffort.entries.firstOrNull { it.name == name } },
         autoTitles = p[AUTO_TITLES] ?: true,
+        autoCompaction = p[AUTO_COMPACTION] ?: true,
+        keepScreenOn = p[KEEP_SCREEN_ON] ?: true,
     )
 
     private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
@@ -162,5 +176,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val REASONING_DEFAULT = booleanPreferencesKey("reasoning_by_default")
         val REASONING_EFFORT = stringPreferencesKey("default_reasoning_effort")
         val AUTO_TITLES = booleanPreferencesKey("auto_titles")
+        val AUTO_COMPACTION = booleanPreferencesKey("auto_compaction")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
     }
 }

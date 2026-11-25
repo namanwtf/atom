@@ -92,6 +92,7 @@ internal class AutomationRuntime private constructor(context: Context) {
         TriggerService.sync(context, enabled)
         setComponent(BluetoothReceiver::class.java, enabled.any { it.trigger is Trigger.BluetoothConnected || it.trigger is Trigger.BluetoothDisconnected })
         Places.sync(context, enabled.filter { it.trigger is Trigger.Location })
+        runCatching { Automations.onListenersChanged() }
     }
 
     private fun setComponent(cls: Class<*>, on: Boolean) {

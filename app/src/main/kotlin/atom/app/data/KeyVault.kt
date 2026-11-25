@@ -57,7 +57,12 @@ class KeyVault(private val store: DataStore<Preferences>) {
      * phone). The UI asks the user to enter them again instead of treating them as empty.
      */
     val unreadable: Flow<Set<String>> = data
-        .map { prefs -> prefs.asMap().keys.mapNotNullTo(mutableSetOf()) { it.name.takeIf { n -> n.startsWith(STALE_PREFIX) }?.removePrefix(STALE_PREFIX)?.substringAfter('.') } }
+        .map { prefs ->
+            prefs.asMap().keys.mapNotNullTo(mutableSetOf()) {
+                it.name.takeIf { n -> n.startsWith(STALE_PREFIX + API_PREFIX) || n.startsWith(STALE_PREFIX + OAUTH_PREFIX) }
+                    ?.removePrefix(STALE_PREFIX)?.substringAfter('.')
+            }
+        }
         .distinctUntilChanged()
 
     suspend fun apiKey(providerId: String): String? = read(apiKeyName(providerId))
@@ -88,6 +93,42 @@ class KeyVault(private val store: DataStore<Preferences>) {
         }
     }
 
+    /**
+     * A feature module's own secret ([namespace] e.g. "speech", "web"). These live under their own prefix, so
+     * provider lists, the provider backup and [removeProvider] never see them. Unlike [apiKey], a value that can no
+     * longer be decrypted reads as [SecretRead.Unreadable] (also on later reads) until it is written again.
+     */
+    suspend fun readSecret(namespace: String, name: String): SecretRead {
+        val key = moduleName(namespace, name)
+        val prefs = data.first()
+        val blob = prefs[key] ?: return if (prefs[staleName(key)] != null) SecretRead.Unreadable else SecretRead.Missing
+        val plain = withContext(Dispatchers.Default) { runCatching { decrypt(blob) }.getOrNull() }
+        if (plain == null) {
+            store.edit {
+                it.remove(key)
+                it[staleName(key)] = "1"
+            }
+            return SecretRead.Unreadable
+        }
+        return SecretRead.Value(plain)
+    }
+
+    /** Blank or null removes the secret (and its unreadable marker). */
+    suspend fun writeSecret(namespace: String, name: String, value: String?) = write(moduleName(namespace, name), value)
+
+    /** Presence only, without decrypting. An unreadable value counts as present. */
+    suspend fun hasSecret(namespace: String, name: String): Boolean {
+        val key = moduleName(namespace, name)
+        val prefs = data.first()
+        return prefs[key] != null || prefs[staleName(key)] != null
+    }
+
+    sealed interface SecretRead {
+        data object Missing : SecretRead
+        data class Value(val value: String) : SecretRead
+        data object Unreadable : SecretRead
+    }
+
     suspend fun hfToken(): String? = read(HF_TOKEN)
 
     suspend fun setHfToken(token: String?) = write(HF_TOKEN, token)
@@ -95,6 +136,8 @@ class KeyVault(private val store: DataStore<Preferences>) {
     private fun apiKeyName(providerId: String) = stringPreferencesKey(API_PREFIX + providerId)
 
     private fun oauthName(providerId: String) = stringPreferencesKey(OAUTH_PREFIX + providerId)
+
+    private fun moduleName(namespace: String, name: String) = stringPreferencesKey("$MODULE_PREFIX$namespace.$name")
 
     private fun staleName(key: Preferences.Key<String>) = stringPreferencesKey(STALE_PREFIX + key.name)
 
@@ -174,6 +217,8 @@ class KeyVault(private val store: DataStore<Preferences>) {
         const val API_PREFIX = "api."
         const val OAUTH_PREFIX = "oauth."
         const val STALE_PREFIX = "stale."
+        /** Feature-module secrets (speech, web); never exported by the provider backup. */
+        const val MODULE_PREFIX = "mod."
         val HF_TOKEN = stringPreferencesKey("hf.token")
     }
 }

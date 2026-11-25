@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_stop_reading">Stop reading</string>
+    <string name="chat_candidate_previous">Previous reply</string>
+    <string name="chat_candidate_next">Next reply</string>
+    <string name="chat_edit_in_place_title">Edit message</string>
+    <string name="chat_edit_in_place_text">The message changes in place. Later turns stay as they are.</string>
+    <string name="action_save_edit">Save</string>
+    <plurals name="chat_subagents_chip">
+        <item quantity="one">%d subagent</item>
+        <item quantity="other">%d subagents</item>
+    </plurals>
+    <string name="chat_subagents_title">Subagents</string>
+    <string name="chat_subagents_empty">No subagents ran in this task.</string>
+    <string name="subagent_status_running">Running</string>
+    <string name="subagent_status_done">Done</string>
+    <string name="subagent_status_partial">Partly done</string>
+    <string name="subagent_status_failed">Failed</string>
+    <string name="subagent_status_cancelled">Cancelled</string>
+    <string name="subagent_steps">%1$d steps · %2$s in · %3$s out</string>
+    <string name="subagent_prompt">Task</string>
+    <string name="subagent_result">Result</string>
+</resources>

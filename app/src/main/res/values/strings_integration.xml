@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backup sections (Settings > Data backup) -->
+    <string name="backup_part_conversations">Conversations</string>
+    <string name="backup_part_providers">Model providers and API keys</string>
+    <string name="backup_part_settings">App settings</string>
+    <string name="backup_part_memory">Memory (MEMORY.md)</string>
+    <string name="backup_part_characters">Characters</string>
+    <string name="backup_part_voice">Speech settings</string>
+    <string name="backup_invalid_section">This part of the file is damaged.</string>
+    <string name="backup_unsupported_version">This part was made by a newer version of Atom.</string>
+</resources>
