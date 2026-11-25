@@ -167,6 +167,16 @@ def window_frames():
     print("=====END=====")
 
 
+def focus_report():
+    """Which window has input focus and whether the keyboard is up (keyboard-fit evidence)."""
+    win = sh("dumpsys window | grep -E 'mCurrentFocus|mFocusedWindow|imeInputTarget|imeLayeringTarget' | head -6")
+    ime = sh("dumpsys input_method | grep -E 'mInputShown|mServedView|isInputViewShown|mImeWindowVis' | head -6")
+    print("=====FOCUS=====")
+    for line in (win + ime).splitlines():
+        print("  " + line.strip()[:200])
+    print("=====END=====")
+
+
 FRAME = re.compile(r"(?:mFrame|\bframe)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
@@ -328,9 +338,14 @@ def main():
     shot(p + "35_mini_chat")
     # Focus the composer: the panel shrinks so the composer sits on the keyboard.
     if tap("^Ask Atom", wait=2.5):
+        focus_report()
         shot(p + "37_mini_chat_keyboard")
         back(wait=1.5)
     back(wait=1.5)
+    focus_report()
+    if find("^Ask Atom anything$|^Ask Atom"):
+        print("[capture] the panel is still open after Back; closing it with its X")
+        tap("^Close$", wait=1.5)
     window_frames()
     shot(p + "38_after_panel")
     after = bubble_bounds()
