@@ -470,7 +470,9 @@ internal fun rememberMathLayout(color: Color = MaterialTheme.colorScheme.onSurfa
 @Composable
 internal fun MathBlock(tex: String, modifier: Modifier = Modifier) {
     val math = rememberMathLayout()
-    val sizePx = with(LocalDensity.current) { 18.sp.toPx() }
+    // A touch larger than body text, from the theme so the global font size applies.
+    val base = androidx.compose.material3.MaterialTheme.typography.bodyLarge.fontSize
+    val sizePx = with(LocalDensity.current) { (if (base.isSp) base else 16.sp).toPx() } * 1.12f
     val box = remember(tex, math, sizePx) { math.layout(tex, sizePx, display = true) }
     val density = LocalDensity.current
     Box(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), contentAlignment = Alignment.Center) {

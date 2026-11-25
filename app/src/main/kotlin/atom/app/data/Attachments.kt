@@ -41,21 +41,49 @@ object Attachments {
         val resolver = context.contentResolver
         val size = sizeOf(resolver, uri)
         if (size != null && size > MAX_IMAGE_BYTES) return@withContext Outcome.Rejected(Reason.TooLarge)
+        val name = displayName(resolver, uri)
+        saveDownscaled(context, ImageDecoder.createSource(resolver, uri), name)
+    }
+
+    /** Decodes [source] at most [MAX_IMAGE_SIDE] px on the long side and keeps a JPEG copy for the model. */
+    private fun saveDownscaled(context: Context, source: ImageDecoder.Source, name: String?): Outcome {
         val bitmap = runCatching {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
                 val w = info.size.width
                 val h = info.size.height
                 val scale = minOf(1f, MAX_IMAGE_SIDE.toFloat() / maxOf(w, h))
                 if (scale < 1f) decoder.setTargetSize((w * scale).toInt().coerceAtLeast(1), (h * scale).toInt().coerceAtLeast(1))
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
-        }.getOrNull() ?: return@withContext Outcome.Rejected(Reason.Unreadable)
+        }.getOrNull() ?: return Outcome.Rejected(Reason.Unreadable)
         val file = File(imageDir(context), UUID.randomUUID().toString() + ".jpg")
-        runCatching { file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) } }
-            .onFailure { return@withContext Outcome.Rejected(Reason.Unreadable) }
+        val written = runCatching { file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) } }.isSuccess
         bitmap.recycle()
-        Outcome.Added(Attachment(AttachmentKind.Image, file.absolutePath, displayName(resolver, uri) ?: file.name, file.length()))
+        if (!written) {
+            file.delete()
+            return Outcome.Rejected(Reason.Unreadable)
+        }
+        return Outcome.Added(Attachment(AttachmentKind.Image, file.absolutePath, name ?: file.name, file.length()))
     }
+
+    /** True for a JPEG or PNG file path (by extension). */
+    fun isImagePath(path: String): Boolean = path.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
+
+    /**
+     * An absolute path handed to the runtime (`AgentHost.start(attachments = ...)`): JPEG and PNG files become image
+     * attachments (a downscaled copy, sent as pixels); everything else is a path reference. Null for a relative path.
+     */
+    suspend fun fromPathForModel(context: Context, path: String): Attachment? = withContext(Dispatchers.IO) {
+        val clean = path.trim()
+        val file = File(clean)
+        if (clean.startsWith("/") && file.isFile && isImagePath(clean) && file.length() <= MAX_IMAGE_BYTES) {
+            val outcome = saveDownscaled(context, ImageDecoder.createSource(file), file.name)
+            if (outcome is Outcome.Added) return@withContext outcome.attachment
+        }
+        fromPath(clean)
+    }
+
+    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png")
 
     /** A picked or shared document: its real path when the provider exposes one, otherwise a private copy. */
     suspend fun importFile(context: Context, uri: Uri): Outcome = withContext(Dispatchers.IO) {

@@ -81,6 +81,8 @@ object LinuxTools {
 
 private class RunTool(private val app: Context) : Tool {
     override val risk = Risk.Sensitive
+    // timeout_s goes up to 600; the command enforces its own limit, this only has to outlast it.
+    override val timeoutMs: Long = 615_000
     override val spec = ToolSpec(
         name = "terminal_run",
         description = "Run one shell command and wait for it. In Linux you are root inside the distro: install software " +
@@ -124,6 +126,8 @@ private class RunTool(private val app: Context) : Tool {
 
 private class SessionTool(private val app: Context) : Tool {
     override val risk = Risk.Sensitive
+    // open waits up to 15 s for the shell, send up to wait_s (120 s max).
+    override val timeoutMs: Long = 140_000
     override val spec = ToolSpec(
         name = "terminal_session",
         description = "A persistent shell that keeps its state (cwd, variables, running programs) between calls, also " +
@@ -185,6 +189,7 @@ private class SessionTool(private val app: Context) : Tool {
 
 private class SessionReadTool : Tool {
     override val risk = Risk.Read
+    override val timeoutMs: Long = 130_000
     override val spec = ToolSpec(
         name = "terminal_session_read",
         description = "Read the latest command and output of a terminal_session (e.g. after a long command), or list sessions when id is omitted.",

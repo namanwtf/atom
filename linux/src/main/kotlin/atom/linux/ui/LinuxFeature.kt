@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import atom.core.tool.Tool
 import atom.linux.LinuxTools
 import atom.linux.R
+import atom.linux.jobs.JobManager
 import atom.ui.components.ScreenIcons
 import atom.ui.feature.AtomFeature
 import atom.ui.feature.FeatureEntry
@@ -28,6 +29,8 @@ object LinuxFeature : AtomFeature {
     const val ROUTE_JOBS = "linux/jobs"
     private const val ROUTE_JOB_LOG = "linux/jobs/"
 
+    override fun onAppCreate(context: Context) = JobManager.reconcileOnStart(context)
+
     override fun tools(context: Context): List<Tool> = LinuxTools.create(context)
 
     override fun promptHint(context: Context): String =
@@ -36,8 +39,9 @@ object LinuxFeature : AtomFeature {
             "read the errors and fix them."
 
     override val entries: List<FeatureEntry> = listOf(
-        FeatureEntry(FeatureSection.System, R.string.linux_entry_title, R.string.linux_entry_subtitle, ScreenIcons.Storage, ROUTE_HOME),
         FeatureEntry(FeatureSection.System, R.string.terminal_entry_title, R.string.terminal_entry_subtitle, AtomIcons.Terminal, ROUTE_TERMINAL),
+        FeatureEntry(FeatureSection.System, R.string.linux_entry_title, R.string.linux_entry_subtitle, ScreenIcons.Storage, ROUTE_HOME),
+        FeatureEntry(FeatureSection.System, R.string.workspace_entry_title, R.string.workspace_entry_subtitle, ScreenIcons.Document, ROUTE_WORKSPACE),
     )
 
     @Composable
@@ -48,7 +52,7 @@ object LinuxFeature : AtomFeature {
             route == ROUTE_HEALTH -> HealthScreen(onBack = nav::back)
             route == ROUTE_FOLDERS -> FoldersScreen(onBack = nav::back)
             route == ROUTE_FILES -> FilesScreen(onBack = nav::back)
-            route == ROUTE_WORKSPACE -> WorkspaceScreen(onBack = nav::back)
+            route == ROUTE_WORKSPACE -> WorkspaceScreen(onBack = nav::back, open = nav::open)
             route == ROUTE_JOBS -> JobsScreen(onBack = nav::back, openLog = { nav.open(ROUTE_JOB_LOG + it) })
             route.startsWith(ROUTE_JOB_LOG) -> JobLogScreen(route.removePrefix(ROUTE_JOB_LOG), onBack = nav::back)
             else -> LinuxHomeScreen(onBack = nav::back, open = nav::open)

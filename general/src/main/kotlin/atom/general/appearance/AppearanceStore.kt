@@ -27,8 +27,9 @@ object AppearanceCodec {
     const val PROGRESSIVE_BLUR = "progressiveBlur"
     const val PREDICTIVE_BACK = "predictiveBack"
     const val SWIPE_BACK = "swipeBackAnywhere"
+    const val TEXT_SIZE = "textSize"
 
-    val KEYS = listOf(MODE, PURE_BLACK, ACCENT, COLOR_STYLE, BLUR, TOP_BAR_BLUR, PROGRESSIVE_BLUR, PREDICTIVE_BACK, SWIPE_BACK)
+    val KEYS = listOf(MODE, PURE_BLACK, ACCENT, COLOR_STYLE, BLUR, TOP_BAR_BLUR, PROGRESSIVE_BLUR, PREDICTIVE_BACK, SWIPE_BACK, TEXT_SIZE)
 
     fun encode(a: Appearance): Map<String, String> = linkedMapOf(
         MODE to a.mode.name,
@@ -40,6 +41,7 @@ object AppearanceCodec {
         PROGRESSIVE_BLUR to a.progressiveBlur.toString(),
         PREDICTIVE_BACK to a.predictiveBack.toString(),
         SWIPE_BACK to a.swipeBackAnywhere.toString(),
+        TEXT_SIZE to a.textSize.name,
     )
 
     fun decode(m: Map<String, String>): Appearance {
@@ -55,6 +57,7 @@ object AppearanceCodec {
             progressiveBlur = bool(PROGRESSIVE_BLUR, d.progressiveBlur),
             predictiveBack = bool(PREDICTIVE_BACK, d.predictiveBack),
             swipeBackAnywhere = bool(SWIPE_BACK, d.swipeBackAnywhere),
+            textSize = enumOr(m[TEXT_SIZE], d.textSize),
         )
     }
 

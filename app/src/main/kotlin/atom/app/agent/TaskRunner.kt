@@ -52,6 +52,12 @@ import atom.ui.feature.HostStep
 import atom.ui.feature.RunPhase
 import atom.ui.feature.RunSource
 import atom.ui.feature.StepState
+import atom.app.data.ModelRole
+import atom.characters.session.CharacterRun
+import atom.characters.session.CharacterSession
+import atom.extend.subagent.SubagentRuns
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -107,6 +113,10 @@ data class LiveRun(
     val finalText: String? = null,
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
+    /** "<name> is replying…" in character chats. */
+    val replyingLabel: String? = null,
+    /** This run produces an alternative character reply (no tools) instead of a new turn. */
+    val regenerating: Boolean = false,
 ) {
     val active: Boolean get() = phase.active
 }
@@ -167,8 +177,16 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
     override fun start(prompt: String, conversationId: String?, source: RunSource, attachments: List<String>): String? {
         if (conversationId != null && isRunning(conversationId)) return null
-        val atts = attachments.mapNotNull { Attachments.fromPath(it) }
-        return launchTurn(TurnRequest(conversationId ?: Conversation.newId(), base = null, prompt = prompt, attachments = atts, source = source))
+        val id = conversationId ?: Conversation.newId()
+        if (attachments.isEmpty()) return launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = emptyList(), source = source))
+        if (!claim(id)) return null
+        scope.launch {
+            // Image files are sent as pixels (downscaled copies); anything else is passed as a path reference.
+            val atts = attachments.mapNotNull { Attachments.fromPathForModel(app, it) }
+            release(id)
+            launchTurn(TurnRequest(id, base = null, prompt = prompt, attachments = atts, source = source))
+        }
+        return id
     }
 
     /**
@@ -195,8 +213,62 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
     private val queuedAttachments = ConcurrentHashMap<String, List<Attachment>>()
 
+    /** Conversations reserved by [start] while their attachments are prepared, so a second start is refused. */
+    private val claimed = HashSet<String>()
+
+    private fun claim(id: String): Boolean = synchronized(lock) { if (executions.containsKey(id) || id in claimed) false else claimed.add(id) }
+
+    private fun release(id: String) = synchronized(lock) { claimed.remove(id) }
+
+    /**
+     * Character chats: produces another reply for the character message at stored [answerIndex] (no tools, one
+     * model call). The reply is kept as a switchable candidate; later turns stay as they are.
+     */
+    fun regenerateCharacterReply(conversation: Conversation, answerIndex: Int): String? {
+        if (isRunning(conversation.id)) return null
+        val answer = conversation.messages.getOrNull(answerIndex) ?: return null
+        if (answer.message.role != Role.Assistant || answer.message.toolCalls.isNotEmpty()) return null
+        val base = conversation.copy(messages = conversation.messages.take(answerIndex))
+        return launchTurn(
+            TurnRequest(conversation.id, base, prompt = null, attachments = emptyList(), source = RunSource.Chat, regenerate = Regenerate(conversation, answerIndex)),
+        )
+    }
+
+    /** Switches the character message at [answerIndex] to candidate [index] and saves it. */
+    suspend fun selectCandidate(conversationId: String, answerIndex: Int, index: Int): Boolean {
+        if (isRunning(conversationId)) return false
+        val c = graph.conversations.load(conversationId) ?: return false
+        val m = c.messages.getOrNull(answerIndex) ?: return false
+        val set = runCatching { CharacterSession.selectCandidate(conversationId, m.createdAt.toString(), index) }.getOrNull() ?: return false
+        graph.conversations.update(conversationId) { conv ->
+            conv.copy(messages = conv.messages.mapIndexed { i, s -> if (i == answerIndex) s.copy(message = ChatMessage.assistant(set.current)) else s })
+        }
+        return true
+    }
+
+    /** Character chats: changes a stored message's text in place, keeping every later turn. */
+    suspend fun editInPlace(conversationId: String, index: Int, text: String): Boolean {
+        if (isRunning(conversationId)) return false
+        val clean = text.trim()
+        if (clean.isEmpty()) return false
+        var key: String? = null
+        var assistant = false
+        val saved = graph.conversations.update(conversationId) { conv ->
+            val m = conv.messages.getOrNull(index) ?: return@update conv
+            key = m.createdAt.toString()
+            assistant = m.message.role == Role.Assistant
+            val msg = if (assistant) ChatMessage.assistant(clean) else ChatMessage.user(clean)
+            conv.copy(messages = conv.messages.mapIndexed { i, s -> if (i == index) s.copy(message = msg) else s }, updatedAt = System.currentTimeMillis())
+        } ?: return false
+        if (assistant) key?.let { runCatching { CharacterSession.replaceCandidate(saved.id, it, clean) } }
+        return true
+    }
+
     private fun takeQueuedAttachments(conversationId: String, m: QueuedMessage): List<Attachment> =
         queuedAttachments.remove("$conversationId#${m.id}") ?: m.attachments.mapNotNull { Attachments.fromPath(it) }
+
+    /** The full conversation and the character reply being regenerated. */
+    private class Regenerate(val original: Conversation, val answerIndex: Int)
 
     private class TurnRequest(
         val conversationId: String,
@@ -204,12 +276,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         val prompt: String?,
         val attachments: List<Attachment>,
         val source: RunSource,
+        val regenerate: Regenerate? = null,
     )
 
     private fun launchTurn(request: TurnRequest): String? {
         val now = System.currentTimeMillis()
         val execution = synchronized(lock) {
-            if (executions[request.conversationId] != null) return null
+            if (executions[request.conversationId] != null || request.conversationId in claimed) return null
             Execution(UUID.randomUUID().toString(), request).also {
                 executions[request.conversationId] = it
                 byRunId[it.runId] = it
@@ -226,6 +299,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 phase = RunPhase.Starting,
                 turnStart = (request.base?.messages?.size ?: 0).coerceAtMost(placeholder.messages.size),
                 startedAt = now,
+                regenerating = request.regenerate != null,
             ))
         }
         execution.job = scope.launch(execution.dispatcher) { execution.run() }
@@ -343,6 +417,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
     }
 
+    /** The conversation run [runId] (a [ToolContext.taskId]) belongs to, e.g. for WebHost.conversationOf. */
+    fun conversationOf(runId: String): String? = byRunId[runId]?.conversationId
+
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
 
@@ -359,7 +436,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         return try {
             val engine = graph.router.acquire(selectionFor(conversation).first).also { routed = it }
             val config = engine.agentConfig("", emptyList(), slowApprovals = false)
-            val window = minOf(engine.contextWindow ?: config.context.budgetTokens, config.context.budgetTokens)
+            val known = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(engine.selection ?: selectionFor(conversation).first) }.getOrNull()
+            val window = minOf(known ?: config.context.budgetTokens, config.context.budgetTokens)
             val cut = Compactor.cutIndex(view.messages, keepRecentTokens = (window * 0.3).toInt())
             if (cut <= 0) return CompactResult.NothingToCompact
             val before = ContextPacker.measure("", view.messages, config.context)
@@ -427,7 +505,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         scope.launch {
             holdsMutex.withLock {
                 val now = synchronized(lock) { executions.values.count { !it.paused.value } }
-                graph.runPower.update(now, graph.runtimePrefs.current().keepScreenOn)
+                graph.runPower.update(now, graph.settings.current().keepScreenOn)
             }
         }
     }
@@ -436,7 +514,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
     init {
         // "Keep screen on while running" applies at once, also to a run already going.
-        scope.launch { graph.runtimePrefs.settings.collect { refreshHolds() } }
+        scope.launch { graph.settings.settings.map { it.keepScreenOn }.distinctUntilChanged().collect { refreshHolds() } }
     }
 
     /** The conversation's own model if it still exists, else the default; second is a notice when it fell back. */
@@ -456,6 +534,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             is EngineSelection.Local -> selection.installedModelId
         },
     )
+
+    /** The model role a run from [source] uses when its conversation has no model of its own; null = primary. */
+    private fun roleFor(source: RunSource): ModelRole? = when (source) {
+        RunSource.Chat -> null
+        RunSource.Bubble, RunSource.Assistant, RunSource.Voice -> ModelRole.Assistant
+        RunSource.Automation, RunSource.Schedule -> ModelRole.Scheduled
+    }
 
     private fun toHostRun(run: LiveRun): HostRun {
         val messages = run.conversation.messages
@@ -503,6 +588,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         var saved = true
 
         private val id = request.conversationId
+        val conversationId: String get() = id
         private lateinit var conversation: Conversation
         private val stored = ArrayList<StoredMessage>()
         private val view = ArrayList<Int>()
@@ -570,44 +656,77 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private val pendingAttachments = ArrayDeque<List<Attachment>>()
 
         suspend fun run() {
+            var character: CharacterRun? = null
+            var subagentWatch: Job? = null
             try {
                 prepare()
                 refreshHolds()
-                val (selection, fallbackNotice) = selectionFor(conversation)
+                val settings = graph.settings.current()
+                val (saved, fallbackNotice) = selectionFor(conversation)
+                // Runs from the bubble, the assistant, voice or schedules use their role's model unless the
+                // conversation has its own.
+                val role = roleFor(request.source)?.takeIf { conversation.selection == null }
+                val roleSelection = role?.let { r -> runCatching { graph.modelRoles.resolve(r, null) }.getOrNull() }
+                val selection = roleSelection ?: saved
                 val engine = graph.router.acquire(selection).also { routed = it }
                 selectionInUse = engine.selection ?: selection
-                windowInUse = engine.contextWindow
+                val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
+                windowInUse = window
                 support = ReasoningSupport.of(engine.reasoning.supported, engine.reasoning.levels)
-                val settings = graph.settings.current()
-                val prefs = graph.runtimePrefs.current()
-                val shell = graph.shell()
-                val tools = buildTools(settings.confirmActTools, shell)
-                this.tools = tools
-                val registry = ToolRegistry(tools)
+                val conversationEffort = conversation.reasoningEffort ?: settings.defaultReasoning
+                val wantedEffort = if (role != null && roleSelection != null) {
+                    runCatching { graph.modelRoles.resolveReasoning(role, roleSelection, conversationEffort) }.getOrDefault(conversationEffort)
+                } else {
+                    conversationEffort
+                }
                 val reasoningSetting = support.request(
                     enabled = conversation.reasoningEnabled ?: settings.reasoningByDefault,
-                    effort = conversation.reasoningEffort ?: settings.defaultReasoning,
+                    effort = engine.snapReasoning(wantedEffort),
                 )
-                val window = engine.contextWindow
-                val config = engine.agentConfig(
-                    systemPrompt = SystemPrompt.build(shell.tier, engine.onDevice) +
-                        Features.all.mapNotNull { runCatching { it.promptHint(app) }.getOrNull() }.joinToString("") { "\n\n" + it },
-                    tools = registry.specs,
-                    slowApprovals = settings.confirmActTools,
-                ).copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = prefs.autoCompact)
-                val notice = listOfNotNull(
-                    fallbackNotice,
-                    engine.notice,
-                    if (window == null && prefs.autoCompact) app.getString(atom.app.R.string.run_window_unknown) else null,
-                ).joinToString("\n").ifEmpty { null }
-                if (fallbackNotice != null) commit(StoredMessage.notice(fallbackNotice), modelVisible = false)
-                contextWindow = config.usableWindow
-                updateRun(id) { copy(phase = if (paused.value) RunPhase.Paused else RunPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = notice) }
 
                 val images = loadTurnImages()
                 val history = ModelHistory.build(stored, images)
                 view.clear()
                 view.addAll(history.storedIndex)
+
+                // Character chats: the character block is built (and the chat marked active, which enables the
+                // story memory tool) before the tools are gathered.
+                character = runCatching {
+                    CharacterSession.prepareRun(id, history.messages, window, regenerate = request.regenerate != null)
+                }.getOrNull()
+                character?.let { c -> updateRun(id) { copy(replyingLabel = c.replyingLabel) } }
+
+                val shell = graph.shell()
+                val gathered = buildTools(settings.confirmActTools, shell)
+                val tools = character?.filterTools(gathered) ?: gathered
+                this.tools = tools
+                val registry = ToolRegistry(tools)
+                val basePrompt = SystemPrompt.build(shell.tier, engine.onDevice) +
+                    Features.all.mapNotNull { runCatching { it.promptHint(app) }.getOrNull() }.joinToString("") { "\n\n" + it }
+                val systemPrompt = character?.let { basePrompt + "\n\n" + it.prompt.systemWithPostHistory() } ?: basePrompt
+                val autoCompact = settings.autoCompaction
+                val config = engine.agentConfig(systemPrompt = systemPrompt, tools = registry.specs, slowApprovals = settings.confirmActTools)
+                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1) else c }
+                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                val notice = listOfNotNull(
+                    fallbackNotice?.takeIf { roleSelection == null },
+                    engine.notice,
+                    if (window == null && autoCompact) app.getString(atom.app.R.string.run_window_unknown) else null,
+                ).joinToString("\n").ifEmpty { null }
+                if (fallbackNotice != null && roleSelection == null && request.regenerate == null) commit(StoredMessage.notice(fallbackNotice), modelVisible = false)
+                contextWindow = config.usableWindow
+                updateRun(id) { copy(phase = if (paused.value) RunPhase.Paused else RunPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = notice) }
+
+                // Subagents report progress through SubagentRuns; it keeps the wake lock and screen timers alive
+                // during long subagent calls. Event-driven and scoped to this run.
+                subagentWatch = scope.launch {
+                    SubagentRuns.runs
+                        .map { list -> list.filter { it.parentTaskId == runId }.sumOf { it.steps.size + it.text.length / 200 + it.status.ordinal } }
+                        .distinctUntilChanged()
+                        .drop(1)
+                        .collect { graph.runPower.progress() }
+                }
+
                 stats = stats.withTurn()
                 Agent(engine.engine, registry, config).run(history.messages, toolContext, control).collect { handle(it) }
                 if (outcome == null) outcome = RunOutcome.Completed
@@ -627,6 +746,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 error = e.message ?: e::class.simpleName
                 finish()
             } finally {
+                subagentWatch?.cancel()
+                if (character != null) CharacterSession.endRun(id)
                 withContext(NonCancellable) { cleanup() }
             }
         }
@@ -650,6 +771,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             turnStart = (stored.indexOfLast { it.isVisibleUser }).coerceAtLeast(0)
             publish()
             updateRun(id) { copy(turnStart = this@Execution.turnStart) }
+            // A regeneration works on a truncated copy; the saved conversation stays whole until it finishes.
+            if (request.regenerate != null) return
             graph.conversations.save(snapshot())
             graph.journal.begin(id, stored.size)
             journalOpen = true
@@ -666,7 +789,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private suspend fun buildTools(confirmAct: Boolean, shell: atom.device.ShellExecutor): List<Tool> {
             val base = DeviceTools.create(app, shell) + LinuxTools.create(app) +
                 Features.all.flatMap { f -> runCatching { f.tools(app) }.getOrDefault(emptyList()) }
-            val wrapped = base.map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }
+            val wrapped = base.map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }.map(LongTools::apply)
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
         }
@@ -904,7 +1027,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 RunOutcome.OutputLimit -> stored += StoredMessage.notice(LlmErrors.explain(atom.core.llm.LlmFailure.OutputLimit))
                 else -> Unit
             }
-            val final = snapshot()
+            val final = request.regenerate?.let { regenerated(it) } ?: snapshot()
             saved = runCatching { graph.conversations.save(final) }.isSuccess
             if (saved && journalOpen) {
                 graph.journal.finish(id)
@@ -929,9 +1052,33 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     compacting = false,
                 )
             }
-            if (outcome == RunOutcome.Completed) titleCandidate = final
+            if (outcome == RunOutcome.Completed && request.regenerate == null) titleCandidate = final
             pruneFinished()
         }
+
+        /**
+         * The saved conversation after a character-reply regeneration: the original record with the reply switched
+         * to the new candidate. Anything else (failure, stop, no text) leaves the original untouched.
+         */
+        private suspend fun regenerated(r: Regenerate): Conversation {
+            val original = r.original.copy(updatedAt = System.currentTimeMillis(), stats = stats)
+            val target = original.messages.getOrNull(r.answerIndex) ?: return original
+            val reply = stored.drop(turnStartOfRegenerate(r)).lastOrNull { it.message.role == Role.Assistant && it.message.toolCalls.isEmpty() }
+                ?.message?.text?.trim()
+            if (outcome == RunOutcome.Failed) {
+                return original.copy(messages = original.messages + StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true))
+            }
+            if (outcome != RunOutcome.Completed || reply.isNullOrEmpty()) return original
+            val set = runCatching { CharacterSession.addCandidate(id, target.createdAt.toString(), target.message.text, reply) }.getOrNull()
+            val text = set?.current ?: reply
+            return original.copy(
+                messages = original.messages.mapIndexed { i, s ->
+                    if (i == r.answerIndex) s.copy(message = ChatMessage.assistant(text), reasoning = null, reasoningMs = null) else s
+                },
+            )
+        }
+
+        private fun turnStartOfRegenerate(r: Regenerate): Int = r.answerIndex.coerceAtMost(stored.size)
 
         private suspend fun generateTitle(final: Conversation) {
             if (final.titleSource != TitleSource.Placeholder) return

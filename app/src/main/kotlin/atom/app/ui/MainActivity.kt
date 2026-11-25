@@ -4,10 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import androidx.lifecycle.lifecycleScope
-import atom.voice.Wake
-import atom.voice.WakePolicy
-import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -21,20 +17,34 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import atom.app.ChatRequest
 import atom.app.data.AppSettings
 import atom.app.graph
+import atom.app.integration.NavRequests
+import atom.automation.AutomationFeature
+import atom.general.appearance.AppearanceStore
+import atom.general.appearance.rememberAppearance
+import atom.overlay.OverlayHooks
 import atom.ui.theme.AtomTheme
 import atom.ui.theme.isDark
+import atom.voice.Wake
+import atom.voice.WakePolicy
+import atom.voice.speech.Speech
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) handlePrompt(intent)
+        if (savedInstanceState == null) handleIntent(intent)
+        // One-time migration: the Appearance screen takes over the old theme setting.
+        lifecycleScope.launch { AppearanceStore.get(this@MainActivity).seedModeIfUnset(graph.settings.current().theme) }
         setContent {
             val settings by graph.settings.settings.collectAsStateWithLifecycle(initialValue = null)
             val loaded: AppSettings? = settings
-            val dark = isDark(loaded?.theme ?: AppSettings().theme, isSystemInDarkTheme())
+            val appearance = rememberAppearance()
+            val dark = isDark(appearance?.mode ?: loaded?.theme ?: AppSettings().theme, isSystemInDarkTheme())
             DisposableEffect(dark) {
                 val bars = if (dark) {
                     SystemBarStyle.dark(Color.TRANSPARENT)
@@ -44,12 +54,18 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
                 onDispose { }
             }
-            AtomTheme(mode = loaded?.theme ?: AppSettings().theme) {
-                if (loaded == null) {
-                    // DataStore answers within a frame or two; avoid flashing the wrong first screen.
+            if (appearance == null) {
+                // DataStore answers within a frame or two; avoid flashing the wrong theme or first screen.
+                AtomTheme(mode = loaded?.theme ?: AppSettings().theme) {
                     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
-                } else {
-                    AtomRoot(loaded)
+                }
+            } else {
+                AtomTheme(appearance) {
+                    if (loaded == null) {
+                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                    } else {
+                        AtomRoot(loaded)
+                    }
                 }
             }
         }
@@ -58,7 +74,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handlePrompt(intent)
+        handleIntent(intent)
     }
 
     override fun onStart() {
@@ -68,22 +84,54 @@ class MainActivity : ComponentActivity() {
         // The microphone service may only be started from the foreground, so the saved choice is applied here.
         lifecycleScope.launch {
             val s = graph.settings.current()
-            Wake.setEnabled(this@MainActivity, s.heyAtom, WakePolicy(screenOffListening = s.heyAtomScreenOff))
+            val policy = WakePolicy(screenOffListening = s.heyAtomScreenOff, listenWhileCharging = Speech.config.value.wakeWhileCharging)
+            Wake.setEnabled(this@MainActivity, s.heyAtom, policy)
         }
     }
 
-    private fun handlePrompt(intent: Intent?) {
-        val prompt = intent?.getStringExtra(EXTRA_PROMPT)?.takeIf { it.isNotBlank() } ?: return
-        intent.removeExtra(EXTRA_PROMPT)
-        graph.tasks.start(base = null, prompt = prompt)
+    /** Prompts (voice commands), conversation links (overlay, automations), routes (overlay settings links), assist. */
+    private fun handleIntent(intent: Intent?) {
+        intent ?: return
+        intent.getStringExtra(EXTRA_PROMPT)?.takeIf { it.isNotBlank() }?.let { prompt ->
+            intent.removeExtra(EXTRA_PROMPT)
+            graph.tasks.start(base = null, prompt = prompt)
+        }
+        val conversationId = intent.getStringExtra(OverlayHooks.EXTRA_CONVERSATION_ID)
+            ?: intent.getStringExtra(AutomationFeature.EXTRA_CONVERSATION_ID)
+        if (conversationId != null) {
+            intent.removeExtra(OverlayHooks.EXTRA_CONVERSATION_ID)
+            intent.removeExtra(AutomationFeature.EXTRA_CONVERSATION_ID)
+            graph.postChatRequest(ChatRequest.Open(conversationId))
+        }
+        intent.getStringExtra(EXTRA_ROUTE)?.takeIf { it.isNotBlank() }?.let { route ->
+            intent.removeExtra(EXTRA_ROUTE)
+            NavRequests.open(route)
+        }
+        if (intent.action == Intent.ACTION_ASSIST) {
+            intent.action = null
+            if (conversationId == null) NavRequests.reset()
+        }
     }
 
     companion object {
         private const val EXTRA_PROMPT = "atom.app.EXTRA_PROMPT"
+        private const val EXTRA_ROUTE = "atom.app.EXTRA_ROUTE"
 
         fun promptIntent(context: Context, prompt: String): Intent =
             Intent(context, MainActivity::class.java)
                 .putExtra(EXTRA_PROMPT, prompt)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        /** Opens the chat on [conversationId] (just the app when null). */
+        fun conversationIntent(context: Context, conversationId: String?): Intent =
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .apply { if (conversationId != null) putExtra(OverlayHooks.EXTRA_CONVERSATION_ID, conversationId) }
+
+        /** Opens one screen, e.g. "models" or a feature route such as "voice/settings". */
+        fun routeIntent(context: Context, route: String): Intent =
+            Intent(context, MainActivity::class.java)
+                .putExtra(EXTRA_ROUTE, route)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 

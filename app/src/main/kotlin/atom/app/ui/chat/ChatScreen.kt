@@ -103,6 +103,12 @@ import atom.ui.theme.AtomIcons
 import atom.ui.theme.AtomMark
 import atom.ui.theme.extras
 import atom.device.Accessibility
+import atom.app.ui.models.ModelPickerSheet
+import atom.voice.tts.ReadAloud
+import atom.voice.tts.ReadAloudState
+import atom.voice.ui.DictationButton
+import atom.web.browser.BrowserCards
+import androidx.compose.foundation.text.input.TextFieldState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -113,8 +119,9 @@ import kotlinx.coroutines.withContext
  */
 
 /**
- * The home chat. [onPickModel] opens a model picker for this conversation (the picker calls [ChatViewModel.setModel]);
- * without one the model pill opens Models. [micSlot] is where the voice feature puts its dictation button.
+ * The home chat. The model pill opens the per-conversation model picker ([onPickModel] replaces it). [micSlot]
+ * replaces the default dictation button. [onOpenRoute] opens feature routes (voice settings from the mic, the
+ * browser take-over from a browser card); without it those links are hidden.
  */
 @Composable
 fun ChatScreen(
@@ -123,13 +130,14 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
     onOpenSetup: () -> Unit,
     onPickModel: (() -> Unit)? = null,
-    micSlot: @Composable () -> Unit = {},
+    micSlot: (@Composable () -> Unit)? = null,
     onOpenTerminal: (() -> Unit)? = null,
     onOpenBrowser: (() -> Unit)? = null,
     onOpenCharacters: (() -> Unit)? = null,
     onOpenPermissions: (() -> Unit)? = null,
     onReadAloud: ((String) -> Unit)? = null,
     permissionsNeedAttention: Boolean = false,
+    onOpenRoute: ((String) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val rows by vm.drawer.collectAsStateWithLifecycle()
@@ -140,6 +148,10 @@ fun ChatScreen(
     val events by vm.events.collectAsStateWithLifecycle()
     val restore by vm.restore.collectAsStateWithLifecycle()
     val accessibilityConnected by Accessibility.connected.collectAsStateWithLifecycle()
+    val subagents by vm.subagents.collectAsStateWithLifecycle()
+    val reading by ReadAloud.state.collectAsStateWithLifecycle()
+    var showPicker by remember { mutableStateOf(false) }
+    var showSubagents by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val copy = rememberCopier()
     val haptics = LocalHapticFeedback.current
@@ -149,7 +161,7 @@ fun ChatScreen(
     var showStats by remember { mutableStateOf(false) }
     var showPath by remember { mutableStateOf(false) }
     var exportId by remember { mutableStateOf<String?>(null) }
-    val pickModel = onPickModel ?: onOpenModels
+    val pickModel = onPickModel ?: { showPicker = true }
     val permissions = onOpenPermissions ?: onOpenSetup
 
     LaunchedEffect(prefill) {
@@ -239,10 +251,30 @@ fun ChatScreen(
         onBranch = { vm.branch(it, context.getString(R.string.chat_branch_suffix)) },
         onDeleteFrom = vm::deleteFrom,
         onEdit = vm::startEdit,
-        onReadAloud = onReadAloud,
+        onReadAloud = onReadAloud?.let { speak -> { text, _ -> speak(text) } } ?: vm::readAloud,
         laterTurns = vm::laterTurns,
         textAt = vm::textAt,
+        readingId = when (val r = reading) {
+            is ReadAloudState.Speaking -> r.id
+            is ReadAloudState.Preparing -> r.id
+            ReadAloudState.Idle -> null
+        },
+        onStopReading = vm::stopReading,
+        candidates = state.candidates,
+        onCandidate = if (state.characterChat) vm::selectCandidate else null,
+        onEditInPlace = if (state.characterChat) vm::editInPlace else null,
+        onTakeOverBrowser = state.conversationId?.let { id -> onOpenRoute?.let { open -> { open(BrowserCards.takeOverRoute(id)) } } },
     )
+
+    val mic: @Composable () -> Unit = micSlot ?: {
+        DictationButton(
+            onInsert = { insertAtCursor(input, it) },
+            onSend = { text ->
+                if (vm.send(text)) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            },
+            onOpenSettings = onOpenRoute?.let { open -> { open(VOICE_SETTINGS_ROUTE) } },
+        )
+    }
 
     val composerCallbacks = ComposerCallbacks(
         onSend = {
@@ -285,8 +317,11 @@ fun ChatScreen(
                 input = input,
                 actions = actions,
                 composerCallbacks = composerCallbacks,
-                micSlot = micSlot,
+                micSlot = mic,
                 restore = restore,
+                subagents = subagents.size,
+                subagentsRunning = subagents.any { it.status == atom.extend.subagent.SubagentStatus.Running },
+                onOpenSubagents = { showSubagents = true },
                 vm = vm,
                 engineMissing = state.engine.name == null || state.engine.missing,
                 accessibilityOff = !accessibilityConnected,
@@ -328,6 +363,21 @@ fun ChatScreen(
     }
 
     state.pending?.let { pending -> ApprovalDialog(pending, onAnswer = { vm.answer(pending.id, it) }) }
+    if (showPicker) {
+        ModelPickerSheet(
+            selected = state.selection,
+            onSelect = {
+                vm.setModel(it)
+                showPicker = false
+            },
+            onDismiss = { showPicker = false },
+            onManage = {
+                showPicker = false
+                onOpenModels()
+            },
+        )
+    }
+    if (showSubagents) SubagentSheet(subagents, onDismiss = { showSubagents = false })
     if (showStats) StatsDialog(state, onCompact = { vm.compact() }, onDismiss = { showStats = false })
     if (showPath) {
         val field = rememberTextFieldState()
@@ -350,6 +400,23 @@ fun ChatScreen(
     }
 }
 
+/** Route of the voice feature's settings screen, opened from dictation errors. */
+private const val VOICE_SETTINGS_ROUTE = "voice/settings"
+
+/** Dictated text goes in at the cursor as an editable draft; existing text is never overwritten. */
+private fun insertAtCursor(input: TextFieldState, text: String) {
+    val clean = text.trim()
+    if (clean.isEmpty()) return
+    input.edit {
+        val current = asCharSequence()
+        val start = selection.min
+        val end = selection.max
+        val lead = if (start > 0 && !current[start - 1].isWhitespace()) " " else ""
+        val trail = if (end < current.length && !current[end].isWhitespace()) " " else ""
+        replace(start, end, lead + clean + trail)
+    }
+}
+
 private fun Modifier.edgeLine(): Modifier = this.then(
     Modifier.drawWithContent {
         drawContent()
@@ -368,6 +435,9 @@ private fun ChatPane(
     composerCallbacks: ComposerCallbacks,
     micSlot: @Composable () -> Unit,
     restore: Pair<String, atom.app.data.ReadingPosition>?,
+    subagents: Int,
+    subagentsRunning: Boolean,
+    onOpenSubagents: () -> Unit,
     vm: ChatViewModel,
     engineMissing: Boolean,
     accessibilityOff: Boolean,
@@ -414,6 +484,7 @@ private fun ChatPane(
                     .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (subagents > 0) SubagentChip(subagents, subagentsRunning, onOpenSubagents)
                 Banners(state, onOpenModels = onOpenModels)
                 Composer(input, state, attachments, editing, composerCallbacks, micSlot)
             }
@@ -714,7 +785,7 @@ private fun SuggestionCard(s: Suggestion, onPick: (String) -> Unit, modifier: Mo
                 Icon(s.icon, null, Modifier.size(16.dp), tint = colors.onSurface.copy(alpha = 0.85f))
             }
             Spacer(Modifier.height(14.dp))
-            Text(s.text, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(s.text, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

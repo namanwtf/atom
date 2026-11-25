@@ -125,4 +125,12 @@
     <string name="about_no_installs">Updates are never installed automatically.</string>
     <string name="about_feedback_subject">Atom feedback</string>
     <string name="about_open_failed">No app can open this link.</string>
+    <string name="appearance_section_text">Text</string>
+    <string name="appearance_text_size">Text size</string>
+    <string name="appearance_text_xsmall">Extra small</string>
+    <string name="appearance_text_small">Small (default)</string>
+    <string name="appearance_text_default">Medium</string>
+    <string name="appearance_text_large">Large</string>
+    <string name="appearance_text_xlarge">Extra large</string>
+    <string name="appearance_text_sample">Atom reads your screen and gets things done for you.</string>
 </resources>

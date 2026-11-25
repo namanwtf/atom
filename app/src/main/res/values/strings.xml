@@ -252,4 +252,20 @@
     <string name="settings_section_tools">Tools</string>
     <string name="settings_section_system_more">System enhancements</string>
     <string name="settings_section_general">General</string>
+    <string name="settings_llm_providers">LLM providers</string>
+    <string name="settings_model_providers">Model providers</string>
+    <string name="settings_reasoning_default">Reasoning enabled by default</string>
+    <string name="settings_default_effort">Default reasoning effort</string>
+    <string name="settings_effort_default">Model default</string>
+    <string name="settings_effort_off">Off</string>
+    <string name="settings_effort_low">Low</string>
+    <string name="settings_effort_medium">Medium</string>
+    <string name="settings_effort_high">High</string>
+    <string name="settings_effort_xhigh">Extra high</string>
+    <string name="settings_effort_max">Max</string>
+    <string name="settings_auto_compaction">Automatic context compaction</string>
+    <string name="settings_auto_titles">Auto-generate titles</string>
+    <string name="settings_keep_screen_on">Keep screen on while running</string>
+    <string name="settings_keep_screen_on_sub">Only while Atom is open and working, with a safety timeout</string>
+    <string name="settings_permissions_setup">Permissions &amp; setup</string>
 </resources>

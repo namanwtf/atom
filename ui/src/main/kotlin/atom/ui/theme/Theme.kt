@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -153,7 +155,9 @@ fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
         warning = if (dark) Color(0xFFF2B65A) else Color(0xFFA86400),
         mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
     )
-    CompositionLocalProvider(LocalAtomExtras provides extras, LocalAppearance provides appearance) {
+    val density = LocalDensity.current
+    val scaled = remember(density, appearance.textSize) { Density(density.density, density.fontScale * appearance.textSize.scale) }
+    CompositionLocalProvider(LocalAtomExtras provides extras, LocalAppearance provides appearance, LocalDensity provides scaled) {
         MaterialTheme(colorScheme = scheme, typography = AtomTypography, shapes = AtomShapes, content = content)
     }
 }

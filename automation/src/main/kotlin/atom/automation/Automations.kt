@@ -26,6 +26,12 @@ object Automations {
 
     @Volatile private var appContext: Context? = null
 
+    /**
+     * Called after the enabled rules may have changed, so the app can refresh what it feeds into [appOpenEvents]
+     * (the accessibility service subscribes to window events only while some rule watches an app).
+     */
+    @Volatile var onListenersChanged: () -> Unit = {}
+
     fun bind(
         toolInvoker: ToolInvoker? = this.toolInvoker,
         engineProvider: EngineProvider? = this.engineProvider,

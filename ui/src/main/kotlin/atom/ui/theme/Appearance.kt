@@ -15,6 +15,12 @@ enum class AccentColor { Monochrome, Silver, Ember, Jade, Iris, Rose, System }
 /** How the system (Monet) palette is turned into a scheme. Only used when the accent is [AccentColor.System]. */
 enum class ColorStyle { TonalSpot, Neutral, Vibrant, Expressive, Monochrome }
 
+/**
+ * App-wide text size, applied on top of the system font size. [Small] is the default: Atom's type is
+ * designed compact, so dense screens (settings, chips, cards) fit without truncation.
+ */
+enum class TextSize(val scale: Float) { XSmall(0.80f), Small(0.88f), Default(1.0f), Large(1.12f), XLarge(1.25f) }
+
 /** Look of the blurred band behind top bars. */
 enum class TopBarBlur { Gradient, Progressive }
 
@@ -39,6 +45,7 @@ data class Appearance(
     val progressiveBlur: Boolean = true,
     val predictiveBack: Boolean = true,
     val swipeBackAnywhere: Boolean = false,
+    val textSize: TextSize = TextSize.Small,
 )
 
 /** The appearance [AtomTheme] was given. Components read flags (blur, gestures) from here. */

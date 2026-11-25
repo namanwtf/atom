@@ -116,7 +116,7 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
             env.updateConfig { it.copy(lastResult = "${current.title} cancelled", lastResultOk = false, lastResultAtMs = System.currentTimeMillis()) }
             throw e
         } catch (e: Exception) {
-            if (current == InstallStep.Base) cleanupPartial(distro, keepDownload = e is IOException && e !is Failure)
+            if (current == InstallStep.Base) cleanupPartial(distro, keepDownload = e is IOException)
             val message = when (e) {
                 is Failure -> e.message ?: "Install failed."
                 is IOException -> "${current.title} failed: ${e.message ?: e.javaClass.simpleName}. Tap Continue installation to try again."

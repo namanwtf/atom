@@ -6,9 +6,8 @@ import android.content.ComponentCallbacks2
 import android.content.ComponentName
 import android.os.Bundle
 import android.view.WindowManager
-import atom.app.agent.SubagentBridge
 import atom.app.feature.Features
-import atom.extend.Extend
+import atom.app.integration.Integration
 import atom.app.ui.MainActivity
 import atom.ui.feature.Atom
 import atom.voice.Wake
@@ -27,7 +26,9 @@ class AtomApp : Application() {
         graph = AppGraph(this)
         graph.notifications.createChannels()
         Atom.install(graph.tasks)
-        SubagentBridge(graph).let { Extend.install(contextWindow = it, engines = it, toolScope = it) }
+        // Every module's install / bind call (extend, voice, overlay, automation, web, vdisplay, backup) first,
+        // so each feature's onAppCreate already sees the app's adapters.
+        Integration.install(this)
         Features.all.forEach { runCatching { it.onAppCreate(this) } }
 
         // Work a crash or kill cut short is restored (and marked interrupted) before anything else touches it.

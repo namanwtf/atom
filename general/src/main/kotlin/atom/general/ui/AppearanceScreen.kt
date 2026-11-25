@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,11 +62,14 @@ import atom.ui.theme.AtomPalettes
 import atom.ui.theme.AtomTheme
 import atom.ui.theme.ColorStyle
 import atom.ui.theme.ThemeMode
+import atom.ui.theme.TextSize
 import atom.ui.theme.TopBarBlur
+import atom.ui.theme.LocalAppearance
 import atom.ui.theme.atomColorScheme
 import atom.ui.theme.isDark
 import atom.ui.theme.supportsDynamicColor
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val MODES = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
 
@@ -85,6 +90,11 @@ internal fun AppearanceScreen(nav: FeatureNav) {
         item(key = "preview") {
             // The preview always renders the chosen appearance, even before the app theme catches up.
             AtomTheme(appearance = a) { AppearancePreview() }
+        }
+
+        item(key = "l-text") { SectionLabel(stringResource(R.string.appearance_section_text)) }
+        item(key = "g-text") {
+            Group { TextSizePicker(a.textSize) { size -> edit { it.copy(textSize = size) } } }
         }
 
         item(key = "l-theme") { SectionLabel(stringResource(R.string.appearance_section_theme)) }
@@ -328,4 +338,48 @@ private fun styleLabel(s: ColorStyle) = when (s) {
 private fun topBarLabel(t: TopBarBlur) = when (t) {
     TopBarBlur.Gradient -> R.string.top_bar_blur_gradient
     TopBarBlur.Progressive -> R.string.top_bar_blur_progressive
+}
+
+/** Five-step slider from small "A" to large "A", with the current step named and a live sample line. */
+@Composable
+private fun TextSizePicker(current: TextSize, onChange: (TextSize) -> Unit) {
+    val steps = TextSize.entries
+    val c = MaterialTheme.colorScheme
+    Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.appearance_text_size), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(stringResource(textSizeLabel(current)), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("A", style = MaterialTheme.typography.labelMedium, color = c.onSurfaceVariant)
+            Slider(
+                value = steps.indexOf(current).toFloat(),
+                onValueChange = { v -> onChange(steps[v.roundToInt().coerceIn(0, steps.lastIndex)]) },
+                valueRange = 0f..steps.lastIndex.toFloat(),
+                steps = steps.size - 2,
+                colors = SliderDefaults.colors(
+                    thumbColor = c.primary,
+                    activeTrackColor = c.primary,
+                    inactiveTrackColor = c.surfaceContainerHighest,
+                    activeTickColor = c.onPrimary,
+                    inactiveTickColor = c.onSurfaceVariant,
+                ),
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+            )
+            Text("A", style = MaterialTheme.typography.titleLarge, color = c.onSurfaceVariant)
+        }
+        Text(
+            stringResource(R.string.appearance_text_sample),
+            fontSize = MaterialTheme.typography.bodyLarge.fontSize * (current.scale / LocalAppearance.current.textSize.scale),
+            color = c.onSurfaceVariant,
+        )
+    }
+}
+
+private fun textSizeLabel(size: TextSize): Int = when (size) {
+    TextSize.XSmall -> R.string.appearance_text_xsmall
+    TextSize.Small -> R.string.appearance_text_small
+    TextSize.Default -> R.string.appearance_text_default
+    TextSize.Large -> R.string.appearance_text_large
+    TextSize.XLarge -> R.string.appearance_text_xlarge
 }
