@@ -1,9 +1,7 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package atom.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,53 +10,62 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import atom.ui.R
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Switch
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.ArrowRight
+import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 // ------------------------------------------------------------------ Screen scaffolding
 
+/** Side margin of cards on list pages; group titles sit 16dp further in (28dp from the screen edge). */
+val ListSideMargin: Dp = 12.dp
+
 /**
- * A secondary screen: round back button, a large title that collapses into the bar as you scroll, and a list body.
- * Pure black behind everything.
+ * A secondary screen in the Miuix style: back chevron, a large title that collapses into the small bar as the
+ * list scrolls, Miuix rubber-band overscroll with a scroll-end haptic, and a list body with 12dp side margins.
  */
 @Composable
 fun LargeTitleScreen(
@@ -68,48 +75,56 @@ fun LargeTitleScreen(
     bottomBar: @Composable () -> Unit = {},
     content: LazyListScope.() -> Unit,
 ) {
-    val behavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val behavior = MiuixScrollBehavior()
+    val layoutDirection = LocalLayoutDirection.current
     Scaffold(
-        modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MiuixTheme.colorScheme.surface,
         topBar = {
-            LargeTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack, modifier = Modifier.padding(start = 4.dp)) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                stringResource(R.string.cd_back),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                },
-                actions = actions,
+            TopAppBar(
+                title = title,
+                color = MiuixTheme.colorScheme.surface,
                 scrollBehavior = behavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                ),
+                navigationIcon = { if (onBack != null) BackButton(onBack) },
+                actions = actions,
             )
         },
         bottomBar = bottomBar,
     ) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize(),
+            Modifier
+                .fillMaxHeight()
+                .scrollEndHaptic()
+                .overScrollVertical(onOffsetChanged = { behavior.state.overscrollOffset = it })
+                .nestedScroll(behavior.nestedScrollConnection),
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = padding.calculateTopPadding() + 4.dp,
-                bottom = padding.calculateBottomPadding() + 32.dp,
+                start = padding.calculateStartPadding(layoutDirection) + ListSideMargin,
+                end = padding.calculateEndPadding(layoutDirection) + ListSideMargin,
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding() + 24.dp,
             ),
+            overscrollEffect = null,
             content = content,
         )
     }
 }
 
-/** 44dp round icon button on a graphite disc: the top-bar control style used everywhere. */
+/** The Miuix back chevron for top bars (mirrored in right-to-left layouts). */
+@Composable
+fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(
+            imageVector = MiuixIcons.ChevronBackward,
+            contentDescription = stringResource(R.string.cd_back),
+            modifier = Modifier
+                .size(26.dp)
+                .graphicsLayer { if (rtl) scaleX = -1f },
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** Round icon button on a filled disc (Miuix icon button with a container colour). */
 @Composable
 fun CircleIconButton(
     icon: ImageVector,
@@ -119,46 +134,45 @@ fun CircleIconButton(
     size: Dp = 44.dp,
     container: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
-    Surface(onClick = onClick, shape = CircleShape, color = container, modifier = modifier.size(size)) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurface)
-        }
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(size),
+        backgroundColor = container,
+        minWidth = size,
+        minHeight = size,
+        cornerRadius = size,
+    ) {
+        Icon(icon, contentDescription, Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface)
     }
 }
 
 // ------------------------------------------------------------------ Grouped lists
 
-/** Small grey label above a group. Sentence case, quiet. */
+/** Miuix small group title: blue-grey, 28dp from the screen edge on list pages. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(
+    SmallTitle(
         text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(start = 18.dp, top = 22.dp, bottom = 8.dp),
+        modifier = modifier,
+        insideMargin = PaddingValues(start = 28.dp - ListSideMargin, end = 28.dp - ListSideMargin, top = 8.dp, bottom = 8.dp),
     )
 }
 
-/** Rounded graphite container holding rows; rows are separated by inset hairlines via [GroupDivider]. */
+/** A Miuix card holding rows, with the 12dp gap below it. Rows stack without dividers. */
 @Composable
 fun Group(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
-        content = content,
-    )
+    Card(modifier = modifier.fillMaxWidth().padding(bottom = 12.dp), content = content)
 }
 
+/** Kept for source compatibility: Miuix cards stack rows without dividers, so this draws nothing. */
+@Suppress("UNUSED_PARAMETER")
 @Composable
-fun GroupDivider(inset: Dp = 58.dp) {
-    HorizontalDivider(Modifier.padding(start = inset), thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
-}
+fun GroupDivider(inset: Dp = 58.dp) = Unit
 
 /**
- * One row in a [Group]: optional leading icon, title, optional subtitle, optional trailing control.
- * Clickable when [onClick] is set.
+ * One row in a [Group] with the Miuix preference anatomy: optional 24dp monochrome icon, title, optional
+ * summary, optional trailing content (value text, chevron, switch...). Clickable when [onClick] is set.
+ * [titleColor] defaults to the Miuix row title colour.
  */
 @Composable
 fun GroupRow(
@@ -166,120 +180,109 @@ fun GroupRow(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     subtitle: String? = null,
-    titleColor: Color = MaterialTheme.colorScheme.onSurface,
+    titleColor: Color = Color.Unspecified,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val alpha = if (enabled) 1f else 0.4f
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 60.dp)
-            .then(if (onClick != null && enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f * alpha))
-            Spacer(Modifier.width(18.dp))
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor.copy(alpha = alpha))
-            if (subtitle != null) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
-                )
-            }
-        }
-        if (trailing != null) {
-            Spacer(Modifier.width(12.dp))
-            trailing()
-        }
+    val start: (@Composable () -> Unit)? = if (icon != null) {
+        { RowIcon(icon, enabled) }
+    } else {
+        null
     }
+    val end: (@Composable RowScope.() -> Unit)? = if (trailing != null) {
+        { Box(Modifier.align(Alignment.CenterVertically)) { trailing() } }
+    } else {
+        null
+    }
+    BasicComponent(
+        modifier = modifier,
+        title = title,
+        titleColor = if (titleColor.isSpecified) {
+            BasicComponentDefaults.titleColor(color = titleColor)
+        } else {
+            BasicComponentDefaults.titleColor()
+        },
+        summary = subtitle,
+        startAction = start,
+        endActions = end,
+        onClick = onClick,
+        enabled = enabled,
+    )
 }
 
+/** 24dp monochrome start icon of a row, with the Miuix 8dp gap after it. */
+@Composable
+fun RowIcon(icon: ImageVector, enabled: Boolean = true) {
+    val c = MiuixTheme.colorScheme
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        modifier = Modifier.padding(end = 8.dp).size(24.dp),
+        tint = if (enabled) c.onBackground else c.disabledOnSecondaryVariant,
+    )
+}
+
+/** The Miuix row arrow (">" in the actions grey). */
 @Composable
 fun RowChevron() {
-    Icon(
-        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    Image(
+        imageVector = MiuixIcons.Basic.ArrowRight,
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(22.dp),
+        colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantActions),
+        modifier = Modifier
+            .padding(start = 8.dp)
+            .size(width = 10.dp, height = 16.dp)
+            .graphicsLayer { if (rtl) scaleX = -1f },
     )
 }
 
+/** End value text of a row (body2, actions grey). */
 @Composable
 fun RowValue(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.body2,
+        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
-/** White track with a black thumb when on; graphite when off. */
+/** Miuix switch: primary (blue) track when on, grey when off. */
 @Composable
 fun AtomSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, enabled: Boolean = true) {
-    val c = MaterialTheme.colorScheme
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        colors = SwitchDefaults.colors(
-            checkedTrackColor = c.primary,
-            checkedThumbColor = c.onPrimary,
-            checkedBorderColor = c.primary,
-            uncheckedTrackColor = c.surfaceContainerHighest,
-            uncheckedThumbColor = c.onSurfaceVariant,
-            uncheckedBorderColor = Color.Transparent,
-        ),
-    )
+    Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
 }
 
 // ------------------------------------------------------------------ Buttons
 
-/** Full-width white pill with black text: the one primary action on a screen. */
+/** Full-width Miuix primary text button (accent fill, white text): the one primary action on a screen. */
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val c = MaterialTheme.colorScheme
-    Surface(
+    TextButton(
+        text = text,
         onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
         enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = if (enabled) c.primary else c.surfaceContainerHigh,
-        contentColor = if (enabled) c.onPrimary else c.onSurfaceVariant,
-        modifier = modifier.fillMaxWidth().height(54.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        }
-    }
+        colors = ButtonDefaults.textButtonColorsPrimary(),
+    )
 }
 
-/** Graphite pill for secondary actions. Wraps its content unless given a width. */
+/** Miuix secondary text button (grey fill). Wraps its content unless given a width. */
 @Composable
 fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val c = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = c.surfaceContainerHighest,
-        contentColor = if (enabled) c.onSurface else c.onSurfaceVariant,
-        modifier = modifier.heightIn(min = 42.dp),
-    ) {
-        Box(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.labelLarge)
-        }
-    }
+    TextButton(text = text, onClick = onClick, modifier = modifier, enabled = enabled)
 }
 
-/** Pinned bottom area for a screen's primary action, over the black. */
+/** Pinned bottom area for a screen's primary action, over the page colour. */
 @Composable
 fun BottomActionBar(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MiuixTheme.colorScheme.surface)
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         content = content,
@@ -295,10 +298,10 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) = SectionLabel(te
 fun Pill(text: String, color: Color, modifier: Modifier = Modifier, contentColor: Color = MaterialTheme.colorScheme.onSurface) {
     Box(
         modifier = modifier
-            .background(color, RoundedCornerShape(50))
-            .padding(horizontal = 9.dp, vertical = 3.dp),
+            .background(color, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
-        Text(text, style = MaterialTheme.typography.labelSmall, color = contentColor, fontWeight = FontWeight.Medium)
+        Text(text = text, style = MiuixTheme.textStyles.footnote2, color = contentColor, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -307,24 +310,22 @@ fun StatusDot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(8.dp).background(color, CircleShape))
 }
 
-/** Standalone rounded graphite card (for content that is not a list of rows). */
+/** Standalone Miuix card with padding (for content that is not a list of rows). */
 @Composable
 fun AtomCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        content = content,
-    )
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+    }
 }
 
 @Composable
 fun StatusLine(dot: Color, text: String, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusDot(dot)
-        Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = text, style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurface)
     }
 }
+
+/** Vertical gap helper for list pages. */
+@Composable
+fun ListGap(height: Dp = 12.dp) = Spacer(Modifier.height(height))

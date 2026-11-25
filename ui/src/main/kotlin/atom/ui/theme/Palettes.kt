@@ -1,9 +1,10 @@
 package atom.ui.theme
 
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
+
 /*
- * Accent tones as plain ARGB so they can be checked for contrast on the JVM without Compose. Each accent has a
- * dark and a light variant; every pair is verified to reach at least 4.5:1 (WCAG AA body text) for
- * primary/onPrimary, primaryContainer/onPrimaryContainer and primary against every background it sits on.
+ * Plain ARGB values and pure decisions, so they can be checked on the JVM without Compose.
  */
 
 /** The four colours an accent sets. */
@@ -17,53 +18,73 @@ data class AccentTones(
 data class AccentPalette(val dark: AccentTones, val light: AccentTones)
 
 object AtomPalettes {
-    /** Today's monochrome primaries (white on black / near-black on light). */
+    /** The monochrome house style: white on black in dark mode, near-black on light. */
     val Monochrome = AccentPalette(
         dark = AccentTones(0xFFF4F4F6, 0xFF0A0A0B, 0xFF26262A, 0xFFF4F4F6),
         light = AccentTones(0xFF111113, 0xFFFFFFFF, 0xFFE6E6EA, 0xFF111113),
     )
-    /** Cool brushed metal. */
-    val Silver = AccentPalette(
-        dark = AccentTones(0xFFC9CDD4, 0xFF16181B, 0xFF23262B, 0xFFE3E6EB),
-        light = AccentTones(0xFF575D66, 0xFFFFFFFF, 0xFFE2E5EA, 0xFF1D2026),
-    )
-    /** Warm copper, like a coal's last glow. */
-    val Ember = AccentPalette(
-        dark = AccentTones(0xFFE6A882, 0xFF2B1407, 0xFF33221A, 0xFFF6D9C6),
-        light = AccentTones(0xFF94481F, 0xFFFFFFFF, 0xFFF5E1D4, 0xFF3A1A08),
-    )
-    /** Soft green stone. */
-    val Jade = AccentPalette(
-        dark = AccentTones(0xFF93CFB4, 0xFF07251A, 0xFF16291F, 0xFFCDEBDC),
-        light = AccentTones(0xFF1F6A50, 0xFFFFFFFF, 0xFFD6ECE1, 0xFF062419),
-    )
-    /** Dusky violet (deliberately not blue). */
-    val Iris = AccentPalette(
-        dark = AccentTones(0xFFCBB9EC, 0xFF1E1430, 0xFF262033, 0xFFE6DDF7),
-        light = AccentTones(0xFF684D96, 0xFFFFFFFF, 0xFFE8E0F4, 0xFF231640),
-    )
-    /** Muted dusty rose. */
-    val Rose = AccentPalette(
-        dark = AccentTones(0xFFE9AABB, 0xFF2E0F18, 0xFF33202A, 0xFFF7DAE2),
-        light = AccentTones(0xFF99405A, 0xFFFFFFFF, 0xFFF6E0E6, 0xFF3A1020),
-    )
 
-    /** Fixed palette for [accent]; null for [AccentColor.System], which comes from the wallpaper. */
-    fun of(accent: AccentColor): AccentPalette? = when (accent) {
-        AccentColor.Monochrome -> Monochrome
-        AccentColor.Silver -> Silver
-        AccentColor.Ember -> Ember
-        AccentColor.Jade -> Jade
-        AccentColor.Iris -> Iris
-        AccentColor.Rose -> Rose
-        AccentColor.System -> null
+    /** Fixed tones for [accent], or null when the accent seeds a Monet palette instead. */
+    fun of(accent: AccentColor): AccentPalette? = if (accent == AccentColor.Monochrome) Monochrome else null
+
+    /** Seed used for [AccentColor.System] when the device has no wallpaper colours (and the Blue accent). */
+    const val FallbackSeed = 0xFF4285F4
+
+    // Page backgrounds: pure black, the dark grey used when pure black is off, and the light page.
+    const val PureBlack = 0xFF000000
+    const val Graphite = 0xFF121212
+
+    /** The Miuix card colour in dark mode; cards stay this colour with pure black on. */
+    const val DarkCard = 0xFF242424
+    val DarkSurfaces = listOf(PureBlack, Graphite, DarkCard)
+    val LightSurfaces = listOf(0xFFF7F7F7, 0xFFFFFFFF)
+}
+
+/**
+ * How an [Appearance] maps onto the Miuix theme controller. Pure, so the choices are unit-tested.
+ */
+object ThemeSpec {
+    /** Miuix scheme mode: Monet variants only when Monet is on and the accent is not the monochrome house style. */
+    fun schemeMode(a: Appearance, dark: Boolean): ColorSchemeMode = when {
+        usesMonet(a) -> if (dark) ColorSchemeMode.MonetDark else ColorSchemeMode.MonetLight
+        dark -> ColorSchemeMode.Dark
+        else -> ColorSchemeMode.Light
     }
 
-    // Backgrounds accents are drawn on, for contrast checks and for the scheme builder.
-    const val PureBlack = 0xFF000000
-    const val Graphite = 0xFF0E0E10
-    val DarkSurfaces = listOf(PureBlack, Graphite, 0xFF121214, 0xFF19191C, 0xFF1B1B1E)
-    val LightSurfaces = listOf(0xFFF6F6F8, 0xFFFFFFFF, 0xFFEDEDF0)
+    fun usesMonet(a: Appearance): Boolean = a.monet && a.accent != AccentColor.Monochrome
+
+    /** True when the monochrome primaries replace the stock blue. */
+    fun usesMonochrome(a: Appearance): Boolean = a.monet && a.accent == AccentColor.Monochrome
+
+    /**
+     * Key colour for the Monet palette, or null to let the library read the wallpaper palette itself.
+     * System + Tonal Spot passes no key (the platform palette is already tonal spot); System with any other
+     * style is seeded by the wallpaper's primary ([systemSeed], or the blue fallback without one).
+     */
+    fun keyColor(a: Appearance, systemSeed: Long?): Long? {
+        if (!usesMonet(a)) return null
+        return when (a.accent) {
+            AccentColor.System -> if (a.colorStyle == ColorStyle.TonalSpot) null else systemSeed ?: AtomPalettes.FallbackSeed
+            else -> a.accent.seed ?: AtomPalettes.FallbackSeed
+        }
+    }
+
+    /** Every [ColorStyle] has a Miuix palette style of the same name. */
+    fun paletteStyle(s: ColorStyle): ThemePaletteStyle = when (s) {
+        ColorStyle.TonalSpot -> ThemePaletteStyle.TonalSpot
+        ColorStyle.Neutral -> ThemePaletteStyle.Neutral
+        ColorStyle.Vibrant -> ThemePaletteStyle.Vibrant
+        ColorStyle.Expressive -> ThemePaletteStyle.Expressive
+        ColorStyle.Rainbow -> ThemePaletteStyle.Rainbow
+        ColorStyle.FruitSalad -> ThemePaletteStyle.FruitSalad
+        ColorStyle.Monochrome -> ThemePaletteStyle.Monochrome
+        ColorStyle.Fidelity -> ThemePaletteStyle.Fidelity
+        ColorStyle.Content -> ThemePaletteStyle.Content
+        ColorStyle.Cmf -> ThemePaletteStyle.Cmf
+    }
+
+    /** Pure black applies only in dark mode. */
+    fun pureBlack(a: Appearance, dark: Boolean): Boolean = dark && a.pureBlack
 }
 
 /** WCAG relative luminance of an opaque ARGB colour. */
@@ -80,4 +101,44 @@ fun contrastRatio(a: Long, b: Long): Double {
     val la = relativeLuminance(a)
     val lb = relativeLuminance(b)
     return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
+}
+
+/** Scales HSL saturation of an ARGB colour by [factor] (clamped to 0..1), keeping hue and lightness. */
+fun scaleSaturation(argb: Long, factor: Float): Long {
+    val a = (argb shr 24) and 0xFF
+    val r = ((argb shr 16) and 0xFF) / 255f
+    val g = ((argb shr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val l = (max + min) / 2f
+    val d = max - min
+    if (d == 0f) return argb
+    var s = if (l > 0.5f) d / (2f - max - min) else d / (max + min)
+    val h = when (max) {
+        r -> ((g - b) / d + (if (g < b) 6f else 0f)) / 6f
+        g -> ((b - r) / d + 2f) / 6f
+        else -> ((r - g) / d + 4f) / 6f
+    }
+    s = (s * factor).coerceIn(0f, 1f)
+    fun hue2rgb(p: Float, q: Float, tIn: Float): Float {
+        var t = tIn
+        if (t < 0f) t += 1f
+        if (t > 1f) t -= 1f
+        return when {
+            t < 1f / 6f -> p + (q - p) * 6f * t
+            t < 1f / 2f -> q
+            t < 2f / 3f -> p + (q - p) * (2f / 3f - t) * 6f
+            else -> p
+        }
+    }
+    val (nr, ng, nb) = if (s == 0f) {
+        Triple(l, l, l)
+    } else {
+        val q = if (l < 0.5f) l * (1f + s) else l + s - l * s
+        val p = 2f * l - q
+        Triple(hue2rgb(p, q, h + 1f / 3f), hue2rgb(p, q, h), hue2rgb(p, q, h - 1f / 3f))
+    }
+    fun ch(v: Float) = (v * 255f + 0.5f).toInt().coerceIn(0, 255).toLong()
+    return (a shl 24) or (ch(nr) shl 16) or (ch(ng) shl 8) or ch(nb)
 }

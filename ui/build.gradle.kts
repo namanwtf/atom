@@ -32,6 +32,10 @@ dependencies {
     api(libs.androidx.lifecycle.runtime.compose)
     api(libs.androidx.lifecycle.viewmodel.compose)
     api(libs.haze)
+    // Miuix (Apache-2.0): theme, basic components, preference rows and icons for the Atom look.
+    api(libs.miuix.ui)
+    api(libs.miuix.preference)
+    api(libs.miuix.icons)
     implementation(libs.haze.blur)
     implementation(libs.kotlinx.coroutines.android)
 }
