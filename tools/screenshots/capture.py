@@ -337,7 +337,11 @@ def main():
     time.sleep(2.5)
     shot(p + "35_mini_chat")
     # Focus the composer: the panel shrinks so the composer sits on the keyboard.
-    if tap("^Ask Atom…$", wait=2.5):
+    # The placeholder is not in the accessibility tree; the field sits left of the mic ("Dictate") in the pill.
+    mic = find("^Dictate$")
+    if mic:
+        sh(f"input tap {max(60, mic[0] - 300)} {(mic[1] + mic[3]) // 2}")
+        time.sleep(2.5)
         focus_report()
         shot(p + "37_mini_chat_keyboard")
         back(wait=1.5)
