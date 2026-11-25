@@ -61,6 +61,11 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
+      # The minified (R8) release variant, unsigned: it has no signingConfig. Signing happens only in release.yml.
+      # Building it here shows shrinker and lint-vital problems on the pull request instead of on main.
+      - name: Build release APK (unsigned)
+        run: ./gradlew :app:assembleRelease --stacktrace
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:

@@ -62,7 +62,7 @@ object CharacterSession {
         synchronized(this) {
             if (storeRef != null) return
             appContext = context.applicationContext
-            storeRef = CharacterStore(File(context.applicationContext.filesDir, "characters"))
+            storeRef = CharacterStore(File(context.applicationContext.filesDir, "atom4_characters"))
         }
     }
 

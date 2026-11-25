@@ -111,6 +111,12 @@ class UpdatePathTest {
         assertEquals("atom-4.0.1.apk", Releases.pickApk(SLUG, release("v4.0.5", apkAssets("4.0.1")))?.name)
     }
 
+    @Test fun onlyTheReleaseBuildInstallsReleasesOverItself() {
+        assertTrue(Releases.canSelfUpdate("io.github.namanwtf.atom"))
+        assertFalse(Releases.canSelfUpdate("io.github.namanwtf.atom.debug"))
+        assertFalse(Releases.canSelfUpdate("io.github.namanwtf.other"))
+    }
+
     // ---- checksums ----
 
     @Test fun parsesChecksumFiles() {

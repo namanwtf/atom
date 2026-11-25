@@ -17,7 +17,7 @@ object Share {
     /** A content URI for [file]; files outside this module's folders are copied into the share cache first. */
     fun uriFor(context: Context, file: File): Uri {
         val app = context.applicationContext
-        val roots = listOf(File(app.filesDir, "generated_images"), File(app.cacheDir, "web_share"), File(app.cacheDir, "browser_previews"))
+        val roots = listOf(File(app.filesDir, "atom4_generated_images"), File(app.cacheDir, "web_share"), File(app.cacheDir, "browser_previews"))
         val canonical = file.canonicalFile
         val served = if (roots.any { canonical.path.startsWith(it.canonicalPath + File.separator) }) canonical else {
             val dir = File(app.cacheDir, "web_share").apply { mkdirs() }

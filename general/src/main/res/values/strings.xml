@@ -121,7 +121,12 @@
     <string name="about_update_downloading">Downloading update… %1$d%%</string>
     <string name="about_update_verifying">Checking the download…</string>
     <string name="about_update_permission">Allow Atom to install apps, then tap Update again</string>
+    <string name="about_update_installing">Handing the update to Android…</string>
     <string name="about_update_confirm">Confirm the update in the system dialog</string>
+    <string name="about_update_continue">Continue update</string>
+    <string name="update_channel">App updates</string>
+    <string name="update_ready_title">Atom update ready</string>
+    <string name="update_ready_text">Tap to confirm the install</string>
     <string name="about_update_failed">Update failed: %1$s</string>
     <string name="about_source">Source code</string>
     <string name="about_feedback">Feedback</string>

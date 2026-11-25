@@ -33,7 +33,7 @@ import java.net.HttpURLConnection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Downloads one model file into `filesDir/models/<id>.<ext>.part`, resuming with HTTP Range,
+ * Downloads one model file into `filesDir/atom4_models/<id>.<ext>.part`, resuming with HTTP Range,
  * then verifies SHA-256, renames atomically and records it in the manifest.
  */
 class ModelDownloadWorker(

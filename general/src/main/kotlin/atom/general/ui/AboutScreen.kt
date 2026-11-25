@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import atom.general.GeneralConfig
 import atom.general.R
 import atom.general.update.InstallState
@@ -51,6 +52,13 @@ internal fun AboutScreen(nav: FeatureNav) {
     var status by remember { mutableStateOf(if (repo.isEmpty()) UpdateStatus.NotConfigured else UpdateChecker.cachedFor(repo)) }
     var checking by remember { mutableStateOf(false) }
     val installState by UpdateInstaller.state.collectAsState()
+    // Debug builds carry another package name: a release APK cannot install over them, so only the page is offered.
+    val selfUpdate = remember { UpdateInstaller.canSelfUpdate(context) }
+    // A pending install opens its confirmation here, in the foreground, once (then via "Continue update").
+    LifecycleResumeEffect(installState) {
+        if (installState is InstallState.WaitingForUser) UpdateInstaller.openConfirm(context, onlyIfNotOpened = true)
+        onPauseOrDispose { }
+    }
 
     fun check(force: Boolean) {
         if (repo.isEmpty() || checking) return
@@ -94,6 +102,7 @@ internal fun AboutScreen(nav: FeatureNav) {
                     s is UpdateStatus.Available && install !is InstallState.Idle -> when (install) {
                         is InstallState.Downloading -> stringResource(R.string.about_update_downloading, install.percent)
                         InstallState.Verifying -> stringResource(R.string.about_update_verifying)
+                        InstallState.Installing -> stringResource(R.string.about_update_installing)
                         InstallState.NeedsPermission -> stringResource(R.string.about_update_permission)
                         InstallState.WaitingForUser -> stringResource(R.string.about_update_confirm)
                         is InstallState.Failed -> stringResource(R.string.about_update_failed, install.reason)
@@ -115,8 +124,13 @@ internal fun AboutScreen(nav: FeatureNav) {
                     onClick = { check(force = true) },
                     trailing = if (s is UpdateStatus.Available) {
                         {
-                            val apk = s.apk
-                            if (apk != null && install !is InstallState.Failed) {
+                            val apk = s.apk?.takeIf { selfUpdate }
+                            if (install is InstallState.WaitingForUser) {
+                                CompactButton(
+                                    stringResource(R.string.about_update_continue),
+                                    onClick = { UpdateInstaller.openConfirm(context) },
+                                )
+                            } else if (apk != null && install !is InstallState.Failed) {
                                 // Downloads, checks the SHA-256 and signing key, then opens the system installer.
                                 CompactButton(
                                     stringResource(R.string.about_update),
