@@ -22,6 +22,11 @@ internal object ShellUi {
     @Volatile
     private var actionable: Set<String> = emptySet()
 
+    /** The screen size of the latest dump, so tap areas are clipped to it. */
+    @Volatile
+    var lastScreen: Box? = null
+        private set
+
     private fun cacheDir(context: Context): File? = context.externalCacheDir?.also { it.mkdirs() }
 
     fun usable(sh: ShellExecutor?): Boolean = sh != null && sh.tier != ShellTier.App
@@ -35,6 +40,7 @@ internal object ShellUi {
             if (xml.isBlank()) throw UiError("The system UI dump failed: ${(r.stderr.ifBlank { r.stdout }).take(200)}")
             val parsed = UiDump.parse(xml)
             val screen = parsed.screen
+            lastScreen = screen.takeUnless { it.isEmpty }
             val result = ScreenRenderer.render(parsed.roots, screen, maxChars)
             boxes = result.ids.mapValues { (_, handle) -> parsed.bounds[handle] ?: Box(0, 0, 0, 0) }
             val clickable = HashSet<Int>()

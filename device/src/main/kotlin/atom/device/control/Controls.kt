@@ -22,6 +22,7 @@ import android.provider.Settings
 import android.telephony.TelephonyManager
 import atom.device.ShellExecutor
 import atom.device.ShellTier
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -435,11 +436,16 @@ object BatterySaver : ShellToggle("battery_saver", "Battery saver") {
  * Personal hotspot. Its state is read from the sticky soft-AP broadcast. Turning it off works with Shizuku or root
  * (`cmd wifi stop-softap`). Turning it on needs root: Atom reads the hotspot saved in Settings (name, security,
  * password, band) and starts exactly that one with `cmd wifi start-softap`, so nothing new is configured and the
- * saved settings are never changed. Without root, or when the saved password is stored encrypted, Atom opens the
- * hotspot screen instead. The runner reads the state before and after, so the reply says what really happened.
+ * saved settings are never changed. That shell command only starts the access point; whether Android also shares
+ * the internet through it is checked in the sticky tether-state broadcast. When it does not (or cannot be checked),
+ * Atom turns that bare access point off again and opens the hotspot screen, so "on" is never claimed for a hotspot
+ * without internet. Without root, or when the saved password is stored encrypted, Atom opens the hotspot screen.
  */
 object Hotspot : BoolControl("hotspot", "Personal hotspot") {
     private const val ACTION = "android.net.wifi.WIFI_AP_STATE_CHANGED"
+    private const val TETHER_ACTION = "android.net.conn.TETHER_STATE_CHANGED"
+    private const val EXTRA_ACTIVE_TETHER = "tetherArray"
+    private const val SHARING_WAIT_MS = 8_000L
     override val settleMs: Long = 8_000
 
     override suspend fun read(env: DeviceEnv): Boolean? {
@@ -451,13 +457,35 @@ object Hotspot : BoolControl("hotspot", "Personal hotspot") {
         }
     }
 
+    /** True when a Wi-Fi interface is tethered (Android shares the internet through it); null when unreadable. */
+    private fun wifiTethered(env: DeviceEnv): Boolean? {
+        val sticky = runCatching { env.app.registerReceiver(null, IntentFilter(TETHER_ACTION)) }.getOrNull() ?: return null
+        val active = sticky.getStringArrayListExtra(EXTRA_ACTIVE_TETHER) ?: return null
+        return SoftAp.isWifiTethered(active)
+    }
+
     override suspend fun write(env: DeviceEnv, value: Boolean): Written {
         val sh = env.privileged()
+        var reason: String? = null
         if (sh != null) {
             if (!value) {
                 env.firstWorking(sh, SoftAp.STOP)?.let { return Written.Done(env.tierName(sh)) }
             } else if (sh.tier == ShellTier.Root) {
-                savedStartCommand(sh)?.let { cmd -> env.firstWorking(sh, cmd)?.let { return Written.Done(env.tierName(sh)) } }
+                val cmd = savedStartCommand(sh)
+                if (cmd == null) {
+                    reason = "The saved hotspot could not be read (its password may be stored encrypted)"
+                } else if (env.firstWorking(sh, cmd) != null) {
+                    var waited = 0L
+                    while (waited < SHARING_WAIT_MS) {
+                        if (wifiTethered(env) == true) return Written.Done("root, sharing the internet")
+                        delay(500)
+                        waited += 500
+                    }
+                    // A bare access point without internet is not what was asked for: take it down again.
+                    env.firstWorking(sh, SoftAp.STOP)
+                    reason = "Atom started the saved hotspot, but Android did not confirm internet sharing through it, " +
+                        "so Atom turned it off again"
+                }
             }
         }
         return openPanel(
@@ -465,6 +493,7 @@ object Hotspot : BoolControl("hotspot", "Personal hotspot") {
             "hotspot settings",
             Intent().setComponent(ComponentName("com.android.settings", "com.android.settings.TetherSettings")),
             Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            reason = reason,
         )
     }
 

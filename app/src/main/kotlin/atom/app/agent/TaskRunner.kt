@@ -442,6 +442,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
 
+    /** False for a capability-limited run without the web: its subagents get no provider-hosted search either. */
+    fun hostedSearchOf(runId: String): Boolean = byRunId[runId]?.hostedSearchInUse ?: true
+
     /** Context window of the newest active run, for features that size themselves to it. */
     fun currentContextWindow(): Int? = byRunId.values.maxByOrNull { it.startedAt }?.windowInUse
 
@@ -643,6 +646,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         @Volatile
         var selectionInUse: EngineSelection? = null
 
+        val hostedSearchInUse: Boolean get() = CapabilityTools.allowsHostedSearch(request.capabilities)
+
         @Volatile
         var windowInUse: Int? = null
 
@@ -687,7 +692,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val role = roleFor(request.source)?.takeIf { conversation.selection == null }
                 val roleSelection = role?.let { r -> runCatching { graph.modelRoles.resolve(r, null) }.getOrNull() }
                 val selection = roleSelection ?: saved
-                val engine = graph.router.acquire(selection).also { routed = it }
+                // Capability-limited runs without the web get no provider-hosted search either.
+                val hostedSearch = CapabilityTools.allowsHostedSearch(request.capabilities)
+                val engine = graph.router.acquire(selection, hostedSearch = hostedSearch).also { routed = it }
                 selectionInUse = engine.selection ?: selection
                 val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
                 windowInUse = window

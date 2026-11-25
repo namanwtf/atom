@@ -57,7 +57,6 @@ internal class ClockTools(context: Context) {
             return@CtxTool if (start(ui)) ToolResult.ok("Opened the clock app with %02d:%02d filled in; the user needs to tap Save (unconfirmed).".format(hour, minute))
             else ToolResult.error("No clock app on this phone accepts alarms.")
         }
-        remember(AlarmRecord(hour, minute, days, args.optString("label").orEmpty()))
         delay(1_500)
         val after = nextAlarm()
         val target = Calendar.getInstance().apply {
@@ -68,6 +67,8 @@ internal class ClockTools(context: Context) {
         }
         val label = "%02d:%02d".format(hour, minute) + (args.optString("label")?.let { " \"$it\"" }.orEmpty()) +
             if (days.isNotEmpty()) " repeating ${args.optString("days")}" else ""
+        // Only confirmed alarms go on Atom's own list.
+        if (matches || after != before) remember(AlarmRecord(hour, minute, days, args.optString("label").orEmpty()))
         when {
             matches -> ToolResult.ok("Alarm $label set (verified: it is now the next alarm, ${When.at(after)}).")
             after != before -> ToolResult.ok("Alarm $label set (verified: the next alarm changed to ${after?.let { When.at(it) } ?: "none"}).")
@@ -154,8 +155,9 @@ internal class ClockTools(context: Context) {
         description = "Change an alarm in the clock app through Android's alarm intents: enable, disable (turns it " +
             "off), change (to a new time), delete, dismiss_next, dismiss_all, or dismiss_timer (a ringing timer). " +
             "Find the alarm by hour+minute (24 h) or label. Android has no intent to delete or edit an alarm in place: " +
-            "delete turns it off and opens the alarm list for the user to remove it; change turns the old one off and " +
-            "sets the new time. Reports whether the next alarm changed, or that the clock app was opened to confirm.",
+            "delete turns it off and opens the alarm list for the user to remove it; change turns the old one off and, " +
+            "only once that is confirmed, sets the new time (otherwise it opens the alarm list instead of risking a " +
+            "duplicate). Reports what was confirmed and what the clock app was left to confirm.",
         risk = Risk.Act,
         parameters = schema {
             string("action", "One of: " + AlarmIntents.ACTIONS.joinToString(", ") + ".", required = true)
@@ -194,37 +196,79 @@ internal class ClockTools(context: Context) {
             null
         }
         val before = nextAlarm()
-        val steps = AlarmIntents.plan(action, from, to, label)
-        for (step in steps) {
+        for (step in AlarmIntents.plan(action, from, to, label)) {
             if (!start(step.toIntent())) {
                 return@CtxTool ToolResult.error("The clock app on this phone does not accept this request (${step.action.substringAfterLast('.')}).")
             }
             delay(700)
         }
         delay(1_200)
-        val after = nextAlarm()
-        // Keep Atom's own list in step with what was asked.
-        when (action) {
-            "enable" -> remember(from!!.copy(enabled = true))
-            "disable" -> from?.let { f -> save(saved().map { if (it.hour == f.hour && it.minute == f.minute) it.copy(enabled = false) else it }) }
-            "change" -> save(saved().filterNot { it.hour == from!!.hour && it.minute == from.minute } + to!!)
-            "delete" -> from?.let { f -> save(saved().filterNot { it.hour == f.hour && it.minute == f.minute }) }
-            "dismiss_all" -> save(saved().map { it.copy(enabled = false) })
-        }
+        var after = nextAlarm()
+        val off = from != null && AlarmIntents.offConfirmed(from.hour, from.minute, hourMinute(before), hourMinute(after))
         val what = from?.let { f -> f.time + (f.label.takeIf { it.isNotBlank() }?.let { " \"$it\"" }.orEmpty()) } ?: label?.let { "\"$it\"" } ?: "alarm"
-        val nextNow = "next alarm now: ${after?.let { When.at(it) } ?: "none"}"
-        val changed = after != before
+        fun nextNow() = "next alarm now: ${after?.let { When.at(it) } ?: "none"}"
+        // Atom's own list only records what was confirmed.
         val text = when (action) {
-            "delete" -> "Turned off $what and opened the clock app's alarm list so the user can delete it (Android has no delete " +
-                "intent); unconfirmed until the user removes it. $nextNow."
+            "enable" -> {
+                val f = from!!
+                if (AlarmIntents.setConfirmed(f.hour, f.minute, hourMinute(before), hourMinute(after), before, after)) {
+                    remember(f.copy(enabled = true))
+                    "Turned on $what (verified: the next alarm changed). ${nextNow()}."
+                } else {
+                    "Sent \"turn on $what\" to the clock app, unconfirmed: the next alarm did not change (an earlier alarm may be next). ${nextNow()}."
+                }
+            }
+            "disable" -> if (off) {
+                markOff(from!!)
+                "Turned off $what (verified: it is no longer the next alarm). ${nextNow()}."
+            } else {
+                "Asked the clock app to turn off $what, unconfirmed: it was not the next alarm, it repeats (only its next " +
+                    "ring may be skipped), or the clock app opened to confirm. ${nextNow()}."
+            }
+            "change" -> {
+                val f = from!!
+                val t = to!!
+                if (off) {
+                    if (!start(AlarmIntents.set(t.hour, t.minute, t.label.ifBlank { null }, t.days).toIntent())) {
+                        markOff(f)
+                        return@CtxTool ToolResult.error("Turned off $what, but the clock app refused the new time ${t.time}; set it with set_alarm.")
+                    }
+                    delay(1_500)
+                    val afterSet = nextAlarm()
+                    save(saved().filterNot { it.hour == f.hour && it.minute == f.minute })
+                    if (AlarmIntents.setConfirmed(t.hour, t.minute, hourMinute(after), hourMinute(afterSet), after, afterSet)) remember(t)
+                    after = afterSet
+                    "Moved $what to ${t.time} (the old alarm is confirmed off). ${nextNow()}."
+                } else {
+                    start(AlarmIntents.showAlarms().toIntent())
+                    "Could not confirm that $what was turned off (it is not the next alarm, it repeats, or the clock app " +
+                        "asked to choose), so ${t.time} was NOT set, to avoid leaving two alarms. Opened the clock app's " +
+                        "alarm list so the user can change it there. ${nextNow()}."
+                }
+            }
+            "delete" -> {
+                if (off) markOff(from!!)
+                "Turned off $what${if (off) " (verified)" else " (unconfirmed)"} and opened the clock app's alarm list so the " +
+                    "user can delete it (Android has no delete intent). ${nextNow()}."
+            }
+            "dismiss_all" -> if (after == null) {
+                save(saved().map { it.copy(enabled = false) })
+                "Turned off all alarms (verified: no alarm is scheduled now)."
+            } else {
+                "Asked the clock app to turn off all alarms, unconfirmed: ${nextNow()}."
+            }
             "dismiss_timer" -> "Asked the clock app to dismiss the ringing timer."
-            "change" -> if (changed) "Moved $what to ${to!!.time} (verified: the next alarm changed). $nextNow."
-            else "Sent $what → ${to!!.time} to the clock app, unconfirmed: the next alarm did not change (the clock app may have opened to confirm). $nextNow."
-            else -> if (changed) "Done: $action $what (verified: the next alarm changed). $nextNow."
-            else "Sent $action for $what to the clock app, unconfirmed: the next alarm did not change (it may not be the next one, " +
-                "or the clock app opened to confirm). $nextNow."
+            else -> if (after != before) "Dismissed the next alarm (verified: the next alarm changed). ${nextNow()}."
+            else "Asked the clock app to dismiss the next alarm, unconfirmed. ${nextNow()}."
         }
         ToolResult.ok(text)
+    }
+
+    private fun markOff(f: AlarmRecord) =
+        save(saved().map { if (it.hour == f.hour && it.minute == f.minute) it.copy(enabled = false) else it })
+
+    private fun hourMinute(millis: Long?): Pair<Int, Int>? = millis?.let {
+        Calendar.getInstance().apply { timeInMillis = it }.let { c -> c.get(Calendar.HOUR_OF_DAY) to c.get(Calendar.MINUTE) }
     }
 
     private companion object {

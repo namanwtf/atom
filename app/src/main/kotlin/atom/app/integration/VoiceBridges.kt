@@ -51,10 +51,11 @@ class ModuleVoiceBridge : VoiceBridge {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val input = VoiceInput(app, scope)
         var done = false
+        var notice = 0L
         fun end() {
             done = true
             scope.cancel()
-            AssistantVoiceNotice.hide(app, AssistantVoiceNotice.Mode.Listening)
+            AssistantVoiceNotice.hideListening(app, notice)
         }
         val started = input.start(VoiceInputOptions.assistant(app)) { result ->
             if (done) return@start
@@ -67,6 +68,9 @@ class ModuleVoiceBridge : VoiceBridge {
             listener.onError(app.getString(errorText(error)))
             return VoiceBridge.NoSession
         }
+        // Outside Atom's screens: "Atom is listening" with Stop, which ends capture and delivers what was heard.
+        // Posted before the state collector runs, so an immediate failure takes it down again.
+        if (!done) notice = AssistantVoiceNotice.showListening(app) { if (!done) input.finish() }
         scope.launch {
             input.state.collect { s ->
                 if (done) return@collect
@@ -83,8 +87,6 @@ class ModuleVoiceBridge : VoiceBridge {
                 }
             }
         }
-        // Outside Atom's screens: "Atom is listening" with Stop, which ends capture and delivers what was heard.
-        AssistantVoiceNotice.showListening(app) { if (!done) input.finish() }
         return object : VoiceBridge.Session {
             override fun stop() {
                 if (!done) input.finish()
@@ -148,11 +150,13 @@ class AppWakePreferences(private val graph: AppGraph) : WakePreferences {
 /**
  * Smart correction on the current chat's model (light reasoning): the conversation the chat shows, else the
  * conversation running most recently, else the global default model a new chat would use. The raw text is kept
- * when that model fails or takes too long (VoiceInput caps the call).
+ * when that model fails or takes too long (VoiceInput caps the call). Skipped when that model is on-device: loading
+ * gigabytes for one dictation costs more than it is worth.
  */
 class ChatProofreader(private val graph: AppGraph) : SpeechProofreader {
     override suspend fun proofread(instructions: String, text: String): String? {
         val selection = currentChatModel() ?: return null
+        if (selection is EngineSelection.Local) return null
         val routed = graph.router.acquire(selection)
         try {
             val reasoning = if (routed.reasoning.supported) routed.reasoning.levels.firstOrNull() else null

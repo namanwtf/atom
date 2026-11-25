@@ -31,6 +31,8 @@ object VoiceFeature : AtomFeature {
 
     override fun onAppCreate(context: Context) {
         Speech.init(context)
+        // Creates "Assistant voice" and removes the old "Reading aloud" channel at start, not at first use.
+        runCatching { atom.voice.notify.AssistantVoiceNotice.ensureChannel(context.applicationContext) }
     }
 
     override val entries: List<FeatureEntry> = listOf(
