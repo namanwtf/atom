@@ -9,7 +9,7 @@ import atom.context.search.likeArg
 
 /** Notification history on disk, in Atom's private storage. Excluded from backups by the app (allowBackup=false). */
 class SqliteNotificationStore(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "notification_history.db", null, 1), NotificationStore {
+    SQLiteOpenHelper(context.applicationContext, "atom4_notification_history.db", null, 1), NotificationStore {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
