@@ -52,7 +52,13 @@ sealed interface LlmEvent {
     data class TextDelta(val text: String) : LlmEvent
     data class ReasoningDelta(val text: String) : LlmEvent
     data class ToolCallReady(val call: ToolCall) : LlmEvent
-    data class Usage(val inputTokens: Int, val outputTokens: Int) : LlmEvent
+    /** Cache figures are 0 when the provider does not report them. */
+    data class Usage(
+        val inputTokens: Int,
+        val outputTokens: Int,
+        val cacheReadTokens: Int = 0,
+        val cacheWriteTokens: Int = 0,
+    ) : LlmEvent
     data class Finished(val reason: FinishReason) : LlmEvent
 }
 

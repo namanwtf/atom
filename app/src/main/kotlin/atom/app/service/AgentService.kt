@@ -1,60 +1,43 @@
 package atom.app.service
 
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
-import atom.app.agent.LiveTask
+import atom.app.agent.LiveRun
 import atom.app.graph
+import atom.ui.feature.RunPhase
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Foreground presence for a running task, and nothing else: it starts with the task, mirrors the task's
- * step into its notification and stops itself the moment the task ends. The agent loop itself lives in
- * TaskRunner. No wake lock while the screen is on; a timed partial one only while it is off.
+ * Foreground presence for running tasks, and nothing else: it starts with the first run, mirrors what each run is
+ * doing into the "Running tasks" notification (Open and Stop per run) and stops itself when the last run ends.
+ * The agent loops live in TaskRunner; wake lock and keep-screen-on live in RunPower.
  */
 class AgentService : LifecycleService() {
     private var observing = false
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var screenReceiverRegistered = false
-
-    private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> acquireWakeLock()
-                Intent.ACTION_SCREEN_ON -> releaseWakeLock()
-            }
-        }
-    }
+    private val children = HashSet<String>()
+    private val announced = HashSet<String>()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         val graph = applicationContext.graph
-        val notification = graph.notifications.progress(graph.tasks.live.value)
-        // Must reach startForeground promptly even if the task already ended, or the system kills us.
+        val active = graph.tasks.liveRuns.value.values.filter { it.active }
+        // Must reach startForeground promptly even if the runs already ended, or the system kills us.
+        val notification = graph.notifications.foreground(active)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(
-                this,
-                TaskNotifications.ID_TASK,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
+            ServiceCompat.startForeground(this, TaskNotifications.ID_TASK, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(TaskNotifications.ID_TASK, notification)
         }
         if (!observing) {
             observing = true
-            registerScreenReceiver()
-            if (getSystemService(PowerManager::class.java)?.isInteractive == false) acquireWakeLock()
             observe()
         }
         return START_NOT_STICKY
@@ -62,93 +45,76 @@ class AgentService : LifecycleService() {
 
     private fun observe() {
         val graph = applicationContext.graph
+        // Runs that ended before this service instance existed were already announced (or seen in the app).
+        announced += graph.tasks.liveRuns.value.values.filter { !it.active }.map { it.runId }
         lifecycleScope.launch {
-            // Only re-post when what the notification shows changes, never per streamed token.
-            graph.tasks.live
-                .map { live -> NotificationKey.of(live) to live }
-                .distinctUntilChanged { a, b -> a.first == b.first }
-                .collect { (key, live) ->
-                    if (!key.active) {
-                        finishWith(live)
+            // Only re-post when what the notifications show changes, never per streamed token.
+            graph.tasks.liveRuns
+                .map { runs -> runs.values.sortedBy { it.startedAt } }
+                .distinctUntilChanged { a, b -> a.map(Key::of) == b.map(Key::of) }
+                .collect { runs ->
+                    val active = runs.filter { it.active }
+                    runs.filter { !it.active && it.runId !in announced }.forEach { finished ->
+                        announced += finished.runId
+                        if (!graph.uiVisible) graph.notifications.showResult(finished)
+                    }
+                    val pending = active.firstOrNull { it.pending != null }?.pending
+                    // In-app, the dialog asks; the heads-up is for when Atom is driving another app.
+                    if (pending == null) graph.notifications.cancelApproval() else if (!graph.uiVisible) graph.notifications.showApproval(pending)
+                    if (active.isEmpty()) {
+                        stop()
                         return@collect
                     }
-                    graph.notifications.notifyProgress(live)
-                    val pending = live?.pending
-                    // In-app, the dialog asks; the heads-up is for when Atom is driving another app.
-                    if (pending == null) {
-                        graph.notifications.cancelApproval()
-                    } else if (!graph.uiVisible) {
-                        graph.notifications.showApproval(pending)
-                    }
+                    graph.notifications.notifyForeground(active)
+                    graph.notifications.syncChildren(active, children)
                 }
         }
     }
 
-    private fun finishWith(live: LiveTask?) {
+    private fun stop() {
         val graph = applicationContext.graph
-        graph.notifications.cancelApproval()
-        if (live != null && !graph.uiVisible) graph.notifications.showResult(live)
-        releaseWakeLock()
+        graph.notifications.syncChildren(emptyList(), children)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun registerScreenReceiver() {
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
-        }
-        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        screenReceiverRegistered = true
-    }
-
-    private fun acquireWakeLock() {
-        val held = wakeLock
-        if (held?.isHeld == true) return
-        val pm = getSystemService(PowerManager::class.java) ?: return
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG).apply {
-            setReferenceCounted(false)
-            acquire(WAKE_TIMEOUT_MS)
-        }
-    }
-
-    private fun releaseWakeLock() {
-        wakeLock?.let { if (it.isHeld) it.release() }
-        wakeLock = null
-    }
-
-    override fun onDestroy() {
-        releaseWakeLock()
-        if (screenReceiverRegistered) {
-            runCatching { unregisterReceiver(screenReceiver) }
-            screenReceiverRegistered = false
-        }
-        super.onDestroy()
-    }
-
-    private data class NotificationKey(val active: Boolean, val tool: String?, val pendingId: Long?, val engine: String?) {
+    private data class Key(
+        val runId: String,
+        val active: Boolean,
+        val phase: RunPhase,
+        val tool: String?,
+        val pendingId: Long?,
+        val engine: String?,
+        val title: String,
+        val retrying: Boolean,
+        val compacting: Boolean,
+        val answering: Boolean,
+    ) {
         companion object {
-            fun of(live: LiveTask?) = NotificationKey(
-                active = live?.phase?.active == true,
-                tool = live?.currentTool,
-                pendingId = live?.pending?.id,
-                engine = live?.engineLabel,
+            fun of(run: LiveRun) = Key(
+                runId = run.runId,
+                active = run.active,
+                phase = run.phase,
+                tool = run.currentTool,
+                pendingId = run.pending?.id,
+                engine = run.engineLabel,
+                title = run.conversation.title,
+                retrying = run.retry != null,
+                compacting = run.compacting,
+                answering = run.stream.text.isNotEmpty(),
             )
         }
     }
 
     companion object {
-        private const val WAKE_TAG = "atom:task"
-
-        /** Upper bound per screen-off period; re-acquired on the next screen-off if the task is still going. */
-        private const val WAKE_TIMEOUT_MS = 10 * 60 * 1000L
-
         fun start(context: Context) {
             try {
                 ContextCompat.startForegroundService(context, Intent(context, AgentService::class.java))
             } catch (_: IllegalStateException) {
-                // Foreground start not allowed right now (e.g. started from the background). The task still
-                // runs; it just lacks the ongoing notification.
+                // Foreground start not allowed right now (e.g. started from the background). The runs still
+                // execute; they just lack the ongoing notification.
+            } catch (_: SecurityException) {
+                // Same, on ROMs that report it differently.
             }
         }
     }

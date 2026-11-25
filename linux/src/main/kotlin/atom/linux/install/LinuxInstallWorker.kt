@@ -17,6 +17,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import atom.linux.AndroidFsOps
 import atom.linux.Distro
+import atom.linux.LinuxEnv
 import atom.linux.LinuxPaths
 import atom.linux.SafeDelete
 import kotlinx.coroutines.CancellationException
@@ -54,9 +55,13 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
     companion object {
         const val UNIQUE_NAME = "atom-linux-install"
         const val KEY_DISTRO = "distro"
+        const val KEY_STEPS = "steps"
         const val KEY_ERROR = "error"
         const val P_STEP = "step"
         const val P_PROGRESS = "progress"
+        const val P_STAGE = "stage"
+        const val P_STAGE_INDEX = "stageIndex"
+        const val P_STAGE_COUNT = "stageCount"
         private const val CHANNEL_ID = "atom_linux_install"
         private const val NOTIFICATION_ID = 0x4C1A0001
 
@@ -79,28 +84,105 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
     private var lastStep = ""
     private var lastPct = -1
 
+    private var stageIndex = 0
+    private var stageCount = 1
+    private var stageTitle = ""
+
     override suspend fun doWork(): Result {
         val distro = inputData.getString(KEY_DISTRO)?.let { n -> Distro.entries.firstOrNull { it.name == n } }
             ?: return Result.failure(workDataOf(KEY_ERROR to "Invalid install request."))
+        val steps = (inputData.getString(KEY_STEPS) ?: InstallStep.Base.key).split(',').mapNotNull(InstallStep::parse)
+        if (steps.isEmpty()) return Result.failure(workDataOf(KEY_ERROR to "Invalid install request."))
+        val env = LinuxEnv.get(applicationContext)
+        stageCount = steps.size
+        var current: InstallStep = steps.first()
         return try {
-            withContext(Dispatchers.IO) { install(distro) }
+            withContext(Dispatchers.IO) {
+                for ((i, step) in steps.withIndex()) {
+                    current = step
+                    stageIndex = i
+                    stageTitle = step.title
+                    runStep(env, distro, step)
+                    env.updateConfig { c -> c.copy(pendingSteps = steps.drop(i + 1).map { it.key }) }
+                }
+            }
+            env.updateConfig {
+                it.copy(pendingSteps = emptyList(), lastResult = "${steps.last().title} finished", lastResultOk = true, lastResultAtMs = System.currentTimeMillis())
+            }
+            postDone(distro, steps)
             Result.success()
         } catch (e: CancellationException) {
-            cleanupPartial(distro, keepDownload = false)
+            if (current == InstallStep.Base) cleanupPartial(distro, keepDownload = false)
+            env.updateConfig { it.copy(lastResult = "${current.title} cancelled", lastResultOk = false, lastResultAtMs = System.currentTimeMillis()) }
             throw e
-        } catch (e: Failure) {
-            cleanupPartial(distro, keepDownload = false)
-            Result.failure(workDataOf(KEY_ERROR to e.message))
-        } catch (e: IOException) {
-            cleanupPartial(distro, keepDownload = true) // a network drop resumes next time
-            Result.failure(workDataOf(KEY_ERROR to "Install failed: ${e.message ?: e.javaClass.simpleName}. Tap install to try again."))
         } catch (e: Exception) {
-            cleanupPartial(distro, keepDownload = false)
-            Result.failure(workDataOf(KEY_ERROR to "Install failed: ${e.message ?: e.javaClass.simpleName}"))
+            if (current == InstallStep.Base) cleanupPartial(distro, keepDownload = e is IOException && e !is Failure)
+            val message = when (e) {
+                is Failure -> e.message ?: "Install failed."
+                is IOException -> "${current.title} failed: ${e.message ?: e.javaClass.simpleName}. Tap Continue installation to try again."
+                else -> "${current.title} failed: ${e.message ?: e.javaClass.simpleName}"
+            }
+            env.updateConfig { it.copy(lastResult = message, lastResultOk = false, lastResultAtMs = System.currentTimeMillis()) }
+            Result.failure(workDataOf(KEY_ERROR to message))
         }
     }
 
-    private suspend fun install(distro: Distro) {
+    private suspend fun runStep(env: LinuxEnv, distro: Distro, step: InstallStep) {
+        when (step) {
+            InstallStep.Base -> installBase(distro)
+            InstallStep.Tools -> {
+                checkSpace(env.toolsBytes(distro))
+                guest(env, distro, InstallScripts.tools(distro), "Installing packages")
+                env.updateConfig { it.copy(toolsInstalled = true) }
+            }
+            is InstallStep.ProfileStep -> {
+                checkSpace(step.profile.approxBytes)
+                guest(env, distro, InstallScripts.profile(step.profile, distro), "Installing ${step.profile.title}")
+                val version = env.runInDistro(distro, InstallScripts.versionProbe(step.profile), 60_000).stdout.trim().lines().lastOrNull().orEmpty()
+                env.updateConfig { it.copy(profiles = it.profiles + step.profile, versions = it.versions + (step.profile.name to version)) }
+            }
+            InstallStep.Upgrade -> guest(env, distro, InstallScripts.upgrade(distro), "Upgrading packages")
+            InstallStep.Repair -> {
+                report(distro, "Rewriting configuration", 0.05f)
+                RootfsSetup.configure(paths.rootfs(distro), distro, AndroidFsOps)
+                paths.workspace.mkdirs()
+                guest(env, distro, InstallScripts.repair(distro), "Recovering packages", failOnError = false)
+                if (env.config.value.toolsInstalled) guest(env, distro, InstallScripts.tools(distro), "Reinstalling base tools")
+            }
+        }
+    }
+
+    /** Runs an installer script in the distro, turning package-manager output into progress. */
+    private suspend fun guest(env: LinuxEnv, distro: Distro, script: String, step: String, failOnError: Boolean = true) {
+        report(distro, step, 0.02f)
+        val progress = PackageProgress()
+        val tail = ArrayDeque<String>()
+        var lastReport = 0L
+        val r = env.runInDistro(distro, script, 45 * 60_000L) { line ->
+            synchronized(tail) {
+                tail.addLast(line)
+                while (tail.size > 12) tail.removeFirst()
+            }
+            val f = progress.line(line) ?: return@runInDistro
+            val now = System.currentTimeMillis()
+            if (now - lastReport >= 500) {
+                lastReport = now
+                reportBlocking(distro, step, 0.05f + 0.9f * f)
+            }
+        }
+        if (r.timedOut) throw IOException("it took longer than 45 minutes")
+        if (failOnError && r.exitCode != 0) {
+            val last = synchronized(tail) { tail.joinToString("\n") }.ifBlank { r.stderr.takeLast(800) }
+            val space = last.contains("No space left", ignoreCase = true)
+            throw Failure(
+                if (space) "Not enough space to finish $stageTitle. Free some storage, then tap Continue installation."
+                else "$stageTitle failed (exit ${r.exitCode}). Last output:\n$last",
+            )
+        }
+        report(distro, step, 1f)
+    }
+
+    private suspend fun installBase(distro: Distro) {
         report(distro, STEP_RESOLVE, 0f)
         val source = try {
             DistroSources.resolve(distro)
@@ -143,8 +225,7 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
             setProperty("installedAt", System.currentTimeMillis().toString())
         }.let { props -> FileOutputStream(paths.marker(distro)).use { props.store(it, "Atom Linux install") } }
 
-        setProgress(workDataOf(P_STEP to STEP_CONFIGURE, P_PROGRESS to 1f))
-        postDone(distro)
+        report(distro, STEP_CONFIGURE, 1f)
     }
 
     // ------------------------------------------------------------------ download
@@ -326,14 +407,27 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
         return total
     }
 
-    private suspend fun report(distro: Distro, step: String, progress: Float, detail: String? = null) {
-        setProgress(workDataOf(P_STEP to step, P_PROGRESS to progress))
+    /** [local] is the progress within the current step; the published value covers the whole plan. */
+    private suspend fun report(distro: Distro, step: String, local: Float, detail: String? = null) {
+        val progress = overall(local)
+        setProgress(progressData(step, progress))
         notifyForeground(distro, step, progress, detail)
     }
 
+    private fun overall(local: Float) = ((stageIndex + local.coerceIn(0f, 1f)) / stageCount).coerceIn(0f, 1f)
+
+    private fun progressData(step: String, progress: Float) = workDataOf(
+        P_STEP to step,
+        P_PROGRESS to progress,
+        P_STAGE to stageTitle,
+        P_STAGE_INDEX to stageIndex,
+        P_STAGE_COUNT to stageCount,
+    )
+
     /** For progress from inside blocking stream callbacks (WorkManager's progress store is thread-safe). */
-    private fun reportBlocking(distro: Distro, step: String, progress: Float) {
-        setProgressAsync(workDataOf(P_STEP to step, P_PROGRESS to progress))
+    private fun reportBlocking(distro: Distro, step: String, local: Float) {
+        val progress = overall(local)
+        setProgressAsync(progressData(step, progress))
         val pct = (progress * 100).toInt()
         if (foregroundOk && pct != lastPct) {
             lastPct = pct
@@ -368,7 +462,7 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
         ).build()
         val builder = Notification.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Installing ${distro.displayName}")
+            .setContentTitle(if (stageCount > 1) "${distro.displayName}: $stageTitle (${stageIndex + 1}/$stageCount)" else "${distro.displayName}: $stageTitle")
             .setContentText(if (detail != null) "$step · $detail" else step)
             .setProgress(100, (progress * 100).toInt().coerceIn(0, 100), false)
             .setOngoing(true)
@@ -381,7 +475,7 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
         return ForegroundInfo(NOTIFICATION_ID, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
-    private fun postDone(distro: Distro) {
+    private fun postDone(distro: Distro, steps: List<InstallStep>) {
         val ctx = applicationContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -392,7 +486,7 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
         ensureChannel()
         val n = Notification.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("${distro.displayName} is ready")
+            .setContentTitle(if (steps.first() == InstallStep.Base) "${distro.displayName} is ready" else "${steps.last().title} finished")
             .setContentText("Open the terminal in Atom to use it.")
             .setAutoCancel(true)
             .build()

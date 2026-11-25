@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -275,7 +276,10 @@ internal object UiController {
             if (!accepted && cont.isActive) cont.resume(false)
         }
 
-    suspend fun typeText(svc: AtomAccessibilityService, id: String?, text: String, append: Boolean, submit: Boolean): String {
+    class Typed(val summary: String, val verified: Boolean)
+
+    suspend fun typeText(svc: AtomAccessibilityService, id: String?, text: String, append: Boolean, submit: Boolean): Typed {
+        var readBack = true
         val (summary, needsKeyEnter) = withContext(ui) {
             withBag { bag ->
                 val start = if (id != null) {
@@ -305,8 +309,12 @@ internal object UiController {
                 field.refresh()
                 val shown = if (field.isShowingHintText) "" else field.text?.toString().orEmpty()
                 val check = when {
-                    field.isPassword || shown == value -> ""
-                    else -> " (field now shows \"${shown.take(60)}\")"
+                    field.isPassword -> ""
+                    shown == value -> ""
+                    else -> {
+                        readBack = false
+                        " (field now shows \"${shown.take(60)}\")"
+                    }
                 }
                 var enter = false
                 var submitted = ""
@@ -320,12 +328,55 @@ internal object UiController {
                 "Typed ${text.length} chars into ${id ?: "the focused field"}$how$check$submitted" to enter
             }
         }
-        if (!needsKeyEnter) return summary
+        if (!needsKeyEnter) return Typed(summary, readBack)
         val sh = shell
         if (sh != null && sh.tier != ShellTier.App && sh.run("input keyevent 66", 5_000).exitCode == 0) {
-            return "$summary and pressed Enter"
+            return Typed("$summary and pressed Enter", readBack)
         }
-        return "$summary, but Enter is not supported in this field; tap the app's send/search button instead"
+        return Typed("$summary, but Enter is not supported in this field; tap the app's send/search button instead", readBack)
+    }
+
+    /** Pastes the clipboard into [id] or the focused field and reads the field back. */
+    suspend fun paste(svc: AtomAccessibilityService, id: String?): Typed = withContext(ui) {
+        withBag { bag ->
+            val start = if (id != null) {
+                resolve(id)
+            } else {
+                bag.add(svc.findFocus(AccessibilityNodeInfo.FOCUS_INPUT))
+                    ?: throw UiError("No text field is focused. Pass the id of a field marked 'edit' from read_screen.")
+            }
+            val field = if (start.isEditable) start else findDescendant(start, bag) { it.isEditable }
+                ?: throw UiError("${id ?: "The focused element"} is not a text field.")
+            if (!field.isFocused) field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            val before = if (field.isShowingHintText) "" else field.text?.toString().orEmpty()
+            if (!field.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                throw UiError("The field refused to paste. Long-press it and tap Paste instead.")
+            }
+            field.refresh()
+            val after = if (field.isShowingHintText) "" else field.text?.toString().orEmpty()
+            val changed = field.isPassword || after != before
+            Typed("Pasted into ${id ?: "the focused field"}" + if (changed) "" else " (the field text did not change)", changed)
+        }
+    }
+
+    /** Whether any visible node's text or description contains [needle] (case-insensitive). */
+    suspend fun screenContains(svc: AtomAccessibilityService, needle: String): Boolean = withContext(ui) {
+        withBag { bag ->
+            val root = bag.add(svc.rootInActiveWindow) ?: return@withBag false
+            val q = needle.lowercase()
+            val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+            var visited = 0
+            while (queue.isNotEmpty() && visited++ < MAX_NODES) {
+                val n = queue.removeFirst()
+                if (n.isVisibleToUser && !n.isPassword) {
+                    val t = n.text?.toString()?.lowercase()
+                    val d = n.contentDescription?.toString()?.lowercase()
+                    if ((t != null && t.contains(q)) || (d != null && d.contains(q))) return@withBag true
+                }
+                for (i in 0 until n.childCount) bag.add(n.getChild(i))?.let(queue::add)
+            }
+            false
+        }
     }
 
     private suspend fun pasteInto(svc: AccessibilityService, field: AccessibilityNodeInfo, value: String, currentLength: Int): Boolean {
@@ -444,12 +495,39 @@ internal object UiController {
         return "Performed $name"
     }
 
-    /** Waits for the screen to settle and formats the one-line outcome every action returns. */
-    suspend fun outcome(svc: AccessibilityService, done: String, expectPackage: String? = null): ToolResult {
-        val settled = Accessibility.settle.awaitSettle()
-        val fg = foreground(svc)
-        val state = if (settled) "screen settled" else "screen still changing after 3s"
-        val note = if (expectPackage != null && fg != expectPackage) " It may still be loading, or another screen is in front." else ""
-        return ToolResult.ok("$done; $state; foreground: $fg.$note")
+    /**
+     * Waits for the screen to settle and formats the outcome every action returns: "done" when the screen visibly
+     * reacted (or the expected app is in front), "submitted, unconfirmed" when nothing observable changed.
+     */
+    suspend fun outcome(svc: AccessibilityService, done: String, expectPackage: String? = null, verified: Boolean? = null): ToolResult {
+        val settle = Accessibility.settle.awaitSettleDetailed()
+        var fg = foreground(svc)
+        if (expectPackage != null && fg != expectPackage && Accessibility.taskActive) {
+            fg = awaitForeground(svc, expectPackage, 4_000) ?: foreground(svc)
+        }
+        val state = if (settle.settled) "screen settled" else "screen still changing after 3s"
+        val result = when {
+            verified == false -> "submitted, unconfirmed"
+            expectPackage != null -> if (fg == expectPackage) "done" else "submitted, unconfirmed"
+            verified == true -> "done"
+            !Accessibility.taskActive -> "done"
+            settle.changed -> "done"
+            else -> "submitted, unconfirmed"
+        }
+        val note = when {
+            expectPackage != null && fg == expectPackage -> " The $expectPackage window was seen."
+            expectPackage != null -> " The $expectPackage window was not seen; it may still be loading, or another screen is in front. Call read_screen."
+            result != "done" -> " Nothing visibly changed; call read_screen to check before acting again."
+            else -> ""
+        }
+        return ToolResult.ok("Outcome: $result. $done; $state; foreground: $fg.$note")
     }
+
+    /** Waits on window events (no polling) until [pkg] is in front; null on timeout. */
+    suspend fun awaitForeground(svc: AccessibilityService, pkg: String, timeoutMs: Long): String? =
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            var seen = Accessibility.settle.events.value
+            while (foreground(svc) != pkg) seen = Accessibility.settle.events.first { it != seen }
+            pkg
+        }
 }

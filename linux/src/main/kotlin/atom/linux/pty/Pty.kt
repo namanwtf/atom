@@ -30,6 +30,10 @@ internal object Pty {
     @JvmStatic
     external fun spawnPiped(path: String, argv: Array<String>, envp: Array<String>, cwd: String?, result: IntArray)
 
+    /** Spawns in its own session with stdout+stderr appended to [logPath]. Returns the pid. */
+    @JvmStatic
+    external fun spawnToFile(path: String, argv: Array<String>, envp: Array<String>, cwd: String?, logPath: String): Int
+
     @JvmStatic
     external fun setSize(fd: Int, rows: Int, cols: Int)
 

@@ -18,7 +18,13 @@ internal object ProcessRunner {
      * Runs [spec]. On timeout or cancellation the process group gets SIGTERM, then SIGKILL, and [onKill] runs
      * (used for root processes the app may not signal itself).
      */
-    suspend fun run(spec: LaunchSpec, timeoutMs: Long, maxChars: Int = 64_000, onKill: (() -> Unit)? = null): CommandResult =
+    suspend fun run(
+        spec: LaunchSpec,
+        timeoutMs: Long,
+        maxChars: Int = 64_000,
+        onLine: ((String) -> Unit)? = null,
+        onKill: (() -> Unit)? = null,
+    ): CommandResult =
         withContext(Dispatchers.IO) {
             val ids = IntArray(3)
             val envp = spec.env.map { (k, v) -> "$k=$v" }.toTypedArray()
@@ -42,8 +48,8 @@ internal object ProcessRunner {
             try {
                 kotlin.run {
                     // Plain threads, not child coroutines: blocking native calls must never hold up cancellation.
-                    val out = onThread("out") { readCapped(stdout, maxChars) }
-                    val err = onThread("err") { readCapped(stderr, maxChars) }
+                    val out = onThread("out") { readCapped(stdout, maxChars, onLine) }
+                    val err = onThread("err") { readCapped(stderr, maxChars, onLine) }
                     val exit = onThread("wait") { Pty.waitFor(pid).also { reaped.set(true) } }
                     var timedOut = false
                     var code = withTimeoutOrNull(timeoutMs) { exit.await() }
@@ -83,10 +89,11 @@ internal object ProcessRunner {
     }
 
     /** Reads to EOF, keeping the first [maxChars] bytes and noting how much was dropped. */
-    private fun readCapped(input: InputStream, maxChars: Int): String {
+    private fun readCapped(input: InputStream, maxChars: Int, onLine: ((String) -> Unit)?): String {
         val keep = java.io.ByteArrayOutputStream()
         val buf = ByteArray(8192)
         var dropped = 0L
+        val line = java.io.ByteArrayOutputStream()
         while (true) {
             val n = try {
                 input.read(buf)
@@ -94,10 +101,22 @@ internal object ProcessRunner {
                 -1
             }
             if (n < 0) break
+            if (onLine != null) {
+                for (i in 0 until n) {
+                    val b = buf[i].toInt()
+                    if (b == '\n'.code || b == '\r'.code) {
+                        if (line.size() > 0) onLine(line.toString(Charsets.UTF_8.name()))
+                        line.reset()
+                    } else if (line.size() < 4096) {
+                        line.write(b)
+                    }
+                }
+            }
             val room = (maxChars - keep.size()).coerceAtLeast(0)
             if (room > 0) keep.write(buf, 0, minOf(room, n))
             if (n > room) dropped += n - room
         }
+        if (onLine != null && line.size() > 0) onLine(line.toString(Charsets.UTF_8.name()))
         val text = keep.toString(Charsets.UTF_8.name())
         return if (dropped > 0) "$text\n… [$dropped more bytes cut]" else text
     }

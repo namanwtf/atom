@@ -40,7 +40,7 @@ class OpenAiChatEngineTest {
     fun tearDown() = server.close()
 
     private fun engine(providerId: String = "openai", key: String = "sk-test-secret-123") =
-        CloudEngines.create(Providers.byId(providerId)!!, key, "gpt-test", server.url("/v1/").toString())
+        CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), key, "gpt-test", server.url("/v1/").toString())
 
     private val request = LlmRequest(model = "gpt-test", messages = listOf(ChatMessage.user("hi")))
 

@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 internal val Context.vaultDataStore: DataStore<Preferences> by preferencesDataStore(name = "vault")
 
 /**
- * Secrets (provider API keys, Hugging Face token) encrypted with a non-exportable AES-256-GCM key in the
+ * Secrets (provider API keys, account sign-in tokens, Hugging Face token) encrypted with a non-exportable AES-256-GCM key in the
  * Android Keystore. Ciphertext lives in DataStore; plaintext only exists transiently in memory.
  * Nothing in this class logs, and callers must never log what it returns.
  */
@@ -47,9 +47,46 @@ class KeyVault(private val store: DataStore<Preferences>) {
 
     val hasHfToken: Flow<Boolean> = data.map { it[HF_TOKEN] != null }.distinctUntilChanged()
 
+    /** Provider ids with stored account sign-in tokens. These are never exported in a backup. */
+    val signedInProviders: Flow<Set<String>> = data
+        .map { prefs -> prefs.asMap().keys.mapNotNullTo(mutableSetOf()) { it.name.takeIf { n -> n.startsWith(OAUTH_PREFIX) }?.removePrefix(OAUTH_PREFIX) } }
+        .distinctUntilChanged()
+
+    /**
+     * Provider ids whose stored key or token could no longer be decrypted (for example after a restore to a new
+     * phone). The UI asks the user to enter them again instead of treating them as empty.
+     */
+    val unreadable: Flow<Set<String>> = data
+        .map { prefs -> prefs.asMap().keys.mapNotNullTo(mutableSetOf()) { it.name.takeIf { n -> n.startsWith(STALE_PREFIX) }?.removePrefix(STALE_PREFIX)?.substringAfter('.') } }
+        .distinctUntilChanged()
+
     suspend fun apiKey(providerId: String): String? = read(apiKeyName(providerId))
 
     suspend fun setApiKey(providerId: String, key: String?) = write(apiKeyName(providerId), key)
+
+    suspend fun isUnreadable(providerId: String): Boolean {
+        val prefs = data.first()
+        return prefs[staleName(apiKeyName(providerId))] != null || prefs[staleName(oauthName(providerId))] != null
+    }
+
+    /** Serialized [atom.llm.cloud.OAuthTokens] for an account sign-in. */
+    suspend fun oauthTokens(providerId: String): String? = read(oauthName(providerId))
+
+    suspend fun setOauthTokens(providerId: String, json: String?) = write(oauthName(providerId), json)
+
+    /** Gives a duplicated provider the original's API key. Account tokens are never copied. */
+    suspend fun copyApiKey(from: String, to: String) {
+        apiKey(from)?.let { setApiKey(to, it) }
+    }
+
+    suspend fun removeProvider(providerId: String) {
+        store.edit {
+            it.remove(apiKeyName(providerId))
+            it.remove(oauthName(providerId))
+            it.remove(staleName(apiKeyName(providerId)))
+            it.remove(staleName(oauthName(providerId)))
+        }
+    }
 
     suspend fun hfToken(): String? = read(HF_TOKEN)
 
@@ -57,12 +94,20 @@ class KeyVault(private val store: DataStore<Preferences>) {
 
     private fun apiKeyName(providerId: String) = stringPreferencesKey(API_PREFIX + providerId)
 
+    private fun oauthName(providerId: String) = stringPreferencesKey(OAUTH_PREFIX + providerId)
+
+    private fun staleName(key: Preferences.Key<String>) = stringPreferencesKey(STALE_PREFIX + key.name)
+
     private suspend fun read(key: Preferences.Key<String>): String? {
         val blob = data.first()[key] ?: return null
         val plain = withContext(Dispatchers.Default) { runCatching { decrypt(blob) }.getOrNull() }
         if (plain == null) {
-            // The keystore key was invalidated (e.g. device restored); the ciphertext is unrecoverable.
-            store.edit { it.remove(key) }
+            // The keystore key was invalidated (e.g. device restored); the ciphertext is unrecoverable, so it is
+            // dropped and a marker asks the user to enter the secret again.
+            store.edit {
+                it.remove(key)
+                it[staleName(key)] = "1"
+            }
         }
         return plain
     }
@@ -70,11 +115,17 @@ class KeyVault(private val store: DataStore<Preferences>) {
     private suspend fun write(key: Preferences.Key<String>, value: String?) {
         val trimmed = value?.trim()
         if (trimmed.isNullOrEmpty()) {
-            store.edit { it.remove(key) }
+            store.edit {
+                it.remove(key)
+                it.remove(staleName(key))
+            }
             return
         }
         val blob = withContext(Dispatchers.Default) { encrypt(trimmed) }
-        store.edit { it[key] = blob }
+        store.edit {
+            it[key] = blob
+            it.remove(staleName(key))
+        }
     }
 
     private fun encrypt(plain: String): String {
@@ -121,6 +172,8 @@ class KeyVault(private val store: DataStore<Preferences>) {
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val TAG_BITS = 128
         const val API_PREFIX = "api."
+        const val OAUTH_PREFIX = "oauth."
+        const val STALE_PREFIX = "stale."
         val HF_TOKEN = stringPreferencesKey("hf.token")
     }
 }

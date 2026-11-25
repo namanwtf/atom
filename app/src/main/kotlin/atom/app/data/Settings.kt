@@ -1,7 +1,5 @@
 package atom.app.data
 
-import atom.ui.theme.ThemeMode
-
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -20,6 +18,9 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import atom.core.llm.ReasoningEffort
+import atom.llm.cloud.PresetCatalog
+import atom.ui.theme.ThemeMode
 
 internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -48,7 +49,10 @@ sealed interface EngineSelection {
 }
 
 data class AppSettings(
-    val selection: EngineSelection? = null,
+    /** The global default model. A fresh install starts on [DEFAULT_SELECTION] (the user still adds a key). */
+    val selection: EngineSelection? = DEFAULT_SELECTION,
+    /** False until the user picks a default model themselves. */
+    val selectionExplicit: Boolean = false,
     /** Used instead of the on-device model while the PowerGovernor disallows local inference. */
     val cloudFallback: EngineSelection.Cloud? = null,
     val wifiOnlyDownloads: Boolean = true,
@@ -60,7 +64,16 @@ data class AppSettings(
     val heyAtom: Boolean = false,
     /** Also listen with the screen off on battery (charging always allows it). */
     val heyAtomScreenOff: Boolean = false,
-)
+    /** New conversations start with reasoning ("Deep Think") on. */
+    val reasoningByDefault: Boolean = false,
+    /** Effort used when reasoning is on; null means the model's own default. */
+    val defaultReasoning: ReasoningEffort? = null,
+    val autoTitles: Boolean = true,
+) {
+    companion object {
+        val DEFAULT_SELECTION = EngineSelection.Cloud(PresetCatalog.DEFAULT_PROVIDER, PresetCatalog.DEFAULT_MODEL)
+    }
+}
 
 class SettingsRepository(private val store: DataStore<Preferences>) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -74,6 +87,18 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     suspend fun setSelection(selection: EngineSelection) {
         store.edit { it[SELECTION] = json.encodeToString(EngineSelection.serializer(), selection) }
+    }
+
+    suspend fun setReasoningByDefault(enabled: Boolean) {
+        store.edit { it[REASONING_DEFAULT] = enabled }
+    }
+
+    suspend fun setDefaultReasoning(effort: ReasoningEffort?) {
+        store.edit { if (effort == null) it.remove(REASONING_EFFORT) else it[REASONING_EFFORT] = effort.name }
+    }
+
+    suspend fun setAutoTitles(enabled: Boolean) {
+        store.edit { it[AUTO_TITLES] = enabled }
     }
 
     suspend fun setFallback(fallback: EngineSelection.Cloud?) {
@@ -108,7 +133,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
     }
 
     private fun read(p: Preferences) = AppSettings(
-        selection = p[SELECTION]?.let { decode(EngineSelection.serializer(), it) },
+        selection = p[SELECTION]?.let { decode(EngineSelection.serializer(), it) } ?: AppSettings.DEFAULT_SELECTION,
+        selectionExplicit = p[SELECTION] != null,
         cloudFallback = p[FALLBACK]?.let { decode(EngineSelection.Cloud.serializer(), it) },
         wifiOnlyDownloads = p[WIFI_ONLY] ?: true,
         confirmActTools = p[CONFIRM_ACT] ?: false,
@@ -116,6 +142,9 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         theme = p[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.Dark,
         heyAtom = p[HEY_ATOM] ?: false,
         heyAtomScreenOff = p[HEY_ATOM_SCREEN_OFF] ?: false,
+        reasoningByDefault = p[REASONING_DEFAULT] ?: false,
+        defaultReasoning = p[REASONING_EFFORT]?.let { name -> ReasoningEffort.entries.firstOrNull { it.name == name } },
+        autoTitles = p[AUTO_TITLES] ?: true,
     )
 
     private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
@@ -130,5 +159,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val THEME = stringPreferencesKey("theme")
         val HEY_ATOM = booleanPreferencesKey("hey_atom")
         val HEY_ATOM_SCREEN_OFF = booleanPreferencesKey("hey_atom_screen_off")
+        val REASONING_DEFAULT = booleanPreferencesKey("reasoning_by_default")
+        val REASONING_EFFORT = stringPreferencesKey("default_reasoning_effort")
+        val AUTO_TITLES = booleanPreferencesKey("auto_titles")
     }
 }

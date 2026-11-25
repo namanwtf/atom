@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Cloud speech services (recognition and spoken answers). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Chat answers keep being read aloud in the background, only while speaking. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
         <!-- Find the device's real speech recognizer (Android 11+ package visibility). -->
@@ -21,6 +26,10 @@
         <intent>
             <action android:name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" />
         </intent>
+        <!-- System text-to-speech engines (fallback voice). -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application>
@@ -29,6 +38,12 @@
             android:name="atom.voice.service.WakeWordService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Exists only while a chat answer is being read aloud; stops itself when speaking ends. -->
+        <service
+            android:name="atom.voice.tts.ReadAloudService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Tier 1: system digital assistant (no mic, no background work). -->
         <service

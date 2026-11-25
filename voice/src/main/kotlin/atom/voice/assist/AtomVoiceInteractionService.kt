@@ -1,10 +1,16 @@
 package atom.voice.assist
 
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.service.voice.VoiceInteractionService
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
+import android.view.View
+import android.view.WindowManager
 import atom.voice.assist.AssistLaunch.intent
 
 /**
@@ -14,9 +20,29 @@ import atom.voice.assist.AssistLaunch.intent
 class AtomVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
-        // Do not make the system capture the screen contents/screenshot on every assist gesture: Atom does not
-        // use them, and skipping them saves CPU and keeps the screen private.
-        setDisabledShowContext(VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
+        active = this
+        // Screen context is only worth its capture cost when the overlay can use it; the plain activity launch cannot.
+        val disabled = if (AssistOverlay.factory != null) {
+            0
+        } else {
+            VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT
+        }
+        setDisabledShowContext(disabled)
+    }
+
+    override fun onShutdown() {
+        if (active === this) active = null
+        super.onShutdown()
+    }
+
+    override fun onDestroy() {
+        if (active === this) active = null
+        super.onDestroy()
+    }
+
+    internal companion object {
+        @Volatile
+        var active: AtomVoiceInteractionService? = null
     }
 }
 
@@ -24,18 +50,83 @@ class AtomVoiceInteractionSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = AtomVoiceInteractionSession(this)
 }
 
-/** Has no UI of its own: on the assist gesture it opens Atom's activity and hides itself. */
-internal class AtomVoiceInteractionSession(context: Context) : VoiceInteractionSession(context) {
-    override fun onShow(args: Bundle?, showFlags: Int) {
-        super.onShow(args, showFlags)
-        val launch = intent(context, fromAssist = true)
-        if (launch != null) {
-            try {
-                startAssistantActivity(launch)
-            } catch (e: RuntimeException) {
-                runCatching { context.startActivity(launch) }
+/**
+ * Draws the overlay UI from [AssistOverlay.factory] edge to edge over the current app. Without a UI it opens
+ * Atom's activity and hides itself.
+ */
+internal class AtomVoiceInteractionSession(context: Context) : VoiceInteractionSession(context), AssistSessionHandle {
+    private val ui: AssistUi? = runCatching { AssistOverlay.factory?.invoke() }.getOrNull()
+
+    override fun onCreate() {
+        super.onCreate()
+        if (ui == null) return
+        runCatching {
+            window.window?.apply {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                setDecorFitsSystemWindows(false)
+                @Suppress("DEPRECATION")
+                statusBarColor = Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                navigationBarColor = Color.TRANSPARENT
+                isNavigationBarContrastEnforced = false
+                isStatusBarContrastEnforced = false
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                attributes = attributes.apply {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
             }
         }
+    }
+
+    override fun onCreateContentView(): View? = ui?.createView(this) ?: super.onCreateContentView()
+
+    override fun onShow(args: Bundle?, showFlags: Int) {
+        super.onShow(args, showFlags)
+        val overlay = ui
+        if (overlay != null) {
+            overlay.onShow(args, showFlags)
+            return
+        }
+        intent(context, fromAssist = true)?.let { launch(it) }
         hide()
+    }
+
+    override fun onHandleAssist(state: AssistState) {
+        if (state.isFocused) ui?.onAssist(state.assistStructure, state.assistContent)
+    }
+
+    override fun onHandleScreenshot(screenshot: Bitmap?) {
+        ui?.onScreenshot(screenshot)
+    }
+
+    override fun onBackPressed() {
+        if (ui?.onBack() != true) super.onBackPressed()
+    }
+
+    override fun onHide() {
+        ui?.onHide()
+        super.onHide()
+    }
+
+    override fun onDestroy() {
+        ui?.onDestroy()
+        super.onDestroy()
+    }
+
+    override fun sessionContext(): Context = context
+
+    override fun dismiss() {
+        hide()
+    }
+
+    override fun launch(intent: Intent) {
+        try {
+            startAssistantActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: RuntimeException) {
+            runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+        if (ui != null) hide()
     }
 }

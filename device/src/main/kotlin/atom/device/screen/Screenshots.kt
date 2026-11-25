@@ -68,6 +68,11 @@ internal object Screenshots {
         } finally {
             buffer.close()
         }
+        return encodeBitmap(software)
+    }
+
+    /** Downscales and JPEG-encodes [software]; recycles it. */
+    fun encodeBitmap(software: Bitmap): Shot {
         val w = software.width
         val h = software.height
         val scale = minOf(1f, MAX_SIDE.toFloat() / max(w, h))

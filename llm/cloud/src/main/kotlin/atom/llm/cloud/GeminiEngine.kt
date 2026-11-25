@@ -34,17 +34,19 @@ internal class GeminiEngine(
     private val model: String,
     baseUrl: String,
     private val http: OkHttpClient,
+    private val options: EngineOptions = EngineOptions(),
 ) : LlmEngine {
 
     private val root = baseUrl.trimEnd('/')
+    private val vertex = provider.wire == Wire.Vertex
     private val errors = ErrorMapper(provider.displayName, apiKey)
 
     override val id: String = "${provider.id}:$model"
 
     override val capabilities = EngineCapabilities(
         nativeToolCalls = true,
-        vision = true,
-        contextWindow = 1_000_000,
+        vision = options.vision ?: true,
+        contextWindow = options.contextWindow ?: 1_000_000,
         onDevice = false,
     )
 
@@ -58,14 +60,16 @@ internal class GeminiEngine(
 
     private fun httpRequest(request: LlmRequest): Request {
         val modelId = request.model.ifBlank { model }.removePrefix("models/")
-        val url = "$root/models/$modelId:streamGenerateContent".toHttpUrl().newBuilder()
+        val base = if (vertex) vertexModelUrl(root, options.vertexProject, options.vertexLocation, modelId) else "$root/models/$modelId"
+        val url = "$base:streamGenerateContent".toHttpUrl().newBuilder()
             .addQueryParameter("alt", "sse")
             .build()
         return Request.Builder()
             .url(url)
             .header("x-goog-api-key", apiKey)
             .header("Accept", "text/event-stream")
-            .post(buildBody(request).toRequestBody())
+            .apply { RequestCustomizer.applyHeaders(this, options) }
+            .post(RequestCustomizer.mergeBody(buildBody(request), options.extraBody).toRequestBody())
             .build()
     }
 
@@ -80,9 +84,9 @@ internal class GeminiEngine(
                 }
             }
         put("contents", contents(request.messages, needsSignature = !LEGACY_MODEL.containsMatchIn(modelId)))
-        if (request.tools.isNotEmpty()) {
+        if (request.tools.isNotEmpty() || options.googleSearch) {
             putJsonArray("tools") {
-                addJsonObject {
+                if (request.tools.isNotEmpty()) addJsonObject {
                     putJsonArray("functionDeclarations") {
                         for (tool in request.tools) addJsonObject {
                             put("name", tool.name)
@@ -91,19 +95,23 @@ internal class GeminiEngine(
                         }
                     }
                 }
+                if (options.googleSearch) addJsonObject { putJsonObject("googleSearch") {} }
             }
         }
         putJsonObject("generationConfig") {
             put("maxOutputTokens", request.maxOutputTokens)
             request.temperature?.let { put("temperature", it) }
-            request.reasoning?.takeIf { it != ReasoningEffort.Off }?.let { effort ->
-                putJsonObject("thinkingConfig") {
-                    put("includeThoughts", true)
-                    if (BUDGET_MODEL.containsMatchIn(modelId)) {
-                        put("thinkingBudget", thinkingBudget(effort))
-                    } else {
-                        put("thinkingLevel", if (effort == ReasoningEffort.Low) "low" else "high")
-                    }
+            val effort = request.reasoning
+            val thinks = options.reasoning?.supported ?: !LEGACY_MODEL.containsMatchIn(modelId)
+            when {
+                effort == null -> if (thinks) putJsonObject("thinkingConfig") { put("includeThoughts", true) }
+                BUDGET_MODEL.containsMatchIn(modelId) -> putJsonObject("thinkingConfig") {
+                    put("includeThoughts", effort != ReasoningEffort.Off)
+                    put("thinkingBudget", thinkingBudget(effort))
+                }
+                else -> putJsonObject("thinkingConfig") {
+                    put("includeThoughts", effort != ReasoningEffort.Off)
+                    put("thinkingLevel", thinkingLevel(effort))
                 }
             }
         }
@@ -169,11 +177,34 @@ internal class GeminiEngine(
         }
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * Vertex AI model resource URL. Without a project this is express mode (API key only); "global" and
+         * the "us"/"eu" multi-regions have their own hosts. A non-Google base URL is treated as an HTTPS proxy.
+         */
+        fun vertexModelUrl(baseUrl: String, project: String?, location: String?, model: String): String {
+            val loc = location?.trim()?.ifEmpty { null } ?: "global"
+            val proxy = baseUrl.trim().trimEnd('/').takeIf { it.isNotEmpty() && !it.contains("googleapis.com") }
+            if (project.isNullOrBlank()) {
+                return "${proxy ?: "https://aiplatform.googleapis.com"}/v1/publishers/google/models/$model"
+            }
+            val host = proxy ?: when (loc) {
+                "global" -> "https://aiplatform.googleapis.com"
+                "us", "eu" -> "https://aiplatform.$loc.rep.googleapis.com"
+                else -> "https://$loc-aiplatform.googleapis.com"
+            }
+            return "$host/v1/projects/${project.trim()}/locations/$loc/publishers/google/models/$model"
+        }
+
         /** Documented placeholder for function calls whose real signature is no longer available. */
         const val SKIP_SIGNATURE = "skip_thought_signature_validator"
         val LEGACY_MODEL = Regex("gemini-(1|2)\\.")
         val BUDGET_MODEL = Regex("gemini-2\\.5")
+
+        fun thinkingLevel(effort: ReasoningEffort): String = when (effort) {
+            ReasoningEffort.Off -> "minimal"
+            else -> effort.wireName
+        }
 
         fun thinkingBudget(effort: ReasoningEffort): Int = when (effort) {
             ReasoningEffort.Low -> 1024
@@ -205,6 +236,7 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
     private var finish: FinishReason? = null
     private var calls = 0
     private var usage: LlmEvent.Usage? = null
+    private val sources = LinkedHashMap<String, String>()
 
     fun onData(data: String): List<LlmEvent> {
         val chunk = parseJsonOrNull(data) as? JsonObject
@@ -214,6 +246,7 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
             usage = LlmEvent.Usage(
                 inputTokens = u.int("promptTokenCount") ?: 0,
                 outputTokens = (u.int("candidatesTokenCount") ?: 0) + (u.int("thoughtsTokenCount") ?: 0),
+                cacheReadTokens = u.int("cachedContentTokenCount") ?: 0,
             )
         }
         val candidates = chunk.arr("candidates")
@@ -231,6 +264,11 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
                 else -> part.str("text")?.takeIf { it.isNotEmpty() }?.let { out += LlmEvent.TextDelta(it) }
             }
         }
+        candidate.obj("groundingMetadata")?.arr("groundingChunks")?.forEach { chunk ->
+            val web = chunk.asObject()?.obj("web") ?: return@forEach
+            val uri = web.str("uri") ?: return@forEach
+            sources.putIfAbsent(uri, web.str("title")?.takeIf { it.isNotBlank() } ?: uri)
+        }
         candidate.str("finishReason")?.let { finish = mapFinish(it) }
         return out
     }
@@ -238,6 +276,7 @@ internal class GeminiStreamDecoder(private val errors: ErrorMapper) {
     fun finish(): List<LlmEvent> {
         val reason = finish ?: throw errors.stream("stream ended before the response completed", retryable = true)
         val out = mutableListOf<LlmEvent>()
+        if (sources.isNotEmpty()) out += LlmEvent.TextDelta(formatSources(sources))
         usage?.let { out += it }
         out += LlmEvent.Finished(if (calls > 0 && reason == FinishReason.Stop) FinishReason.ToolCalls else reason)
         return out

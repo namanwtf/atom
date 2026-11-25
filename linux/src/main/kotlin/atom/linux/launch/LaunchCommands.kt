@@ -17,6 +17,8 @@ internal data class ProotConfig(
     val fakeProc: Map<String, String> = emptyMap(),
     /** Shared storage to bind at /sdcard, or null when the app cannot read it. */
     val sdcard: String? = null,
+    /** Further (host, guest) binds in order: /workspace first, then its shared-folder mounts. */
+    val binds: List<Pair<String, String>> = emptyList(),
     val shell: String = "/bin/sh",
     val term: String = LaunchCommands.TERM,
 )
@@ -29,8 +31,8 @@ internal data class ChrootConfig(
     val stateDir: String,
     /** Unique per session; names the namespace record used for cleanup. */
     val token: String,
-    val guestTmp: String,
-    val sdcard: String? = null,
+    /** File listing "host<TAB>guest" binds, one per line, written by the caller ([LaunchCommands.bindsFile]). */
+    val bindsFile: String,
     val shell: String = "/bin/sh",
     val term: String = LaunchCommands.TERM,
     /** Environment for su itself (the guest gets a clean one). */
@@ -75,6 +77,7 @@ internal object LaunchCommands {
         argv += listOf("-b", "${c.guestTmp}:/tmp", "-b", "${c.guestTmp}:/dev/shm")
         for ((guest, host) in c.fakeProc.toSortedMap()) argv += listOf("-b", "$host:$guest")
         if (c.sdcard != null) argv += listOf("-b", "${c.sdcard}:/sdcard")
+        for ((host, guest) in c.binds) argv += listOf("-b", "$host:$guest")
         argv += listOf("-w", "/root")
         argv += shellArgv(c.shell, command)
 
@@ -89,7 +92,7 @@ internal object LaunchCommands {
     /** The `su -c` string that runs the launcher; every argument is single-quoted. */
     fun chrootInvocation(c: ChrootConfig, command: String?): String {
         val args = mutableListOf(
-            "sh", c.script, c.rootfs, c.stateDir, c.token, c.guestTmp, c.sdcard ?: "-", c.shell, c.term,
+            "sh", c.script, c.rootfs, c.stateDir, c.token, c.bindsFile, c.shell, c.term,
             if (command == null) "login" else "command",
         )
         if (command != null) args += command
@@ -108,8 +111,8 @@ internal object LaunchCommands {
     fun chrootScript(): String = """
         |#!/system/bin/sh
         |# Atom chroot launcher (runs as root via su).
-        |# Args: ROOTFS STATE_DIR TOKEN GUEST_TMP SDCARD SHELL TERM MODE [COMMAND]
-        |R="${'$'}1"; STATE="${'$'}2"; TOKEN="${'$'}3"; GTMP="${'$'}4"; SD="${'$'}5"; GSHELL="${'$'}6"; GTERM="${'$'}7"; MODE="${'$'}8"; CMD="${'$'}9"
+        |# Args: ROOTFS STATE_DIR TOKEN BINDS_FILE SHELL TERM MODE [COMMAND]
+        |R="${'$'}1"; STATE="${'$'}2"; TOKEN="${'$'}3"; BINDS="${'$'}4"; GSHELL="${'$'}5"; GTERM="${'$'}6"; MODE="${'$'}7"; CMD="${'$'}8"
         |BB=""
         |for b in /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox; do
         |  [ -x "${'$'}b" ] && { BB="${'$'}b"; break; }
@@ -140,8 +143,12 @@ internal object LaunchCommands {
         |bindmnt /dev/pts "${'$'}R/dev/pts"
         |mount -t proc proc "${'$'}R/proc" 2>/dev/null || bindmnt /proc "${'$'}R/proc"
         |mount -t sysfs sysfs "${'$'}R/sys" 2>/dev/null || bindmnt /sys "${'$'}R/sys"
-        |bindmnt "${'$'}GTMP" "${'$'}R/tmp"
-        |if [ "${'$'}SD" != "-" ] && [ -d "${'$'}SD" ]; then bindmnt "${'$'}SD" "${'$'}R/sdcard"; fi
+        |TAB=${'$'}(printf '	')
+        |while IFS="${'$'}TAB" read -r src dst; do
+        |  case "${'$'}dst" in /*) ;; *) continue ;; esac
+        |  case "${'$'}dst" in */../*|*/..) continue ;; esac
+        |  [ -e "${'$'}src" ] && bindmnt "${'$'}src" "${'$'}R${'$'}dst"
+        |done < "${'$'}BINDS"
         |cd "${'$'}R/root" 2>/dev/null || cd "${'$'}R"
         |CHROOT=chroot
         |command -v chroot >/dev/null 2>&1 || CHROOT="${'$'}BB chroot"
@@ -174,6 +181,11 @@ internal object LaunchCommands {
             |rm -f "${'$'}F"
             |""".trimMargin()
     }
+
+    /** Content of the binds file the chroot launcher reads: "host<TAB>guest" per line; tabs/newlines rejected. */
+    fun bindsFile(binds: List<Pair<String, String>>): String = binds
+        .filter { (h, g) -> h.none { it == '\t' || it == '\n' } && g.none { it == '\t' || it == '\n' } && g.startsWith("/") }
+        .joinToString("") { (h, g) -> "$h\t$g\n" }
 
     /** Prints every mount point under [dir] (one per line) as seen from the namespace it runs in. */
     fun listMountsScript(dir: String): String {

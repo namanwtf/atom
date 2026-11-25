@@ -1,9 +1,13 @@
 package atom.device
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
+
+internal data class Settle(val settled: Boolean, val changed: Boolean)
 
 /**
  * Event-driven "wait until the screen stops changing". The accessibility service calls [signal] for each
@@ -18,11 +22,18 @@ internal class SettleDetector(
 ) {
     private val counter = MutableStateFlow(0L)
 
+    /** Increments on every window event while a task is active; collectors wake only on real changes. */
+    val events: StateFlow<Long> = counter.asStateFlow()
+
     fun signal() = counter.update { it + 1 }
 
     /** True if the screen went quiet; false if it was still changing when the cap was hit. */
-    suspend fun awaitSettle(): Boolean {
-        var seen = counter.value
+    suspend fun awaitSettle(): Boolean = awaitSettleDetailed().settled
+
+    /** Also reports whether any window event arrived at all, i.e. whether the action visibly did something. */
+    suspend fun awaitSettleDetailed(): Settle {
+        val start = counter.value
+        var seen = start
         var window = initialQuietMs
         val settled = withTimeoutOrNull(maxMs) {
             var quiet = false
@@ -33,6 +44,6 @@ internal class SettleDetector(
             }
             true
         }
-        return settled ?: false
+        return Settle(settled ?: false, counter.value != start)
     }
 }

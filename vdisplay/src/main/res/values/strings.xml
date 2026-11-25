@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings entry -->
+    <string name="vd_system_title">System enhancements</string>
+    <string name="vd_system_sub">Root, LSPosed, assistant, power key, Circle to Search</string>
+
+    <!-- Status -->
+    <string name="vd_section_status">Status</string>
+    <string name="vd_root">Root</string>
+    <string name="vd_root_granted">Granted</string>
+    <string name="vd_root_checking">Checking…</string>
+    <string name="vd_root_unknown">Not checked yet</string>
+    <string name="vd_root_not_detected">Not detected</string>
+    <string name="vd_root_timed_out">Prompt not answered</string>
+    <string name="vd_root_denied">Denied in the root manager</string>
+    <string name="vd_authorize">Authorize</string>
+    <string name="vd_check_again">Check again</string>
+    <string name="vd_framework">Xposed framework</string>
+    <string name="vd_framework_connected">%1$s %2$s · API %3$d</string>
+    <string name="vd_framework_not_connected">Not connected</string>
+    <string name="vd_framework_scope">Scope: %1$s</string>
+    <string name="vd_framework_scope_none">No scope enabled yet</string>
+    <string name="vd_framework_hooked">Running with Atom\'s hooks: %1$s</string>
+    <string name="vd_framework_hooked_none">No process is running Atom\'s hooks yet; restart them (or reboot) after enabling the scope.</string>
+    <string name="vd_module_help">Module help</string>
+    <string name="vd_module_help_body">The power-key, assistant, Circle to Search and accessibility options need LSPosed (or a compatible fork with the modern API 101+). In LSPosed, enable Atom as a module and tick its recommended scope: System Framework, System UI, Google, and your launcher. Then reboot.\n\nConnected means LSPosed sees the module; it does not prove every hook is active. Hooks start after the scoped processes restart, and a ROM that differs from what a hook expects simply leaves that option without effect (it is logged once in LSPosed\'s log). The list of processes running Atom\'s hooks shows what is really active.</string>
+    <string name="vd_request_scope">Request recommended scope</string>
+
+    <!-- Assistant -->
+    <string name="vd_section_assistant">Assistant</string>
+    <string name="vd_digital_assistant">Digital assistant app</string>
+    <string name="vd_assistant_atom">Atom</string>
+    <string name="vd_assistant_other">%1$s</string>
+    <string name="vd_assistant_none">Not set</string>
+    <string name="vd_power_target">Power key long press</string>
+    <string name="vd_power_system">System default</string>
+    <string name="vd_power_gemini">Gemini</string>
+    <string name="vd_power_atom">Atom</string>
+    <string name="vd_power_sub">ColorOS, HyperOS and AOSP-based ROMs</string>
+    <string name="vd_auto_assistant">Automatically set default assistant</string>
+    <string name="vd_auto_assistant_sub">Keeps the assistant role on the power-key target if the system changes it</string>
+
+    <!-- Circle to Search -->
+    <string name="vd_section_cts">Circle to Search</string>
+    <string name="vd_cts_bar">Gesture bar long press</string>
+    <string name="vd_cts_bar_sub">Touch and hold the navigation handle</string>
+    <string name="vd_cts_two_finger">Two-finger long press</string>
+    <string name="vd_cts_two_finger_sub">Touch and hold anywhere with two fingers</string>
+    <string name="vd_google_app">Google app</string>
+    <string name="vd_google_system">Installed as a system app</string>
+    <string name="vd_google_priv">Installed as a privileged system app</string>
+    <string name="vd_google_user">Installed (user app)</string>
+    <string name="vd_google_missing">Not installed; Circle to Search needs it</string>
+    <string name="vd_google_eligibility">Eligibility is on whenever the module is active for the Google app.</string>
+
+    <!-- Protection -->
+    <string name="vd_section_protection">Protection</string>
+    <string name="vd_enforce_a11y">Enforce accessibility</string>
+    <string name="vd_enforce_a11y_sub">Turns Atom\'s accessibility service back on if the ROM drops it (limited retries). While on, switching the service off in system settings is undone too.</string>
+
+    <!-- Background display -->
+    <string name="vd_section_background">Background</string>
+    <string name="vd_bg_display">Background virtual display</string>
+    <string name="vd_bg_display_sub">Cross-app tasks run on a hidden screen so yours stays untouched. Needs root. Off until you have tried it on this phone.</string>
+    <string name="vd_bg_active">In use now: %1$dx%2$d</string>
+
+    <string name="vd_lsposed_needed">Needs the LSPosed module</string>
+
+    <!-- Viewfinder & stage -->
+    <string name="vd_viewfinder_label">Background</string>
+    <string name="vd_viewfinder_open">Open the background display</string>
+    <string name="vd_stage_title">Background display</string>
+    <string name="vd_stage_agent">Atom is working here</string>
+    <string name="vd_stage_user">You are in control</string>
+    <string name="vd_take_over">Take over</string>
+    <string name="vd_continue">Continue</string>
+    <string name="vd_fullscreen">Fullscreen</string>
+    <string name="vd_exit_fullscreen">Exit fullscreen</string>
+    <string name="vd_collapse">Collapse stage</string>
+    <string name="vd_present">Present to main screen</string>
+    <string name="vd_back">Back</string>
+    <string name="vd_waiting_frame">Waiting for the first frame…</string>
+    <string name="vd_display_unavailable">Display unavailable</string>
+</resources>

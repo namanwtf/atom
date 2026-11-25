@@ -7,7 +7,6 @@ import atom.core.llm.FinishReason
 import atom.core.llm.LlmEngine
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
-import atom.core.llm.ReasoningEffort
 import atom.core.llm.Role
 import atom.core.llm.ToolCall
 import java.util.UUID
@@ -33,17 +32,19 @@ internal class OpenAiChatEngine(
     private val model: String,
     baseUrl: String,
     private val http: OkHttpClient,
+    private val options: EngineOptions = EngineOptions(),
 ) : LlmEngine {
 
     private val endpoint = baseUrl.trimEnd('/') + "/chat/completions"
     private val errors = ErrorMapper(provider.displayName, apiKey)
+    private val family = provider.family
 
     override val id: String = "${provider.id}:$model"
 
     override val capabilities = EngineCapabilities(
         nativeToolCalls = true,
-        vision = visionLikely(provider, model),
-        contextWindow = 128_000,
+        vision = options.vision ?: visionLikely(provider, model),
+        contextWindow = options.contextWindow ?: 128_000,
         onDevice = false,
     )
 
@@ -53,6 +54,9 @@ internal class OpenAiChatEngine(
             decoder.onData(event.data).forEach { emit(it) }
         }
         decoder.finish().forEach { emit(it) }
+        decoder.interleavedReasoning()?.let { (callId, text) ->
+            if (ChatReasoning.interleaved(family)) ReplayCaches.chatReasoning.put(callId, text)
+        }
     }
 
     private fun httpRequest(request: LlmRequest): Request =
@@ -61,19 +65,20 @@ internal class OpenAiChatEngine(
             .header("Accept", "text/event-stream")
             .apply {
                 if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
-                if (provider.id == "openrouter") {
+                if (family == Family.OPENROUTER) {
                     header("HTTP-Referer", OPENROUTER_REFERER)
                     header("X-Title", APP_NAME)
                 }
+                RequestCustomizer.applyHeaders(this, options)
             }
-            .post(buildBody(request).toRequestBody())
+            .post(RequestCustomizer.mergeBody(buildBody(request), options.extraBody).toRequestBody())
             .build()
 
     internal fun buildBody(request: LlmRequest): JsonObject = buildJsonObject {
         val modelId = request.model.ifBlank { model }
         put("model", modelId)
         put("stream", true)
-        if (provider.id != "mistral") putJsonObject("stream_options") { put("include_usage", true) }
+        if (family != Family.MISTRAL) putJsonObject("stream_options") { put("include_usage", true) }
         put("messages", messages(request.messages))
         if (request.tools.isNotEmpty()) {
             putJsonArray("tools") {
@@ -87,23 +92,17 @@ internal class OpenAiChatEngine(
                 }
             }
         }
-        val reasoning = request.reasoning
-        val openAiReasoning = provider.id == "openai" && OPENAI_REASONING_MODEL.containsMatchIn(modelId)
-        if (provider.id == "openai") put("max_completion_tokens", request.maxOutputTokens) else put("max_tokens", request.maxOutputTokens)
-        if (reasoning != null) {
-            when {
-                openAiReasoning -> put("reasoning_effort", reasoning.wireName)
-                provider.id == "openrouter" -> putJsonObject("reasoning") { put("effort", reasoning.wireName) }
-                provider.id == "qwen" -> put("enable_thinking", true)
-                provider.id == "deepseek" -> putJsonObject("thinking") { put("type", "enabled") }
-            }
-        }
+        val openAi = family == Family.OPENAI
+        val reasoningModel = openAi && (OPENAI_REASONING_MODEL.containsMatchIn(modelId) || options.reasoning?.supported == true)
+        if (openAi) put("max_completion_tokens", request.maxOutputTokens) else put("max_tokens", request.maxOutputTokens)
+        if (!openAi || reasoningModel) ChatReasoning.apply(this, family, request.reasoning)
         val temperature = request.temperature
-        if (temperature != null && !openAiReasoning) put("temperature", temperature)
+        if (temperature != null && !reasoningModel) put("temperature", temperature)
     }
 
     private fun messages(history: List<ChatMessage>): JsonArray = buildJsonArray {
         val pendingImages = mutableListOf<ContentPart.Image>()
+        val replay = ChatReasoning.interleaved(family)
         fun flushImages() {
             if (pendingImages.isEmpty()) return
             addJsonObject {
@@ -135,6 +134,9 @@ internal class OpenAiChatEngine(
                         put("role", "assistant")
                         if (message.text.isEmpty()) put("content", JsonNull) else put("content", message.text)
                         if (message.toolCalls.isNotEmpty()) {
+                            if (replay) {
+                                ReplayCaches.chatReasoning.get(message.toolCalls.first().id)?.let { put("reasoning_content", it) }
+                            }
                             putJsonArray("tool_calls") {
                                 for (call in message.toolCalls) addJsonObject {
                                     put("id", call.id)
@@ -190,15 +192,6 @@ internal class OpenAiChatEngine(
 internal const val APP_NAME = "Atom"
 internal const val OPENROUTER_REFERER = "https://atom.invalid"
 
-internal val ReasoningEffort.wireName: String
-    get() = when (this) {
-        ReasoningEffort.Low -> "low"
-        ReasoningEffort.Medium -> "medium"
-        ReasoningEffort.High -> "high"
-        ReasoningEffort.XHigh, ReasoningEffort.Max -> "xhigh"
-        ReasoningEffort.Off -> "none"
-    }
-
 /** Turns Chat Completions stream chunks into [LlmEvent]s, accumulating tool-call fragments by index. */
 internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
 
@@ -208,6 +201,8 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
     private var finish: FinishReason? = null
     private var sawDone = false
     private var emittedCalls = false
+    private var firstCallId: String? = null
+    private val reasoning = StringBuilder()
     private var usage: LlmEvent.Usage? = null
 
     fun onData(data: String): List<LlmEvent> {
@@ -219,7 +214,11 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
             ?: throw errors.stream("malformed stream chunk", retryable = false)
         chunk["error"]?.let { throw errors.stream(messageIn(it) ?: "stream error", retryable = false) }
         chunk.obj("usage")?.let { u ->
-            usage = LlmEvent.Usage(u.int("prompt_tokens") ?: 0, u.int("completion_tokens") ?: 0)
+            usage = LlmEvent.Usage(
+                inputTokens = u.int("prompt_tokens") ?: 0,
+                outputTokens = u.int("completion_tokens") ?: 0,
+                cacheReadTokens = u.obj("prompt_tokens_details")?.int("cached_tokens") ?: u.int("prompt_cache_hit_tokens") ?: 0,
+            )
         }
         val out = mutableListOf<LlmEvent>()
         for (choiceElement in chunk.arr("choices")) {
@@ -227,7 +226,10 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
             choice.obj("delta")?.let { delta ->
                 (delta.str("reasoning_content") ?: delta.str("reasoning"))
                     ?.takeIf { it.isNotEmpty() }
-                    ?.let { out += LlmEvent.ReasoningDelta(it) }
+                    ?.let {
+                        reasoning.append(it)
+                        out += LlmEvent.ReasoningDelta(it)
+                    }
                 delta.str("content")?.takeIf { it.isNotEmpty() }?.let { out += LlmEvent.TextDelta(it) }
                 delta.arr("tool_calls").forEach { it.asObject()?.let(::accumulate) }
             }
@@ -246,6 +248,12 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
         val reason = finish ?: FinishReason.Stop
         out += LlmEvent.Finished(if (emittedCalls && reason == FinishReason.Stop) FinishReason.ToolCalls else reason)
         return out
+    }
+
+    /** The reasoning text of a turn that ended in tool calls, keyed by its first call id. */
+    fun interleavedReasoning(): Pair<String, String>? {
+        val id = firstCallId ?: return null
+        return if (reasoning.isEmpty()) null else id to reasoning.toString()
     }
 
     private fun accumulate(fragment: JsonObject) {
@@ -273,6 +281,7 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
             )
         }
         pending.clear()
+        if (firstCallId == null) firstCallId = ready.first().call.id
         emittedCalls = true
         return ready
     }
@@ -285,8 +294,10 @@ internal class OpenAiStreamDecoder(private val errors: ErrorMapper) {
 }
 
 internal fun visionLikely(provider: Provider, model: String): Boolean {
-    if (provider.wire != Wire.OpenAiChat || provider.id in setOf("openai", "openrouter", "xai")) return true
+    if (provider.wire.protocol != Protocol.OpenAi || provider.family in setOf(Family.OPENAI, Family.OPENROUTER, Family.XAI, Family.CHATGPT)) {
+        return true
+    }
     return VISION_HINT.containsMatchIn(model.lowercase())
 }
 
-private val VISION_HINT = Regex("vl|vision|omni|4o|gpt-4\\.1|gpt-[5-9]|grok-4|pixtral|mistral-(medium|small)|llava|gemma-?3|kimi-k3|minimax-m3")
+private val VISION_HINT = Regex("vl|vision|omni|4o|gpt-4\\.1|gpt-[5-9]|grok-4|pixtral|mistral-(medium|small)|llava|gemma-?3|kimi-k(2\\.[6-9]|3)|minimax-m3|qwen3\\.[5-9]|mimo|deepseek-(flash|v4\\.1)|step-[3-9]")

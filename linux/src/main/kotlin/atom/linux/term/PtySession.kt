@@ -32,6 +32,8 @@ internal class PtySession private constructor(
     rows: Int,
     /** Runs once after the terminal is gone (e.g. chroot cleanup of anything that survived the hangup). */
     private val onExit: (() -> Unit)?,
+    /** Sees every raw output chunk on the reader thread (Simple mode parses blocks from it). */
+    private val onOutput: ((ByteArray, Int) -> Unit)?,
 ) : TerminalSession {
 
     private val emulator = TerminalEmulator(cols, rows)
@@ -67,6 +69,7 @@ internal class PtySession private constructor(
         while (true) {
             val n = Pty.read(fd, wakeRead, buf, buf.size)
             if (n <= 0) break
+            onOutput?.invoke(buf, n)
             val reply: String?
             synchronized(lock) {
                 emulator.process(buf, 0, n)
@@ -172,6 +175,7 @@ internal class PtySession private constructor(
             cols: Int,
             rows: Int,
             onExit: (() -> Unit)? = null,
+            onOutput: ((ByteArray, Int) -> Unit)? = null,
         ): TerminalSession {
             require(argv.isNotEmpty())
             val c = cols.coerceIn(1, 1000)
@@ -179,7 +183,7 @@ internal class PtySession private constructor(
             val result = IntArray(3)
             val envp = env.map { (k, v) -> "$k=$v" }.toTypedArray()
             val fd = Pty.spawn(argv[0], argv.toTypedArray(), envp, cwd, r, c, result)
-            return PtySession(fd, result[0], result[1], result[2], c, r, onExit).also { it.start() }
+            return PtySession(fd, result[0], result[1], result[2], c, r, onExit, onOutput).also { it.start() }
         }
     }
 }

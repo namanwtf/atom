@@ -1,5 +1,6 @@
 package atom.ui.theme
 
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -11,8 +12,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -129,18 +132,75 @@ val LocalAtomExtras = staticCompositionLocalOf {
     AtomExtras(Color(0xFF7FD6AE), Color(0xFFF2B65A), TextStyle(fontFamily = FontFamily.Monospace))
 }
 
+/** Original call shape: mode only, every other appearance option at its default. */
 @Composable
-fun AtomTheme(mode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) {
-    val dark = isDark(mode, isSystemInDarkTheme())
-    val scheme: ColorScheme = if (dark) Dark else Light
+fun AtomTheme(mode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) =
+    AtomTheme(appearance = Appearance(mode = mode), content = content)
+
+/**
+ * Full appearance: mode, pure black, accent / Monet and style, plus the flags components read through
+ * [LocalAppearance] (blur, gestures). `AtomTheme(Appearance())` looks exactly like `AtomTheme()`.
+ */
+@Composable
+fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
+    val dark = isDark(appearance.mode, isSystemInDarkTheme())
+    val context = LocalContext.current
+    val scheme: ColorScheme = remember(appearance.accent, appearance.colorStyle, appearance.pureBlack, dark) {
+        atomColorScheme(context, appearance, dark)
+    }
     val extras = AtomExtras(
         success = if (dark) Color(0xFF7FD6AE) else Color(0xFF117A55),
         warning = if (dark) Color(0xFFF2B65A) else Color(0xFFA86400),
         mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
     )
-    CompositionLocalProvider(LocalAtomExtras provides extras) {
+    CompositionLocalProvider(LocalAtomExtras provides extras, LocalAppearance provides appearance) {
         MaterialTheme(colorScheme = scheme, typography = AtomTypography, shapes = AtomShapes, content = content)
     }
+}
+
+/** Dark background when pure black is off: graphite, with containers lifted to keep the same separation. */
+private val GraphiteDark = Dark.copy(
+    background = Color(AtomPalettes.Graphite),
+    surface = Color(AtomPalettes.Graphite),
+    surfaceContainerLowest = Color(AtomPalettes.Graphite),
+    surfaceContainerLow = Color(0xFF141417),
+    surfaceContainer = Color(0xFF19191C),
+    surfaceContainerHigh = Color(0xFF212125),
+    surfaceContainerHighest = Color(0xFF2A2A2F),
+    surfaceVariant = Color(0xFF1F1F23),
+    surfaceBright = Color(0xFF323238),
+    surfaceDim = Color(AtomPalettes.Graphite),
+    outlineVariant = Color(0xFF26262B),
+    inverseOnSurface = Color(0xFF19191C),
+)
+
+/** Builds the colour scheme for [appearance]; defaults return the original monochrome schemes untouched. */
+fun atomColorScheme(context: Context, appearance: Appearance, dark: Boolean): ColorScheme {
+    if (appearance.accent == AccentColor.System && supportsDynamicColor) {
+        val dyn = dynamicScheme(context, dark, appearance.colorStyle)
+        return if (dark) dyn.withDarkBackground(appearance.pureBlack) else dyn
+    }
+    val base = when {
+        !dark -> Light
+        appearance.pureBlack -> Dark
+        else -> GraphiteDark
+    }
+    val palette = AtomPalettes.of(appearance.accent) ?: AtomPalettes.Monochrome
+    if (palette === AtomPalettes.Monochrome) return base
+    val t = if (dark) palette.dark else palette.light
+    return base.copy(
+        primary = Color(t.primary),
+        onPrimary = Color(t.onPrimary),
+        primaryContainer = Color(t.primaryContainer),
+        onPrimaryContainer = Color(t.onPrimaryContainer),
+        inversePrimary = Color(if (dark) palette.light.primary else palette.dark.primary),
+    )
+}
+
+/** Monet surfaces, with the background forced to true black (or graphite) to keep the house look. */
+private fun ColorScheme.withDarkBackground(pureBlack: Boolean): ColorScheme {
+    val bg = Color(if (pureBlack) AtomPalettes.PureBlack else AtomPalettes.Graphite)
+    return copy(background = bg, surface = bg, surfaceContainerLowest = bg, surfaceDim = bg)
 }
 
 val MaterialTheme.extras: AtomExtras

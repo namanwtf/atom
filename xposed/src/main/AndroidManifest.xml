@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Atom is its own LSPosed module (modern libxposed API 101+): the framework finds it through
+      META-INF/xposed/java_init.list inside the APK. Hooks run only after the user enables the module and its scope
+      in LSPosed. io.github.libxposed.service.XposedProvider (merged from the service library) receives the
+      framework's binder so the app can show the connection status.
+    -->
+    <application />
+</manifest>

@@ -2,15 +2,20 @@ package atom.linux
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.StatFs
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import atom.linux.install.InstallScripts
+import atom.linux.install.InstallStep
 import atom.linux.install.LinuxInstallWorker
+import atom.linux.install.Profile
 import atom.linux.install.RootfsSetup
 import atom.linux.launch.ChrootConfig
 import atom.linux.launch.LaunchCommands
+import atom.linux.launch.LaunchSpec
 import atom.linux.launch.ProcessRunner
 import atom.linux.launch.ProotConfig
 import atom.linux.launch.RootSupport
@@ -32,11 +37,11 @@ import java.util.Properties
 import java.util.UUID
 
 /**
- * The on-device Linux environment: one installed distro, run with chroot (root) or proot (no root).
+ * The on-device Linux environment: one installed distro, run with chroot (Root mode) or proot (Standard mode).
  *
- * Nothing runs while idle: there is no daemon or service. Each session or command is a process tree that
- * dies with it (proot --kill-on-exit; chroot sessions live in a private mount namespace that is emptied
- * and so unmounted when they end).
+ * Nothing runs while idle: there is no daemon or service of its own. Each session or command is a process tree
+ * that dies with it (proot --kill-on-exit; chroot sessions live in a private mount namespace that is emptied, and
+ * so unmounted, when they end). Background jobs and daemons are separate ([atom.linux.jobs.JobManager]).
  */
 class LinuxEnv private constructor(context: Context) {
 
@@ -56,6 +61,7 @@ class LinuxEnv private constructor(context: Context) {
 
     private val app = context.applicationContext
     internal val paths = LinuxPaths(app)
+    private val store = LinuxConfigStore(paths.config)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val workManager by lazy { WorkManager.getInstance(app) }
     private val probeMutex = Mutex()
@@ -64,39 +70,101 @@ class LinuxEnv private constructor(context: Context) {
     @Volatile private var probe: RootSupport.Probe? = null
     @Volatile private var lastWork: WorkInfo? = null
 
+    private val _config = MutableStateFlow(store.get())
+    val config: StateFlow<LinuxConfig> = _config.asStateFlow()
+
     private val _state = MutableStateFlow(computeState())
     val state: StateFlow<LinuxState> = _state.asStateFlow()
+
+    private val _health = MutableStateFlow<HealthReport?>(null)
+    val health: StateFlow<HealthReport?> = _health.asStateFlow()
 
     init {
         scope.launch {
             workManager.getWorkInfosForUniqueWorkFlow(LinuxInstallWorker.UNIQUE_NAME).collect { infos ->
                 lastWork = infos.firstOrNull()
+                _config.value = store.get()
                 _state.value = computeState()
             }
         }
     }
 
-    // ================================================================ install / uninstall
+    /** The root check result, once known. */
+    val rootProbe: RootSupport.Probe? get() = probe
 
-    /** Starts (or keeps) the one-tap install. Ignored while an install is already running. */
-    fun install(distro: Distro) {
-        if (_state.value is LinuxState.Installing) return
-        val request = OneTimeWorkRequestBuilder<LinuxInstallWorker>()
-            .setInputData(workDataOf(LinuxInstallWorker.KEY_DISTRO to distro.name))
-            .addTag(TAG_PREFIX + distro.name)
-            .build()
-        workManager.enqueueUniqueWork(LinuxInstallWorker.UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
-        _state.value = LinuxState.Installing(distro, LinuxInstallWorker.STEP_RESOLVE, 0f)
+    // ================================================================ install / upgrade / repair
+
+    /** One tap: base system, base tools, then [profiles]. Already installed parts are skipped. */
+    fun install(distro: Distro, profiles: Set<Profile> = emptySet()) {
+        val installed = installedDistro()
+        if (installed != null && installed != distro) return
+        val cfg = store.get()
+        val steps = buildList {
+            if (installed == null) add(InstallStep.Base)
+            if (installed == null || !cfg.toolsInstalled) add(InstallStep.Tools)
+            profiles.filter { it !in cfg.profiles || installed == null }.forEach { add(InstallStep.ProfileStep(it)) }
+        }
+        enqueue(distro, steps)
+    }
+
+    /** Runs what is left of an interrupted or failed install. */
+    fun continueInstall() {
+        val distro = installedDistro() ?: (lastWorkDistro() ?: return)
+        val steps = store.get().pendingSteps.mapNotNull(InstallStep::parse)
+        if (steps.isEmpty()) install(distro) else enqueue(distro, steps)
+    }
+
+    fun installProfiles(profiles: Set<Profile>) {
+        val distro = installedDistro() ?: return
+        val cfg = store.get()
+        val steps = buildList {
+            if (!cfg.toolsInstalled) add(InstallStep.Tools)
+            profiles.forEach { add(InstallStep.ProfileStep(it)) }
+        }
+        enqueue(distro, steps)
+    }
+
+    /** Upgrades the distro's packages and refreshes installed profiles to their latest releases. */
+    fun upgrade() {
+        val distro = installedDistro() ?: return
+        enqueue(distro, listOf(InstallStep.Upgrade) + store.get().profiles.map { InstallStep.ProfileStep(it) })
+    }
+
+    fun repair() {
+        val distro = installedDistro() ?: return
+        enqueue(distro, listOf(InstallStep.Repair))
     }
 
     fun cancelInstall() {
         workManager.cancelUniqueWork(LinuxInstallWorker.UNIQUE_NAME)
     }
 
+    private fun enqueue(distro: Distro, steps: List<InstallStep>) {
+        if (steps.isEmpty() || _state.value is LinuxState.Installing) return
+        store.update { it.copy(pendingSteps = steps.map { s -> s.key }) }
+        val request = OneTimeWorkRequestBuilder<LinuxInstallWorker>()
+            .setInputData(
+                workDataOf(
+                    LinuxInstallWorker.KEY_DISTRO to distro.name,
+                    LinuxInstallWorker.KEY_STEPS to steps.joinToString(",") { it.key },
+                ),
+            )
+            .addTag(TAG_PREFIX + distro.name)
+            .build()
+        workManager.enqueueUniqueWork(LinuxInstallWorker.UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+        _state.value = LinuxState.Installing(distro, LinuxInstallWorker.STEP_RESOLVE, 0f, steps.first().title, 0, steps.size)
+    }
+
+    /** Called by the installer as it goes. */
+    internal fun updateConfig(block: (LinuxConfig) -> LinuxConfig) {
+        _config.value = store.update(block)
+        _state.value = computeState()
+    }
+
     /**
-     * Removes the installed distro. In chroot mode every session process is killed first and the mount
-     * table is checked (app and global namespace); nothing is deleted while anything is still mounted under
-     * the install, and deletion never crosses file systems.
+     * Removes the installed distro (the /workspace files stay). In chroot mode every session process is killed first
+     * and the mount table is checked (app and global namespace); nothing is deleted while anything is still mounted
+     * under the install, and deletion never crosses file systems.
      */
     suspend fun uninstall() = uninstallMutex.withLock {
         val distro = installedDistro() ?: return@withLock
@@ -116,19 +184,28 @@ class LinuxEnv private constructor(context: Context) {
                     RootSupport.su("rm -rf ${LaunchCommands.shQuote(rootfs.path)}", hostEnv(), 120_000)
                 }
                 paths.marker(distro).delete()
-                check(SafeDelete.deleteTree(dir)) { "Some Linux files could not be removed." }
+                check(SafeDelete.deleteTree(dir)) {
+                    if (store.get().usedChroot && !p.root) {
+                        "Some files were created in Root mode and need root to delete. Restore root access, then uninstall."
+                    } else {
+                        "Some Linux files could not be removed."
+                    }
+                }
                 SafeDelete.deleteTree(paths.guestTmp)
                 SafeDelete.deleteTree(paths.prootTmp)
                 SafeDelete.deleteTree(paths.fakeProc)
+                store.update { it.copy(toolsInstalled = false, profiles = emptySet(), versions = emptyMap(), pendingSteps = emptyList(), usedChroot = false) }
             }
         } finally {
+            _config.value = store.get()
+            _health.value = null
             _state.value = computeState()
         }
     }
 
-    // ================================================================ running
+    // ================================================================ mode, settings, folders
 
-    /** Re-checks root/chroot support and disk use. Call when showing Linux UI; may prompt for root once. */
+    /** Re-checks root and disk use. Call when showing Linux UI; may prompt the root manager once. */
     suspend fun refresh() {
         probeRoot(force = true)
         val distro = installedDistro()
@@ -143,50 +220,154 @@ class LinuxEnv private constructor(context: Context) {
         _state.value = computeState()
     }
 
+    /** Switches between Standard (proot) and Root (chroot). Returns an error message, or null when done. */
+    suspend fun setMode(mode: RunMode): String? {
+        if (mode == RunMode.Chroot) {
+            val p = probeRoot(force = true)
+            if (!p.root) return "Root access is not available (su did not grant root)."
+            if (!p.privateMounts) return "This root setup cannot create a private mount namespace (unshare -m), which Root mode needs."
+        }
+        updateConfig { it.copy(preferredMode = mode) }
+        return null
+    }
+
+    fun setJobCapMinutes(minutes: Int) = updateConfig { it.copy(jobCapMinutes = minutes.coerceIn(0, 24 * 60)) }
+
+    /** Adds a shared folder (applies from the next session). Returns an error message, or null. */
+    fun addSharedFolder(name: String, hostPath: String): String? {
+        val folder = SharedFolder(name.trim(), SharedFolderRules.normalize(hostPath.trim()) ?: hostPath.trim())
+        val problem = SharedFolderRules.validate(folder, store.get().sharedFolders, paths.base.path)
+        if (problem != null) return describe(problem)
+        val dir = File(folder.hostPath)
+        if (!dir.isDirectory) return "That folder does not exist."
+        updateConfig { it.copy(sharedFolders = it.sharedFolders + folder) }
+        return null
+    }
+
+    fun removeSharedFolder(name: String) = updateConfig { c -> c.copy(sharedFolders = c.sharedFolders.filterNot { it.name == name }) }
+
+    private fun describe(p: SharedFolderRules.Problem): String = when (p) {
+        SharedFolderRules.Problem.BadName -> "Use 1-32 letters, digits, dots, dashes or underscores, starting with a letter or digit."
+        SharedFolderRules.Problem.DuplicateName -> "A shared folder with that name already exists."
+        SharedFolderRules.Problem.DuplicatePath -> "That folder is already shared."
+        SharedFolderRules.Problem.NotAbsolute -> "Enter a full path starting with /."
+        SharedFolderRules.Problem.Forbidden -> "That system location cannot be shared."
+        SharedFolderRules.Problem.InsideLinux -> "Linux's own files cannot be shared into itself."
+        SharedFolderRules.Problem.TooMany -> "At most ${SharedFolderRules.MAX_FOLDERS} shared folders."
+    }
+
+    /** A read-only view of the installed system, or null when nothing is installed. */
+    fun guestFs(): GuestFs? {
+        val distro = installedDistro() ?: return null
+        return GuestFs(paths.rootfs(distro), guestMounts())
+    }
+
+    private fun guestMounts(): Map<String, File> = buildMap {
+        put("/workspace", paths.workspace)
+        put("/tmp", paths.guestTmp)
+        paths.sdcardOrNull()?.let { put("/sdcard", File(it)) }
+        for (f in store.get().sharedFolders) put(f.guestPath, File(f.hostPath))
+    }
+
+    /** Free bytes on the storage that holds the install. */
+    fun freeBytes(): Long = runCatching { StatFs(paths.base.apply { mkdirs() }.path).availableBytes }.getOrDefault(0L)
+
+    // ================================================================ health
+
+    suspend fun healthCheck(): HealthReport {
+        val distro = installedDistro()
+        val cfg = store.get()
+        val report = if (distro == null) {
+            HealthReport(listOf(HealthReport.Item("start", "Linux", HealthReport.Level.Problem, "Not installed.")), System.currentTimeMillis())
+        } else {
+            val r = runInDistro(distro, HealthCheck.script(distro), 60_000)
+            val unreadable = cfg.sharedFolders.filter { !File(it.hostPath).canRead() }
+            HealthCheck.evaluate(r.stdout, r.exitCode, freeBytes(), cfg.toolsInstalled, cfg.sharedFolders, unreadable)
+        }
+        _health.value = report
+        return report
+    }
+
+    // ================================================================ running
+
     /**
-     * Runs [command] non-interactively in a login shell inside the distro. stdout/stderr are captured
-     * (each capped at [OUTPUT_CAP]); on timeout the whole process tree is killed.
+     * Runs [command] non-interactively in a login shell inside the distro. stdout/stderr are captured (each capped at
+     * [OUTPUT_CAP]); on timeout the whole process tree is killed.
      */
     suspend fun run(command: String, timeoutMs: Long = 120_000): CommandResult {
         val ready = _state.value as? LinuxState.Ready
             ?: return CommandResult(127, "", "Linux is not installed. Install it from Atom's Linux screen first.")
-        val p = probe ?: probeRoot()
-        val rootfs = paths.rootfs(ready.distro)
+        if (ready.rootLost) return CommandResult(126, "", rootLostMessage())
+        return runInDistro(ready.distro, command, timeoutMs)
+    }
+
+    /** Runs [command] in [distro] regardless of the published state (the installer uses this mid-install). */
+    internal suspend fun runInDistro(
+        distro: Distro,
+        command: String,
+        timeoutMs: Long,
+        onLine: ((String) -> Unit)? = null,
+    ): CommandResult {
+        val (spec, token) = commandSpec(distro, command) ?: return CommandResult(126, "", missingBinaries() ?: rootLostMessage())
+        return try {
+            ProcessRunner.run(spec, timeoutMs, OUTPUT_CAP, onLine) {
+                if (token != null) scope.launch(Dispatchers.IO) { cleanupSession(token) }
+            }.let(::explainChrootFailure)
+        } finally {
+            if (token != null) cleanupSession(token)
+        }
+    }
+
+    /**
+     * The command line for running [command] in the distro now, plus the chroot token to clean up afterwards (null
+     * under proot). Null when it cannot run (binaries missing, or Root mode chosen and root lost).
+     */
+    internal suspend fun commandSpec(distro: Distro, command: String?): Pair<LaunchSpec, String?>? {
+        if (store.get().preferredMode == RunMode.Chroot && probe == null) probeRoot()
+        val rootfs = paths.rootfs(distro)
         prepareRuntime()
-        return if (p.chrootCapable) {
-            val token = newToken()
-            val spec = LaunchCommands.chroot(chrootConfig(rootfs, token), command)
-            try {
-                ProcessRunner.run(spec, timeoutMs, OUTPUT_CAP) { scope.launch(Dispatchers.IO) { cleanupSession(token) } }
-                    .let(::explainChrootFailure)
-            } finally {
-                cleanupSession(token)
+        return when (effectiveMode()) {
+            RunMode.Chroot -> {
+                val token = newToken()
+                LaunchCommands.chroot(chrootConfig(rootfs, token), command) to token
             }
-        } else {
-            missingBinaries()?.let { return CommandResult(126, "", it) }
-            ProcessRunner.run(LaunchCommands.proot(prootConfig(rootfs), command), timeoutMs, OUTPUT_CAP)
+            RunMode.Proot -> {
+                if (store.get().preferredMode == RunMode.Chroot) return null // root lost: never fall back silently
+                if (missingBinaries() != null) return null
+                LaunchCommands.proot(prootConfig(rootfs), command) to null
+            }
         }
     }
 
     /** An interactive login shell in the distro. Close it to end every process it started. */
-    fun openSession(cols: Int, rows: Int): TerminalSession {
+    fun openSession(cols: Int, rows: Int, onOutput: ((ByteArray, Int) -> Unit)? = null): TerminalSession {
         val ready = _state.value as? LinuxState.Ready ?: throw IllegalStateException("Linux is not installed.")
+        if (ready.rootLost) throw IllegalStateException(rootLostMessage())
         val rootfs = paths.rootfs(ready.distro)
         prepareRuntime()
-        return if (ready.mode == RunMode.Chroot && probe?.chrootCapable == true) {
+        return if (ready.mode == RunMode.Chroot) {
             val token = newToken()
             val spec = LaunchCommands.chroot(chrootConfig(rootfs, token), null)
-            PtySession.start(spec.argv, spec.env, spec.cwd, cols, rows) {
+            PtySession.start(spec.argv, spec.env, spec.cwd, cols, rows, onExit = {
                 scope.launch(Dispatchers.IO) { cleanupSession(token) }
-            }
+            }, onOutput = onOutput)
         } else {
             missingBinaries()?.let { throw IllegalStateException(it) }
             val spec = LaunchCommands.proot(prootConfig(rootfs), null)
-            PtySession.start(spec.argv, spec.env, spec.cwd, cols, rows)
+            PtySession.start(spec.argv, spec.env, spec.cwd, cols, rows, onOutput = onOutput)
         }
     }
 
+    private fun rootLostMessage() =
+        "Root mode is selected but root access is gone. Your Linux files are kept; switch to Standard mode (PRoot) " +
+            "on the Linux screen, or restore root."
+
     // ================================================================ state
+
+    private fun effectiveMode(): RunMode {
+        val wantsChroot = store.get().preferredMode == RunMode.Chroot
+        return if (wantsChroot && probe?.chrootCapable == true) RunMode.Chroot else RunMode.Proot
+    }
 
     private fun computeState(): LinuxState {
         val work = lastWork
@@ -194,14 +375,32 @@ class LinuxEnv private constructor(context: Context) {
             val distro = work.tags.firstNotNullOfOrNull { tag ->
                 Distro.entries.firstOrNull { TAG_PREFIX + it.name == tag }
             } ?: Distro.Alpine
-            val step = work.progress.getString(LinuxInstallWorker.P_STEP) ?: LinuxInstallWorker.STEP_RESOLVE
-            val progress = work.progress.getFloat(LinuxInstallWorker.P_PROGRESS, 0f)
-            return LinuxState.Installing(distro, step, progress)
+            val p = work.progress
+            return LinuxState.Installing(
+                distro = distro,
+                step = p.getString(LinuxInstallWorker.P_STEP) ?: LinuxInstallWorker.STEP_RESOLVE,
+                progress = p.getFloat(LinuxInstallWorker.P_PROGRESS, 0f),
+                stage = p.getString(LinuxInstallWorker.P_STAGE) ?: "",
+                stageIndex = p.getInt(LinuxInstallWorker.P_STAGE_INDEX, 0),
+                stageCount = p.getInt(LinuxInstallWorker.P_STAGE_COUNT, 1),
+            )
         }
+        val cfg = store.get()
         installedDistro()?.let { d ->
-            val size = readMarker(d)?.getProperty("sizeBytes")?.toLongOrNull() ?: 0L
-            val mode = if (probe?.chrootCapable == true) RunMode.Chroot else RunMode.Proot
-            return LinuxState.Ready(d, size, mode)
+            val props = readMarker(d)
+            val size = props?.getProperty("sizeBytes")?.toLongOrNull() ?: 0L
+            val p = probe
+            val rootLost = cfg.preferredMode == RunMode.Chroot && p != null && !p.chrootCapable
+            return LinuxState.Ready(
+                distro = d,
+                sizeBytes = size,
+                mode = effectiveMode().let { if (cfg.preferredMode == RunMode.Chroot && p == null) RunMode.Chroot else it },
+                release = props?.getProperty("release").orEmpty(),
+                toolsInstalled = cfg.toolsInstalled,
+                profiles = cfg.profiles,
+                rootLost = rootLost,
+                pendingSteps = cfg.pendingSteps,
+            )
         }
         if (work != null && work.state == WorkInfo.State.FAILED) {
             return LinuxState.Failed(work.outputData.getString(LinuxInstallWorker.KEY_ERROR) ?: "Install failed.")
@@ -209,22 +408,28 @@ class LinuxEnv private constructor(context: Context) {
         return LinuxState.NotInstalled
     }
 
-    private fun installedDistro(): Distro? = Distro.entries.firstOrNull { paths.marker(it).isFile && paths.rootfs(it).isDirectory }
+    private fun lastWorkDistro(): Distro? = lastWork?.tags?.firstNotNullOfOrNull { tag ->
+        Distro.entries.firstOrNull { TAG_PREFIX + it.name == tag }
+    }
+
+    internal fun installedDistro(): Distro? = Distro.entries.firstOrNull { paths.marker(it).isFile && paths.rootfs(it).isDirectory }
 
     private fun readMarker(d: Distro): Properties? = runCatching {
         Properties().apply { FileInputStream(paths.marker(d)).use { load(it) } }
     }.getOrNull()
 
-    private suspend fun probeRoot(force: Boolean = false): RootSupport.Probe = probeMutex.withLock {
+    /** Checks su and private-mount support once (or again with [force]). May show the root manager's prompt. */
+    suspend fun probeRoot(force: Boolean = false): RootSupport.Probe = probeMutex.withLock {
         probe?.takeIf { !force }?.let { return it }
         val p = runCatching { RootSupport.probe(hostEnv()) }.getOrDefault(RootSupport.Probe(false, false))
         probe = p
+        _state.value = computeState()
         p
     }
 
     // ================================================================ launch plumbing
 
-    private fun hostEnv(): Map<String, String> = LinkedHashMap(System.getenv()).apply {
+    internal fun hostEnv(): Map<String, String> = LinkedHashMap(System.getenv()).apply {
         put("TERM", LaunchCommands.TERM)
         put("HOME", app.filesDir.path)
         put("TMPDIR", app.cacheDir.path)
@@ -240,6 +445,18 @@ class LinuxEnv private constructor(context: Context) {
                 "extracted native libraries (jniLibs useLegacyPackaging = true)."
         }
 
+    /** Workspace first, then each shared folder below it (mount points are created on the app side). */
+    private fun workspaceBinds(): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        out += paths.workspace.path to "/workspace"
+        for (f in store.get().sharedFolders) {
+            if (!File(f.hostPath).isDirectory) continue
+            File(paths.workspace, "mounts/${f.name}").mkdirs()
+            out += f.hostPath to f.guestPath
+        }
+        return out
+    }
+
     private fun prootConfig(rootfs: File) = ProotConfig(
         proot = paths.proot.path,
         loader = paths.prootLoader.path,
@@ -248,31 +465,41 @@ class LinuxEnv private constructor(context: Context) {
         guestTmp = paths.guestTmp.path,
         fakeProc = fakeProcBindings(),
         sdcard = paths.sdcardOrNull(),
+        binds = workspaceBinds(),
         shell = RootfsSetup.loginShell(rootfs),
     )
 
-    private fun chrootConfig(rootfs: File, token: String) = ChrootConfig(
-        script = paths.chrootScript.path,
-        rootfs = rootfs.path,
-        stateDir = paths.run.path,
-        token = token,
-        guestTmp = paths.guestTmp.path,
-        sdcard = paths.sdcardOrNull() ?: "/storage/emulated/0", // root can read it even if the app cannot
-        shell = RootfsSetup.loginShell(rootfs),
-        hostEnv = hostEnv(),
-    )
+    private fun chrootConfig(rootfs: File, token: String): ChrootConfig {
+        val binds = ArrayList<Pair<String, String>>()
+        binds += paths.guestTmp.path to "/tmp"
+        binds += (paths.sdcardOrNull() ?: "/storage/emulated/0") to "/sdcard" // root can read it even if the app cannot
+        binds += workspaceBinds()
+        val file = File(paths.run, "$token.binds")
+        file.writeText(LaunchCommands.bindsFile(binds))
+        if (!store.get().usedChroot) updateConfig { it.copy(usedChroot = true) }
+        return ChrootConfig(
+            script = paths.chrootScript.path,
+            rootfs = rootfs.path,
+            stateDir = paths.run.path,
+            token = token,
+            bindsFile = file.path,
+            shell = RootfsSetup.loginShell(rootfs),
+            hostEnv = hostEnv(),
+        )
+    }
 
-    /** Creates the scratch dirs and the launcher script; cheap and idempotent. */
+    /** Creates the scratch dirs, workspace and the launcher script; cheap and idempotent. */
     private fun prepareRuntime() {
-        for (d in listOf(paths.guestTmp, paths.prootTmp, paths.run, paths.fakeProc)) d.mkdirs()
+        for (d in listOf(paths.guestTmp, paths.prootTmp, paths.run, paths.fakeProc, paths.workspace)) d.mkdirs()
+        installedDistro()?.let { File(paths.rootfs(it), "workspace").mkdirs() }
         runCatching { android.system.Os.chmod(paths.guestTmp.path, "1777".toInt(8)) }
         val script = LaunchCommands.chrootScript()
         if (!paths.chrootScript.isFile || paths.chrootScript.readText() != script) paths.chrootScript.writeText(script)
     }
 
     /**
-     * Android hides some /proc files from apps (SELinux), and tools such as top/htop/free break without
-     * them. Under proot each unreadable one is replaced by a plausible static file.
+     * Android hides some /proc files from apps (SELinux), and tools such as top/htop/free break without them. Under
+     * proot each unreadable one is replaced by a plausible static file.
      */
     private fun fakeProcBindings(): Map<String, String> {
         val out = LinkedHashMap<String, String>()
@@ -285,7 +512,9 @@ class LinuxEnv private constructor(context: Context) {
         return out
     }
 
-    private suspend fun cleanupSession(token: String) {
+    /** Kills whatever is left of one chroot session (its whole mount namespace) and removes its records. */
+    internal suspend fun cleanupSession(token: String) {
+        File(paths.run, "$token.binds").delete()
         if (!File(paths.run, "$token.ns").exists()) return
         RootSupport.su(LaunchCommands.cleanupScript(paths.run.path, token), hostEnv(), 15_000)
     }
@@ -313,7 +542,7 @@ class LinuxEnv private constructor(context: Context) {
 
     private fun explainChrootFailure(r: CommandResult): CommandResult =
         if (r.exitCode == LaunchCommands.EXIT_NO_PRIVATE_MOUNTS) {
-            r.copy(stderr = r.stderr + "\nChroot needs a private mount namespace, which this root setup refused.")
+            r.copy(stderr = r.stderr + "\nRoot mode needs a private mount namespace, which this root setup refused. Use Standard mode.")
         } else {
             r
         }
@@ -328,6 +557,8 @@ class LinuxEnv private constructor(context: Context) {
         }
         return total
     }
+
+    internal fun toolsBytes(distro: Distro) = InstallScripts.approxToolsBytes(distro)
 }
 
 /** Static stand-ins for /proc files apps may not read. */

@@ -234,6 +234,68 @@ Java_atom_linux_pty_Pty_spawnPiped(JNIEnv *env, jclass clazz, jstring jpath, job
     (*env)->SetIntArrayRegion(env, jresult, 0, 3, result);
 }
 
+/*
+ * Background spawn: stdin /dev/null, stdout and stderr appended to [jlog]. The child is its own session (and
+ * process group), so stopping the job kills the whole tree. Nothing reads the output while it runs: the log is
+ * the record. Returns the pid.
+ */
+JNIEXPORT jint JNICALL
+Java_atom_linux_pty_Pty_spawnToFile(JNIEnv *env, jclass clazz, jstring jpath, jobjectArray jargv, jobjectArray jenvp,
+                                    jstring jcwd, jstring jlog) {
+    (void) clazz;
+    const char *log_utf = (*env)->GetStringUTFChars(env, jlog, NULL);
+    int logfd = open(log_utf, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+    (*env)->ReleaseStringUTFChars(env, jlog, log_utf);
+    if (logfd < 0) {
+        throw_io(env, "open log", errno);
+        return -1;
+    }
+    const char *path_utf = (*env)->GetStringUTFChars(env, jpath, NULL);
+    const char *cwd_utf = jcwd == NULL ? NULL : (*env)->GetStringUTFChars(env, jcwd, NULL);
+    char *path = strdup(path_utf);
+    char *cwd = cwd_utf == NULL ? NULL : strdup(cwd_utf);
+    (*env)->ReleaseStringUTFChars(env, jpath, path_utf);
+    if (cwd_utf != NULL) (*env)->ReleaseStringUTFChars(env, jcwd, cwd_utf);
+    char **argv = to_c_array(env, jargv);
+    char **envp = to_c_array(env, jenvp);
+    int ok = path != NULL && argv != NULL && envp != NULL;
+    pid_t pid = ok ? fork() : -1;
+    if (pid < 0) {
+        int e = ok ? errno : ENOMEM;
+        free(path); free(cwd); free_c_array(argv); free_c_array(envp);
+        close(logfd);
+        throw_io(env, "fork", e);
+        return -1;
+    }
+    if (pid == 0) {
+        sigset_t all;
+        sigemptyset(&all);
+        sigprocmask(SIG_SETMASK, &all, NULL);
+        for (int sig = 1; sig < NSIG; sig++) signal(sig, SIG_DFL);
+        setsid();
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull >= 0) dup2(devnull, 0);
+        dup2(logfd, 1);
+        dup2(logfd, 2);
+        close_from(3);
+        if (cwd != NULL && chdir(cwd) != 0) {
+            if (chdir("/") != 0) { /* ignore */ }
+        }
+        execvpe(path, argv, envp);
+        const char *prefix = "atom: cannot run ";
+        const char *reason = strerror(errno);
+        write(2, prefix, strlen(prefix));
+        write(2, path, strlen(path));
+        write(2, ": ", 2);
+        write(2, reason, strlen(reason));
+        write(2, "\n", 1);
+        _exit(127);
+    }
+    free(path); free(cwd); free_c_array(argv); free_c_array(envp);
+    close(logfd);
+    return pid;
+}
+
 JNIEXPORT void JNICALL
 Java_atom_linux_pty_Pty_setSize(JNIEnv *env, jclass clazz, jint fd, jint rows, jint cols) {
     (void) env; (void) clazz;

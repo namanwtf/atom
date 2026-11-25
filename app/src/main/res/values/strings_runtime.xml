@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Agent runtime and chat. -->
+    <string name="share_target_label">Atom</string>
+
+    <!-- Runs -->
+    <string name="run_interrupted">Interrupted. Finished steps were restored; nothing was replayed.</string>
+    <string name="run_stopped">Stopped. Finished steps were kept.</string>
+    <string name="run_failed">The task failed.</string>
+    <string name="run_step_limit">Stopped at the step limit before finishing.</string>
+    <string name="run_model_gone">%1$s is no longer available, so this conversation uses %2$s.</string>
+    <string name="run_window_unknown">This model\'s context window is unknown, so automatic compaction is off.</string>
+    <string name="run_compaction_failed">Context could not be compacted: %1$s</string>
+    <string name="run_pause">Pause</string>
+    <string name="run_resume">Resume</string>
+    <string name="run_paused">Paused</string>
+    <string name="run_paused_hint">Paused. You have the phone.</string>
+    <string name="run_waiting_control">Waiting for phone control</string>
+    <string name="run_retrying">Retrying model request (%1$d of %2$d) in %3$d s</string>
+    <string name="run_retrying_short">Retrying model request</string>
+    <string name="run_compacting">Compacting context…</string>
+    <string name="run_answering">Answering</string>
+
+    <!-- Notifications -->
+    <string name="notif_running_tasks">Running tasks</string>
+    <plurals name="notif_running_count">
+        <item quantity="one">%d task running</item>
+        <item quantity="other">%d tasks running</item>
+    </plurals>
+    <string name="notif_open">Open</string>
+    <string name="notif_stop_all">Stop all</string>
+
+    <!-- Composer -->
+    <string name="composer_hint">Ask Atom to do something</string>
+    <string name="composer_hint_running">Add a message to the queue</string>
+    <string name="composer_queue">Queue message</string>
+    <string name="composer_attach">Attach</string>
+    <string name="composer_editing">Editing message. Sending replaces it and everything after it.</string>
+    <string name="queue_label">Queued · %1$d</string>
+    <string name="queue_send_now">Send now</string>
+    <string name="queue_next_step">At next step</string>
+    <string name="queue_after_task">After this task</string>
+    <string name="queue_attachments_only">Attachments</string>
+    <string name="attach_image">Image</string>
+    <string name="attach_file">File</string>
+    <string name="attach_folder">Folder</string>
+    <string name="attach_path">Enter path</string>
+    <string name="attach_path_title">Attach a path</string>
+    <string name="attach_path_text">Any absolute path on this phone. Atom reads it with its file and terminal tools.</string>
+    <string name="attach_path_add">Add</string>
+    <string name="attach_image_limit">Up to %1$s images per message.</string>
+    <string name="attach_too_large">That image is too large (20 MB at most).</string>
+    <string name="attach_unreadable">That item could not be read.</string>
+    <string name="attach_folder_unsupported">Only folders on this phone\'s storage can be attached.</string>
+    <string name="attach_some_failed">%1$s shared item(s) could not be read.</string>
+
+    <!-- Reasoning -->
+    <string name="reasoning_think">Think</string>
+    <string name="reasoning_deep">Deep Think</string>
+    <string name="reasoning_deep_with">Deep Think · %1$s</string>
+    <string name="reasoning_fixed_default">Default</string>
+    <string name="reasoning_effort">Reasoning effort</string>
+    <string name="effort_off">Off</string>
+    <string name="effort_default">Default</string>
+    <string name="effort_low">Low</string>
+    <string name="effort_medium">Medium</string>
+    <string name="effort_high">High</string>
+    <string name="effort_xhigh">XHigh</string>
+    <string name="effort_max">Max</string>
+    <string name="reasoning_live">Reasoning…</string>
+    <plurals name="reasoning_done">
+        <item quantity="one">Reasoning completed · %d second</item>
+        <item quantity="other">Reasoning completed · %d seconds</item>
+    </plurals>
+    <string name="reasoning_done_plain">Reasoning completed</string>
+
+    <!-- Transcript -->
+    <string name="chat_empty_title">How can I help you?</string>
+    <string name="chat_suggest_screen">Take a screenshot and describe what\'s on my screen</string>
+    <string name="chat_suggest_message">Open WhatsApp</string>
+    <string name="chat_suggest_web">Summarize today\'s tech news from the web</string>
+    <string name="chat_suggest_memory">Check memory pressure and explain it</string>
+    <string name="chat_configure_model">Configure a model first.</string>
+    <plurals name="timeline_thought">
+        <item quantity="one">Thought once</item>
+        <item quantity="other">Thought %d times</item>
+    </plurals>
+    <plurals name="timeline_calls">
+        <item quantity="one">%d tool call</item>
+        <item quantity="other">%d tool calls</item>
+    </plurals>
+    <string name="timeline_failed">%1$d failed</string>
+    <string name="timeline_working">Working</string>
+    <string name="step_command">Command</string>
+    <string name="step_copy_command">Copy command</string>
+    <string name="step_unknown">Result unknown</string>
+    <string name="chat_back_to_bottom">Back to bottom</string>
+    <string name="chat_load_older">Show earlier messages</string>
+    <string name="chat_steered">Sent to the running task</string>
+    <string name="chat_compacted">Context compacted · tap to view the summary</string>
+    <string name="chat_message_actions">Message actions</string>
+    <string name="chat_copy">Copy</string>
+    <string name="chat_copied">Copied</string>
+    <string name="chat_edit">Edit</string>
+    <string name="chat_regenerate">Regenerate</string>
+    <string name="chat_regenerate_title">Regenerate this answer?</string>
+    <plurals name="chat_regenerate_text">
+        <item quantity="one">The %d later turn will be deleted.</item>
+        <item quantity="other">The %d later turns will be deleted.</item>
+    </plurals>
+    <string name="chat_branch">Branch into a new conversation</string>
+    <string name="chat_branch_suffix">Branch</string>
+    <string name="chat_read_aloud">Read aloud</string>
+    <string name="chat_delete_turn">Delete</string>
+    <string name="chat_delete_message_title">Delete message?</string>
+    <string name="chat_delete_message_text">This message will be deleted.</string>
+    <plurals name="chat_delete_message_later">
+        <item quantity="one">This message and %d later turn will be deleted.</item>
+        <item quantity="other">This message and %d later turns will be deleted.</item>
+    </plurals>
+
+    <!-- Markdown -->
+    <string name="md_code">code</string>
+    <string name="md_copy">Copy</string>
+    <string name="md_copied">Copied</string>
+    <string name="md_note">Note</string>
+    <string name="md_tip">Tip</string>
+    <string name="md_important">Important</string>
+    <string name="md_warning">Warning</string>
+    <string name="md_caution">Caution</string>
+
+    <!-- Drawer -->
+    <string name="drawer_pinned">Pinned</string>
+    <string name="drawer_today">Today</string>
+    <string name="drawer_yesterday">Yesterday</string>
+    <string name="drawer_search">Search conversations</string>
+    <string name="drawer_no_matches">No matching conversations.</string>
+    <string name="drawer_reasoning">Atom is reasoning</string>
+    <string name="drawer_using_tool">Using %1$s</string>
+    <string name="drawer_pin">Pin</string>
+    <string name="drawer_unpin">Unpin</string>
+    <string name="drawer_rename">Rename</string>
+    <string name="drawer_rename_hint">Conversation name</string>
+    <string name="drawer_export">Export as Markdown</string>
+    <string name="drawer_stop_and_delete">Stop task and delete</string>
+    <string name="drawer_stop_and_delete_text">A task is running here. It will be stopped and its results saved first; if saving fails, the conversation is kept.</string>
+    <string name="drawer_characters">Characters</string>
+    <string name="drawer_permissions">Permissions</string>
+    <string name="drawer_permissions_attention">Permissions need attention</string>
+    <string name="delete_save_failed">The task\'s results could not be saved, so the conversation was kept.</string>
+    <string name="export_done">Conversation exported</string>
+    <string name="export_failed">Could not export the conversation</string>
+
+    <!-- Top bar and stats -->
+    <string name="menu_open_terminal">Open terminal</string>
+    <string name="menu_open_browser">Open browser</string>
+    <string name="menu_compact">Compact context</string>
+    <string name="menu_stats">Session stats</string>
+    <string name="context_ring_cd">Context %1$d%% used</string>
+    <string name="compact_done">Context compacted: %1$d messages summarized.</string>
+    <string name="compact_nothing">Nothing to compact yet.</string>
+    <string name="compact_busy">Wait for the task to finish, then compact.</string>
+    <string name="compact_failed">Compaction failed: %1$s</string>
+    <string name="stats_title">Session stats</string>
+    <string name="stats_context">Context</string>
+    <string name="stats_context_value">%1$s of %2$s (%3$d%%)</string>
+    <string name="stats_autocompact_on" formatted="false">Compacts automatically at about 85% of the window.</string>
+    <string name="stats_autocompact_unknown">Window unknown: automatic compaction is off.</string>
+    <string name="stats_turns">Turns</string>
+    <string name="stats_steps">Steps</string>
+    <string name="stats_model_time">Model time</string>
+    <string name="stats_tool_time">Tool time</string>
+    <string name="stats_tool_value">%1$s · %2$d calls · %3$d failed</string>
+    <string name="stats_ttft">Avg. time to first token</string>
+    <string name="stats_speed">Output speed</string>
+    <string name="stats_tokens">Tokens</string>
+    <string name="stats_cache">Prompt cache</string>
+    <string name="stats_cache_value">%1$s read · %2$s written · %3$d%% hit</string>
+    <string name="stats_cache_none">Not reported</string>
+    <string name="stats_compactions">Compactions</string>
+    <string name="stats_compactions_value">%1$d · %2$s tokens spent</string>
+    <string name="stats_payback">Compaction payback</string>
+    <string name="stats_payback_value">after about %1$s requests</string>
+</resources>

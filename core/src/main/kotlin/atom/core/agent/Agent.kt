@@ -3,8 +3,10 @@ package atom.core.agent
 import atom.core.llm.ChatMessage
 import atom.core.llm.FinishReason
 import atom.core.llm.LlmEngine
+import atom.core.llm.LlmErrors
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmException
+import atom.core.llm.LlmFailure
 import atom.core.llm.LlmRequest
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ToolCall
@@ -31,18 +33,82 @@ data class AgentConfig(
     val maxOutputTokens: Int = 2048,
     val reasoning: ReasoningEffort? = null,
     val toolTimeoutMs: Long = 60_000,
-    val maxRetries: Int = 2,
+    /** Retries of a transient model failure; waits double from [retryDelayMs] (2 s, 4 s, 8 s by default). */
+    val maxRetries: Int = 3,
     val context: ContextPolicy = ContextPolicy(),
-)
+    val retryDelayMs: Long = 2_000,
+    /** The model's context window in tokens. Null means unknown: usage is still reported, auto-compaction is off. */
+    val contextWindow: Int? = null,
+    val autoCompact: Boolean = true,
+    /** Fraction of the usable window at which the conversation is compacted automatically. */
+    val compactAt: Double = 0.85,
+) {
+    /** What one prompt may actually use: the model window, capped by the packer's budget. */
+    val usableWindow: Int? get() = contextWindow?.let { minOf(it, context.budgetTokens) }
+
+    fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
+}
 
 enum class StopReason { Completed, StepLimit, OutputLimit }
+
+/** Metadata the app stores next to a message the agent appended. */
+data class MessageInfo(
+    val reasoning: String? = null,
+    val reasoningMs: Long? = null,
+    val durationMs: Long? = null,
+    val isError: Boolean = false,
+    /** Only for the current turn; persist [Scrubber.scrub] of it instead. */
+    val sensitive: Boolean = false,
+    /** A loop-guard nudge: sent to the model, never shown as the user's words. */
+    val internal: Boolean = false,
+    /** A queued user message delivered to the running task. */
+    val steering: Boolean = false,
+)
 
 sealed interface AgentEvent {
     data class Text(val delta: String) : AgentEvent
     data class Reasoning(val delta: String) : AgentEvent
     data class ToolStarted(val call: ToolCall) : AgentEvent
     data class ToolFinished(val call: ToolCall, val result: ToolResult, val durationMs: Long) : AgentEvent
+
+    /** Cumulative for this run. */
     data class Usage(val inputTokens: Int, val outputTokens: Int) : AgentEvent
+
+    /** Every message the agent adds to the conversation, in order, as soon as it is final. */
+    data class Appended(val message: ChatMessage, val info: MessageInfo = MessageInfo()) : AgentEvent
+
+    data class ModelCall(val stats: ModelCallStats) : AgentEvent
+
+    /** How much of the window the conversation uses, measured after each response. */
+    data class ContextUsage(val usedTokens: Int, val windowTokens: Int?) : AgentEvent
+
+    /**
+     * A transient model failure; the request is repeated after [delayMs]. When [discardPartial] is true the text
+     * and reasoning streamed for this step so far are void and will be streamed again.
+     */
+    data class Retrying(
+        val attempt: Int,
+        val maxAttempts: Int,
+        val delayMs: Long,
+        val reason: String,
+        val discardPartial: Boolean,
+    ) : AgentEvent
+
+    data object Compacting : AgentEvent
+
+    /**
+     * The first [summarizedCount] messages of the conversation the agent works on (history given to [Agent.run]
+     * plus what it appended) are now represented by [summary].
+     */
+    data class Compacted(
+        val summary: ChatMessage,
+        val summarizedCount: Int,
+        val tokensBefore: Int,
+        val tokensAfter: Int,
+        val cost: ModelCallStats,
+    ) : AgentEvent
+
+    data class CompactionFailed(val reason: String) : AgentEvent
 
     /** [newMessages] is everything this run appended after the given history; persist it to continue later. */
     data class Done(
@@ -52,7 +118,28 @@ sealed interface AgentEvent {
         val newMessages: List<ChatMessage>,
     ) : AgentEvent
 
-    data class Failed(val message: String, val newMessages: List<ChatMessage>) : AgentEvent
+    data class Failed(
+        val message: String,
+        val newMessages: List<ChatMessage>,
+        val failure: LlmFailure = LlmFailure.Unknown,
+        val detail: String? = null,
+    ) : AgentEvent
+}
+
+/** Hooks the runtime uses to steer, pause and serialise phone access. All are called at safe points only. */
+interface RunControl {
+    /** Suspends while the run is paused. Called before every model request and every tool call. */
+    suspend fun checkpoint() {}
+
+    /** User messages queued to steer the run; drained between steps. */
+    fun drainSteering(): List<ChatMessage> = emptyList()
+
+    /** Called before a tool that drives the phone UI; suspends until this run holds phone control. */
+    suspend fun acquirePhone() {}
+
+    companion object {
+        val None: RunControl = object : RunControl {}
+    }
 }
 
 class Agent(
@@ -63,17 +150,18 @@ class Agent(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. */
-    fun run(history: List<ChatMessage>, ctx: ToolContext): Flow<AgentEvent> = flow {
-        val convo = history.toMutableList()
-        val firstNew = convo.size
+    fun run(history: List<ChatMessage>, ctx: ToolContext, control: RunControl = RunControl.None): Flow<AgentEvent> = flow {
+        val state = RunState(history)
         val guard = LoopGuard()
-        var inTokens = 0
-        var outTokens = 0
 
         for (step in 1..config.maxSteps) {
+            control.checkpoint()
+            deliverSteering(state, control)
+            maybeCompact(state)
+
             val request = LlmRequest(
                 model = config.model,
-                messages = ContextPacker.pack(config.systemPrompt, convo, config.context),
+                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.context),
                 tools = tools.specs,
                 maxOutputTokens = config.maxOutputTokens,
                 reasoning = config.reasoning,
@@ -81,30 +169,42 @@ class Agent(
             val turn = try {
                 streamWithRetry(request)
             } catch (e: LlmException) {
-                emit(AgentEvent.Failed(e.message ?: "Model request failed", convo.subList(firstNew, convo.size).toList()))
+                val failure = LlmErrors.classify(e)
+                emit(AgentEvent.Failed(LlmErrors.explain(e), state.appended.toList(), failure, e.message))
                 return@flow
             }
-            inTokens += turn.inputTokens
-            outTokens += turn.outputTokens
-            emit(AgentEvent.Usage(inTokens, outTokens))
+            state.inTokens += turn.stats.inputTokens
+            state.outTokens += turn.stats.outputTokens
+            emit(AgentEvent.ModelCall(turn.stats))
+            emit(AgentEvent.Usage(state.inTokens, state.outTokens))
 
-            convo += ChatMessage.assistant(turn.text, turn.calls)
+            append(state, ChatMessage.assistant(turn.text, turn.calls), MessageInfo(turn.reasoning, turn.reasoningMs))
+            state.lastReported = turn.reportedInput + turn.reportedOutput
+            state.sinceReport = 0
+            emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
 
             if (turn.calls.isEmpty()) {
+                if (deliverSteering(state, control)) continue
                 val reason = if (turn.finish == FinishReason.Length) StopReason.OutputLimit else StopReason.Completed
-                emit(AgentEvent.Done(turn.text, reason, step, convo.subList(firstNew, convo.size).toList()))
+                emit(AgentEvent.Done(turn.text, reason, step, state.appended.toList()))
                 return@flow
             }
 
             for (call in turn.calls) {
+                control.checkpoint()
                 emit(AgentEvent.ToolStarted(call))
                 val started = System.nanoTime()
-                val result = execute(call, ctx)
-                emit(AgentEvent.ToolFinished(call, result, (System.nanoTime() - started) / 1_000_000))
-                convo += ChatMessage.toolResult(call, result.toParts())
+                val result = execute(call, ctx, control)
+                val duration = (System.nanoTime() - started) / 1_000_000
+                emit(AgentEvent.ToolFinished(call, result, duration))
+                append(
+                    state,
+                    ChatMessage.toolResult(call, result.toParts()),
+                    MessageInfo(durationMs = duration, isError = result.isError, sensitive = result.sensitive),
+                )
             }
 
-            guard.nudgeFor(turn.calls)?.let { convo += ChatMessage.user(it) }
+            guard.nudgeFor(turn.calls)?.let { append(state, ChatMessage.user(it), MessageInfo(internal = true)) }
         }
 
         emit(
@@ -112,17 +212,89 @@ class Agent(
                 finalText = "Stopped after ${config.maxSteps} steps without finishing.",
                 reason = StopReason.StepLimit,
                 steps = config.maxSteps,
-                newMessages = convo.subList(firstNew, convo.size).toList(),
+                newMessages = state.appended.toList(),
             ),
         )
+    }
+
+    private class RunState(history: List<ChatMessage>) {
+        val convo = history.toMutableList()
+        val sensitive = MutableList(history.size) { false }
+        val appended = ArrayList<ChatMessage>()
+        var inTokens = 0
+        var outTokens = 0
+
+        /** Provider-reported size of the last exchange (prompt + answer), 0 when not reported. */
+        var lastReported = 0
+
+        /** Estimated tokens added since that report. */
+        var sinceReport = 0
+
+        fun used(): Int = if (lastReported > 0) lastReported + sinceReport else convo.sumOf { ContextPacker.estimate(it) }
+    }
+
+    private suspend fun FlowCollector<AgentEvent>.append(state: RunState, message: ChatMessage, info: MessageInfo) {
+        state.convo += message
+        state.sensitive += info.sensitive
+        state.appended += message
+        state.sinceReport += ContextPacker.estimate(message)
+        emit(AgentEvent.Appended(message, info))
+    }
+
+    private suspend fun FlowCollector<AgentEvent>.deliverSteering(state: RunState, control: RunControl): Boolean {
+        val messages = control.drainSteering()
+        for (m in messages) append(state, m, MessageInfo(steering = true))
+        return messages.isNotEmpty()
+    }
+
+    private suspend fun FlowCollector<AgentEvent>.maybeCompact(state: RunState) {
+        val window = config.usableWindow ?: return
+        if (!config.autoCompact) return
+        val measured = ContextPacker.measure(config.systemPrompt, state.convo, config.context)
+        val used = maxOf(measured, if (state.lastReported > 0) state.used() else 0)
+        if (used < window * config.compactAt) return
+        val cut = Compactor.cutIndex(state.convo, keepRecentTokens = (window * KEEP_RECENT_SHARE).toInt())
+        if (cut <= 0) return
+        emit(AgentEvent.Compacting)
+        val request = Compactor.request(
+            model = config.model,
+            prefix = state.convo.subList(0, cut).toList(),
+            sensitive = { state.sensitive[it] },
+            maxOutputTokens = (window / 8).coerceIn(400, 2_000),
+            transcriptBudgetChars = (window * 3).coerceAtLeast(8_000),
+            reasoning = if (config.reasoning == ReasoningEffort.Off) ReasoningEffort.Off else null,
+        )
+        val result = try {
+            Compactor.summarize(engine, request)
+        } catch (e: LlmException) {
+            emit(AgentEvent.CompactionFailed(LlmErrors.explain(e)))
+            return
+        }
+        val summary = Compactor.summaryMessage(result.summary)
+        val kept = state.convo.subList(cut, state.convo.size).toList()
+        val keptFlags = state.sensitive.subList(cut, state.sensitive.size).toList()
+        state.convo.clear()
+        state.convo += summary
+        state.convo += kept
+        state.sensitive.clear()
+        state.sensitive += false
+        state.sensitive += keptFlags
+        val after = ContextPacker.measure(config.systemPrompt, state.convo, config.context)
+        state.lastReported = 0
+        state.sinceReport = 0
+        emit(AgentEvent.Compacted(summary, cut, used, after, result.stats))
+        emit(AgentEvent.ContextUsage(after, window))
     }
 
     private class Turn(
         val text: String,
         val calls: List<ToolCall>,
         val finish: FinishReason,
-        val inputTokens: Int,
-        val outputTokens: Int,
+        val reasoning: String?,
+        val reasoningMs: Long?,
+        val reportedInput: Int,
+        val reportedOutput: Int,
+        val stats: ModelCallStats,
     )
 
     private suspend fun FlowCollector<AgentEvent>.streamWithRetry(request: LlmRequest): Turn {
@@ -130,41 +302,75 @@ class Agent(
         while (true) {
             var emittedAny = false
             try {
+                val started = System.nanoTime()
+                var firstToken: Long? = null
+                var reasoningStart: Long? = null
+                var reasoningEnd: Long? = null
                 val text = StringBuilder()
+                val reasoning = StringBuilder()
                 val calls = mutableListOf<ToolCall>()
                 var finish = FinishReason.Stop
-                var input = 0
-                var output = 0
+                var usage: LlmEvent.Usage? = null
                 engine.stream(request).collect { event ->
                     when (event) {
                         is LlmEvent.TextDelta -> {
                             emittedAny = true
+                            val now = System.nanoTime()
+                            if (firstToken == null) firstToken = now
+                            if (reasoningStart != null && reasoningEnd == null) reasoningEnd = now
                             text.append(event.text)
                             emit(AgentEvent.Text(event.text))
                         }
                         is LlmEvent.ReasoningDelta -> {
                             emittedAny = true
+                            val now = System.nanoTime()
+                            if (firstToken == null) firstToken = now
+                            if (reasoningStart == null) reasoningStart = now
+                            reasoning.append(event.text)
                             emit(AgentEvent.Reasoning(event.text))
                         }
-                        is LlmEvent.ToolCallReady -> calls += event.call
-                        is LlmEvent.Usage -> {
-                            input = event.inputTokens
-                            output = event.outputTokens
+                        is LlmEvent.ToolCallReady -> {
+                            val now = System.nanoTime()
+                            if (firstToken == null) firstToken = now
+                            if (reasoningStart != null && reasoningEnd == null) reasoningEnd = now
+                            calls += event.call
                         }
+                        is LlmEvent.Usage -> usage = event
                         is LlmEvent.Finished -> finish = event.reason
                     }
                 }
-                return Turn(text.toString(), calls, finish, input, output)
+                val end = System.nanoTime()
+                val reported = usage
+                val estimatedIn = request.messages.sumOf { ContextPacker.estimate(it) }
+                val estimatedOut = ContextPacker.estimate(text.toString()) + ContextPacker.estimate(reasoning.toString())
+                return Turn(
+                    text = text.toString(),
+                    calls = calls,
+                    finish = finish,
+                    reasoning = reasoning.toString().takeIf { it.isNotBlank() },
+                    reasoningMs = reasoningStart?.let { ((reasoningEnd ?: end) - it) / 1_000_000 },
+                    reportedInput = reported?.inputTokens ?: 0,
+                    reportedOutput = reported?.outputTokens ?: 0,
+                    stats = ModelCallStats(
+                        ttftMs = firstToken?.let { (it - started) / 1_000_000 },
+                        durationMs = (end - started) / 1_000_000,
+                        inputTokens = reported?.inputTokens?.takeIf { it > 0 } ?: estimatedIn,
+                        outputTokens = reported?.outputTokens?.takeIf { it > 0 } ?: estimatedOut,
+                        cacheReadTokens = reported?.cacheReadTokens ?: 0,
+                        cacheWriteTokens = reported?.cacheWriteTokens ?: 0,
+                    ),
+                )
             } catch (e: LlmException) {
-                // A retry after partial output would duplicate text on screen, so only retry clean failures.
-                if (!e.retryable || emittedAny || attempt >= config.maxRetries) throw e
-                delay(backoffMs(attempt))
+                if (!e.retryable || attempt >= config.maxRetries) throw e
+                val wait = config.retryDelay(attempt)
+                emit(AgentEvent.Retrying(attempt + 1, config.maxRetries, wait, LlmErrors.explain(e), discardPartial = emittedAny))
+                delay(wait)
                 attempt++
             }
         }
     }
 
-    private suspend fun execute(call: ToolCall, ctx: ToolContext): ToolResult {
+    private suspend fun execute(call: ToolCall, ctx: ToolContext, control: RunControl): ToolResult {
         val tool = tools[call.name]
             ?: return ToolResult.error("Unknown tool '${call.name}'. Available: ${tools.specs.joinToString { it.name }}")
 
@@ -174,6 +380,8 @@ class Agent(
             return ToolResult.error("Arguments for '${call.name}' were not a valid JSON object: ${e.message}")
         }
 
+        if (tool.usesPhoneUi) control.acquirePhone()
+
         if (tool.risk == Risk.Sensitive && !ctx.confirm(describe(call))) {
             return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
         }
@@ -181,7 +389,7 @@ class Agent(
         return try {
             withTimeout(config.toolTimeoutMs) { tool.run(args, ctx) }
         } catch (e: TimeoutCancellationException) {
-            ToolResult.error("'${call.name}' timed out after ${config.toolTimeoutMs / 1000}s.")
+            ToolResult.error("'${call.name}' timed out after ${config.toolTimeoutMs / 1000}s. Its outcome is unknown; check the state before retrying.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: ToolArgumentException) {
@@ -196,7 +404,9 @@ class Agent(
         return "${call.name}($args)"
     }
 
-    private fun backoffMs(attempt: Int): Long = 800L shl attempt
+    private companion object {
+        const val KEEP_RECENT_SHARE = 0.3
+    }
 }
 
 /**
