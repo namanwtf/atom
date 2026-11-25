@@ -57,7 +57,7 @@ internal object AutomationTools {
             val now = Instant.now()
             val schedule = ScheduleText.parse(a.string("schedule"), now)
             schedule.problem(now)?.let { return@SimpleTool ToolResult.error(it) }
-            val caps = a.optString("capabilities")?.split(',')?.mapNotNull { Capability.fromTag(it) }?.toSet() ?: Capability.DEFAULT
+            val caps = a.optString("capabilities")?.split(',')?.mapNotNull { Capability.fromTag(it) }?.toSet() ?: Capability.TASK_DEFAULT
             val task = ScheduledTask(
                 id = UUID.randomUUID().toString(),
                 name = a.string("name").take(60),

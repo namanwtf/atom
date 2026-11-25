@@ -23,6 +23,9 @@ enum class Capability(val tag: String, val label: String) {
 
     companion object {
         val DEFAULT: Set<Capability> = setOf(Web, DeviceRead)
+
+        /** A new scheduled task's capabilities: web, device reading, terminal and MCP on; device controls and app UI off. */
+        val TASK_DEFAULT: Set<Capability> = setOf(Web, DeviceRead, Terminal, Mcp)
         fun fromTag(tag: String): Capability? = entries.firstOrNull { it.tag == tag.trim().lowercase() || it.name.equals(tag.trim(), true) }
         fun describe(set: Set<Capability>): String = if (set.isEmpty()) "Chat only" else entries.filter { it in set }.joinToString(", ") { it.label }
     }
