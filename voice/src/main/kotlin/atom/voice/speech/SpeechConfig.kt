@@ -148,7 +148,9 @@ data class SpeechConfig(
         get() = dashScopeBase.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
 
     companion object {
-        const val DEFAULT_PREVIEW = "Hi, I'm Atom. This is how I'll sound when I read your answers aloud."
+        /** A short self-introduction, then a mock reminder, so a voice can be heard on a typical answer. */
+        const val DEFAULT_PREVIEW = "Hi, I'm Atom, the assistant on your phone. Here is a reminder: your project review starts " +
+            "at 3:30 this afternoon in meeting room 2. The slides are in your inbox, and I can read the agenda to you."
         const val PREVIEW_MAX = 500
         const val STYLE_MAX = 500
     }

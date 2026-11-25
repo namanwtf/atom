@@ -101,6 +101,7 @@ object AssistantVoiceNotice {
             .setCategory(if (mode == Mode.Listening) Notification.CATEGORY_STATUS else Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(stopAction)
+        if (mode == Mode.Listening) builder.setContentText(context.getString(R.string.assistant_voice_listening_text))
         if (mode == Mode.Reading) builder.setStyle(Notification.MediaStyle().setShowActionsInCompactView(0))
         context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
             builder.setContentIntent(PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))

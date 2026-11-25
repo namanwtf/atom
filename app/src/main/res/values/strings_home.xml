@@ -38,6 +38,26 @@
         <item quantity="one">Completed %d step</item>
         <item quantity="other">Completed %d steps</item>
     </plurals>
+    <string name="hosted_running">Running %1$s</string>
+    <string name="hosted_web_search">Web search</string>
+    <string name="hosted_file_search">File search</string>
+    <string name="hosted_code_execution">Code execution</string>
+    <string name="hosted_computer_use">Computer use</string>
+    <string name="hosted_image_generation">Image generation</string>
+    <string name="hosted_mcp">MCP tool</string>
+    <plurals name="work_calls">
+        <item quantity="one">%d call</item>
+        <item quantity="other">%d calls</item>
+    </plurals>
+    <string name="browser_loading">Loading · %1$d%%</string>
+    <string name="browser_open_current">Open current browser</string>
+    <string name="image_view">View image</string>
+    <string name="image_save">Save</string>
+    <string name="image_saved">Saved to Pictures/Atom</string>
+    <string name="image_save_failed">Could not save the image</string>
+    <string name="image_share">Share</string>
+    <string name="image_share_failed">Could not share the image</string>
+    <string name="image_continue_editing">Continue editing</string>
     <string name="chat_loading">Loading…</string>
     <string name="chat_load_failed">Load failed. Tap to retry</string>
 

@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -135,6 +136,10 @@ internal class MessageActions(
     val stats: SessionStats = SessionStats(),
     /** Stored index of the user message being edited (its bubble gets an accent border). */
     val editingIndex: Int? = null,
+    /** "Continue editing" in the image viewer: puts a chat image back into the composer. */
+    val onContinueEditing: ((String) -> Unit)? = null,
+    /** Conversation whose live browser the "Open current browser" step action opens. */
+    val conversationId: String? = null,
 )
 
 private const val PAGE = 40
@@ -263,13 +268,39 @@ private fun UserBubble(item: ChatItem.User, actions: MessageActions, canEdit: Bo
                 modifier = Modifier.padding(end = 6.dp, bottom = 4.dp),
             )
         }
-        if (item.attachments.isNotEmpty()) {
+        val images = remember(item.attachments) { item.attachments.filter { it.kind == AttachmentKind.Image } }
+        val refs = remember(item.attachments) { item.attachments.filter { it.kind != AttachmentKind.Image } }
+        if (images.isNotEmpty()) {
+            var viewing by remember { mutableStateOf<String?>(null) }
+            FlowRow(
+                Modifier.padding(start = 40.dp, bottom = 6.dp).widthIn(max = 316.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                images.forEach { img ->
+                    val (w, h) = when (images.size) {
+                        1 -> 176.dp to 216.dp
+                        2 -> 118.dp to 148.dp
+                        else -> 98.dp to 124.dp
+                    }
+                    ChatImageThumb(img.path, w, h, corner = if (images.size == 1) 16.dp else 14.dp) { viewing = img.path }
+                }
+            }
+            viewing?.let { path ->
+                ChatImageViewer(
+                    path,
+                    onDismiss = { viewing = null },
+                    onContinueEditing = actions.onContinueEditing?.let { reattach -> { reattach(path) } },
+                )
+            }
+        }
+        if (refs.isNotEmpty()) {
             FlowRow(
                 Modifier.padding(start = 48.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                item.attachments.forEach { AttachmentChip(it, onRemove = null) }
+                refs.forEach { AttachmentChip(it, onRemove = null) }
             }
         }
         Box {
@@ -388,7 +419,7 @@ internal fun AttachmentChip(a: Attachment, onRemove: (() -> Unit)?) {
 @Composable
 private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean, showStats: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp)) {
-        if (turn.work.isNotEmpty()) Timeline(turn)
+        if (turn.work.isNotEmpty()) Timeline(turn, actions)
         TurnCards(turn, actions.onTakeOverBrowser)
         turn.answerReasoning?.let { ReasoningBlock(it) }
         val answer = turn.answer
@@ -451,7 +482,7 @@ private fun smoothReveal(target: String): String {
 }
 
 @Composable
-private fun Timeline(turn: ChatItem.Turn) {
+private fun Timeline(turn: ChatItem.Turn, actions: MessageActions) {
     val colors = MaterialTheme.colorScheme
     val summary = turn.summary
     var expanded by rememberSaveable(turn.key) { mutableStateOf<Boolean?>(null) }
@@ -503,7 +534,11 @@ private fun Timeline(turn: ChatItem.Turn) {
                             maxLines = 6,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        is WorkEntry.Steps -> StepGroup(entry)
+                        is WorkEntry.Steps -> StepGroup(
+                            entry,
+                            onOpenBrowser = if (turn.live) actions.onTakeOverBrowser else null,
+                            conversationId = actions.conversationId.takeIf { turn.live },
+                        )
                     }
                 }
             }
@@ -625,7 +660,7 @@ private fun Modifier.pulsing(): Modifier {
 }
 
 @Composable
-private fun StepGroup(group: WorkEntry.Steps) {
+private fun StepGroup(group: WorkEntry.Steps, onOpenBrowser: (() -> Unit)? = null, conversationId: String? = null) {
     val colors = MaterialTheme.colorScheme
     var open by rememberSaveable(group.key) { mutableStateOf(false) }
     val last = group.calls.last()
@@ -644,7 +679,7 @@ private fun StepGroup(group: WorkEntry.Steps) {
             Text(humanizeTool(group.tool), style = MaterialTheme.typography.labelLarge, color = colors.onSurface.copy(alpha = 0.9f), maxLines = 1)
             if (group.calls.size > 1) {
                 Spacer(Modifier.width(6.dp))
-                Text("×${group.calls.size}", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Text(pluralStringResource(R.plurals.work_calls, group.calls.size, group.calls.size), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
             Spacer(Modifier.width(8.dp))
             Text(
@@ -666,12 +701,33 @@ private fun StepGroup(group: WorkEntry.Steps) {
             }
             StepMark(state, group.calls.any { it.awaitingApproval })
         }
+        val browser = group.tool.startsWith(BROWSER_TOOL_PREFIX)
+        if (browser && running != null && conversationId != null) BrowserLoadingLine(conversationId)
         AnimatedVisibility(visible = open, enter = fadeIn(tween(QUICK)) + expandVertically(tween(200)), exit = fadeOut(tween(150)) + shrinkVertically(tween(180))) {
             Column(Modifier.padding(start = 25.dp, top = 10.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 group.calls.forEach { CallDetails(it, numbered = group.calls.size > 1) }
+                if (browser && onOpenBrowser != null) {
+                    atom.ui.components.CompactButton(stringResource(R.string.browser_open_current), onClick = onOpenBrowser, primary = false)
+                }
             }
         }
     }
+}
+
+private const val BROWSER_TOOL_PREFIX = "browser_"
+
+/** "Loading · N%" under a running browser step while its page loads. */
+@Composable
+private fun BrowserLoadingLine(conversationId: String) {
+    val session = remember(conversationId) { atom.web.browser.BrowserSessions.get(conversationId) } ?: return
+    val page by session.page.collectAsState()
+    if (!page.loading) return
+    Text(
+        stringResource(R.string.browser_loading, page.progress.coerceIn(0, 100)),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 25.dp, top = 4.dp),
+    )
 }
 
 @Composable
@@ -1084,6 +1140,19 @@ private fun CompactedRow(key: String, summary: String) {
     }
 }
 
+/** Names of tools a provider runs on its side, as they appear in "Running <x>". */
+internal fun hostedToolRes(kind: atom.core.llm.HostedToolKind): Int = when (kind) {
+    atom.core.llm.HostedToolKind.WebSearch -> R.string.hosted_web_search
+    atom.core.llm.HostedToolKind.FileSearch -> R.string.hosted_file_search
+    atom.core.llm.HostedToolKind.CodeExecution -> R.string.hosted_code_execution
+    atom.core.llm.HostedToolKind.ComputerUse -> R.string.hosted_computer_use
+    atom.core.llm.HostedToolKind.ImageGeneration -> R.string.hosted_image_generation
+    atom.core.llm.HostedToolKind.Mcp -> R.string.hosted_mcp
+}
+
+@Composable
+internal fun hostedToolLabel(kind: atom.core.llm.HostedToolKind): String = stringResource(hostedToolRes(kind))
+
 @Composable
 private fun WorkingRow(state: ChatUiState, onPause: () -> Unit, onResume: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -1096,6 +1165,7 @@ private fun WorkingRow(state: ChatUiState, onPause: () -> Unit, onResume: () -> 
         retry != null -> stringResource(R.string.run_retrying, retry.attempt, retry.of, rememberCountdown(retry.untilMillis))
         state.compacting -> stringResource(R.string.run_compacting)
         state.currentTool != null -> humanizeTool(state.currentTool)
+        state.hostedTool != null -> stringResource(R.string.hosted_running, hostedToolLabel(state.hostedTool))
         state.phase == RunPhase.Starting -> stringResource(R.string.status_preparing)
         state.replyingLabel != null -> state.replyingLabel
         else -> stringResource(R.string.status_thinking)

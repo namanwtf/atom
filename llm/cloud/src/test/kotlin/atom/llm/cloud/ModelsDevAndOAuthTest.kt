@@ -166,7 +166,9 @@ class ModelsDevAndOAuthTest {
         }
         Socket("127.0.0.1", port).use { socket ->
             socket.getOutputStream().write("GET /auth/callback?code=abc%2B1&state=s1 HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
-            assertTrue(String(socket.getInputStream().readBytes()).startsWith("HTTP/1.1 200"))
+            val reply = String(socket.getInputStream().readBytes())
+            assertTrue(reply.startsWith("HTTP/1.1 200"))
+            assertTrue(LoopbackCallback.RECEIVED in reply)
         }
         val received = result.await()
         assertEquals("abc+1", received.code)
