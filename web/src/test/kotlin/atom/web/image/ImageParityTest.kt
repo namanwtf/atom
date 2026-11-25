@@ -29,10 +29,11 @@ class ImageParityTest {
         assertEquals(ImageJobs.LiveSpec(true, 1, 0), ImageJobs.parseLive(ImageJobs.liveCardText("edit_image", "{}", null)!!))
         assertEquals("Generating 3 images", ImageJobs.placeholder(spec).title)
 
+        val call = ImageJobs.LiveSpec(edit = false, count = 3, sinceMs = 10_000)
         val older = ImageJob("a", null, false, 1, "p", "m", startedAt = 100)
-        val mine = ImageJob("b", null, false, 3, "p", "m", startedAt = 1_200)
-        val edit = ImageJob("c", null, true, 1, "p", "m", startedAt = 1_500)
-        assertEquals("b", ImageJobs.liveJob(spec, listOf(older, mine, edit))?.id)
-        assertNull(ImageJobs.liveJob(spec, listOf(older, edit)))
+        val mine = ImageJob("b", null, false, 3, "p", "m", startedAt = 10_200)
+        val edit = ImageJob("c", null, true, 1, "p", "m", startedAt = 10_500)
+        assertEquals("b", ImageJobs.liveJob(call, listOf(older, mine, edit))?.id)
+        assertNull(ImageJobs.liveJob(call, listOf(older, edit)))
     }
 }
