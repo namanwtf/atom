@@ -29,3 +29,6 @@ Third-party software included in Atom (all GPL-3.0 compatible):
   linux/third_party/proot.
 - talloc 2.5.0 (Samba) — LGPL-3.0-or-later, linked into libproot.so.
 - XZ for Java (org.tukaani:xz) — 0BSD.
+- JetBrains Mono 2.304 (https://github.com/JetBrains/JetBrainsMono) — SIL Open Font License 1.1,
+  Copyright 2020 The JetBrains Mono Project Authors; Regular and Bold TTF bundled as
+  linux/src/main/res/font (licenses/OFL-1.1.txt).
