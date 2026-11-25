@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * the Xposed framework's remote preferences whenever they change or the framework connects.
  */
 class SystemPrefs private constructor(context: Context) {
-    private val sp: SharedPreferences = context.getSharedPreferences("atom_system", Context.MODE_PRIVATE)
+    private val sp: SharedPreferences = context.getSharedPreferences("atom4_system", Context.MODE_PRIVATE)
 
     private val _backgroundDisplay = MutableStateFlow(sp.getBoolean(K_BG_DISPLAY, false))
 
