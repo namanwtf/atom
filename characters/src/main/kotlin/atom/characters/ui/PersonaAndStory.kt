@@ -20,6 +20,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import atom.characters.data.StoryDraft
+import atom.ui.components.AtomTextButton
+import atom.ui.theme.extras
 import atom.characters.R
 import atom.characters.data.CharacterStore
 import atom.characters.model.Persona
@@ -85,48 +92,81 @@ internal fun StoryMemoryScreen(id: String, nav: FeatureNav) {
     val scope = rememberCoroutineScope()
     var saved by remember { mutableStateOf<String?>(null) }
     var text by remember { mutableStateOf<String?>(null) }
+    var conflict by remember { mutableStateOf(false) }
     LaunchedEffect(id) {
         val current = store.storyMemory(id)
         saved = current
         if (text == null) text = current
     }
+    // A chat may have written story memory meanwhile: adopt it if there is no draft, else keep the draft and say so.
+    LifecycleResumeEffect(id) {
+        scope.launch {
+            val base = saved ?: return@launch
+            when (StoryDraft.check(base, store.storyMemory(id), text ?: base)) {
+                StoryDraft.Result.Same -> Unit
+                StoryDraft.Result.AdoptRemote -> store.storyMemory(id).let { saved = it; text = it }
+                StoryDraft.Result.Conflict -> conflict = true
+            }
+        }
+        onPauseOrDispose { }
+    }
     val tooLong = (text?.toByteArray()?.size ?: 0) > CharacterStore.STORY_LIMIT
     val latest by rememberUpdatedState(text)
     val latestSaved by rememberUpdatedState(saved)
+    val latestConflict by rememberUpdatedState(conflict)
     DisposableEffect(id) {
         onDispose {
             val t = latest ?: return@onDispose
-            if (t != latestSaved && t.toByteArray().size <= CharacterStore.STORY_LIMIT) SaveScope.scope.launch { store.setStoryMemory(id, t) }
+            if (!latestConflict && t != latestSaved && t.toByteArray().size <= CharacterStore.STORY_LIMIT) SaveScope.scope.launch { store.setStoryMemory(id, t) }
         }
     }
-    LargeTitleScreen(
-        title = stringResource(R.string.characters_story_memory),
-        onBack = nav::back,
-        actions = {
-            CompactButton(
-                text = stringResource(R.string.characters_save),
-                enabled = text != null && text != saved && !tooLong,
-                onClick = {
-                    val t = text ?: return@CompactButton
-                    scope.launch {
-                        if (store.setStoryMemory(id, t)) {
-                            saved = t
-                            Toast.makeText(context, R.string.characters_saved, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        },
-    ) {
+
+    fun save() {
+        val t = text ?: return
+        scope.launch {
+            val current = store.storyMemory(id)
+            val base = saved
+            if (!conflict && base != null && StoryDraft.check(base, current, t) == StoryDraft.Result.Conflict) {
+                // First save after a chat changed it: show the notice; saving again keeps the draft.
+                conflict = true
+                return@launch
+            }
+            if (store.setStoryMemory(id, t)) {
+                saved = t
+                conflict = false
+                Toast.makeText(context, R.string.characters_saved, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun reload() {
+        scope.launch {
+            val current = store.storyMemory(id)
+            saved = current
+            text = current
+            conflict = false
+        }
+    }
+
+    LargeTitleScreen(title = stringResource(R.string.characters_story_memory), onBack = nav::back) {
         val t = text ?: return@LargeTitleScreen
         item {
             Text(
                 stringResource(R.string.characters_story_memory_subtitle, name),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 6.dp, bottom = 4.dp),
+                modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp),
             )
+        }
+        if (conflict) {
+            item {
+                Text(
+                    stringResource(R.string.characters_story_conflict),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.extras.warning,
+                    modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 8.dp),
+                )
+            }
         }
         item {
             LabeledField(
@@ -137,6 +177,18 @@ internal fun StoryMemoryScreen(id: String, nav: FeatureNav) {
                 minLines = 10,
                 error = if (tooLong) stringResource(R.string.characters_story_too_long) else null,
             )
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AtomTextButton(stringResource(R.string.characters_story_reload), ::reload, Modifier.weight(1f))
+                AtomTextButton(
+                    stringResource(R.string.characters_story_save),
+                    ::save,
+                    Modifier.weight(1f),
+                    primary = true,
+                    enabled = !tooLong && (t != saved || conflict),
+                )
+            }
         }
         if (t.isNotEmpty()) {
             item {
