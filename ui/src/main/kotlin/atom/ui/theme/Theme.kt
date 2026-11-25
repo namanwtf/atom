@@ -27,6 +27,7 @@ import top.yukonga.miuix.kmp.theme.Colors
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.defaultTextStyles
 import androidx.compose.material3.lightColorScheme as materialLight
 import top.yukonga.miuix.kmp.theme.darkColorScheme as miuixDark
 import top.yukonga.miuix.kmp.theme.lightColorScheme as miuixLight
@@ -103,7 +104,9 @@ fun AtomTheme(appearance: Appearance, content: @Composable () -> Unit) {
     )
     val density = LocalDensity.current
     val scaled = remember(density, appearance.textSize) { Density(density.density, density.fontScale * appearance.textSize.scale) }
-    MiuixTheme(controller = controller) {
+    // Group titles in a medium weight (the library default is bold), matching the Atom settings pages.
+    val textStyles = remember { defaultTextStyles().let { it.copy(subtitle = it.subtitle.copy(fontWeight = FontWeight.Medium)) } }
+    MiuixTheme(controller = controller, textStyles = textStyles) {
         // The controller's colours, then Atom's adjustments (pure black, monochrome accent) on top.
         val raw = MiuixTheme.colorScheme
         val colors = adjustColors(raw, dark, ThemeSpec.pureBlack(appearance, dark), ThemeSpec.usesMonochrome(appearance))

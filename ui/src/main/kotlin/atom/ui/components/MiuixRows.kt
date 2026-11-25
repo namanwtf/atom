@@ -1,6 +1,7 @@
 package atom.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,28 +14,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
+import top.yukonga.miuix.kmp.basic.DropdownDefaults
+import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InputField
+import top.yukonga.miuix.kmp.basic.Switch
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.CheckboxLocation
-import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
+import top.yukonga.miuix.kmp.popup.WindowDropdownPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.window.WindowDialog
@@ -44,11 +51,6 @@ import top.yukonga.miuix.kmp.window.WindowDialog
  * depending on the library's exact signatures. Rows go inside a [Group]. Popups, dialogs and sheets open in their
  * own window, so they work on any screen (not only inside a Miuix Scaffold).
  */
-
-private fun startIcon(icon: ImageVector?, enabled: Boolean): (@Composable () -> Unit)? {
-    if (icon == null) return null
-    return { RowIcon(icon, enabled) }
-}
 
 private fun optionIcon(vector: ImageVector?): (@Composable (Modifier) -> Unit)? {
     if (vector == null) return null
@@ -66,26 +68,20 @@ fun ArrowRow(
     value: String? = null,
     enabled: Boolean = true,
 ) {
-    if (value != null) {
-        ArrowPreference(
-            title = title,
-            modifier = modifier,
-            summary = summary,
-            startAction = startIcon(icon, enabled),
-            endActions = { RowValue(value) },
-            onClick = onClick,
-            enabled = enabled,
-        )
-    } else {
-        ArrowPreference(
-            title = title,
-            modifier = modifier,
-            summary = summary,
-            startAction = startIcon(icon, enabled),
-            onClick = onClick,
-            enabled = enabled,
-        )
-    }
+    AtomRow(
+        title = title,
+        modifier = modifier,
+        icon = icon,
+        summary = summary,
+        enabled = enabled,
+        onClick = onClick,
+        end = {
+            if (value != null) {
+                Box(Modifier.align(Alignment.CenterVertically).weight(1f, fill = false)) { RowValue(value) }
+            }
+            Box(Modifier.align(Alignment.CenterVertically)) { RowChevron() }
+        },
+    )
 }
 
 /** Row with a Miuix switch at the end; tapping the row toggles it. */
@@ -99,14 +95,19 @@ fun SwitchRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
-    SwitchPreference(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
+    AtomRow(
         title = title,
         modifier = modifier,
+        icon = icon,
         summary = summary,
-        startAction = startIcon(icon, enabled),
         enabled = enabled,
+        onClick = { onCheckedChange(!checked) },
+        role = Role.Switch,
+        end = {
+            Box(Modifier.align(Alignment.CenterVertically)) {
+                Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+            }
+        },
     )
 }
 
@@ -121,15 +122,19 @@ fun CheckboxRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
-    CheckboxPreference(
+    AtomRow(
         title = title,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
         modifier = modifier,
+        icon = icon,
         summary = summary,
-        startAction = startIcon(icon, enabled),
-        checkboxLocation = CheckboxLocation.End,
         enabled = enabled,
+        onClick = { onCheckedChange(!checked) },
+        role = Role.Checkbox,
+        end = {
+            Box(Modifier.align(Alignment.CenterVertically)) {
+                AtomCheckbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+            }
+        },
     )
 }
 
@@ -159,22 +164,22 @@ fun DropdownRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
-    WindowDropdownPreference(
-        items = items,
-        selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
+    SpinnerRow(
         title = title,
+        options = items.map { SpinnerOption(it) },
+        selectedIndex = selectedIndex,
+        onSelect = onSelect,
         modifier = modifier,
+        icon = icon,
         summary = summary,
-        startAction = startIcon(icon, enabled),
-        enabled = enabled && items.isNotEmpty(),
-        onSelectedIndexChange = onSelect,
+        enabled = enabled,
     )
 }
 
 /** One choice in a [SpinnerRow]: title, optional summary line and optional icon. */
 data class SpinnerOption(val title: String, val summary: String? = null, val icon: ImageVector? = null)
 
-/** Like [DropdownRow], but each choice can carry a summary line and an icon (Miuix spinner). */
+/** Like [DropdownRow], but each choice can carry a summary line and an icon. */
 @Composable
 fun SpinnerRow(
     title: String,
@@ -186,22 +191,67 @@ fun SpinnerRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
-    val items = options.map { o ->
-        DropdownItem(
-            text = o.title,
-            summary = o.summary,
-            icon = optionIcon(o.icon),
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val entry = remember(options, selectedIndex) {
+        DropdownEntry(
+            options.mapIndexed { i, o ->
+                DropdownItem(
+                    text = o.title,
+                    selected = i == selectedIndex,
+                    onClick = { currentOnSelect(i) },
+                    icon = optionIcon(o.icon),
+                    summary = o.summary,
+                )
+            },
         )
     }
-    WindowSpinnerPreference(
-        items = items,
-        selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
+    var expanded by remember { mutableStateOf(false) }
+    var holdDown by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val active = enabled && options.isNotEmpty()
+    val c = MiuixTheme.colorScheme
+    val actionColor = if (active) c.onSurfaceVariantActions else c.disabledOnSecondaryVariant
+    val current = options.getOrNull(selectedIndex)?.title
+    AtomRow(
         title = title,
         modifier = modifier,
+        icon = icon,
         summary = summary,
-        startAction = startIcon(icon, enabled),
-        enabled = enabled && items.isNotEmpty(),
-        onSelectedIndexChange = onSelect,
+        enabled = active,
+        onClick = {
+            expanded = !expanded
+            if (expanded) {
+                holdDown = true
+                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+            }
+        },
+        role = Role.DropdownList,
+        holdDown = holdDown,
+        end = {
+            if (!current.isNullOrEmpty()) {
+                Text(
+                    text = current,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .align(Alignment.CenterVertically)
+                        .weight(1f, fill = false),
+                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = actionColor,
+                    textAlign = TextAlign.End,
+                )
+            }
+            DropdownArrowEndAction(actionColor = actionColor)
+            if (options.isNotEmpty()) {
+                WindowDropdownPopup(
+                    entry = entry,
+                    show = expanded,
+                    onDismiss = { expanded = false },
+                    maxHeight = null,
+                    dropdownColors = DropdownDefaults.dropdownColors(),
+                    onDismissFinished = { holdDown = false },
+                )
+            }
+        },
     )
 }
 
