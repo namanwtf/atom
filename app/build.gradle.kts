@@ -48,15 +48,25 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.namanwtf.atomnext"
+        // The same id as the earlier Atom app, so a phone that has it installed updates in place (Android also
+        // requires the same signing certificate; see docs/UPDATES.md).
+        applicationId = "io.github.namanwtf.atom"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // versionCode rule: yyyyMMdd * 100 + the 15-minute slot of the UTC day (0..95), stamped by
+        // .github/workflows/release.yml. It never decreases: Android refuses an update with a lower versionCode than
+        // the installed one. The earlier app's last release was below 2026112500. This committed value is only the
+        // floor; the release workflow always publishes something higher (and never commits its value back).
+        versionCode = 2026112600
+        versionName = "4.0.0"
         ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
+        debug {
+            // A debug build installs next to the release app instead of replacing it.
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

@@ -22,7 +22,7 @@ import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.PresetCatalog
 import atom.ui.theme.ThemeMode
 
-internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "atom4_settings")
 
 /** Hardware path for on-device inference. GGUF models only distinguish GPU offload from CPU. */
 @Serializable

@@ -19,7 +19,7 @@ import okhttp3.OkHttpClient
  * The app calls [install] once from `Application.onCreate`; [atom.voice.ui.VoiceFeature.onAppCreate] calls [init].
  */
 object Speech {
-    private const val PREFS = "atom_speech"
+    private const val PREFS = "atom4_speech"
     private const val KEY_CONFIG = "config.v1"
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }

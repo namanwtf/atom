@@ -35,7 +35,7 @@ enum class ToolSwitch(val key: String, val title: String, val summary: String, v
  * tool it covers, even mid-run. Losing a permission never changes these.
  */
 object ToolSwitches {
-    private const val PREFS = "atom_tool_switches"
+    private const val PREFS = "atom4_tool_switches"
 
     @Volatile
     private var prefs: SharedPreferences? = null

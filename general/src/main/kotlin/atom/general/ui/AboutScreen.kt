@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,7 +21,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import atom.general.GeneralConfig
 import atom.general.R
+import atom.general.update.InstallState
 import atom.general.update.UpdateChecker
+import atom.general.update.UpdateInstaller
 import atom.general.update.UpdateStatus
 import atom.ui.components.CompactButton
 import atom.ui.components.Group
@@ -47,9 +50,11 @@ internal fun AboutScreen(nav: FeatureNav) {
     val feedback = GeneralConfig.feedback.trim()
     var status by remember { mutableStateOf(if (repo.isEmpty()) UpdateStatus.NotConfigured else UpdateChecker.cachedFor(repo)) }
     var checking by remember { mutableStateOf(false) }
+    val installState by UpdateInstaller.state.collectAsState()
 
     fun check(force: Boolean) {
         if (repo.isEmpty() || checking) return
+        if (force) UpdateInstaller.reset()
         scope.launch {
             checking = true
             status = UpdateChecker.check(repo, version, force)
@@ -83,8 +88,17 @@ internal fun AboutScreen(nav: FeatureNav) {
                 )
                 GroupDivider()
                 val s = status
+                val install = installState
                 val subtitle = when {
                     checking -> stringResource(R.string.about_checking)
+                    s is UpdateStatus.Available && install !is InstallState.Idle -> when (install) {
+                        is InstallState.Downloading -> stringResource(R.string.about_update_downloading, install.percent)
+                        InstallState.Verifying -> stringResource(R.string.about_update_verifying)
+                        InstallState.NeedsPermission -> stringResource(R.string.about_update_permission)
+                        InstallState.WaitingForUser -> stringResource(R.string.about_update_confirm)
+                        is InstallState.Failed -> stringResource(R.string.about_update_failed, install.reason)
+                        InstallState.Idle -> null
+                    }
                     s == null -> stringResource(R.string.about_tap_to_check)
                     s is UpdateStatus.NotConfigured -> stringResource(R.string.about_updates_not_configured)
                     s is UpdateStatus.UpToDate -> stringResource(R.string.about_up_to_date)
@@ -101,10 +115,19 @@ internal fun AboutScreen(nav: FeatureNav) {
                     onClick = { check(force = true) },
                     trailing = if (s is UpdateStatus.Available) {
                         {
-                            CompactButton(
-                                stringResource(R.string.about_download),
-                                onClick = { openExternal(context, s.releaseUrl) },
-                            )
+                            val apk = s.apk
+                            if (apk != null && install !is InstallState.Failed) {
+                                // Downloads, checks the SHA-256 and signing key, then opens the system installer.
+                                CompactButton(
+                                    stringResource(R.string.about_update),
+                                    onClick = { UpdateInstaller.start(context, apk) },
+                                )
+                            } else {
+                                CompactButton(
+                                    stringResource(R.string.about_download),
+                                    onClick = { openExternal(context, s.releaseUrl) },
+                                )
+                            }
                         }
                     } else {
                         null
