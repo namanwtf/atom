@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -124,12 +125,18 @@ internal fun Composer(
             QueuePanel(state.queued, state.running, callbacks)
         }
         if (editing != null) {
-            Text(
-                stringResource(if (editReplacesLater) R.string.composer_edit_replace_later else R.string.composer_edit_replace),
-                fontSize = 13.sp,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 18.dp),
-            )
+            // The caption with its cancel action; the + button stays so an edited message can take attachments.
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(if (editReplacesLater) R.string.composer_edit_replace_later else R.string.composer_edit_replace),
+                    fontSize = 13.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = callbacks.onCancelEdit) {
+                    Icon(Icons.Filled.Close, stringResource(R.string.composer_cancel_edit), Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                }
+            }
         }
         Column(
             Modifier
@@ -168,13 +175,7 @@ internal fun Composer(
                 )
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (editing != null) {
-                    IconButton(onClick = callbacks.onCancelEdit, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.Close, stringResource(R.string.composer_cancel_edit), Modifier.size(20.dp), tint = colors.onSurface.copy(alpha = 0.72f))
-                    }
-                } else {
-                    AttachButton(callbacks)
-                }
+                AttachButton(callbacks)
                 Spacer(Modifier.width(2.dp))
                 ReasoningChip(state.reasoning, enabled = !state.running, callbacks)
                 Spacer(Modifier.weight(1f))
@@ -188,7 +189,7 @@ internal fun Composer(
                     enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.78f) + expandHorizontally(),
                     exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.78f) + shrinkHorizontally(),
                 ) {
-                    Box(Modifier.padding(end = 4.dp)) { ExtraStop(callbacks.onStop) }
+                    ExtraStop(callbacks.onStop)
                 }
                 SendButton(running = state.running, canSend = hasContent, onSend = callbacks.onSend, onStop = callbacks.onStop)
             }
@@ -297,6 +298,8 @@ private fun ReasoningChip(ui: ReasoningUi, enabled: Boolean, callbacks: Composer
     val border by animateColorAsState(if (on) ink.accent(0.30f, 0.22f) else ink.ink(0.10f, 0.065f), tween(160), label = "thinkBorder")
     val content by animateColorAsState(if (on) colors.primary else ink.ink(0.58f, 0.54f), tween(160), label = "thinkText")
     val label = when {
+        // Forced reasoning with no levels to pick: a fixed "Default".
+        fixed -> stringResource(R.string.reasoning_fixed_default)
         !on -> stringResource(R.string.reasoning_think)
         ui.effort != null -> effortLabel(ui.effort)
         else -> stringResource(R.string.reasoning_deep)
@@ -393,14 +396,15 @@ private fun ExtraStop(onStop: () -> Unit) {
     val description = stringResource(R.string.composer_stop_run)
     Box(
         Modifier
-            .size(32.dp)
+            .minimumInteractiveComponentSize()
             .clip(CircleShape)
-            .background(colors.surfaceContainerHigh)
             .clickable(onClick = onStop)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(10.dp).background(colors.onSurface, RoundedCornerShape(2.dp)))
+        Box(Modifier.size(32.dp).background(colors.surfaceContainerHigh, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(10.dp).background(colors.onSurface, RoundedCornerShape(2.dp)))
+        }
     }
 }
 

@@ -94,7 +94,11 @@ import atom.app.ui.common.humanizeTool
 import atom.characters.ui.CharacterAvatar
 import atom.core.home.ConversationGroup
 import atom.core.home.ConversationGroups
+import atom.ui.components.ArrowRow
 import atom.ui.components.AtomMenu
+import atom.ui.components.AtomSearchBar
+import atom.ui.components.Group
+import androidx.compose.material3.minimumInteractiveComponentSize
 import atom.ui.components.ScreenIcons
 import atom.ui.theme.AtomIcons
 
@@ -322,40 +326,16 @@ private fun Workbench(activeModel: String?, callbacks: DrawerCallbacks) {
         callbacks.onSkills?.let { add(Triple(Icons.Outlined.AutoAwesome, R.string.drawer_skills, it)) }
         callbacks.onScheduled?.let { add(Triple(Icons.Outlined.Schedule, R.string.drawer_scheduled, it)) }
     }
-    Column(
-        Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceContainer),
-    ) {
+    // The foundation's Miuix card and arrow rows (icon, title, end value, arrow).
+    Group(Modifier.padding(horizontal = 16.dp)) {
         entries.forEachIndexed { i, (icon, title, onClick) ->
-            if (i > 0) HorizontalDivider(Modifier.padding(start = 47.dp), thickness = 0.5.dp, color = colors.outlineVariant.copy(alpha = 0.45f))
-            WorkbenchRow(icon, stringResource(title), if (i == 0) activeModel ?: stringResource(R.string.home_not_set) else null, onClick)
+            ArrowRow(
+                title = stringResource(title),
+                onClick = onClick,
+                icon = icon,
+                value = if (i == 0) activeModel ?: stringResource(R.string.home_not_set) else null,
+            )
         }
-    }
-}
-
-@Composable
-private fun WorkbenchRow(icon: ImageVector, title: String, value: String?, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .heightIn(min = 46.dp)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, Modifier.size(19.dp), tint = colors.onSurface.copy(alpha = 0.85f))
-        Spacer(Modifier.width(12.dp))
-        Text(title, fontSize = 15.sp, color = colors.onSurface, maxLines = 1, modifier = Modifier.weight(1f))
-        if (value != null) {
-            Spacer(Modifier.width(8.dp))
-            Text(value, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 136.dp))
-        }
-        Spacer(Modifier.width(4.dp))
-        Icon(ChatGlyphs.Chevron, null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
     }
 }
 
@@ -442,8 +422,12 @@ private fun ConversationRow(
                 }
                 if (status != null) {
                     Text(status, fontSize = 12.sp, color = colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-                } else if (row.snippet != null) {
-                    Text(row.snippet, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                } else {
+                    // Search hit, or the last message; skipped when the title already shows it.
+                    val preview = (row.snippet ?: s.preview).replace('\n', ' ').trim()
+                    if (preview.isNotEmpty() && preview != title) {
+                        Text(preview, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    }
                 }
             }
             when {
@@ -459,7 +443,7 @@ private fun ConversationRow(
             if (selected) {
                 Spacer(Modifier.width(4.dp))
                 Box(
-                    Modifier.size(28.dp).clip(CircleShape).clickable { menu = true },
+                    Modifier.minimumInteractiveComponentSize().size(28.dp).clip(CircleShape).clickable { menu = true },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Filled.MoreHoriz, stringResource(R.string.drawer_more), Modifier.size(20.dp), tint = colors.onSurfaceVariant)
@@ -570,59 +554,16 @@ private fun Dock(
 
 @Composable
 private fun SearchCapsule(query: String, onQuery: (String) -> Unit, onFocus: (Boolean) -> Unit, modifier: Modifier) {
-    val colors = MaterialTheme.colorScheme
-    val ink = homeInk()
-    val field = rememberTextFieldState(query)
-    var focused by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(field) { snapshotFlow { field.text.toString() }.collect(onQuery) }
-    LaunchedEffect(query) { if (query.isEmpty() && field.text.isNotEmpty()) field.setTextAndPlaceCursorAtEnd("") }
-    val shape = RoundedCornerShape(50)
-    Row(
-        modifier
-            .height(44.dp)
-            .clip(shape)
-            .background(ink.glassButton)
-            .border(0.5.dp, ink.glassEdge, shape)
-            .clickable { focusRequester.requestFocus() },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(Modifier.width(14.dp))
-        Icon(ChatGlyphs.Search, null, Modifier.size(20.dp), tint = if (focused) colors.primary else colors.onSurfaceVariant)
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            val style = TextStyle(fontSize = 15.sp, lineHeight = 20.sp)
-            if (field.text.isEmpty()) {
-                Text(stringResource(R.string.drawer_search), style = style, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            BasicTextField(
-                state = field,
-                textStyle = style.copy(color = colors.onSurface),
-                cursorBrush = SolidColor(colors.primary),
-                lineLimits = TextFieldLineLimits.SingleLine,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-                    .onFocusChanged {
-                        focused = it.isFocused
-                        onFocus(it.isFocused)
-                    },
-            )
-        }
-        AnimatedVisibility(visible = field.text.isNotEmpty(), enter = fadeIn() + scaleIn(initialScale = 0.8f), exit = fadeOut() + scaleOut(targetScale = 0.8f)) {
-            val clear = stringResource(R.string.drawer_clear_search)
-            Box(
-                Modifier
-                    .padding(end = 8.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .clickable { field.setTextAndPlaceCursorAtEnd("") }
-                    .semantics { contentDescription = clear },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Close, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-            }
-        }
-        if (field.text.isEmpty()) Spacer(Modifier.width(14.dp))
-    }
+    // The foundation's Miuix search field (search glyph, clear button while there is text).
+    var text by remember { mutableStateOf(query) }
+    LaunchedEffect(query) { if (query.isEmpty() && text.isNotEmpty()) text = "" }
+    AtomSearchBar(
+        query = text,
+        onQueryChange = {
+            text = it
+            onQuery(it)
+        },
+        label = stringResource(R.string.drawer_search),
+        modifier = modifier.onFocusChanged { onFocus(it.hasFocus) },
+    )
 }

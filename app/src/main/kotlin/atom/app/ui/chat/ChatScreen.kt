@@ -114,6 +114,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -284,7 +285,13 @@ fun ChatScreen(
     )
 
     val actions = MessageActions(
-        onCopy = { copy(it) },
+        onCopy = {
+            copy(it)
+            // Android 13+ confirms clipboard writes itself; older versions get a toast.
+            if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.S_V2) {
+                Toast.makeText(context, R.string.chat_copied, Toast.LENGTH_SHORT).show()
+            }
+        },
         onRegenerate = vm::regenerate,
         onBranch = { vm.branch(it, context.getString(R.string.chat_branch_suffix)) },
         onDeleteFrom = vm::deleteFrom,
@@ -562,24 +569,36 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
             content()
             val progress = state.progress
             if (progress > 0f) {
+                val closeLabel = stringResource(R.string.home_close_drawer)
                 Box(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = state.progress }
                         .background(Color.Black.copy(alpha = 0.16f))
-                        .pointerInput(Unit) { detectTapGestures { scope.launch { state.animateTo(false) } } },
+                        .pointerInput(Unit) { detectTapGestures { scope.launch { state.animateTo(false) } } }
+                        .semantics {
+                            contentDescription = closeLabel
+                            onClick(label = closeLabel) {
+                                scope.launch { state.animateTo(false) }
+                                true
+                            }
+                        },
                 )
             }
         }
-        // The pane slides in from the start edge by the same amount.
-        Box(
-            Modifier
-                .width(paneWidth)
-                .fillMaxHeight()
-                .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
-                .background(paneColor())
-                .edgeLine(),
-        ) { pane() }
+        // The pane slides in from the start edge by the same amount. Fully closed, it is not composed at all, so
+        // screen readers and keyboard focus never land on hidden controls (the list and search live in the
+        // view model and come back as they were).
+        if (state.offset > 0f || state.target) {
+            Box(
+                Modifier
+                    .width(paneWidth)
+                    .fillMaxHeight()
+                    .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
+                    .background(paneColor())
+                    .edgeLine(),
+            ) { pane() }
+        }
     }
 }
 
@@ -847,8 +866,22 @@ private fun ModelCapsule(info: EngineInfo, enabled: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun capsuleLabel(info: EngineInfo): String =
-    if (info.live || (info.ready && info.name != null)) info.name.orEmpty() else stringResource(R.string.home_not_selected)
+private fun capsuleLabel(info: EngineInfo): String = when {
+    info.live || (info.ready && info.name != null) -> info.name.orEmpty()
+    info.reason == NotReady.SignIn && info.providerName != null -> stringResource(R.string.home_sign_in_capsule, info.providerName)
+    else -> stringResource(R.string.home_not_selected)
+}
+
+/** The send-blocked banner: the specific reason when there is one. */
+@Composable
+private fun needsModelText(info: EngineInfo): String {
+    val provider = info.providerName
+    return when {
+        info.reason == NotReady.SignIn && provider != null -> stringResource(R.string.home_sign_in_needed, provider)
+        info.reason == NotReady.KeyUnreadable && provider != null -> stringResource(R.string.mdl_route_key_unreadable, provider)
+        else -> stringResource(R.string.chat_configure_model)
+    }
+}
 
 /** A titled conversation: the title over a small model line; character chats add the avatar on the left. */
 @Composable
@@ -920,7 +953,7 @@ private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel
         QuietBanner(
             AtomIcons.Chip,
             colors.primary,
-            stringResource(R.string.chat_configure_model),
+            needsModelText(state.engine),
             onDismiss = onDismissNeedsModel,
             action = stringResource(R.string.screen_models),
             onAction = {

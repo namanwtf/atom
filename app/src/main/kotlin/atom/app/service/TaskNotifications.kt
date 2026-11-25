@@ -20,10 +20,15 @@ import atom.app.ui.MainActivity
 import atom.app.ui.chat.ChatLinkActivity
 import atom.app.ui.common.humanizeTool
 import atom.core.llm.Role
+import atom.core.runtime.LiveUpdate
 import atom.ui.feature.RunPhase
 
 class TaskNotifications(private val context: Context) {
     private val manager = NotificationManagerCompat.from(context)
+
+    /** Settings › "Live Update notification": promote the single-run notification on Android 16+. */
+    @Volatile
+    var liveUpdates: Boolean = true
 
     fun createChannels() {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
@@ -48,7 +53,10 @@ class TaskNotifications(private val context: Context) {
      * "Running tasks" summary and every run gets its own child notification with Open and Stop.
      */
     fun foreground(active: List<LiveRun>): Notification {
-        if (active.size <= 1) return runNotification(active.firstOrNull(), asGroupChild = false)
+        if (active.size <= 1) {
+            val promote = LiveUpdate.promote(Build.VERSION.SDK_INT, liveUpdates, singleRun = true)
+            return runNotification(active.firstOrNull(), asGroupChild = false, promote = promote)
+        }
         val inbox = NotificationCompat.InboxStyle()
         active.forEach { inbox.addLine(titleOf(it) + " · " + statusOf(it)) }
         return base(CH_TASK)
@@ -79,7 +87,7 @@ class TaskNotifications(private val context: Context) {
         }
     }
 
-    private fun runNotification(run: LiveRun?, asGroupChild: Boolean): Notification {
+    private fun runNotification(run: LiveRun?, asGroupChild: Boolean, promote: Boolean = false): Notification {
         val builder = base(CH_TASK)
             .setContentTitle(run?.let(::titleOf) ?: context.getString(R.string.notif_working_title))
             .setContentText(run?.let(::statusOf) ?: context.getString(R.string.notif_starting))
@@ -104,7 +112,32 @@ class TaskNotifications(private val context: Context) {
             }
             builder.addAction(0, context.getString(R.string.action_stop), broadcast(TaskActionReceiver.ACTION_STOP, id, REQ_STOP + childId(id)))
         }
+        if (promote) promoteAsLiveUpdate(builder, run)
         return builder.build()
+    }
+
+    /**
+     * Android 16+: asks for a Live Update (status-bar chip, top of the shade). The chip reads "Working" while Atom
+     * acts and "Answering" while the final answer streams. The system only promotes ongoing, non-colorized
+     * notifications with a title, which this one is; older Androids keep the plain ongoing notification.
+     */
+    private fun promoteAsLiveUpdate(builder: NotificationCompat.Builder, run: LiveRun?) {
+        if (Build.VERSION.SDK_INT < LiveUpdate.MIN_SDK) return
+        val chip = LiveUpdate.chip(
+            paused = run?.phase == RunPhase.Paused,
+            waitingForUser = run?.pending != null,
+            usingTool = run?.currentTool != null,
+            streamingAnswer = run != null && run.stream.text.isNotEmpty(),
+        )
+        val text = when (chip) {
+            LiveUpdate.Chip.Working -> R.string.live_working
+            LiveUpdate.Chip.Answering -> R.string.run_answering
+            LiveUpdate.Chip.Paused -> R.string.run_paused
+            LiveUpdate.Chip.Waiting -> R.string.live_waiting
+        }
+        builder.setColorized(false)
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(context.getString(text))
     }
 
     private fun titleOf(run: LiveRun): String = run.conversation.title.ifBlank { context.getString(R.string.notif_working_title) }

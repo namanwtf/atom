@@ -75,7 +75,23 @@ data class EngineInfo(
     val live: Boolean = false,
     val ready: Boolean = true,
     val logo: String? = null,
+    /** Why the selection is not usable, when it is not. */
+    val reason: NotReady? = null,
+    /** The provider's display name, for "sign in to …" and "enter the key for … again". */
+    val providerName: String? = null,
 )
+
+/** Why a model selection cannot be used yet. */
+enum class NotReady {
+    /** No usable selection at all, or the provider has no key. */
+    Configure,
+
+    /** An account provider (ChatGPT, Grok) that is not signed in. */
+    SignIn,
+
+    /** The stored key could not be decrypted (for example after a restore to another phone). */
+    KeyUnreadable,
+}
 
 /** The reasoning chip and effort picker for the current conversation's model. */
 data class ReasoningUi(val support: ReasoningSupport, val enabled: Boolean, val effort: ReasoningEffort?)
@@ -162,6 +178,7 @@ private data class Readiness(
     val savedKeys: Set<String>,
     val signedIn: Set<String>,
     val installed: List<InstalledModel>,
+    val unreadable: Set<String> = emptySet(),
 ) {
     val facts: List<ProviderFacts> = providers.map { p ->
         ProviderFacts(p.id, p.enabled, p.keyOptional, accountAuth = p.auth != AuthMethod.ApiKey, modelIds = p.models.map { it.id })
@@ -234,7 +251,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         graph.vault.savedProviders,
         graph.vault.signedInProviders,
         graph.models.installed,
-    ) { providers, saved, signedIn, installed -> Readiness(providers, saved, signedIn, installed) }
+        graph.vault.unreadable,
+    ) { providers, saved, signedIn, installed, unreadable -> Readiness(providers, saved, signedIn, installed, unreadable) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Subagent runs of the selected conversation's current or last run (in memory only). */
@@ -313,6 +331,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             graph.chatRequests.collect { requests -> requests.forEach { handle(it) } }
         }
         viewModelScope.launch { runCatching { CharacterSession.store.load() } }
+        // Voice smart correction and other helpers follow the conversation on screen (null for a new chat).
+        viewModelScope.launch { selectedId.collect { graph.focusedConversationId = it } }
     }
 
     /**
@@ -718,7 +738,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         if (live != null && live.active && live.engineLabel != null) {
             return EngineInfo(live.engineLabel, live.onDevice, missing = false, live = true, ready = true, logo = logo)
         }
-        if (selection == null) return EngineInfo(null, onDevice = false, missing = false, ready = false)
+        if (selection == null) return EngineInfo(null, onDevice = false, missing = false, ready = false, reason = NotReady.Configure)
         val info = graph.modelInfo
         val name = runCatching { info.modelName(selection) }.getOrNull()
         val exists = runCatching { info.exists(selection) }.getOrDefault(true)
@@ -734,14 +754,31 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             )
             is EngineSelection.Local -> ModelReadiness.localReady(selection.installedModelId, ready.installed.map { it.id })
         })
-        return EngineInfo(name, selection is EngineSelection.Local, missing = !exists, ready = usable, logo = logo)
+        val cloud = selection as? EngineSelection.Cloud
+        val provider = cloud?.let { runCatching { info.provider(it) }.getOrNull() }
+        val reason = when {
+            usable -> null
+            provider != null && provider.enabled && provider.auth != AuthMethod.ApiKey && ready != null && provider.id !in ready.signedIn -> NotReady.SignIn
+            provider != null && ready != null && provider.id in ready.unreadable -> NotReady.KeyUnreadable
+            else -> NotReady.Configure
+        }
+        return EngineInfo(
+            name,
+            selection is EngineSelection.Local,
+            missing = !exists,
+            ready = usable,
+            logo = logo,
+            reason = reason,
+            providerName = provider?.displayName,
+        )
     }
 
     private fun logoKey(selection: EngineSelection): String? = runCatching {
         when (selection) {
             is EngineSelection.Cloud -> {
                 val provider = graph.modelInfo.provider(selection)
-                ProviderBrands.key(selection.providerId, provider?.displayName, selection.baseUrl ?: provider?.baseUrl, selection.model)
+                val modelName = provider?.model(selection.model)?.displayName
+                ProviderBrands.key(provider?.presetId, selection.model) ?: modelName?.let { ProviderBrands.modelKey(it) }
             }
             is EngineSelection.Local -> ProviderBrands.key(null, model = graph.modelInfo.modelName(selection))
         }
@@ -761,6 +798,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     }
 
     override fun onCleared() {
+        if (graph.focusedConversationId == selectedId.value) graph.focusedConversationId = null
         selectedId.value?.let { runner.clearFinished(it) }
         super.onCleared()
     }

@@ -80,6 +80,8 @@ sealed interface ChatItem {
         val streaming: Boolean,
         /** The turn ended (with an answer, or stopped); message actions apply. */
         val finished: Boolean,
+        /** Search suggestions the provider attached to the answer (Gemini grounding), shown under it. */
+        val answerSuggestions: atom.core.llm.SearchSuggestions? = null,
     ) : ChatItem {
         val summary: WorkSummary
             get() {
@@ -155,6 +157,7 @@ object Transcript {
         var answer: String? = null
         var answerIndex: Int? = null
         var answerReasoning: WorkEntry.Thought? = null
+        var answerSuggestions: atom.core.llm.SearchSuggestions? = null
         val calls = LinkedHashMap<String, StepCall>()
 
         fun assistant(i: Int, s: StoredMessage) {
@@ -168,6 +171,7 @@ object Transcript {
                 if (text.isNotEmpty()) {
                     answer = text
                     answerIndex = i
+                    answerSuggestions = s.searchSuggestions?.takeIf { !it.isEmpty }
                 }
                 return
             }
@@ -217,6 +221,7 @@ object Transcript {
             answer = null
             answerIndex = null
             answerReasoning = null
+            answerSuggestions = null
         }
 
         private fun addStep(step: StepCall) {
@@ -279,6 +284,7 @@ object Transcript {
                 live = live,
                 streaming = streaming,
                 finished = !live,
+                answerSuggestions = answerSuggestions.takeIf { !streaming },
             )
         }
     }

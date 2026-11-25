@@ -1,6 +1,10 @@
 package atom.app.ui
 
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -72,11 +76,20 @@ fun AtomRoot(settings: AppSettings) {
     // Every launch opens on the home chat. Setup stays reachable from the drawer's Permissions button and the
     // "Turn on Accessibility" nudge; the first launch is recorded so nothing that keys off it is lost.
     var stack by rememberSaveable { mutableStateOf(listOf(Routes.CHAT)) }
-    LaunchedEffect(settings.onboarded) {
-        if (!settings.onboarded) graph.settings.setOnboarded()
-    }
     // The four items the old sidebar badge watched: background running, floating window, accessibility, notifications.
     var permissionsNeedAttention by remember { mutableStateOf(false) }
+    val notificationPrompt = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permissionsNeedAttention = PermissionAttention.needed(context)
+    }
+    LaunchedEffect(settings.onboarded) {
+        if (settings.onboarded) return@LaunchedEffect
+        // First launch only: ask once for notifications (running-task controls and results), then never again here.
+        val permission = "android.permission.POST_NOTIFICATIONS"
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+            runCatching { notificationPrompt.launch(permission) }
+        }
+        graph.settings.setOnboarded()
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         permissionsNeedAttention = PermissionAttention.needed(context)
     }

@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class AutomationRuntime private constructor(context: Context) {
     val context: Context = context.applicationContext
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val file = File(this.context.filesDir, "automation/state.json")
+    private val file = File(this.context.filesDir, "atom4_automation/state.json")
     private val writes = Channel<Snapshot>(Channel.CONFLATED)
     val state: AutomationState = AutomationState(load()) { writes.trySend(it) }
     val notifier = Notifier(this.context)
