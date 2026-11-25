@@ -109,9 +109,9 @@ class BubbleGeometryTest {
         val target = Pt(0f, 0f)
         val radius = 100f
         assertTrue(DismissMath.captured(Pt(90f, 0f), target, radius, wasCaptured = false))
-        assertFalse(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = false))
-        assertTrue(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = true))
-        assertFalse(DismissMath.captured(Pt(140f, 0f), target, radius, wasCaptured = true))
+        assertFalse(DismissMath.captured(Pt(110f, 0f), target, radius, wasCaptured = false))
+        assertTrue(DismissMath.captured(Pt(110f, 0f), target, radius, wasCaptured = true))
+        assertFalse(DismissMath.captured(Pt(120f, 0f), target, radius, wasCaptured = true))
     }
 
     @Test
