@@ -63,6 +63,22 @@ import atom.ui.components.RowChevron
 import atom.ui.components.SectionLabel
 import atom.ui.components.StatusLine
 import atom.ui.theme.extras
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
+import atom.linux.SharedFolder
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomDialog
+import atom.ui.components.AtomRow
+import atom.ui.components.AtomTextButton
+import atom.ui.components.AtomTextField
+import atom.ui.components.DialogButtons
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,73 +171,177 @@ private fun StatusDot(level: HealthReport.Level) {
 
 // ================================================================ shared folders
 
+private val STORAGE_ROOT: String = Environment.getExternalStorageDirectory()?.path ?: "/storage/emulated/0"
+
 @Composable
 internal fun FoldersScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val env = remember { LinuxEnv.get(context) }
     val config by env.config.collectAsStateWithLifecycle()
-    var name by rememberSaveable { mutableStateOf("") }
-    var path by rememberSaveable { mutableStateOf("") }
-    var problem by remember { mutableStateOf<String?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        val p = uri?.let { SharedFolderRules.pathFromTreeUri(it.toString()) } ?: return@rememberLauncherForActivityResult
-        path = p
-        if (name.isBlank()) name = SharedFolderRules.suggestName(p)
-    }
+    var adding by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<SharedFolder?>(null) }
 
     LargeTitleScreen(title = stringResource(R.string.folders_title), onBack = onBack) {
         item {
             Text(
                 stringResource(R.string.folders_body, SharedFolderRules.MAX_FOLDERS),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(4.dp),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
             )
         }
         item {
-            if (config.sharedFolders.isEmpty()) {
-                Text(stringResource(R.string.folders_empty), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
-            } else {
-                Group {
-                    config.sharedFolders.forEachIndexed { i, f ->
-                        if (i > 0) GroupDivider(inset = 18.dp)
-                        val readable = File(f.hostPath).canRead()
-                        GroupRow(
-                            title = f.guestPath,
-                            subtitle = f.hostPath + if (!readable) "\n" + stringResource(R.string.folders_unreadable) else "",
-                            trailing = {
-                                IconButton(onClick = { env.removeSharedFolder(f.name) }) {
-                                    Icon(Icons.Filled.Delete, stringResource(R.string.folders_remove), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            },
-                        )
-                    }
+            SectionLabel(stringResource(R.string.folders_list, config.sharedFolders.size))
+            Group {
+                if (config.sharedFolders.isEmpty()) {
+                    AtomRow(title = stringResource(R.string.folders_empty), summary = stringResource(R.string.folders_empty_body))
+                }
+                for (f in config.sharedFolders) {
+                    val readable = File(f.hostPath).canRead()
+                    AtomRow(
+                        title = f.guestPath,
+                        summary = f.hostPath + if (!readable) "\n" + stringResource(R.string.folders_unreadable) else "",
+                        end = {
+                            Box(Modifier.align(Alignment.CenterVertically)) {
+                                AtomTextButton(stringResource(R.string.folders_remove), { removing = f })
+                            }
+                        },
+                    )
                 }
             }
         }
         item {
-            SectionLabel(stringResource(R.string.folders_add))
-            AtomCard {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.folders_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = path, onValueChange = { path = it }, label = { Text(stringResource(R.string.folders_path)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CompactButton(stringResource(R.string.folders_pick), { picker.launch(null) }, primary = false)
-                    CompactButton(
-                        stringResource(R.string.folders_add),
-                        {
-                            problem = env.addSharedFolder(name, path)
-                            if (problem == null) {
-                                name = ""
-                                path = ""
-                            }
-                        },
-                        enabled = name.isNotBlank() && path.isNotBlank() && config.sharedFolders.size < SharedFolderRules.MAX_FOLDERS,
-                    )
-                }
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Group(Modifier.padding(top = 12.dp)) {
+                ArrowRow(
+                    stringResource(R.string.folders_add),
+                    { adding = true },
+                    enabled = config.sharedFolders.size < SharedFolderRules.MAX_FOLDERS,
+                )
             }
         }
     }
+
+    if (adding) {
+        AddFolderDialog(
+            onDismiss = { adding = false },
+            onAdd = { name, path ->
+                val problem = env.addSharedFolder(name, path)
+                if (problem == null) adding = false
+                problem
+            },
+        )
+    }
+
+    AtomDialog(
+        show = removing != null,
+        onDismiss = { removing = null },
+        title = removing?.let { stringResource(R.string.folders_remove_title, it.name) },
+        summary = stringResource(R.string.folders_remove_body),
+    ) {
+        DialogButtons(
+            confirmText = stringResource(R.string.folders_remove),
+            onConfirm = {
+                removing?.let { env.removeSharedFolder(it.name) }
+                removing = null
+            },
+            dismissText = stringResource(R.string.linux_cancel),
+            onDismiss = { removing = null },
+        )
+    }
+}
+
+/**
+ * Pick a directory under shared storage (or with the system picker), name the mount and add it. [onAdd] returns
+ * a problem to show, or null when the folder was added.
+ */
+@Composable
+private fun AddFolderDialog(onDismiss: () -> Unit, onAdd: (String, String) -> String?) {
+    var path by rememberSaveable { mutableStateOf(STORAGE_ROOT) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var nameEdited by rememberSaveable { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val listing = remember(path) {
+        File(path).listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() }
+    }
+    LaunchedEffect(path) { if (!nameEdited) name = if (path == STORAGE_ROOT) "" else SharedFolderRules.suggestName(path) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val p = uri?.let { SharedFolderRules.pathFromTreeUri(it.toString()) } ?: return@rememberLauncherForActivityResult
+        path = p
+        if (!nameEdited) name = SharedFolderRules.suggestName(p)
+    }
+    val c = MiuixTheme.colorScheme
+
+    AtomDialog(show = true, onDismiss = onDismiss, title = stringResource(R.string.folders_add_title)) {
+        Column {
+            Text(path, style = MiuixTheme.textStyles.body2, color = c.onSurfaceVariantSummary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.secondaryContainer)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                SharedFolderRules.parentWithin(path, STORAGE_ROOT)?.let { up ->
+                    PickerRow("..", onClick = { path = up })
+                }
+                when {
+                    listing == null -> PickerNote(stringResource(R.string.folders_cannot_open))
+                    listing.isEmpty() -> PickerNote(stringResource(R.string.folders_no_subfolders))
+                    else -> listing.forEach { d -> PickerRow(d.name + "/", onClick = { path = d.path }) }
+                }
+            }
+            AtomTextButton(stringResource(R.string.folders_system_picker), { picker.launch(null) }, Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(12.dp))
+            AtomTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    nameEdited = true
+                    problem = null
+                },
+                label = stringResource(R.string.folders_mount_name),
+                singleLine = true,
+            )
+            Text(
+                stringResource(R.string.folders_mount_line, path, if (name.isBlank()) "…" else "/workspace/mounts/$name"),
+                style = MiuixTheme.textStyles.footnote1,
+                color = c.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            problem?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = c.error, modifier = Modifier.padding(top = 6.dp)) }
+            DialogButtons(
+                confirmText = stringResource(R.string.folders_add_confirm),
+                onConfirm = { problem = onAdd(name.trim(), path) },
+                dismissText = stringResource(R.string.linux_cancel),
+                onDismiss = onDismiss,
+                confirmEnabled = name.isNotBlank(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PickerRow(text: String, onClick: () -> Unit) {
+    Text(
+        text,
+        style = MiuixTheme.textStyles.body1,
+        color = MiuixTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
+    )
+}
+
+@Composable
+private fun PickerNote(text: String) {
+    Text(
+        text,
+        style = MiuixTheme.textStyles.body2,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+    )
 }
 
 // ================================================================ file browser
