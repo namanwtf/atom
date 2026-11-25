@@ -387,6 +387,7 @@ def main():
     after = bubble_bounds()
     print(f"[capture] bubble frame before the panel: {before}, after closing it: {after}, unchanged: {before == after}")
     # The same keyboard round with Atom's accessibility service on, so the measured keyboard top is used.
+    sh("logcat -c")
     service = f"{PKG}/atom.device.AtomAccessibilityService"
     sh(f"settings put secure enabled_accessibility_services {service}")
     sh("settings put secure accessibility_enabled 1")
@@ -406,6 +407,9 @@ def main():
     back(wait=1.5)
     if find("^Ask Atom anything$"):
         tap("^Close$", wait=1.5)
+    print("=====LOGCAT AtomOverlay=====")
+    print(sh("logcat -d -s AtomOverlay:I | tail -20"))
+    print("=====END=====")
     sh("settings put secure enabled_accessibility_services ''")
     sh("settings put secure accessibility_enabled 0")
     time.sleep(2)

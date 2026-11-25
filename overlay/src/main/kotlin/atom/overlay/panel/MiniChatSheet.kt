@@ -1,6 +1,7 @@
 package atom.overlay.panel
 
 import android.graphics.Rect
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -42,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -127,6 +129,7 @@ internal fun MiniChatSheet() {
     var windowTop by remember { mutableIntStateOf(0) }
     var seenThisFocus by remember { mutableStateOf(false) }
     val ime = WindowInsets.ime.getBottom(density)
+    val currentIme by rememberUpdatedState(ime)
     SideEffect {
         if (ime > 0 && !insetsSeen) insetsSeen = true
         if (ime > 0 && focused && !seenThisFocus) seenThisFocus = true
@@ -164,8 +167,11 @@ internal fun MiniChatSheet() {
             if (stable == STABLE_READS && focused && seenThisFocus) {
                 // A keyboard closed with Back leaves the field focused: drop focus so the panel grows back and the
                 // next tap on the field starts measuring again.
-                val signals = KeyboardSignals(focused, serviceTop, serviceSaw, ime, insetsSeen, frameKeyboard, windowTop, view.height, bars.height.toInt())
-                if (KeyboardFit.gone(signals)) focusManager.clearFocus()
+                val signals = KeyboardSignals(focused, serviceTop, serviceSaw, currentIme, insetsSeen, frameKeyboard, windowTop, view.height, bars.height.toInt())
+                if (KeyboardFit.closedEverywhere(signals)) {
+                    Log.i(LOG_TAG, "keyboard closed with the field focused; dropping focus ($signals)")
+                    focusManager.clearFocus()
+                }
             }
             if (!focused && stable >= STABLE_READS) break
             delay(if (stable >= STABLE_READS) SLOW_POLL_MS else POLL_MS)
@@ -231,6 +237,7 @@ internal fun MiniChatSheet() {
     }
 }
 
+private const val LOG_TAG = "AtomOverlay"
 private const val POLL_MS = 150L
 private const val SLOW_POLL_MS = 1_000L
 
