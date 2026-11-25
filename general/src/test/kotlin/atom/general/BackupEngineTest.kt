@@ -121,6 +121,16 @@ class BackupEngineTest {
         assertEquals("new-b", b.value)
     }
 
+    @Test fun refusesWhileConversationsSave() = runTest {
+        val a = Fake("a", "old")
+        val e = BackupEngine("1.2.3", { listOf(a) }, { 1_764_000_000_000L }, saving = { true })
+        val file = parseOk(e, exported(Fake("a", "new")))
+        assertEquals(ImportResult.Saving, e.import(file) { false })
+        assertEquals(ImportResult.Busy, e.import(file) { true })
+        assertEquals("old", a.value)
+        assertTrue(a.writes.isEmpty())
+    }
+
     @Test fun refusesWhileTasksRun() = runTest {
         val a = Fake("a", "old")
         val e = engine(a)
