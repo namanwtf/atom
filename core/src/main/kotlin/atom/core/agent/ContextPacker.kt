@@ -30,6 +30,10 @@ object ContextPacker {
         return listOf(ChatMessage.system(systemPrompt)) + fitted
     }
 
+    /** Estimated prompt size after the cheap shrinking steps but before anything is dropped. */
+    fun measure(systemPrompt: String, convo: List<ChatMessage>, policy: ContextPolicy): Int =
+        estimate(systemPrompt) + limitImages(shrinkToolResults(convo, policy), policy.keepImages).sumOf(::estimate)
+
     fun estimate(text: String): Int = text.length / CHARS_PER_TOKEN + 1
 
     fun estimate(message: ChatMessage): Int =

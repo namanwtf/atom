@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Read aloud -->
+    <string name="speech_reading_channel">Reading aloud</string>
+    <string name="speech_reading_title">Atom is reading aloud</string>
+    <string name="speech_stop">Stop</string>
+    <string name="speech_read_aloud">Read aloud</string>
+    <string name="speech_stop_reading">Stop reading</string>
+
+    <!-- Feature entries -->
+    <string name="speech_title">Speech</string>
+    <string name="speech_subtitle">Recognition, spoken answers, Hey Atom</string>
+    <string name="speech_audio_chat_title">Audio chat</string>
+    <string name="speech_audio_chat_subtitle">Talk with Atom hands-free</string>
+
+    <!-- Dictation -->
+    <string name="speech_dictation_cd">Voice input</string>
+    <string name="speech_dictation_hold_hint">Release to send, slide away to cancel</string>
+    <string name="speech_dictation_release_cancel">Release to cancel</string>
+    <string name="speech_dictation_done">Done</string>
+    <string name="speech_dictation_cancel">Cancel</string>
+    <string name="speech_dictation_settings_link">Voice settings</string>
+    <string name="speech_dictation_mic_denied">Allow microphone access to use voice input.</string>
+
+    <!-- Phases -->
+    <string name="speech_phase_connecting">Connecting…</string>
+    <string name="speech_phase_listening">Listening…</string>
+    <string name="speech_phase_recognizing">Recognizing…</string>
+    <string name="speech_phase_uploading">Uploading…</string>
+    <string name="speech_phase_proofreading">Proofreading…</string>
+
+    <!-- Errors -->
+    <string name="speech_err_no_permission">Microphone access is off.</string>
+    <string name="speech_err_disabled">Speech recognition is turned off.</string>
+    <string name="speech_err_missing_key">Add an API key for this speech service.</string>
+    <string name="speech_err_unreadable_key">A saved speech key can\'t be read any more. Please enter it again.</string>
+    <string name="speech_err_missing_storage">Set up recording storage first.</string>
+    <string name="speech_err_auth">The speech service rejected the key (check the key and region).</string>
+    <string name="speech_err_quota">The speech service is out of quota or rate-limited.</string>
+    <string name="speech_err_network">No connection to the speech service.</string>
+    <string name="speech_err_timeout">The speech service took too long.</string>
+    <string name="speech_err_no_speech">Didn\'t catch that.</string>
+    <string name="speech_err_too_long">That recording was too long.</string>
+    <string name="speech_err_busy">The microphone or recognizer is busy.</string>
+    <string name="speech_err_unsupported">Not supported on this device.</string>
+    <string name="speech_err_server">The speech service returned an error.</string>
+
+    <!-- Audio chat -->
+    <string name="speech_chat_tap_to_start">Tap to start</string>
+    <string name="speech_chat_hold_to_talk">Hold to talk</string>
+    <string name="speech_chat_listening">Listening</string>
+    <string name="speech_chat_thinking">Thinking</string>
+    <string name="speech_chat_speaking">Speaking</string>
+    <string name="speech_chat_tap_interrupt">Tap to interrupt</string>
+    <string name="speech_chat_speak_interrupt">Speak or tap to interrupt</string>
+    <string name="speech_chat_ended_silence">Ended after a quiet stretch</string>
+    <string name="speech_chat_ended_screen">Ended when the screen turned off</string>
+    <string name="speech_chat_ended">Conversation ended</string>
+    <string name="speech_chat_start_again">Start again</string>
+    <string name="speech_chat_end">End</string>
+    <string name="speech_chat_open_in_chat">Open in chat</string>
+    <string name="speech_chat_hands_free">Hands-free</string>
+    <string name="speech_chat_push_to_talk">Push to talk</string>
+    <string name="speech_chat_you">You</string>
+    <string name="speech_chat_atom">Atom</string>
+    <string name="speech_chat_mic_needed">Audio chat needs microphone access.</string>
+    <string name="speech_chat_allow_mic">Allow microphone</string>
+    <string name="speech_chat_orb_cd">Talk to Atom</string>
+
+    <!-- Settings: overview -->
+    <string name="speech_set_enable_recognition">Enable speech recognition</string>
+    <string name="speech_set_enable_recognition_sub">When off, the mic disappears and the assistant opens with the keyboard</string>
+    <string name="speech_set_recognition">Speech recognition</string>
+    <string name="speech_set_recognition_service">Recognition service</string>
+    <string name="speech_set_spoken_answers">Spoken answers</string>
+    <string name="speech_set_voice_service">Voice service</string>
+    <string name="speech_set_storage">Recording storage</string>
+    <string name="speech_set_storage_sub">Your Alibaba OSS bucket, for Qwen file transcription</string>
+    <string name="speech_set_assistant">Assistant</string>
+    <string name="speech_set_overlay_speak">Speak answers automatically</string>
+    <string name="speech_set_overlay_speak_sub">Final answers to voice questions, while the assistant is open</string>
+    <string name="speech_set_auto_send">Auto-send after a pause</string>
+    <string name="speech_set_auto_read">Read chat answers aloud</string>
+    <string name="speech_set_auto_read_sub">Reads each finished answer; also in the chat More menu</string>
+    <string name="speech_set_accuracy">Accuracy and reading</string>
+    <string name="speech_set_smart_correction">Smart correction</string>
+    <string name="speech_set_smart_correction_sub">The chat model fixes homophones and mixed-language terms (up to 8 s)</string>
+    <string name="speech_set_filter_markdown">Filter Markdown formatting before reading aloud</string>
+    <string name="speech_set_filter_markdown_sub">Skips tables, code, images, HTML and links</string>
+    <string name="speech_set_audio_chat">Audio chat</string>
+    <string name="speech_set_open_audio_chat">Open audio chat</string>
+    <string name="speech_set_chat_speak">Speak answers</string>
+    <string name="speech_set_chat_barge">Interrupt by speaking</string>
+    <string name="speech_set_chat_barge_sub">Talk over Atom to cut in</string>
+    <string name="speech_set_chat_barge_unsupported">This phone has no echo canceller; tap to interrupt instead</string>
+    <string name="speech_set_hey_atom">Hey Atom</string>
+    <string name="speech_set_hey_atom_switch">Listen for “Hey Atom”</string>
+    <string name="speech_set_hey_atom_screen_off">Listen with the screen off</string>
+    <string name="speech_set_hey_atom_screen_off_sub">Uses more battery</string>
+    <string name="speech_set_hey_atom_charging">Listen while charging</string>
+    <string name="speech_set_hey_atom_charging_sub">Even with the screen off</string>
+    <string name="speech_set_hey_atom_missing">Wake-word model not installed in this build</string>
+    <string name="speech_set_try">Try it</string>
+    <string name="speech_set_try_sub">Uses the settings on this page, even before you save. Cloud services may charge you.</string>
+    <string name="speech_set_test_recognition">Test recognition</string>
+    <string name="speech_set_test_stop">Stop test</string>
+    <string name="speech_set_preview_voice">Preview voice</string>
+    <string name="speech_set_preview_text">Preview text</string>
+    <string name="speech_set_save">Save</string>
+    <string name="speech_set_saved">Saved</string>
+    <string name="speech_pause_1">1 s</string>
+    <string name="speech_pause_15">1.5 s</string>
+    <string name="speech_pause_2">2 s</string>
+    <string name="speech_pause_3">3 s</string>
+    <string name="speech_pause_never">Never</string>
+
+    <!-- Settings: services -->
+    <string name="speech_asr_auto">Automatic</string>
+    <string name="speech_asr_android_on_device">On-device (Android)</string>
+    <string name="speech_asr_android_on_device_sub">Free, private, works offline</string>
+    <string name="speech_asr_android_on_device_unavailable">Not available on this phone</string>
+    <string name="speech_asr_android_default">System recognizer</string>
+    <string name="speech_asr_android_default_sub">The phone\'s default speech service</string>
+    <string name="speech_asr_qwen_realtime">Qwen Realtime</string>
+    <string name="speech_asr_qwen_realtime_sub">Live preview · recommended cloud service</string>
+    <string name="speech_asr_qwen_short">Qwen Short audio</string>
+    <string name="speech_asr_qwen_short_sub">Records, then transcribes</string>
+    <string name="speech_asr_qwen_file">Qwen File transcription</string>
+    <string name="speech_asr_qwen_file_sub">Uploads to your own OSS bucket, then deletes it</string>
+    <string name="speech_asr_doubao">Doubao Streaming 2.0</string>
+    <string name="speech_asr_doubao_sub">Live preview</string>
+    <string name="speech_asr_mimo">MiMo</string>
+    <string name="speech_asr_mimo_sub">Records, then transcribes · beta</string>
+    <string name="speech_asr_deepseek">DeepSeek</string>
+    <string name="speech_asr_deepseek_sub">Records up to 120 s, then transcribes</string>
+
+    <string name="speech_tts_off">Off</string>
+    <string name="speech_tts_off_sub">Read aloud still uses the system voice</string>
+    <string name="speech_tts_system">System voice</string>
+    <string name="speech_tts_system_sub">Android text-to-speech, free and offline</string>
+    <string name="speech_tts_qwen">Qwen</string>
+    <string name="speech_tts_doubao">Doubao</string>
+    <string name="speech_tts_gemini">Gemini</string>
+    <string name="speech_tts_minimax">MiniMax</string>
+    <string name="speech_tts_mimo">MiMo</string>
+    <string name="speech_tts_deepseek">DeepSeek</string>
+    <string name="speech_tts_fallback_note">If a cloud voice fails, Atom quietly switches to the system voice.</string>
+
+    <!-- Settings: fields -->
+    <string name="speech_f_language">Language</string>
+    <string name="speech_f_language_hint">Blank = automatic (en, zh, yue, hi…)</string>
+    <string name="speech_f_region">Region</string>
+    <string name="speech_f_region_hint">Must match the region of your key</string>
+    <string name="speech_f_beijing">Beijing</string>
+    <string name="speech_f_singapore">Singapore</string>
+    <string name="speech_f_base_url">Base URL (optional)</string>
+    <string name="speech_f_base_url_hint">e.g. a workspace domain; blank uses the region</string>
+    <string name="speech_f_api_key">API key</string>
+    <string name="speech_f_api_key_reuse">Blank uses your %1$s model key</string>
+    <string name="speech_f_key_saved">Saved · type to replace</string>
+    <string name="speech_f_remove">Remove</string>
+    <string name="speech_f_doubao_resource">Resource ID</string>
+    <string name="speech_f_doubao_app_id">App ID (legacy console, optional)</string>
+    <string name="speech_f_doubao_app_id_hint">Set this to sign in with App ID + Access Token instead of the API key</string>
+    <string name="speech_f_doubao_token">Access Token (legacy)</string>
+    <string name="speech_f_mimo_language">Recognition language</string>
+    <string name="speech_f_auto">Auto</string>
+    <string name="speech_f_chinese">Chinese</string>
+    <string name="speech_f_english">English</string>
+    <string name="speech_f_voice">Voice</string>
+    <string name="speech_f_custom_voice">Custom voice ID</string>
+    <string name="speech_f_custom_voice_hint">Enter a voice ID by hand</string>
+    <string name="speech_f_custom">Custom</string>
+    <string name="speech_f_model">Model</string>
+    <string name="speech_f_style">Reading style (optional)</string>
+    <string name="speech_f_style_hint">Tone, emotion, speed or dialect, in your own words</string>
+    <string name="speech_f_speed">Speed %1$.1fx</string>
+    <string name="speech_f_normalize">Read numbers naturally</string>
+    <string name="speech_f_site">Site</string>
+    <string name="speech_f_overseas">Overseas</string>
+    <string name="speech_f_china">China</string>
+    <string name="speech_f_oss_region">Region</string>
+    <string name="speech_f_oss_region_hint">e.g. cn-hangzhou, ap-southeast-1</string>
+    <string name="speech_f_oss_endpoint">Endpoint (optional)</string>
+    <string name="speech_f_oss_endpoint_hint">Blank derives it from the region</string>
+    <string name="speech_f_oss_bucket">Bucket</string>
+    <string name="speech_f_oss_prefix">Prefix</string>
+    <string name="speech_f_oss_ak">AccessKey ID</string>
+    <string name="speech_f_oss_sk">AccessKey secret</string>
+    <string name="speech_f_oss_note">Recordings are uploaded as private objects, transcribed, then deleted. Failed deletions are retried before the next upload.</string>
+    <string name="speech_f_oss_pending">%1$d recording(s) waiting to be deleted</string>
+    <string name="speech_f_file_needs_storage">Needs recording storage</string>
+</resources>

@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -42,6 +44,8 @@ android {
         }
     }
 
+    buildFeatures { compose = true }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -49,7 +53,10 @@ android {
 
 dependencies {
     api(project(":core"))
+    implementation(project(":ui"))
+    implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.work.runtime)
     // .tar.xz rootfs images (Debian). 0BSD.
     implementation("org.tukaani:xz:1.12")

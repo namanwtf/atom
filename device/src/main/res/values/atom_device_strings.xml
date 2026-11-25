@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="atom_device_accessibility_label">Atom</string>
+    <string name="atom_device_accessibility_label">Atom Agent</string>
     <string name="atom_device_accessibility_summary">Lets Atom see and operate the screen while it runs a task you asked for.</string>
-    <string name="atom_device_accessibility_description">Atom reads what is on screen and taps, types and scrolls for you, only while it is carrying out a task you started. When no task is running it receives no screen events. Screen contents go only to the AI model you chose in Atom, on this phone or in the cloud.</string>
+    <string name="atom_device_accessibility_description">Atom reads what is on screen and taps, types and scrolls for you, only while it is carrying out a task you started. When no task is running it receives no screen events. Password fields are never read. Screen contents go only to the AI model you chose in Atom, on this phone or in the cloud.</string>
+
+    <string name="atom_device_permissions">Permissions</string>
+    <string name="atom_device_permissions_sub">Access Atom has, and what needs attention</string>
+    <string name="atom_device_tool_list">Tool list</string>
+    <string name="atom_device_tool_list_sub">Master switches and what each tool needs</string>
+    <string name="atom_device_changes">Change history</string>
+    <string name="atom_device_changes_sub">Every change Atom made, with one-tap undo</string>
+    <string name="atom_device_power">Power tools</string>
+    <string name="atom_device_power_sub">Firewall, charge limit, refresh rate, battery drain, GPS spoofing</string>
 </resources>

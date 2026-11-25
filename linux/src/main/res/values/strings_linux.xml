@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feature entries -->
+    <string name="linux_entry_title">Linux environment</string>
+    <string name="linux_entry_subtitle">Alpine or Debian, tools, workspace, background tasks</string>
+    <string name="terminal_entry_title">Terminal</string>
+    <string name="terminal_entry_subtitle">Android shell, root shell and Linux</string>
+
+    <!-- Terminal -->
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_cd_back">Back</string>
+    <string name="terminal_mode_console">Console</string>
+    <string name="terminal_mode_simple">Simple</string>
+    <string name="terminal_new">New</string>
+    <string name="terminal_new_session">New session</string>
+    <string name="terminal_restart">Restart</string>
+    <string name="terminal_close">Close</string>
+    <string name="terminal_sessions">Sessions</string>
+    <string name="terminal_limit">Up to %1$d sessions in this mode. Close one to open another.</string>
+    <string name="terminal_root_unavailable">Root is not available</string>
+    <string name="terminal_linux_unavailable">Linux is not installed</string>
+    <string name="terminal_empty">No sessions. Open one to start.</string>
+    <string name="terminal_paste">Paste</string>
+    <string name="terminal_keyboard">Keyboard</string>
+    <string name="terminal_font_smaller">Smaller text</string>
+    <string name="terminal_font_larger">Larger text</string>
+    <string name="terminal_starting">Starting…</string>
+    <string name="terminal_exited">Session ended (exit %1$d)</string>
+    <string name="terminal_error">Could not start the session: %1$s</string>
+    <string name="terminal_key_esc">Esc</string>
+    <string name="terminal_key_tab">Tab</string>
+    <string name="terminal_key_ctrl">Ctrl</string>
+    <string name="terminal_key_alt">Alt</string>
+    <string name="terminal_key_enter">Enter</string>
+    <string name="terminal_key_home">Home</string>
+    <string name="terminal_key_end">End</string>
+    <string name="terminal_key_pgup">PgUp</string>
+    <string name="terminal_key_pgdn">PgDn</string>
+    <string name="terminal_cd_left">Left</string>
+    <string name="terminal_cd_right">Right</string>
+    <string name="terminal_cd_up">Up</string>
+    <string name="terminal_cd_down">Down</string>
+    <string name="terminal_simple_hint">Type a command</string>
+    <string name="terminal_simple_input_hint">Input for the running command</string>
+    <string name="terminal_run">Run</string>
+    <string name="terminal_send">Send</string>
+    <string name="terminal_interrupt">Ctrl-C</string>
+    <string name="terminal_copy_command">Copy command</string>
+    <string name="terminal_copy_output">Copy output</string>
+    <string name="terminal_reuse">Reuse command</string>
+    <string name="terminal_running">Running…</string>
+    <string name="terminal_exit_code">exit %1$d</string>
+    <string name="terminal_copied">Copied</string>
+    <string name="terminal_simple_empty">Commands and their output appear here as blocks.</string>
+
+    <!-- Linux home -->
+    <string name="linux_title">Linux</string>
+    <string name="linux_intro">A real Linux system on your phone with a package manager and tools. Nothing runs in the background: it starts with a terminal or command and stops when they end.</string>
+    <string name="linux_status">Status</string>
+    <string name="linux_not_installed">Not installed</string>
+    <string name="linux_distribution">Distribution</string>
+    <string name="linux_alpine_body">Alpine: musl and busybox, tiny and fast (about 4 MB). Packages with apk.</string>
+    <string name="linux_debian_body">Debian Trixie: glibc, the broadest compatibility (about 90 MB). Packages with apt.</string>
+    <string name="linux_mode">Execution mode</string>
+    <string name="linux_mode_standard">Standard</string>
+    <string name="linux_mode_root">Root</string>
+    <string name="linux_mode_standard_body">PRoot, no root needed. Private to Atom.</string>
+    <string name="linux_mode_root_body">chroot in its own mount namespace: native speed. Needs root.</string>
+    <string name="linux_root_lost">Root access is gone. Your Linux files are kept. Switch to Standard to keep using them, or restore root.</string>
+    <string name="linux_use_standard">Use Standard (PRoot)</string>
+    <string name="linux_mode_files_note">Files created in Root mode belong to root and may be read-only in Standard mode.</string>
+    <string name="linux_install">Install</string>
+    <string name="linux_continue">Continue installation</string>
+    <string name="linux_upgrade">Upgrade tools</string>
+    <string name="linux_cancel">Cancel</string>
+    <string name="linux_stage">%1$s (%2$d of %3$d)</string>
+    <string name="linux_progress">%1$s · %2$d%%</string>
+    <string name="linux_ready_line">%1$s %2$s · %3$s on disk</string>
+    <string name="linux_mode_line_chroot">Root mode (chroot)</string>
+    <string name="linux_mode_line_proot">Standard mode (PRoot)</string>
+    <string name="linux_last_result">Last: %1$s</string>
+    <string name="linux_base_tools">Base tools</string>
+    <string name="linux_base_tools_body">rg, fd, git, ssh client, curl, jq, sqlite, file, xz, unzip, less, nano, htop</string>
+    <string name="linux_installed">Installed</string>
+    <string name="linux_profiles">Optional profiles</string>
+    <string name="linux_profile_python">Python via uv, latest stable Python</string>
+    <string name="linux_profile_node">Node.js LTS and npm</string>
+    <string name="linux_profile_ssh">Full OpenSSH server (port 8022, keys only)</string>
+    <string name="linux_profile_apk">OpenJDK 25, JADX, Apktool, smali, baksmali. Needs about 768 MB. Rebuilding APKs is not supported.</string>
+    <string name="linux_more">More</string>
+    <string name="linux_open_terminal">Open terminal</string>
+    <string name="linux_health">Health check</string>
+    <string name="linux_health_body">Core commands, /workspace, /sdcard, free space</string>
+    <string name="linux_folders">Shared folders</string>
+    <string name="linux_folders_body">Android folders at /workspace/mounts</string>
+    <string name="linux_files">Browse Linux files</string>
+    <string name="linux_files_body">Read-only, with text previews</string>
+    <string name="linux_workspace">Workspace and files</string>
+    <string name="linux_workspace_body">Import, export, access</string>
+    <string name="linux_jobs">Background tasks</string>
+    <string name="linux_jobs_body">Commands and daemons that keep running</string>
+    <string name="linux_uninstall">Uninstall</string>
+    <string name="linux_uninstalling">Removing…</string>
+    <string name="linux_uninstall_title">Uninstall %1$s?</string>
+    <string name="linux_uninstall_body">The system and installed packages are deleted. /workspace and files in /sdcard stay.</string>
+    <string name="linux_failed">Install failed</string>
+    <string name="linux_error">Could not finish: %1$s</string>
+    <string name="linux_space_warning">Needs about %1$s; %2$s free.</string>
+
+    <!-- Health -->
+    <string name="health_title">Health check</string>
+    <string name="health_run">Run check</string>
+    <string name="health_running">Checking…</string>
+    <string name="health_repair">Repair</string>
+    <string name="health_repair_body">Rewrites Atom\'s settings in the system, recovers half-installed packages and reinstalls missing base tools.</string>
+    <string name="health_never">Not checked yet.</string>
+
+    <!-- Shared folders -->
+    <string name="folders_title">Shared folders</string>
+    <string name="folders_body">Android folders shown in Linux at /workspace/mounts/&lt;name&gt;. Changes apply from the next session. Up to %1$d.</string>
+    <string name="folders_add">Add folder</string>
+    <string name="folders_pick">Choose folder</string>
+    <string name="folders_name">Name</string>
+    <string name="folders_path">Android path</string>
+    <string name="folders_remove">Remove</string>
+    <string name="folders_unreadable">Atom cannot read this folder; allow file access on the Workspace page.</string>
+    <string name="folders_empty">No shared folders.</string>
+
+    <!-- File browser -->
+    <string name="files_title">Linux files</string>
+    <string name="files_up">Up</string>
+    <string name="files_empty">Empty folder</string>
+    <string name="files_unreadable">This folder cannot be read.</string>
+    <string name="files_binary">Binary file (%1$s); no preview.</string>
+    <string name="files_truncated">Showing the first %1$s of %2$s.</string>
+
+    <!-- Workspace -->
+    <string name="workspace_title">Workspace and files</string>
+    <string name="workspace_private">Private: /workspace</string>
+    <string name="workspace_private_body">Atom\'s own folder, always available to Linux. %1$s used.</string>
+    <string name="workspace_public">Public: /sdcard</string>
+    <string name="workspace_public_granted">Shared storage is readable and writable from Linux.</string>
+    <string name="workspace_public_denied">Not allowed yet. Linux sees an empty /sdcard until you allow all-files access.</string>
+    <string name="workspace_allow">Allow access</string>
+    <string name="workspace_import">Import files</string>
+    <string name="workspace_import_limit">Up to 32 MiB each, copied into /workspace.</string>
+    <string name="workspace_imported">Imported %1$d file(s).</string>
+    <string name="workspace_too_big">%1$s is larger than 32 MiB and was skipped.</string>
+    <string name="workspace_export">Export</string>
+    <string name="workspace_files">Files in /workspace</string>
+    <string name="workspace_none">No files yet.</string>
+    <string name="workspace_exported">Exported.</string>
+
+    <!-- Jobs -->
+    <string name="jobs_title">Background tasks</string>
+    <string name="jobs_body">Commands started in the background keep running after the reply ends; you get a notification when they finish. Daemons run until stopped or the phone restarts.</string>
+    <string name="jobs_cap">Stop background commands after 10 minutes</string>
+    <string name="jobs_cap_body">Turn off to let them run until they finish.</string>
+    <string name="jobs_daemons">Daemons</string>
+    <string name="jobs_commands">Commands</string>
+    <string name="jobs_none">Nothing yet.</string>
+    <string name="jobs_stop">Stop</string>
+    <string name="jobs_logs">Logs</string>
+    <string name="jobs_clear">Clear finished</string>
+    <string name="jobs_log_title">Log</string>
+    <string name="jobs_refresh">Refresh</string>
+</resources>

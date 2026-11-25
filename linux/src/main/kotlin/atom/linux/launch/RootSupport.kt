@@ -3,7 +3,7 @@ package atom.linux.launch
 import atom.linux.CommandResult
 
 /** Talks to `su` for chroot mode. Every call is a short-lived process; nothing stays running. */
-internal object RootSupport {
+object RootSupport {
 
     data class Probe(val root: Boolean, val privateMounts: Boolean) {
         val chrootCapable get() = root && privateMounts

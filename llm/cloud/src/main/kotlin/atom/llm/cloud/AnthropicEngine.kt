@@ -29,18 +29,20 @@ internal class AnthropicEngine(
     private val model: String,
     baseUrl: String,
     private val http: OkHttpClient,
+    private val options: EngineOptions = EngineOptions(),
 ) : LlmEngine {
 
     private val root = baseUrl.trimEnd('/')
-    private val official = root == provider.baseUrl.trimEnd('/')
+    private val messagesUrl = messagesEndpoint(root)
+    private val official = root.contains("api.anthropic.com")
     private val errors = ErrorMapper(provider.displayName, apiKey)
 
     override val id: String = "${provider.id}:$model"
 
     override val capabilities = EngineCapabilities(
         nativeToolCalls = true,
-        vision = true,
-        contextWindow = if (isLegacyModel(model)) 200_000 else 1_000_000,
+        vision = options.vision ?: true,
+        contextWindow = options.contextWindow ?: if (isLegacyModel(model)) 200_000 else 1_000_000,
         onDevice = false,
     )
 
@@ -54,11 +56,12 @@ internal class AnthropicEngine(
 
     private fun httpRequest(request: LlmRequest): Request =
         Request.Builder()
-            .url("$root/messages")
+            .url(messagesUrl)
             .header("x-api-key", apiKey)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("Accept", "text/event-stream")
-            .post(buildBody(request).toRequestBody())
+            .apply { RequestCustomizer.applyHeaders(this, options) }
+            .post(RequestCustomizer.mergeBody(buildBody(request), options.extraBody).toRequestBody())
             .build()
 
     internal fun buildBody(request: LlmRequest): JsonObject = buildJsonObject {
@@ -168,6 +171,13 @@ internal class AnthropicEngine(
     internal companion object {
         const val ANTHROPIC_VERSION = "2023-06-01"
 
+        /** Accepts base URLs with or without the version segment ("https://api.anthropic.com" or ".../v1"). */
+        fun versionedRoot(root: String): String = if (VERSIONED.containsMatchIn(root)) root else "$root/v1"
+
+        fun messagesEndpoint(root: String): String = versionedRoot(root.trimEnd('/')) + "/messages"
+
+        private val VERSIONED = Regex("/v\\d+$")
+
         private val LEGACY = Regex("^claude-(3|(opus|sonnet|haiku)-4(-[0-5])?(-\\d{8})?$)")
 
         /** Models before the 4.6 generation take a fixed thinking budget instead of adaptive thinking. */
@@ -200,6 +210,8 @@ internal class AnthropicStreamDecoder(private val errors: ErrorMapper) {
     private val blocks = HashMap<Int, Block>()
     private var inputTokens = 0
     private var outputTokens = 0
+    private var cacheRead = 0
+    private var cacheWrite = 0
     private var sawUsage = false
     private var stopReason: String? = null
     private var stopped = false
@@ -255,7 +267,7 @@ internal class AnthropicStreamDecoder(private val errors: ErrorMapper) {
     fun finish(): List<LlmEvent> {
         if (!stopped) throw errors.stream("stream ended before the response completed", retryable = true)
         val out = mutableListOf<LlmEvent>()
-        if (sawUsage) out += LlmEvent.Usage(inputTokens, outputTokens)
+        if (sawUsage) out += LlmEvent.Usage(inputTokens, outputTokens, cacheRead, cacheWrite)
         val reason = when (stopReason) {
             "tool_use" -> FinishReason.ToolCalls
             "max_tokens", "model_context_window_exceeded" -> FinishReason.Length
@@ -269,6 +281,8 @@ internal class AnthropicStreamDecoder(private val errors: ErrorMapper) {
         val keys = listOf("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
         if (keys.any { usage.containsKey(it) }) {
             inputTokens = maxOf(inputTokens, keys.sumOf { usage.int(it) ?: 0 })
+            cacheRead = maxOf(cacheRead, usage.int("cache_read_input_tokens") ?: 0)
+            cacheWrite = maxOf(cacheWrite, usage.int("cache_creation_input_tokens") ?: 0)
             sawUsage = true
         }
         usage.int("output_tokens")?.let {

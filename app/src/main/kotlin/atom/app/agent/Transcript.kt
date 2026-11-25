@@ -1,83 +1,282 @@
 package atom.app.agent
 
-import atom.app.data.Conversation
+import atom.app.data.Attachment
+import atom.app.data.EntryKind
+import atom.app.data.StoredMessage
 import atom.core.llm.Role
 import atom.core.tool.Risk
+import atom.ui.feature.StepState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-enum class StepStatus { Running, AwaitingApproval, Ok, Error }
+/** One tool call as the timeline shows it. */
+data class StepCall(
+    val key: String,
+    val callId: String,
+    val name: String,
+    val argsLine: String,
+    val argsFull: String,
+    val state: StepState,
+    val durationMs: Long?,
+    val result: String?,
+    val risk: Risk?,
+    /** Wall-clock start while it runs, for the live timer. */
+    val startedAt: Long? = null,
+    val awaitingApproval: Boolean = false,
+    /** Last line of terminal output, shown on the collapsed row. */
+    val lastLine: String? = null,
+)
 
-/** What the chat list renders: built from a stored conversation or streamed live by the TaskRunner. */
-sealed interface TranscriptItem {
+sealed interface WorkEntry {
     val key: String
 
-    data class User(override val key: String, val text: String) : TranscriptItem
+    data class Thought(override val key: String, val text: String, val durationMs: Long?, val live: Boolean = false) : WorkEntry
 
-    data class Assistant(override val key: String, val text: String) : TranscriptItem
+    /** Text the model wrote between tool calls. */
+    data class Note(override val key: String, val text: String) : WorkEntry
 
-    data class Step(
+    /** Consecutive calls of the same tool, merged into one row. */
+    data class Steps(override val key: String, val tool: String, val calls: List<StepCall>) : WorkEntry
+}
+
+data class WorkSummary(val thoughts: Int, val toolCalls: Int, val failed: Int, val running: Boolean)
+
+/** What the chat list renders: built from the stored record plus the live stream of a running task. */
+sealed interface ChatItem {
+    val key: String
+
+    data class User(
         override val key: String,
-        val name: String,
-        val argsLine: String,
-        val argsFull: String,
-        val status: StepStatus,
-        val durationMs: Long?,
-        val result: String?,
-        val risk: Risk?,
-    ) : TranscriptItem
+        val index: Int,
+        val text: String,
+        val attachments: List<Attachment>,
+        val steering: Boolean,
+    ) : ChatItem
+
+    data class Turn(
+        override val key: String,
+        /** Stored index of the user message that started it, if any. */
+        val userIndex: Int?,
+        val work: List<WorkEntry>,
+        val answer: String?,
+        val answerIndex: Int?,
+        val answerReasoning: WorkEntry.Thought?,
+        val live: Boolean,
+        /** Streaming text not yet committed to a message. */
+        val streaming: Boolean,
+        /** The turn ended (with an answer, or stopped); message actions apply. */
+        val finished: Boolean,
+    ) : ChatItem {
+        val summary: WorkSummary
+            get() {
+                val calls = work.filterIsInstance<WorkEntry.Steps>().flatMap { it.calls }
+                val thoughts = work.count { it is WorkEntry.Thought } + if (answerReasoning != null) 1 else 0
+                return WorkSummary(thoughts, calls.size, calls.count { it.state == StepState.Failed }, calls.any { it.state == StepState.Running })
+            }
+    }
+
+    data class Notice(override val key: String, val index: Int, val text: String, val error: Boolean = false) : ChatItem
+
+    data class Compacted(override val key: String, val index: Int, val summary: String) : ChatItem
+}
+
+/** Live state of the message being streamed. */
+data class StreamState(
+    val text: String = "",
+    val reasoning: String = "",
+    val reasoningStartedAt: Long? = null,
+    val reasoningEndedAt: Long? = null,
+    val runningCallId: String? = null,
+    val runningSince: Long? = null,
+    val awaitingApproval: Boolean = false,
+) {
+    val isEmpty: Boolean get() = text.isEmpty() && reasoning.isEmpty()
 }
 
 object Transcript {
     private val json = Json { isLenient = true }
     private val pretty = Json { prettyPrint = true }
 
-    fun of(conversation: Conversation): List<TranscriptItem> {
-        val out = ArrayList<TranscriptItem>(conversation.messages.size)
-        val msgs = conversation.messages
-        var i = 0
-        while (i < msgs.size) {
-            val stored = msgs[i]
-            val msg = stored.message
-            when (msg.role) {
-                Role.User -> if (!stored.hidden && msg.text.isNotBlank()) out += TranscriptItem.User("u$i", msg.text)
-                Role.Assistant -> {
-                    val text = msg.text.trim()
-                    if (text.isNotEmpty()) out += TranscriptItem.Assistant("a$i", text)
-                    // Tool results directly follow their assistant message; pair them by id within that window
-                    // (prompted on-device engines reuse ids across turns, so a global match would be wrong).
-                    var j = i + 1
-                    val results = ArrayList<Int>()
-                    while (j < msgs.size && msgs[j].message.role == Role.Tool) results += j++
-                    msg.toolCalls.forEachIndexed { k, call ->
-                        val match = results.firstOrNull { msgs[it].message.toolCallId == call.id } ?: results.firstOrNull()
-                        if (match != null) results.remove(match)
-                        val result = match?.let { msgs[it] }
-                        out += TranscriptItem.Step(
-                            key = "s$i.$k",
-                            name = call.name,
-                            argsLine = argsLine(call.argumentsJson),
-                            argsFull = argsFull(call.argumentsJson),
-                            status = if (result == null || result.isError) StepStatus.Error else StepStatus.Ok,
-                            durationMs = result?.durationMs,
-                            result = result?.message?.text?.let(::preview),
-                            risk = result?.risk,
-                        )
-                    }
-                    i = j
-                    continue
+    /** [live] is the stream of the running task in this conversation, or null if none runs. */
+    fun of(messages: List<StoredMessage>, live: StreamState? = null, now: Long = System.currentTimeMillis()): List<ChatItem> {
+        val out = ArrayList<ChatItem>()
+        var turn: TurnBuilder? = null
+        fun close() {
+            turn?.let { out += it.build(live = false, stream = null, now) }
+            turn = null
+        }
+        for ((i, s) in messages.withIndex()) {
+            val msg = s.message
+            when {
+                s.kind == EntryKind.Notice -> {
+                    close()
+                    out += ChatItem.Notice("n$i", i, msg.text, s.isError)
                 }
-                Role.Tool, Role.System -> Unit
+                s.kind == EntryKind.Summary -> {
+                    close()
+                    out += ChatItem.Compacted("c$i", i, msg.text.substringAfter('\n').trim())
+                }
+                s.isVisibleUser -> {
+                    close()
+                    out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering)
+                    turn = TurnBuilder("t$i", i)
+                }
+                msg.role == Role.User -> Unit
+                msg.role == Role.Assistant -> (turn ?: TurnBuilder("t$i", null).also { turn = it }).assistant(i, s)
+                msg.role == Role.Tool -> turn?.tool(s)
+                else -> Unit
             }
-            i++
+        }
+        if (live != null) {
+            val t = turn ?: TurnBuilder("t${messages.size}", null)
+            out += t.build(live = true, stream = live, now)
+        } else {
+            close()
         }
         return out
     }
 
-    fun preview(text: String): String = if (text.length <= 600) text else text.take(600) + "…"
+    private class TurnBuilder(val key: String, val userIndex: Int?) {
+        val work = ArrayList<WorkEntry>()
+        var answer: String? = null
+        var answerIndex: Int? = null
+        var answerReasoning: WorkEntry.Thought? = null
+        val calls = LinkedHashMap<String, StepCall>()
+
+        fun assistant(i: Int, s: StoredMessage) {
+            // A previous candidate answer turned out to be interim text.
+            demoteAnswer()
+            val msg = s.message
+            val thought = s.reasoning?.takeIf { it.isNotBlank() }?.let { WorkEntry.Thought("r$i", it.trim(), s.reasoningMs) }
+            val text = msg.text.trim()
+            if (msg.toolCalls.isEmpty()) {
+                answerReasoning = thought
+                if (text.isNotEmpty()) {
+                    answer = text
+                    answerIndex = i
+                }
+                return
+            }
+            thought?.let { work += it }
+            if (text.isNotEmpty()) work += WorkEntry.Note("a$i", text)
+            msg.toolCalls.forEachIndexed { k, call ->
+                val step = StepCall(
+                    key = "s$i.$k",
+                    callId = call.id,
+                    name = call.name,
+                    argsLine = argsLine(call.argumentsJson),
+                    argsFull = argsFull(call.argumentsJson),
+                    state = StepState.Unknown,
+                    durationMs = null,
+                    result = null,
+                    risk = null,
+                )
+                calls["$i:${call.id}"] = step
+                addStep(step)
+            }
+        }
+
+        fun tool(s: StoredMessage) {
+            val id = s.message.toolCallId ?: return
+            val entry = calls.entries.lastOrNull { it.key.endsWith(":$id") && it.value.state == StepState.Unknown } ?: return
+            val text = s.message.text
+            val updated = entry.value.copy(
+                state = if (s.isError) StepState.Failed else StepState.Completed,
+                durationMs = s.durationMs,
+                result = preview(text),
+                risk = s.risk,
+                lastLine = if (isTerminal(entry.value.name)) text.lineSequence().lastOrNull { it.isNotBlank() }?.trim()?.take(160) else null,
+            )
+            calls[entry.key] = updated
+            replaceStep(updated)
+        }
+
+        private fun demoteAnswer() {
+            val a = answer ?: run {
+                answerReasoning?.let { work += it }
+                answerReasoning = null
+                return
+            }
+            answerReasoning?.let { work += it }
+            work += WorkEntry.Note("a${answerIndex}", a)
+            answer = null
+            answerIndex = null
+            answerReasoning = null
+        }
+
+        private fun addStep(step: StepCall) {
+            val last = work.lastOrNull()
+            if (last is WorkEntry.Steps && last.tool == step.name) {
+                work[work.lastIndex] = last.copy(calls = last.calls + step)
+            } else {
+                work += WorkEntry.Steps("g" + step.key, step.name, listOf(step))
+            }
+        }
+
+        private fun replaceStep(step: StepCall) {
+            for (w in work.indices) {
+                val entry = work[w]
+                if (entry is WorkEntry.Steps && entry.calls.any { it.key == step.key }) {
+                    work[w] = entry.copy(calls = entry.calls.map { if (it.key == step.key) step else it })
+                    return
+                }
+            }
+        }
+
+        fun build(live: Boolean, stream: StreamState?, now: Long): ChatItem.Turn {
+            if (live) {
+                for (w in work.indices) {
+                    val entry = work[w]
+                    if (entry !is WorkEntry.Steps) continue
+                    work[w] = entry.copy(
+                        calls = entry.calls.map { c ->
+                            if (c.state != StepState.Unknown) return@map c
+                            val running = stream?.runningCallId == c.callId
+                            c.copy(
+                                state = StepState.Running,
+                                startedAt = if (running) stream.runningSince else null,
+                                awaitingApproval = running && stream.awaitingApproval,
+                            )
+                        },
+                    )
+                }
+            }
+            var streaming = false
+            if (stream != null && !stream.isEmpty) {
+                demoteAnswer()
+                if (stream.reasoning.isNotBlank()) {
+                    val ms = stream.reasoningStartedAt?.let { (stream.reasoningEndedAt ?: now) - it }
+                    answerReasoning = WorkEntry.Thought("rlive", stream.reasoning.trim(), ms, live = stream.reasoningEndedAt == null)
+                }
+                if (stream.text.isNotEmpty()) {
+                    answer = stream.text
+                    answerIndex = null
+                    streaming = true
+                }
+            }
+            return ChatItem.Turn(
+                key = key,
+                userIndex = userIndex,
+                work = work.toList(),
+                answer = answer,
+                answerIndex = answerIndex,
+                answerReasoning = answerReasoning,
+                live = live,
+                streaming = streaming,
+                finished = !live,
+            )
+        }
+    }
+
+    fun isTerminal(tool: String): Boolean {
+        val n = tool.lowercase()
+        return "shell" in n || "terminal" in n || "linux" in n || "command" in n || n == "run" || "exec" in n
+    }
+
+    fun preview(text: String): String = if (text.length <= 4_000) text else text.take(4_000) + "…"
 
     /** `{"x":10,"y":20}` → `x=10, y=20`, short enough for one line. */
     fun argsLine(raw: String): String {
@@ -97,4 +296,13 @@ object Transcript {
     fun argsFull(raw: String): String =
         runCatching { pretty.encodeToString(JsonObject.serializer(), json.parseToJsonElement(raw) as JsonObject) }
             .getOrDefault(raw)
+
+    /** The exact command of a terminal-like call, for "Copy command". */
+    fun command(raw: String): String? {
+        val obj = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return null
+        for (key in listOf("command", "cmd", "script", "code")) {
+            (obj[key] as? JsonPrimitive)?.takeIf { it.isString }?.let { return it.content }
+        }
+        return null
+    }
 }

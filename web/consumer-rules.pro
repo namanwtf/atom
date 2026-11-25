@@ -1,0 +1,1 @@
+-keepclassmembers class atom.web.browser.AgentBridge { @android.webkit.JavascriptInterface <methods>; }

@@ -61,21 +61,32 @@ class LaunchCommandsTest {
             rootfs = "/data/x/debian/rootfs",
             stateDir = "/data/x/run",
             token = "abc123",
-            guestTmp = "/data/x/tmp",
-            sdcard = null,
+            bindsFile = "/data/x/run/abc123.binds",
             shell = "/bin/bash",
             hostEnv = mapOf("PATH" to "/system/bin"),
         )
         val login = LaunchCommands.chroot(c, null)
         assertEquals(listOf("su", "-c"), login.argv.take(2))
         assertEquals(
-            "'sh' '/data/x/atom-chroot.sh' '/data/x/debian/rootfs' '/data/x/run' 'abc123' '/data/x/tmp' '-' " +
+            "'sh' '/data/x/atom-chroot.sh' '/data/x/debian/rootfs' '/data/x/run' 'abc123' '/data/x/run/abc123.binds' " +
                 "'/bin/bash' 'xterm-256color' 'login'",
             login.argv[2],
         )
         val cmd = LaunchCommands.chroot(c, "echo 'it''s' \$HOME")
         assertTrue(cmd.argv[2].endsWith("'command' 'echo '\\''it'\\'''\\''s'\\'' \$HOME'"))
         assertEquals(mapOf("PATH" to "/system/bin"), cmd.env)
+    }
+
+    @Test
+    fun bindsFileAndProotWorkspaceBinds() {
+        val content = LaunchCommands.bindsFile(
+            listOf("/data/ws" to "/workspace", "/storage/emulated/0/Download" to "/workspace/mounts/dl", "/bad\tpath" to "/x", "/y" to "relative"),
+        )
+        assertEquals("/data/ws\t/workspace\n/storage/emulated/0/Download\t/workspace/mounts/dl\n", content)
+        val spec = LaunchCommands.proot(proot.copy(binds = listOf("/data/ws" to "/workspace", "/dl" to "/workspace/mounts/dl")), null)
+        val i = spec.argv.indexOf("/data/ws:/workspace")
+        assertTrue(i > 0 && spec.argv[i - 1] == "-b")
+        assertTrue(spec.argv.indexOf("/dl:/workspace/mounts/dl") > i) // mounts after /workspace
     }
 
     @Test
@@ -91,7 +102,7 @@ class LaunchCommandsTest {
         assertTrue(s.contains("ns/mnt"))
         // Everything is bound inside the rootfs only.
         Regex("bindmnt (\\S+) (\\S+)").findAll(s).filter { !it.value.startsWith("bindmnt()") }.forEach {
-            assertTrue(it.groupValues[2].startsWith("\"\$R/"), it.value)
+            assertTrue(it.groupValues[2].startsWith("\"\$R"), it.value)
         }
     }
 

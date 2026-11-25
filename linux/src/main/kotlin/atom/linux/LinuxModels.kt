@@ -26,9 +26,29 @@ sealed interface LinuxState {
     data object NotInstalled : LinuxState
 
     /** [progress] is 0..1 across the whole install; [step] is a short human-readable phase. */
-    data class Installing(val distro: Distro, val step: String, val progress: Float) : LinuxState
+    data class Installing(
+        val distro: Distro,
+        val step: String,
+        val progress: Float,
+        /** Which planned step is running, e.g. "Base tools" (2 of 3). */
+        val stage: String = "",
+        val stageIndex: Int = 0,
+        val stageCount: Int = 1,
+    ) : LinuxState
 
-    data class Ready(val distro: Distro, val sizeBytes: Long, val mode: RunMode) : LinuxState
+    data class Ready(
+        val distro: Distro,
+        val sizeBytes: Long,
+        /** The mode sessions actually use now. */
+        val mode: RunMode,
+        val release: String = "",
+        val toolsInstalled: Boolean = false,
+        val profiles: Set<atom.linux.install.Profile> = emptySet(),
+        /** Root mode was chosen but su no longer works; the chroot files are kept and PRoot is offered. */
+        val rootLost: Boolean = false,
+        /** Steps left from an interrupted install ("Continue installation"). */
+        val pendingSteps: List<String> = emptyList(),
+    ) : LinuxState
 
     data class Failed(val message: String) : LinuxState
 }
@@ -40,3 +60,15 @@ data class CommandResult(
     val stderr: String,
     val timedOut: Boolean = false,
 )
+
+/** Where a terminal, command or job runs. */
+enum class ShellEnv(val label: String) {
+    /** /system/bin/sh as the app user. */
+    Android("Android"),
+
+    /** A root shell through su (Magisk, KernelSU or APatch). */
+    Root("Root"),
+
+    /** The installed Linux distro. */
+    Linux("Linux"),
+}

@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -18,6 +20,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures { compose = true }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -25,8 +29,9 @@ android {
 
 dependencies {
     api(project(":core"))
-    // androidx.core 1.19 demands compileSdk 37; this module only needs platform APIs, so it is left out.
+    implementation(project(":ui"))
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.activity.compose)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
 

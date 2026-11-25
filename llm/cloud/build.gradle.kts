@@ -16,7 +16,7 @@ kotlin {
 
 dependencies {
     api(project(":core"))
-    implementation(libs.okhttp)
+    api(libs.okhttp)
     implementation(libs.okhttp.sse)
 
     testImplementation(libs.kotlin.test.junit)

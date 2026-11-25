@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="atom_context_listener_label">Atom notification history</string>
+    <string name="atom_context_health_rationale">Atom and your health data</string>
+    <string name="atom_context_history">Notification history</string>
+    <string name="atom_context_history_sub">Last 7 days, kept only on this phone</string>
+</resources>

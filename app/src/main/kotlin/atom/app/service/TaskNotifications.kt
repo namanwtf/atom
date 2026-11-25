@@ -13,11 +13,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import atom.app.R
-import atom.app.agent.LiveTask
+import atom.app.agent.LiveRun
 import atom.app.agent.PendingApproval
-import atom.app.agent.TaskPhase
+import atom.app.agent.RunOutcome
 import atom.app.ui.MainActivity
+import atom.app.ui.chat.ChatLinkActivity
 import atom.app.ui.common.humanizeTool
+import atom.core.llm.Role
+import atom.ui.feature.RunPhase
 
 class TaskNotifications(private val context: Context) {
     private val manager = NotificationManagerCompat.from(context)
@@ -40,43 +43,91 @@ class TaskNotifications(private val context: Context) {
         )
     }
 
-    /** The ongoing foreground notification: current step and a Stop action. */
-    fun progress(live: LiveTask?): Notification {
-        val waiting = live?.pending != null
-        val title = context.getString(if (waiting) R.string.notif_waiting_title else R.string.notif_working_title)
-        val text = when {
-            live == null -> context.getString(R.string.notif_starting)
-            waiting -> context.getString(R.string.notif_waiting_text)
-            live.currentTool != null -> humanizeTool(live.currentTool)
-            live.phase == TaskPhase.Preparing -> context.getString(R.string.notif_starting)
-            else -> context.getString(R.string.notif_thinking)
-        }
-        return NotificationCompat.Builder(context, CH_TASK)
-            .setSmallIcon(R.drawable.ic_stat_atom)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSubText(live?.engineLabel)
-            .setColor(ACCENT)
+    /**
+     * The foreground notification. With one run it is that run (Open, Pause/Resume, Stop); with several it is the
+     * "Running tasks" summary and every run gets its own child notification with Open and Stop.
+     */
+    fun foreground(active: List<LiveRun>): Notification {
+        if (active.size <= 1) return runNotification(active.firstOrNull(), asGroupChild = false)
+        val inbox = NotificationCompat.InboxStyle()
+        active.forEach { inbox.addLine(titleOf(it) + " · " + statusOf(it)) }
+        return base(CH_TASK)
+            .setContentTitle(context.getString(R.string.notif_running_tasks))
+            .setContentText(context.resources.getQuantityString(R.plurals.notif_running_count, active.size, active.size))
+            .setStyle(inbox)
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(true)
-            .setProgress(0, 0, true)
+            .setGroup(GROUP_RUNS)
+            .setGroupSummary(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openApp())
-            .addAction(0, context.getString(R.string.action_stop), action(TaskActionReceiver.ACTION_STOP, REQ_STOP))
+            .addAction(0, context.getString(R.string.notif_stop_all), broadcast(TaskActionReceiver.ACTION_STOP_ALL, null, REQ_STOP_ALL))
             .build()
+    }
+
+    /** Child notifications, one per run, only while more than one runs. */
+    fun syncChildren(active: List<LiveRun>, shown: MutableSet<String>) {
+        val wanted = if (active.size > 1) active.associateBy { it.conversation.id } else emptyMap()
+        (shown - wanted.keys).forEach { manager.cancel(TAG_RUN, childId(it)) }
+        shown.retainAll(wanted.keys)
+        if (!canPost()) return
+        wanted.forEach { (id, run) ->
+            notifySafely(TAG_RUN, childId(id), runNotification(run, asGroupChild = true))
+            shown += id
+        }
+    }
+
+    private fun runNotification(run: LiveRun?, asGroupChild: Boolean): Notification {
+        val builder = base(CH_TASK)
+            .setContentTitle(run?.let(::titleOf) ?: context.getString(R.string.notif_working_title))
+            .setContentText(run?.let(::statusOf) ?: context.getString(R.string.notif_starting))
+            .setSubText(run?.engineLabel)
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        if (run?.phase != RunPhase.Paused) builder.setProgress(0, 0, true)
+        if (asGroupChild) builder.setGroup(GROUP_RUNS)
+        val id = run?.conversation?.id
+        builder.setContentIntent(if (id != null) openConversation(id) else openApp())
+        if (id != null) {
+            builder.addAction(0, context.getString(R.string.notif_open), openConversation(id))
+            if (!asGroupChild) {
+                if (run.phase == RunPhase.Paused) {
+                    builder.addAction(0, context.getString(R.string.run_resume), broadcast(TaskActionReceiver.ACTION_RESUME, id, REQ_RESUME))
+                } else {
+                    builder.addAction(0, context.getString(R.string.run_pause), broadcast(TaskActionReceiver.ACTION_PAUSE, id, REQ_PAUSE))
+                }
+            }
+            builder.addAction(0, context.getString(R.string.action_stop), broadcast(TaskActionReceiver.ACTION_STOP, id, REQ_STOP + childId(id)))
+        }
+        return builder.build()
+    }
+
+    private fun titleOf(run: LiveRun): String = run.conversation.title.ifBlank { context.getString(R.string.notif_working_title) }
+
+    private fun statusOf(run: LiveRun): String = when {
+        run.pending != null -> context.getString(R.string.notif_waiting_text)
+        run.phase == RunPhase.Paused -> context.getString(R.string.run_paused)
+        run.phase == RunPhase.WaitingForControl -> context.getString(R.string.run_waiting_control)
+        run.retry != null -> context.getString(R.string.run_retrying_short)
+        run.compacting -> context.getString(R.string.run_compacting)
+        run.currentTool != null -> humanizeTool(run.currentTool)
+        run.phase == RunPhase.Starting -> context.getString(R.string.notif_starting)
+        run.stream.text.isNotEmpty() -> context.getString(R.string.run_answering)
+        else -> context.getString(R.string.notif_thinking)
     }
 
     /** Heads-up so the user can answer while Atom is driving another app. */
     fun showApproval(pending: PendingApproval) {
         if (!canPost()) return
-        val notification = NotificationCompat.Builder(context, CH_APPROVAL)
-            .setSmallIcon(R.drawable.ic_stat_atom)
+        val notification = base(CH_APPROVAL)
             .setContentTitle(context.getString(R.string.confirm_title))
             .setContentText(pending.action)
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.action))
-            .setColor(ACCENT)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setTimeoutAfter((pending.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(1_000))
@@ -85,38 +136,40 @@ class TaskNotifications(private val context: Context) {
             .addAction(0, context.getString(R.string.confirm_deny), approvalAction(pending.id, approve = false))
             .addAction(0, context.getString(R.string.confirm_allow), approvalAction(pending.id, approve = true))
             .build()
-        notifySafely(ID_APPROVAL, notification)
+        notifySafely(null, ID_APPROVAL, notification)
     }
 
     fun cancelApproval() = manager.cancel(ID_APPROVAL)
 
-    fun showResult(live: LiveTask) {
+    fun showResult(run: LiveRun) {
         if (!canPost()) return
-        val (title, text) = when (live.phase) {
-            TaskPhase.Failed -> context.getString(R.string.notif_failed) to (live.error ?: "")
-            TaskPhase.Cancelled -> return
-            TaskPhase.StepLimit -> context.getString(R.string.notif_step_limit) to (live.finalText ?: "")
-            else -> context.getString(R.string.notif_done) to lastAssistantText(live)
+        val (title, text) = when (run.outcome) {
+            RunOutcome.Failed -> context.getString(R.string.notif_failed) to (run.error ?: "")
+            RunOutcome.Cancelled, null -> return
+            RunOutcome.StepLimit -> context.getString(R.string.notif_step_limit) to (run.finalText ?: "")
+            else -> context.getString(R.string.notif_done) to lastAnswer(run)
         }
-        val notification = NotificationCompat.Builder(context, CH_RESULT)
-            .setSmallIcon(R.drawable.ic_stat_atom)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setColor(ACCENT)
+        val notification = base(CH_RESULT)
+            .setContentTitle(run.conversation.title.ifBlank { title })
+            .setContentText(text.ifBlank { title })
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text.ifBlank { title }))
             .setAutoCancel(true)
-            .setContentIntent(openApp())
+            .setContentIntent(openConversation(run.conversation.id))
             .build()
-        notifySafely(ID_RESULT, notification)
+        notifySafely(TAG_RESULT, childId(run.conversation.id), notification)
     }
 
-    fun notifyProgress(live: LiveTask?) {
-        if (canPost()) notifySafely(ID_TASK, progress(live))
+    fun notifyForeground(active: List<LiveRun>) {
+        if (canPost()) notifySafely(null, ID_TASK, foreground(active))
     }
 
-    private fun lastAssistantText(live: LiveTask): String =
-        live.conversation.messages.lastOrNull { it.message.role == atom.core.llm.Role.Assistant && it.message.text.isNotBlank() }
+    private fun lastAnswer(run: LiveRun): String =
+        run.conversation.messages.lastOrNull { it.message.role == Role.Assistant && it.message.text.isNotBlank() }
             ?.message?.text?.trim()?.take(300).orEmpty()
+
+    private fun base(channel: String) = NotificationCompat.Builder(context, channel)
+        .setSmallIcon(R.drawable.ic_stat_atom)
+        .setColor(ACCENT)
 
     private fun canPost(): Boolean =
         manager.areNotificationsEnabled() &&
@@ -126,9 +179,9 @@ class TaskNotifications(private val context: Context) {
                 )
 
     @Suppress("MissingPermission")
-    private fun notifySafely(id: Int, notification: Notification) {
+    private fun notifySafely(tag: String?, id: Int, notification: Notification) {
         try {
-            manager.notify(id, notification)
+            manager.notify(tag, id, notification)
         } catch (_: SecurityException) {
             // Permission revoked between the check and the call.
         }
@@ -141,10 +194,19 @@ class TaskNotifications(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun action(action: String, requestCode: Int): PendingIntent = PendingIntent.getBroadcast(
+    private fun openConversation(conversationId: String): PendingIntent = PendingIntent.getActivity(
+        context,
+        REQ_OPEN_CONVERSATION + childId(conversationId),
+        ChatLinkActivity.intent(context, conversationId),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun broadcast(action: String, conversationId: String?, requestCode: Int): PendingIntent = PendingIntent.getBroadcast(
         context,
         requestCode,
-        Intent(context, TaskActionReceiver::class.java).setAction(action),
+        Intent(context, TaskActionReceiver::class.java).setAction(action).apply {
+            if (conversationId != null) putExtra(TaskActionReceiver.EXTRA_CONVERSATION_ID, conversationId)
+        },
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
@@ -157,17 +219,27 @@ class TaskNotifications(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    private fun childId(conversationId: String): Int = (conversationId.hashCode() and 0x0FFFFFFF) or 0x10000000
+
     companion object {
         const val CH_TASK = "task"
         const val CH_APPROVAL = "approval"
         const val CH_RESULT = "result"
         const val ID_TASK = 1001
         const val ID_APPROVAL = 1002
-        const val ID_RESULT = 1003
+        private const val TAG_RUN = "run"
+        private const val TAG_RESULT = "result"
+        private const val GROUP_RUNS = "atom.runs"
         private const val REQ_OPEN = 10
         private const val REQ_STOP = 11
         private const val REQ_APPROVE = 12
         private const val REQ_DENY = 13
-        private const val ACCENT = 0xFF4F8BFF.toInt()
+        private const val REQ_STOP_ALL = 14
+        private const val REQ_PAUSE = 15
+        private const val REQ_RESUME = 16
+        private const val REQ_OPEN_CONVERSATION = 17
+
+        /** White on graphite, the app's only accent. */
+        private const val ACCENT = 0xFFF4F4F6.toInt()
     }
 }

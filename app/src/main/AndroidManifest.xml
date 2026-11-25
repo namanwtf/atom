@@ -29,7 +29,37 @@
             </intent-filter>
         </activity>
 
-        <!-- Exists only while a user-requested task runs; stops itself when the task ends. -->
+        <!-- Share-to-Atom: any type, one or many items. Reads the items, then hands them to the chat. -->
+        <activity
+            android:name=".ui.chat.ShareReceiverActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="@string/share_target_label"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Notification "Open": selects the run's conversation, then shows the app. -->
+        <activity
+            android:name=".ui.chat.ChatLinkActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Exists only while user-requested tasks run; stops itself when the last one ends. -->
         <service
             android:name=".service.AgentService"
             android:exported="false"

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_entry_search">Web search and reading</string>
+    <string name="web_entry_search_sub">Search and page-reading services</string>
+    <string name="web_entry_images">AI image generation</string>
+    <string name="web_entry_images_sub">Image models, keys and defaults</string>
+    <string name="web_entry_gallery">Generated images</string>
+    <string name="web_entry_gallery_sub">View, save and share your images</string>
+    <string name="web_entry_browser">Browser</string>
+    <string name="web_entry_browser_sub">Browse with the agent\'s sign-ins</string>
+</resources>

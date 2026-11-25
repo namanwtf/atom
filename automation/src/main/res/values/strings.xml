@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="automation_tasks_title">Scheduled tasks</string>
+    <string name="automation_tasks_subtitle">Run Atom on a schedule</string>
+    <string name="automation_rules_title">Automations</string>
+    <string name="automation_rules_subtitle">Describe it once; it runs on phone events</string>
+    <string name="automation_channel_results">Scheduled task results</string>
+    <string name="automation_channel_results_desc">Results of scheduled tasks and automations</string>
+    <string name="automation_channel_alerts">Scheduled task alerts</string>
+    <string name="automation_channel_alerts_desc">Failures, auto-pause and tasks waiting for you to unlock</string>
+    <string name="automation_channel_listening">Automations listening</string>
+    <string name="automation_channel_listening_desc">Shown while automations wait for phone events</string>
+</resources>

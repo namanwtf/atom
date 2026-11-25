@@ -65,6 +65,9 @@ internal suspend fun fetchText(client: OkHttpClient, request: Request, errors: E
     return body
 }
 
+/** Executes [request] and returns status and body without interpreting either. */
+internal suspend fun rawFetch(client: OkHttpClient, request: Request): Pair<Int, String> = client.newCall(request).await()
+
 private suspend fun Call.await(): Pair<Int, String> = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { cancel() }
     enqueue(object : Callback {

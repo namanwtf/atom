@@ -18,6 +18,10 @@ internal class LinuxPaths(context: Context) {
     val run = File(base, "run")
     val fakeProc = File(base, "fakeproc")
     val chrootScript = File(base, "atom-chroot.sh")
+    /** The app's private workspace, shown as /workspace in Linux (survives reinstalling the distro). */
+    val workspace = File(base, "workspace")
+    val jobs = File(base, "jobs")
+    val config = File(base, "config.json")
 
     private val nativeDir = File(context.applicationInfo.nativeLibraryDir)
     val proot = File(nativeDir, "libproot.so")

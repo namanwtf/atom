@@ -61,7 +61,7 @@ class AnthropicEngineTest {
 
         assertEquals("Hello there", events.text())
         assertEquals(listOf(LlmEvent.ReasoningDelta("hmm")), events.filterIsInstance<LlmEvent.ReasoningDelta>())
-        assertEquals(LlmEvent.Usage(15, 7), events.filterIsInstance<LlmEvent.Usage>().single())
+        assertEquals(LlmEvent.Usage(15, 7, cacheReadTokens = 5), events.filterIsInstance<LlmEvent.Usage>().single())
         assertEquals(LlmEvent.Finished(FinishReason.Stop), events.last())
 
         val recorded = server.takeRequest()

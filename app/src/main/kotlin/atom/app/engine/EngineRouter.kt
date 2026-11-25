@@ -20,9 +20,27 @@ import atom.engine.litert.LiteRtBackend
 import atom.engine.litert.LiteRtEngine
 import atom.engine.llamacpp.LlamaConfig
 import atom.engine.llamacpp.LlamaCppEngine
+import atom.app.data.ModelRole
+import atom.app.data.ModelRoles
+import atom.app.data.ProviderStore
+import atom.core.llm.ReasoningEffort
+import atom.llm.cloud.AuthMethod
+import atom.llm.cloud.ChatGptAuth
 import atom.llm.cloud.CloudEngines
+import atom.llm.cloud.EngineOptions
+import atom.llm.cloud.Family
+import atom.llm.cloud.GrokAuth
+import atom.llm.cloud.HeaderEntry
+import atom.llm.cloud.ModelConfig
+import atom.llm.cloud.OAuthException
+import atom.llm.cloud.PresetCatalog
+import atom.llm.cloud.Protocol
 import atom.llm.cloud.Provider
+import atom.llm.cloud.ProviderConfig
 import atom.llm.cloud.Providers
+import atom.llm.cloud.Reasoning
+import atom.llm.cloud.ReasoningInfo
+import atom.llm.cloud.RequestCustomizer
 import atom.llm.cloud.Wire
 import atom.models.InstalledModel
 import atom.models.ModelFormat
@@ -48,7 +66,15 @@ class RoutedEngine internal constructor(
     val onDevice: Boolean,
     /** Short explanation when routing differs from the user's selection (e.g. hot phone → cloud). */
     val notice: String?,
+    /** What actually runs (the fallback when [notice] says so). */
+    val selection: EngineSelection? = null,
+    /** Reasoning levels the model accepts; pass requested efforts through [snapReasoning]. */
+    val reasoning: ReasoningInfo = ReasoningInfo.None,
+    /** Context window in tokens when known; null means unknown (automatic compaction stays off). */
+    val contextWindow: Int? = null,
 ) {
+    fun snapReasoning(effort: ReasoningEffort?): ReasoningEffort? = Reasoning.snap(effort, reasoning)
+
     fun agentConfig(systemPrompt: String, tools: List<ToolSpec>, slowApprovals: Boolean): AgentConfig {
         val vision = engine.capabilities.vision
         val toolTimeout = if (slowApprovals) 125_000L else 60_000L
@@ -112,11 +138,19 @@ class EngineRouter(
     private var inUse = 0
     private var idleJob: Job? = null
 
-    suspend fun acquire(): RoutedEngine = mutex.withLock {
+    private val providers: ProviderStore by lazy { ProviderStore.get(context) }
+    private val accounts: SubscriptionAuth by lazy { SubscriptionAuth.get(context) }
+
+    /** The engine for a role (assistant overlay, subagent, titles, scheduled tasks), following the primary model when unset. */
+    suspend fun acquire(role: ModelRole, conversationSelection: EngineSelection?, override: EngineSelection? = null): RoutedEngine =
+        acquire(ModelRoles.get(context).resolve(role, conversationSelection, override))
+
+    /** The engine for [selection] (a conversation's model), or the global default when null. */
+    suspend fun acquire(selection: EngineSelection? = null): RoutedEngine = mutex.withLock {
         idleJob?.cancel()
         idleJob = null
         val current = settings.current()
-        val selection = current.selection ?: throw RouteException(context.getString(R.string.route_no_engine))
+        val selection = selection ?: current.selection ?: throw RouteException(context.getString(R.string.route_no_engine))
         val routed = when (selection) {
             is EngineSelection.Cloud -> cloud(selection, notice = null)
             is EngineSelection.Local -> {
@@ -176,15 +210,33 @@ class EngineRouter(
     }
 
     private suspend fun cloud(selection: EngineSelection.Cloud, notice: String?): RoutedEngine {
-        val provider = ProviderResolver.resolve(selection.providerId, selection.baseUrl, selection.model)
+        val config = providers.get(selection.providerId) ?: ProviderResolver.legacyConfig(selection)
             ?: throw RouteException(context.getString(R.string.route_unknown_provider, selection.providerId))
-        val key = vault.apiKey(provider.id).orEmpty()
-        if (key.isEmpty() && provider.id != Providers.CUSTOM_ID) {
-            throw RouteException(context.getString(R.string.route_missing_key, provider.displayName))
+        if (!config.enabled) throw RouteException(context.getString(R.string.mdl_route_disabled, config.displayName))
+        val modelId = selection.model.ifBlank { config.primaryModel }
+        if (modelId.isBlank()) throw RouteException(context.getString(R.string.mdl_route_no_model, config.displayName))
+        val modelConfig = config.model(modelId) ?: ModelConfig(modelId)
+        val credential = credential(config)
+        val extraBody = RequestCustomizer.parseExtraBody(config.extraBody).getOrElse {
+            throw RouteException(context.getString(R.string.mdl_route_bad_body, config.displayName))
         }
-        val baseUrl = selection.baseUrl?.takeIf { it.isNotBlank() } ?: provider.baseUrl
+        val provider = credential.provider
+        val baseUrl = provider.baseUrl
+        val options = EngineOptions(
+            headers = config.headers,
+            authHeaders = credential.headers,
+            extraBody = extraBody,
+            systemPrompt = config.systemPrompt.takeIf { it.isNotBlank() },
+            hostedWebSearch = config.hostedWebSearch && provider.wire == Wire.OpenAiResponses,
+            googleSearch = config.googleSearch && provider.wire.protocol == Protocol.Gemini,
+            vertexProject = config.vertexProject.takeIf { it.isNotBlank() },
+            vertexLocation = config.vertexLocation,
+            reasoning = modelConfig.reasoning,
+            contextWindow = modelConfig.effectiveContextWindow,
+            vision = modelConfig.vision,
+        )
         val engine = try {
-            CloudEngines.create(provider, key, selection.model, baseUrl)
+            CloudEngines.create(provider, credential.secret, modelId, baseUrl, options)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -192,11 +244,46 @@ class EngineRouter(
         }
         return RoutedEngine(
             engine = engine,
-            model = selection.model,
-            label = context.getString(R.string.engine_label_cloud, provider.displayName, selection.model),
+            model = modelId,
+            label = context.getString(R.string.engine_label_cloud, config.displayName, modelConfig.displayName),
             onDevice = false,
             notice = notice,
+            selection = selection.copy(model = modelId),
+            reasoning = modelConfig.reasoning,
+            contextWindow = modelConfig.effectiveContextWindow,
         )
+    }
+
+    private class Credential(val provider: Provider, val secret: String, val headers: List<HeaderEntry>)
+
+    private suspend fun credential(config: ProviderConfig): Credential {
+        val provider = config.toProvider()
+        return when (config.auth) {
+            AuthMethod.ApiKey -> {
+                val key = vault.apiKey(config.id).orEmpty()
+                if (key.isEmpty() && !config.keyOptional) {
+                    val message = if (vault.isUnreadable(config.id)) R.string.mdl_route_key_unreadable else R.string.route_missing_key
+                    throw RouteException(context.getString(message, config.displayName))
+                }
+                Credential(provider, key, emptyList())
+            }
+            AuthMethod.ChatGpt -> {
+                val tokens = accountTokens(config)
+                val account = provider.copy(wire = Wire.OpenAiResponses, baseUrl = ChatGptAuth.BASE_URL, family = Family.CHATGPT, supportsModelList = false)
+                Credential(account, tokens.accessToken, ChatGptAuth.accountHeaders(tokens))
+            }
+            AuthMethod.Grok -> {
+                val tokens = accountTokens(config)
+                val account = provider.copy(wire = Wire.OpenAiResponses, baseUrl = GrokAuth.BASE_URL, family = Family.XAI)
+                Credential(account, tokens.accessToken, emptyList())
+            }
+        }
+    }
+
+    private suspend fun accountTokens(config: ProviderConfig) = try {
+        accounts.validTokens(config.id)
+    } catch (e: OAuthException) {
+        throw RouteException(context.getString(R.string.mdl_route_signin, config.displayName, e.message.orEmpty()))
     }
 
     private suspend fun local(selection: EngineSelection.Local): RoutedEngine {
@@ -226,6 +313,8 @@ class EngineRouter(
             label = installed.name,
             onDevice = true,
             notice = null,
+            selection = selection,
+            contextWindow = RoutedEngine.LOCAL_CONTEXT_WINDOW,
         )
     }
 
@@ -264,9 +353,13 @@ class EngineRouter(
 }
 
 object ProviderResolver {
-    /** Resolves a provider id, synthesising an OpenAI-compatible provider for the custom id if needed. */
+    /**
+     * Resolves a provider id to its configured provider (or the built-in preset before the store has loaded),
+     * synthesising an OpenAI-compatible provider for the legacy custom id.
+     */
     fun resolve(providerId: String, baseUrl: String? = null, model: String? = null): Provider? {
-        Providers.byId(providerId)?.let { return it }
+        ProviderStore.peekInstance()?.peek(providerId)?.let { return it.toProvider() }
+        Providers.byId(providerId)?.takeIf { it.id != Providers.CUSTOM_ID }?.let { return it }
         if (providerId != Providers.CUSTOM_ID) return null
         return Provider(
             id = Providers.CUSTOM_ID,
@@ -276,16 +369,25 @@ object ProviderResolver {
             defaultModel = model.orEmpty(),
             keyHelpUrl = null,
             supportsModelList = true,
+            family = Family.CUSTOM,
         )
     }
 
-    /** Every provider the picker offers; custom is always present and last. */
+    /** Enabled providers, in the user's order. */
     fun all(): List<Provider> {
-        val listed = Providers.all
-        return if (listed.any { it.id == Providers.CUSTOM_ID }) {
-            listed.filterNot { it.id == Providers.CUSTOM_ID } + listed.first { it.id == Providers.CUSTOM_ID }
-        } else {
-            listed + resolve(Providers.CUSTOM_ID)!!
-        }
+        val configured = ProviderStore.peekInstance()?.providers?.value
+        return configured?.filter { it.enabled }?.map { it.toProvider() }
+            ?: PresetCatalog.providers.map { it.toProvider() }
+    }
+
+    /** Selections saved before providers were configurable used a single "custom" id with a base URL. */
+    internal fun legacyConfig(selection: EngineSelection.Cloud): ProviderConfig? {
+        if (selection.providerId != Providers.CUSTOM_ID || selection.baseUrl.isNullOrBlank()) return null
+        return ProviderConfig(
+            id = Providers.CUSTOM_ID,
+            displayName = "Custom",
+            wire = Wire.OpenAiChat,
+            baseUrl = selection.baseUrl,
+        )
     }
 }

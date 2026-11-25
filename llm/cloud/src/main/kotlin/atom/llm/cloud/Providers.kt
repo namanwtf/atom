@@ -1,10 +1,81 @@
 package atom.llm.cloud
 
-enum class Wire { OpenAiChat, Anthropic, Gemini }
+/**
+ * The HTTP protocol a provider speaks. [OpenAiChat] and [OpenAiResponses] are the two endpoint modes of an
+ * OpenAI-compatible provider; [Gemini] is Google AI Studio and [Vertex] is Gemini on Vertex AI.
+ */
+enum class Wire {
+    OpenAiChat,
+    OpenAiResponses,
+    Anthropic,
+    Gemini,
+    Vertex,
+    ;
+
+    val protocol: Protocol
+        get() = when (this) {
+            OpenAiChat, OpenAiResponses -> Protocol.OpenAi
+            Anthropic -> Protocol.Anthropic
+            Gemini, Vertex -> Protocol.Gemini
+        }
+}
+
+enum class Protocol { OpenAi, Anthropic, Gemini }
 
 /**
- * A cloud model provider. [baseUrl] always includes the API version segment; each wire appends
- * only its resource path (`/chat/completions`, `/messages`, `/models/{model}:streamGenerateContent`).
+ * Vendor families. Wire quirks (reasoning parameters, headers, interleaved thinking) key off the family, not
+ * the provider id, so duplicated or user-added providers that point at a known vendor behave the same.
+ */
+object Family {
+    const val OPENAI = "openai"
+    const val ANTHROPIC = "anthropic"
+    const val GEMINI = "gemini"
+    const val DEEPSEEK = "deepseek"
+    const val MOONSHOT = "moonshot"
+    const val QWEN = "qwen"
+    const val MIMO = "mimo"
+    const val MINIMAX = "minimax"
+    const val STEPFUN = "stepfun"
+    const val SILICONFLOW = "siliconflow"
+    const val OPENROUTER = "openrouter"
+    const val XAI = "xai"
+    const val GROQ = "groq"
+    const val MISTRAL = "mistral"
+    const val CHATGPT = "chatgpt"
+    const val CUSTOM = "custom"
+
+    private val HOSTS = listOf(
+        "api.openai.com" to OPENAI,
+        "chatgpt.com" to CHATGPT,
+        "anthropic.com" to ANTHROPIC,
+        "generativelanguage.googleapis.com" to GEMINI,
+        "aiplatform" to GEMINI,
+        "deepseek.com" to DEEPSEEK,
+        "moonshot" to MOONSHOT,
+        "kimi" to MOONSHOT,
+        "dashscope" to QWEN,
+        "aliyuncs.com" to QWEN,
+        "xiaomimimo.com" to MIMO,
+        "minimax" to MINIMAX,
+        "stepfun.com" to STEPFUN,
+        "siliconflow" to SILICONFLOW,
+        "openrouter.ai" to OPENROUTER,
+        "x.ai" to XAI,
+        "grok.com" to XAI,
+        "groq.com" to GROQ,
+        "mistral.ai" to MISTRAL,
+    )
+
+    /** Guesses the family from a base URL; [CUSTOM] when the host is not a known vendor. */
+    fun fromBaseUrl(baseUrl: String): String {
+        val host = baseUrl.substringAfter("://").substringBefore('/').substringBefore(':').lowercase()
+        return HOSTS.firstOrNull { (needle, _) -> host.contains(needle) }?.second ?: CUSTOM
+    }
+}
+
+/**
+ * A provider as the engines see it. [baseUrl] includes the API version segment where the vendor has one;
+ * each wire appends only its resource path.
  */
 data class Provider(
     val id: String,
@@ -14,138 +85,22 @@ data class Provider(
     val defaultModel: String,
     val keyHelpUrl: String?,
     val supportsModelList: Boolean,
+    val family: String = id,
 )
 
 object Providers {
     const val CUSTOM_ID = "custom"
 
-    val all: List<Provider> = listOf(
-        Provider(
-            id = "openai",
-            displayName = "OpenAI",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.openai.com/v1",
-            defaultModel = "gpt-6.2-sol",
-            keyHelpUrl = "https://platform.openai.com/api-keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "anthropic",
-            displayName = "Anthropic",
-            wire = Wire.Anthropic,
-            baseUrl = "https://api.anthropic.com/v1",
-            defaultModel = "claude-opus-5-5",
-            keyHelpUrl = "https://console.anthropic.com/settings/keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "gemini",
-            displayName = "Google Gemini",
-            wire = Wire.Gemini,
-            baseUrl = "https://generativelanguage.googleapis.com/v1beta",
-            defaultModel = "gemini-3.8-flash",
-            keyHelpUrl = "https://aistudio.google.com/apikey",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "deepseek",
-            displayName = "DeepSeek",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.deepseek.com",
-            defaultModel = "deepseek-flash",
-            keyHelpUrl = "https://platform.deepseek.com/api_keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "moonshot",
-            displayName = "Moonshot Kimi",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.moonshot.ai/v1",
-            defaultModel = "kimi-k3.1-pro",
-            keyHelpUrl = "https://platform.kimi.ai/console/api-keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "qwen",
-            displayName = "Qwen (DashScope)",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-            defaultModel = "qwen-plus",
-            keyHelpUrl = "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "xai",
-            displayName = "xAI",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.x.ai/v1",
-            defaultModel = "grok-4.7",
-            keyHelpUrl = "https://console.x.ai",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "minimax",
-            displayName = "MiniMax",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.minimax.io/v1",
-            defaultModel = "MiniMax-M3",
-            keyHelpUrl = "https://platform.minimax.io/user-center/basic-information/interface-key",
-            supportsModelList = false,
-        ),
-        Provider(
-            id = "stepfun",
-            displayName = "StepFun",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.stepfun.com/v1",
-            defaultModel = "step-3.5-flash",
-            keyHelpUrl = "https://platform.stepfun.com/interface-key",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "siliconflow",
-            displayName = "SiliconFlow",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.siliconflow.com/v1",
-            defaultModel = "deepseek-ai/DeepSeek-R1",
-            keyHelpUrl = "https://cloud.siliconflow.com/account/ak",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "openrouter",
-            displayName = "OpenRouter",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://openrouter.ai/api/v1",
-            defaultModel = "openrouter/auto",
-            keyHelpUrl = "https://openrouter.ai/settings/keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "groq",
-            displayName = "Groq",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.groq.com/openai/v1",
-            defaultModel = "openai/gpt-oss-120b",
-            keyHelpUrl = "https://console.groq.com/keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = "mistral",
-            displayName = "Mistral",
-            wire = Wire.OpenAiChat,
-            baseUrl = "https://api.mistral.ai/v1",
-            defaultModel = "mistral-medium-latest",
-            keyHelpUrl = "https://console.mistral.ai/api-keys",
-            supportsModelList = true,
-        ),
-        Provider(
-            id = CUSTOM_ID,
-            displayName = "Custom (OpenAI-compatible)",
-            wire = Wire.OpenAiChat,
-            baseUrl = "http://localhost:11434/v1",
-            defaultModel = "",
-            keyHelpUrl = null,
-            supportsModelList = true,
-        ),
+    /** Built-in providers, in catalog order, followed by the generic custom endpoint. */
+    val all: List<Provider> = PresetCatalog.providers.map { it.toProvider() } + Provider(
+        id = CUSTOM_ID,
+        displayName = "Custom (OpenAI-compatible)",
+        wire = Wire.OpenAiChat,
+        baseUrl = "http://localhost:11434/v1",
+        defaultModel = "",
+        keyHelpUrl = null,
+        supportsModelList = true,
+        family = Family.CUSTOM,
     )
 
     private val byIdMap = all.associateBy { it.id }

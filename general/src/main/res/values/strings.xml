@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings entries -->
+    <string name="general_entry_appearance">Appearance &amp; theme</string>
+    <string name="general_entry_appearance_sub">Theme, accent, blur, gestures</string>
+    <string name="general_entry_backup">Data backup</string>
+    <string name="general_entry_backup_sub">Export or import everything as one file</string>
+    <string name="general_entry_language">Language</string>
+    <string name="general_entry_language_sub">Follow system</string>
+    <string name="general_entry_about">About</string>
+    <string name="general_entry_about_sub">Version, updates, source, feedback</string>
+
+    <!-- Appearance -->
+    <string name="appearance_title">Appearance</string>
+    <string name="appearance_preview">Preview</string>
+    <string name="appearance_preview_user">Summarise my unread messages</string>
+    <string name="appearance_preview_reply">Three new messages. Your 4 pm moved to 5, and the parcel arrives tomorrow.</string>
+    <string name="appearance_preview_action">Run</string>
+    <string name="appearance_preview_switch">Hands-free</string>
+    <string name="appearance_section_theme">Theme</string>
+    <string name="appearance_mode_system">System</string>
+    <string name="appearance_mode_light">Light</string>
+    <string name="appearance_mode_dark">Dark</string>
+    <string name="appearance_pure_black">Pure black</string>
+    <string name="appearance_pure_black_sub">True #000000 in dark mode. Off uses soft graphite.</string>
+    <string name="appearance_section_accent">Accent</string>
+    <string name="accent_monochrome">Mono</string>
+    <string name="accent_silver">Silver</string>
+    <string name="accent_ember">Ember</string>
+    <string name="accent_jade">Jade</string>
+    <string name="accent_iris">Iris</string>
+    <string name="accent_rose">Rose</string>
+    <string name="accent_system">System</string>
+    <string name="appearance_monet_unavailable">Wallpaper colours need Android 12 or later.</string>
+    <string name="appearance_color_style">Colour style</string>
+    <string name="appearance_color_style_sub">How wallpaper colours are applied</string>
+    <string name="style_tonal_spot">Tonal spot</string>
+    <string name="style_neutral">Neutral</string>
+    <string name="style_vibrant">Vibrant</string>
+    <string name="style_expressive">Expressive</string>
+    <string name="style_monochrome">Monochrome</string>
+    <string name="appearance_section_effects">Effects</string>
+    <string name="appearance_blur">Blur effects</string>
+    <string name="appearance_blur_sub">Frosted bars. Off uses a plain tint and saves battery.</string>
+    <string name="appearance_top_bar_blur">Top bar blur</string>
+    <string name="top_bar_blur_gradient">Gradient band</string>
+    <string name="top_bar_blur_progressive">Progressive</string>
+    <string name="appearance_progressive_blur">Progressive blur</string>
+    <string name="appearance_progressive_blur_sub">Blur that fades out gradually. Turn off for performance.</string>
+    <string name="appearance_section_navigation">Navigation</string>
+    <string name="appearance_predictive_back">Predictive back</string>
+    <string name="appearance_predictive_back_sub">Peek at the previous screen while swiping back</string>
+    <string name="appearance_swipe_back">Swipe back anywhere</string>
+    <string name="appearance_swipe_back_sub">Swipe right from anywhere on a screen to go back</string>
+
+    <!-- Backup -->
+    <string name="backup_title">Data backup</string>
+    <string name="backup_intro">One JSON file with your data. Keep it somewhere safe.</string>
+    <string name="backup_includes">Includes: %1$s</string>
+    <string name="backup_nothing_registered">Nothing to back up yet.</string>
+    <string name="backup_export">Export data</string>
+    <string name="backup_export_sub">Save everything to one file</string>
+    <string name="backup_import">Import data</string>
+    <string name="backup_import_sub">Replace current data from a backup file</string>
+    <string name="backup_never_included">Speech credentials and sign-in tokens are never included. The system cloud backup is off; this is the only backup.</string>
+    <string name="backup_working">Working…</string>
+    <string name="backup_secrets_title">This file will contain API keys</string>
+    <string name="backup_secrets_body">Your model provider API keys are saved in the file as plain text. Anyone with the file can use them. Store it privately and delete copies you no longer need.</string>
+    <string name="backup_continue">Continue</string>
+    <string name="backup_cancel">Cancel</string>
+    <string name="backup_ok">OK</string>
+    <string name="backup_exported">Backup saved.</string>
+    <string name="backup_export_failed">Could not save the backup: %1$s</string>
+    <string name="backup_confirm_title">Replace current data?</string>
+    <string name="backup_confirm_body">Backup from %1$s, Atom %2$s.\n\nThese parts will be replaced: %3$s.\n\nYour current data for them will be overwritten. This cannot be undone.</string>
+    <string name="backup_confirm_untouched">\n\nNot in the file, left as is: %1$s.</string>
+    <string name="backup_confirm_unknown">\n\nSkipped (not supported by this version): %1$s.</string>
+    <string name="backup_confirm_secrets">\n\nThe file contains API keys.</string>
+    <string name="backup_replace">Replace</string>
+    <string name="backup_busy_title">Stop running tasks first</string>
+    <string name="backup_busy_body">An agent task is running. Stop it before importing, so nothing writes data mid-import.</string>
+    <string name="backup_stop_tasks">Stop tasks</string>
+    <string name="backup_done_title">Import complete</string>
+    <string name="backup_done_body">Restored: %1$s.\n\nSubscription sign-ins stay off until you sign in again. If your default model was not restored, pick it again in Models.</string>
+    <string name="backup_failed_title">Import failed</string>
+    <string name="backup_failed_rolled_back">%1$s could not be imported (%2$s). All changes were undone; your previous data is back.</string>
+    <string name="backup_failed_partial">%1$s could not be imported (%2$s). These parts could not be restored and may need checking: %3$s.</string>
+    <string name="backup_invalid_title">Can\'t use this file</string>
+    <string name="backup_problem_empty">The file is empty.</string>
+    <string name="backup_problem_too_large">The file is too large to be an Atom backup.</string>
+    <string name="backup_problem_not_json">The file is damaged or is not a backup.</string>
+    <string name="backup_problem_foreign">This is not an Atom backup file.</string>
+    <string name="backup_problem_version">This backup was made by a newer version of Atom (format %1$d). Update Atom, then import it.</string>
+    <string name="backup_problem_corrupt">The backup is damaged (%1$s).</string>
+    <string name="backup_problem_section">%1$s: %2$s</string>
+    <string name="backup_problem_nothing">The file has nothing this version of Atom can import.</string>
+    <string name="backup_read_failed">Could not read the file.</string>
+    <string name="general_backup_section_appearance">Appearance</string>
+
+    <!-- Language -->
+    <string name="language_title">Language</string>
+    <string name="language_follow_system">Follow system</string>
+    <string name="language_follow_system_sub">English</string>
+    <string name="language_note">Atom is available in English. More languages will appear here as translations are added.</string>
+
+    <!-- About -->
+    <string name="about_title">About</string>
+    <string name="about_app_name">Atom</string>
+    <string name="about_tagline">An on-device AI agent for your phone</string>
+    <string name="about_version_row">Version</string>
+    <string name="about_check_updates">Check for updates</string>
+    <string name="about_updates_not_configured">Updates: not configured</string>
+    <string name="about_checking">Checking…</string>
+    <string name="about_up_to_date">Already on the latest version</string>
+    <string name="about_update_available">Update available: latest %1$s, current %2$s</string>
+    <string name="about_no_releases">No releases published yet</string>
+    <string name="about_check_failed">Couldn\'t check: %1$s</string>
+    <string name="about_tap_to_check">Tap to check GitHub Releases</string>
+    <string name="about_download">Download</string>
+    <string name="about_source">Source code</string>
+    <string name="about_feedback">Feedback</string>
+    <string name="about_feedback_sub">Report a problem or suggest an idea</string>
+    <string name="about_licenses">Open source licenses</string>
+    <string name="about_licenses_sub">Licenses for the software Atom uses</string>
+    <string name="about_no_installs">Updates are never installed automatically.</string>
+    <string name="about_feedback_subject">Atom feedback</string>
+    <string name="about_open_failed">No app can open this link.</string>
+</resources>
