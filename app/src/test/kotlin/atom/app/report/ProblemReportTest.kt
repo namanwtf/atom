@@ -135,6 +135,12 @@ class ProblemReportTest {
         assertTrue("[number]" in text)
     }
 
+    @Test fun buildNamesAreKept() {
+        val build = "sdk_gphone64_x86_64-userdebug 15 AE3A.240806.043 12960925 dev-keys"
+        val text = ProblemReport.text(input().copy(device = input().device.copy(build = build)))
+        assertTrue("Build: $build" in text, text)
+    }
+
     @Test fun conversationIsOnlyThereWhenChosen() {
         assertFalse("Conversation (included by you)" in ProblemReport.text(input()))
         assertTrue("Conversation (included by you)" in ProblemReport.text(input(conversation = "## User\n\nhello")))

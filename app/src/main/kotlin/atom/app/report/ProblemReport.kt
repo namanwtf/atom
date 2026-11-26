@@ -72,14 +72,17 @@ object ProblemReport {
         val time = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US).withZone(input.zone)
         fun at(ms: Long) = time.format(Instant.ofEpochMilli(ms))
         fun mine(s: String) = Redactor.personal(s, known)
-        val out = buildString {
+        val head = buildString {
             appendLine("Atom problem report")
             appendLine("Created ${at(input.createdAt)} (${input.zone.id})")
             appendLine("Made on the phone and shared by hand: Atom sends nothing on its own. Keys, tokens and personal data are left out.")
 
             section("What happened")
             appendLine(input.note.trim().ifEmpty { "(not described)" }.let { Redactor.secrets(it, known) })
-
+        }
+        // Versions and build names come from the system, not from the person or a model: only saved secrets are
+        // matched there, so a build id is never mistaken for a token.
+        val facts = buildString {
             section("App")
             appendLine("Atom ${input.app.versionName} (${input.app.versionCode})${if (input.app.debugBuild) ", debug build" else ""}")
             appendLine("Package: ${input.app.packageName}")
@@ -89,7 +92,8 @@ object ProblemReport {
             appendLine("Model: ${input.device.manufacturer} ${input.device.model}".trimEnd())
             appendLine("ROM: ${input.device.rom ?: "not detected"}")
             input.device.build?.takeIf { it.isNotBlank() }?.let { appendLine("Build: $it") }
-
+        }
+        val body = buildString {
             section("Last run")
             val run = input.run
             if (run == null) {
@@ -131,8 +135,8 @@ object ProblemReport {
                 appendLine("Could not be read on this phone.")
             } else {
                 val lines = log.takeLast(MAX_LOG_LINES)
-                section("Atom log (last ${lines.size} lines)")
-                if (lines.isEmpty()) appendLine("Empty.")
+                section(if (lines.isEmpty()) "Atom log" else "Atom log (last ${lines.size} lines)")
+                if (lines.isEmpty()) appendLine("No lines from Atom's log tags since the phone started.")
                 lines.forEach { appendLine(logLine(it, known)) }
             }
 
@@ -144,7 +148,7 @@ object ProblemReport {
             section("Attachments")
             appendLine(if (input.screenshot) "Screenshot attached." else "No screenshot.")
         }
-        return Redactor.secrets(out, known)
+        return Redactor.secrets(head, known) + Redactor.exact(facts, known) + Redactor.secrets(body, known)
     }
 
     private fun StringBuilder.section(title: String) {

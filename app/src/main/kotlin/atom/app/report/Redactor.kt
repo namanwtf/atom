@@ -41,11 +41,17 @@ object Redactor {
     private val URL = Regex("(?i)\\b(https?|wss?)://([^\\s/?#\"'<>]+)([^\\s\"'<>]*)")
     private val USER_FILES = Regex("(/(?:storage/emulated/\\d+|sdcard|storage/[0-9A-F]{4}-[0-9A-F]{4}|data/user/\\d+/[^/\\s]+/files/workspace))/[^\\s\"'<>]+")
 
-    /** Removes [known] values (the person's saved keys and tokens, matched exactly) and every key-like string. */
-    fun secrets(text: String, known: Collection<String> = emptyList()): String {
+    /** Removes only [known] values: the person's saved keys and tokens, matched exactly. */
+    fun exact(text: String, known: Collection<String>): String {
         var t = text
         known.asSequence().map { it.trim() }.filter { it.length >= MIN_KNOWN }.distinct().sortedByDescending { it.length }
             .forEach { t = t.replace(it, REDACTED) }
+        return t
+    }
+
+    /** Removes [known] values (the person's saved keys and tokens, matched exactly) and every key-like string. */
+    fun secrets(text: String, known: Collection<String> = emptyList()): String {
+        var t = exact(text, known)
         t = PEM.replace(t, REDACTED)
         t = NAMED.replace(t) { m -> m.groupValues[1] + m.groupValues[2] + REDACTED }
         t = SCHEME.replace(t) { m -> m.groupValues[1] + " " + REDACTED }
