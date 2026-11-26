@@ -54,6 +54,13 @@ jobs:
       - name: Build debug APKs (app and on-device AI pack)
         run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
 
+      # The emulator needs the runner's memory more than the idle Gradle and Kotlin daemons do.
+      - name: Free memory for the emulator
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -83,6 +90,12 @@ jobs:
             python3 tools/screenshots/capture.py light
             echo "=====CRASH BUFFER====="; adb logcat -d -b crash | tail -n 80; echo "=====END====="
             test ! -f shots/startup_failed
+
+      - name: Host memory after the emulator
+        if: always()
+        run: |
+          free -m
+          sudo dmesg | grep -iE 'out of memory|oom-kill|killed process' | tail -n 20 || true
 
       - name: Upload screenshots
         if: always()

@@ -128,6 +128,13 @@ jobs:
           sleep 2
           curl -fsS http://127.0.0.1:8081/v1/models
 
+      # The emulator needs the runner's memory more than the idle Gradle and Kotlin daemons do.
+      - name: Free memory for the emulator
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -158,6 +165,12 @@ jobs:
             adb install -r -g "$RUNNER_TEMP/new.apk"
             python3 tools/compare/run.py new "$RUNNER_TEMP/new.json" || true
             adb uninstall io.github.namanwtf.atom || true
+
+      - name: Host memory after the emulator
+        if: always()
+        run: |
+          free -m
+          sudo dmesg | grep -iE 'out of memory|oom-kill|killed process' | tail -n 20 || true
 
       - name: Report
         if: always()
