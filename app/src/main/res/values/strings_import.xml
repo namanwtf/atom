@@ -48,7 +48,7 @@
         <item quantity="one">%d character chat was imported as a normal chat.</item>
         <item quantity="other">%d character chats were imported as normal chats.</item>
     </plurals>
-    <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old files are left untouched.</string>
+    <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old files stay for 7 days after an import that brought everything over, then they are removed (sooner from Settings, Data backup).</string>
     <string name="import_nothing">No data from the previous Atom was found on this phone.</string>
     <string name="import_error">The import stopped early (%1$s). What was imported is kept; it continues at the next start or when you import again.</string>
     <string name="import_error_space">not enough free storage for a temporary copy</string>

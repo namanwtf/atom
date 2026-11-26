@@ -115,11 +115,23 @@ brought over in `files/atom4_legacy_import.json` and deletes the copy. MCP serve
 other settings are not imported. Details: [IMPORT.md](IMPORT.md). Every file and folder Atom 4's own
 code creates in `files/` (apart from the DataStore library's `datastore/` folder), `files/datastore/`,
 `databases/` and `shared_prefs/`, and every Android Keystore alias it uses, has a name starting with `atom4`
-(table below), a prefix new in Atom 4. Atom 4 never opens, changes or
-deletes any other name there (the importer above only reads the earlier app's files), so the earlier app's files in
-those places are left untouched on disk. They take up
-space until the user clears the app's storage (Android Settings > Apps > Atom > Storage > Clear storage, which
-also clears Atom 4's own data). Keys the earlier app sealed in the Android Keystore stay there too.
+(table below), a prefix new in Atom 4. Atom 4 never opens or changes any other name there, and it deletes only the
+fixed list of the earlier app's files below.
+
+**The earlier app's files are kept for 7 days after a successful import, then removed.** The earlier app stored API
+keys unencrypted (`model_providers.api_key` in `databases/atom.db`); Atom 4 keeps the imported keys in its vault,
+encrypted with an Android Keystore key, so the plaintext copy should not stay on the phone. Once an import run
+finishes with no error and no failed provider or conversation, the next start at least 7 days later deletes
+`databases/atom.db` with its `-wal`, `-shm` and `-journal` files, the `no_backup/provider_credentials/` folder,
+`files/datastore/atom_settings.preferences_pb` and `shared_prefs/atom_mcp_secrets.xml`, `atom_speech_secrets.xml`
+and `atom_image_gen_secrets.xml`, and then the earlier app's Keystore aliases `atom_provider_credentials_v1`,
+`atom_mcp_credentials_v1`, `atom_speech_credentials_v1` and `atom_image_gen_credentials_v1`. The week leaves time to
+run the import again. The user can remove them sooner from Settings > General > Data backup > Remove previous
+Atom's data. Without a successful import nothing is removed automatically; that row stays, with a warning that
+data not imported yet would be lost. The removal is recorded as `legacyCleanedAt` in
+`files/atom4_legacy_import.json`. The earlier app's other files (generated pictures, character, terminal and skills
+folders, `files/bubble_history.json`) stay until the user clears the app's storage (Android Settings > Apps > Atom >
+Storage > Clear storage, which also clears Atom 4's own data).
 
 | Store | Atom 4 names |
 |---|---|

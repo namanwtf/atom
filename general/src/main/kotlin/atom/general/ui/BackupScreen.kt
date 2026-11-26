@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import atom.core.legacy.LegacyCleanup
 import atom.general.GeneralHooks
 import atom.general.R
 import atom.general.backup.BackupEngine
@@ -53,6 +55,9 @@ private sealed interface BackupDialog {
     data class Message(val title: String, val body: String) : BackupDialog
     data class Confirm(val plan: ImportPlan) : BackupDialog
     data class Busy(val file: BackupFile) : BackupDialog
+
+    /** Confirm removing the previous app's files; [unimported] adds the warning that unimported data is lost. */
+    data class RemoveOld(val unimported: Boolean) : BackupDialog
 }
 
 @Composable
@@ -64,7 +69,12 @@ internal fun BackupScreen(nav: FeatureNav) {
     var working by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<BackupDialog?>(null) }
     val legacy = GeneralHooks.legacyImport
-    val legacyAvailable by produceState(false, legacy) { value = withContext(Dispatchers.IO) { legacy?.available() == true } }
+    // Bumped after a removal, so both legacy rows check the files again.
+    var legacyChecks by remember { mutableIntStateOf(0) }
+    val legacyAvailable by produceState(false, legacy, legacyChecks) { value = withContext(Dispatchers.IO) { legacy?.available() == true } }
+    val cleanupOffer by produceState(LegacyCleanup.Offer.Hidden, legacy, legacyChecks, working) {
+        value = withContext(Dispatchers.IO) { legacy?.cleanupOffer() ?: LegacyCleanup.Offer.Hidden }
+    }
 
     fun labels(keys: List<String>): String {
         val byKey = contributors.associateBy { it.key }
@@ -219,6 +229,23 @@ internal fun BackupScreen(nav: FeatureNav) {
                         trailing = { RowChevron() },
                     )
                 }
+                if (legacy != null && cleanupOffer != LegacyCleanup.Offer.Hidden) {
+                    val unimported = cleanupOffer == LegacyCleanup.Offer.Unimported
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_remove),
+                        subtitle = stringResource(
+                            when (cleanupOffer) {
+                                LegacyCleanup.Offer.ImportFirst -> R.string.backup_legacy_remove_import_first
+                                LegacyCleanup.Offer.Unimported -> R.string.backup_legacy_remove_unimported
+                                else -> R.string.backup_legacy_remove_sub
+                            },
+                        ),
+                        icon = ScreenIcons.Shield,
+                        enabled = !working && cleanupOffer != LegacyCleanup.Offer.ImportFirst,
+                        onClick = { dialog = BackupDialog.RemoveOld(unimported) },
+                        trailing = { RowChevron() },
+                    )
+                }
             }
         }
         if (working) {
@@ -275,6 +302,36 @@ internal fun BackupScreen(nav: FeatureNav) {
                 onDismiss = { dialog = null },
             )
         }
+        is BackupDialog.RemoveOld -> {
+            var body = stringResource(R.string.backup_legacy_remove_body)
+            if (d.unimported) body += stringResource(R.string.backup_legacy_remove_body_unimported)
+            AtomDialog(
+                title = stringResource(R.string.backup_legacy_remove_title),
+                body = body,
+                confirm = stringResource(R.string.backup_legacy_remove_confirm),
+                onConfirm = {
+                    dialog = null
+                    val hook = legacy
+                    if (hook != null) scope.launch {
+                        working = true
+                        val done = try {
+                            hook.removeOldData()
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            false
+                        }
+                        working = false
+                        legacyChecks++
+                        dialog = BackupDialog.Message(
+                            context.getString(R.string.backup_legacy_remove),
+                            context.getString(if (done) R.string.backup_legacy_removed else R.string.backup_legacy_remove_partial),
+                        )
+                    }
+                },
+                onDismiss = { dialog = null },
+                destructive = true,
+            )
+        }
         is BackupDialog.Busy -> {
             val stop = GeneralHooks.stopTasks
             AtomDialog(
@@ -293,7 +350,14 @@ internal fun BackupScreen(nav: FeatureNav) {
 
 /** The Miuix dialog with one confirm button, plus Cancel when [onDismiss] is set. */
 @Composable
-private fun AtomDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: (() -> Unit)?) {
+private fun AtomDialog(
+    title: String,
+    body: String,
+    confirm: String,
+    onConfirm: () -> Unit,
+    onDismiss: (() -> Unit)?,
+    destructive: Boolean = false,
+) {
     atom.ui.components.AtomDialog(show = true, onDismiss = { (onDismiss ?: onConfirm)() }, title = title, summary = body) {
         if (onDismiss != null) {
             atom.ui.components.DialogButtons(
@@ -301,6 +365,7 @@ private fun AtomDialog(title: String, body: String, confirm: String, onConfirm: 
                 onConfirm = onConfirm,
                 dismissText = stringResource(R.string.backup_cancel),
                 onDismiss = onDismiss,
+                destructive = destructive,
             )
         } else {
             atom.ui.components.AtomTextButton(confirm, onConfirm, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
