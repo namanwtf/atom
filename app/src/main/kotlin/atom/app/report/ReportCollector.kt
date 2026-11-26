@@ -96,8 +96,10 @@ object ReportCollector {
     suspend fun collect(context: Context, conversationId: String?): ReportDraft = withContext(Dispatchers.IO) {
         val app = context.applicationContext
         val graph = app.graph
+        android.util.Log.i("AtomReport", "collecting a problem report")
         val known = runCatching { knownSecrets(graph) }.getOrDefault(emptyList())
         val (run, conversation) = runCatching { lastRun(graph, conversationId) }.getOrDefault(null to null)
+        val log = runCatching { atomLog() }.getOrElse { null to "logcat could not run: ${it.message ?: it::class.java.simpleName}" }
         val input = ReportInput(
             createdAt = System.currentTimeMillis(),
             zone = ZoneId.systemDefault(),
@@ -105,7 +107,8 @@ object ReportCollector {
             device = deviceFacts(),
             run = run,
             exits = runCatching { exits(app) }.getOrDefault(emptyList()),
-            log = runCatching { atomLog() }.getOrNull(),
+            log = log.first,
+            logNote = log.second,
         )
         ReportDraft(input, conversation?.takeIf { it.messages.isNotEmpty() }?.let { ConversationExport.markdown(it) }, known)
     }
@@ -232,17 +235,23 @@ object ReportCollector {
 
     /**
      * Atom's own log lines (tags starting with "Atom", plus Android's crash lines for this app). An app reads only
-     * its own log this way; no permission is involved.
+     * its own log this way; no permission is involved. Returns the lines and a note when nothing could be read.
      */
-    private fun atomLog(): List<String> {
-        val p = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "4000", "-b", "main,system,crash").redirectErrorStream(true).start()
+    private fun atomLog(): Pair<List<String>?, String?> {
+        val p = ProcessBuilder("/system/bin/logcat", "-d", "-v", "threadtime", "-t", "5000").redirectErrorStream(true).start()
         val lines = p.inputStream.bufferedReader().use { r -> r.readLines() }
         if (!p.waitFor(3, TimeUnit.SECONDS)) p.destroy()
         val tag = Regex("^\\S+ \\S+\\s+\\d+\\s+\\d+\\s+[VDIWEFA]\\s+([^:]*?)\\s*:")
-        return lines.filter { line ->
-            val t = tag.find(line)?.groupValues?.get(1) ?: return@filter false
+        val entries = lines.filter { tag.containsMatchIn(it) }
+        if (entries.isEmpty()) {
+            val why = lines.firstOrNull { it.isNotBlank() && !it.startsWith("---------") }?.take(160)
+            return null to (why?.let { "logcat gave no entries: $it" } ?: "logcat gave no entries")
+        }
+        val atom = entries.filter { line ->
+            val t = tag.find(line)?.groupValues?.get(1).orEmpty()
             t.startsWith("atom", ignoreCase = true) || t == "AndroidRuntime"
         }.takeLast(ProblemReport.MAX_LOG_LINES)
+        return atom to if (atom.isEmpty()) "${entries.size} entries readable, none from Atom's tags" else null
     }
 
     /** The person's saved keys, sign-in tokens and header values: removed by exact match wherever they appear. */
