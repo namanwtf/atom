@@ -193,9 +193,10 @@ class TaskNotifications(private val context: Context) {
     }
 
     /**
-     * Heads-up so the user can answer while Atom is driving another app. On the lock screen only "Atom needs your
-     * approval" shows (no action text, no buttons), and Allow asks for the device credential first (Android 12+;
-     * [TaskActionReceiver] also ignores Allow while the device is locked, which covers Android 11).
+     * Heads-up so the user can answer while Atom is driving another app. When lock-screen notifications hide
+     * sensitive content, only "Atom needs your approval" shows there (no action text, no buttons). Either way Allow
+     * asks for the device credential first on Android 12+, and on Android 11 [TaskActionReceiver] ignores an Allow
+     * tapped while the device is locked.
      */
     fun showApproval(pending: PendingApproval) {
         if (!canPost()) return
