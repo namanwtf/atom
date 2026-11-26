@@ -64,6 +64,9 @@ object DisplayRouter {
 
     val current: DisplayLease? get() = leases.current
 
+    /** True while the hidden display is leased to one of [owners] (run or conversation ids); see [LeaseManager.hiddenHeldBy]. */
+    fun hiddenHeldBy(vararg owners: String): Boolean = leases.hiddenHeldBy(owners.toList())
+
     fun init(context: Context) {
         if (::app.isInitialized) return
         app = context.applicationContext

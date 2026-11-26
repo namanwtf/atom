@@ -17,17 +17,17 @@ class SystemPrefs private constructor(context: Context) {
     private val sp: SharedPreferences = context.getSharedPreferences("atom4_system", Context.MODE_PRIVATE)
 
     private val _backgroundDisplay = MutableStateFlow(
-        if (sp.contains(K_BG_DISPLAY)) {
-            sp.getBoolean(K_BG_DISPLAY, false)
-        } else {
-            // On for a new install, as in the original app; an install that already stored settings keeps it off.
-            val fresh = sp.all.isEmpty()
-            sp.edit().putBoolean(K_BG_DISPLAY, fresh).apply()
-            fresh
+        // An earlier build stored "off" for installs that already had other settings here, without the user ever
+        // choosing it; only the user's own choice is kept.
+        BackgroundUse.storedSetting(
+            chosenByUser = sp.getBoolean(K_BG_DISPLAY_CHOSEN, false),
+            stored = if (sp.contains(K_BG_DISPLAY)) sp.getBoolean(K_BG_DISPLAY, true) else null,
+        ).also { on ->
+            if (!sp.contains(K_BG_DISPLAY) || sp.getBoolean(K_BG_DISPLAY, true) != on) sp.edit().putBoolean(K_BG_DISPLAY, on).apply()
         },
     )
 
-    /** On by default for new installs. It only acts with root (see [SystemFeature.tools]). */
+    /** On by default; only the user's own choice turns it off. It only acts with root (see [SystemFeature.tools]). */
     val backgroundDisplay: StateFlow<Boolean> = _backgroundDisplay.asStateFlow()
 
     private val _hooks = MutableStateFlow(HookConfig.fromMap(sp.all))
@@ -45,7 +45,7 @@ class SystemPrefs private constructor(context: Context) {
     }
 
     fun setBackgroundDisplay(on: Boolean) {
-        sp.edit().putBoolean(K_BG_DISPLAY, on).apply()
+        sp.edit().putBoolean(K_BG_DISPLAY, on).putBoolean(K_BG_DISPLAY_CHOSEN, true).apply()
         _backgroundDisplay.value = on
     }
 
@@ -69,6 +69,9 @@ class SystemPrefs private constructor(context: Context) {
 
     companion object {
         private const val K_BG_DISPLAY = "background_virtual_display"
+
+        /** Written when the user flips the switch themselves; until then the setting follows the default (on). */
+        private const val K_BG_DISPLAY_CHOSEN = "background_virtual_display_chosen"
         private const val K_FRAMEWORK_SEEN = "framework_seen"
 
         @Volatile

@@ -105,10 +105,15 @@ class AppOverlayHooks(private val appContext: Context, private val graph: AppGra
 
     override fun voiceSettingsIntent(context: Context): Intent = MainActivity.routeIntent(context, VoiceRoutes.SETTINGS)
 
-    /** True only while [run] actually holds the phone-control lease (and the user has not taken over). */
+    /**
+     * True only while [run] actually holds the phone-control lease (and the user has not taken over), or works on
+     * the hidden background display: that never takes phone control, but the run capsule (with its viewfinder of
+     * the hidden screen) should still show.
+     */
     override fun drivesScreen(run: HostRun): Boolean {
         val runId = graph.tasks.liveRuns.value[run.conversationId]?.runId ?: return false
-        return run.phase.active && graph.tasks.lease.holds(runId)
+        if (!run.phase.active) return false
+        return graph.tasks.lease.holds(runId) || atom.vdisplay.route.DisplayRouter.hiddenHeldBy(runId, run.conversationId)
     }
 
     override suspend fun transcript(conversationId: String): List<OverlayMessage>? {
