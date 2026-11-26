@@ -176,7 +176,8 @@ object ShellRisk {
             words = unwrap(words)
             if (words.isEmpty()) return
             val head = words[0]
-            if (!head.literal || head.glob) throw Unclear("the command name is only known at run time")
+            // `[` is the test command, not a glob.
+            if (!head.literal || (head.glob && head.text != "[")) throw Unclear("the command name is only known at run time")
             val name = head.text.substringAfterLast('/').lowercase()
             val args = words.drop(1)
             when {
