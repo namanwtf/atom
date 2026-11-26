@@ -1086,6 +1086,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         message,
                         reasoning = info.reasoning,
                         reasoningMs = info.reasoningMs,
+                        hidden = info.internal,
                         createdAt = now,
                         searchSuggestions = info.searchSuggestions,
                     )
@@ -1094,6 +1095,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     message = if (info.sensitive) Scrubber.scrub(message) else stripImages(message),
                     durationMs = info.durationMs,
                     isError = info.isError,
+                    hidden = info.internal,
                     risk = message.toolCallId?.let { callRisk.remove(it) } ?: message.toolName?.let { riskOf[it] },
                     createdAt = now,
                 )

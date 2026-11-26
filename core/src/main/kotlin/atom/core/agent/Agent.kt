@@ -127,7 +127,7 @@ data class MessageInfo(
     val isError: Boolean = false,
     /** Only for the current turn; persist [Scrubber.scrub] of it instead. */
     val sensitive: Boolean = false,
-    /** A loop-guard nudge: sent to the model, never shown as the user's words. */
+    /** Agent-internal (a loop-guard nudge, the run's tool preload): sent to the model, never shown to the user. */
     val internal: Boolean = false,
     /** A queued user message delivered to the running task. */
     val steering: Boolean = false,
@@ -235,8 +235,9 @@ class Agent(
         control: RunControl = RunControl.None,
         /**
          * A tool call already made for the model before its first step, with its result (the tool groups the run
-         * preloaded, [atom.core.tool.ToolLoadout.Preloaded.asExchange]). It is added to the conversation like any
-         * call, so it persists with it and the system prompt stays the same.
+         * preloaded, [atom.core.tool.ToolLoadout.Preloaded.asExchange]). It is added to the conversation, marked
+         * [MessageInfo.internal], so it persists with it and the system prompt stays the same, but it is no step of
+         * the run: no tool events, hidden from the transcript.
          */
         preloaded: Pair<ToolCall, ToolResult>? = null,
     ): Flow<AgentEvent> = flow {
@@ -244,11 +245,10 @@ class Agent(
         val guard = LoopGuard()
         var stuckAt: Int? = null
 
+        // Internal: kept for the model (and the prompt cache) but not a step the user sees, so no tool events.
         preloaded?.let { (call, result) ->
-            append(state, ChatMessage.assistant("", listOf(call)), MessageInfo())
-            emit(AgentEvent.ToolStarted(call))
-            emit(AgentEvent.ToolFinished(call, result, 0))
-            append(state, ChatMessage.toolResult(call, result.toParts()), MessageInfo(durationMs = 0))
+            append(state, ChatMessage.assistant("", listOf(call)), MessageInfo(internal = true))
+            append(state, ChatMessage.toolResult(call, result.toParts()), MessageInfo(durationMs = 0, internal = true))
         }
 
         for (step in 1..config.maxSteps) {

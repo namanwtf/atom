@@ -50,10 +50,13 @@ class PreloadExchangeTest {
         assertEquals("the same system prompt every turn", sent.messages.first().text)
         assertTrue(sent.messages.any { it.role == Role.Tool && note in it.text })
         assertTrue(sent.tools.any { it.name == "browser_open" })
-        // It is kept with the conversation like any tool call.
+        // It is kept with the conversation like any tool call, but marked internal and not reported as a step.
         val kept = events.filterIsInstance<AgentEvent.Done>().single().newMessages
         assertEquals(ToolLoadout.LOADER, kept.first().toolCalls.single().name)
-        assertTrue(events.any { it is AgentEvent.ToolFinished && it.call.name == ToolLoadout.LOADER })
+        val appended = events.filterIsInstance<AgentEvent.Appended>()
+        assertTrue(appended.take(2).all { it.info.internal }, appended.take(2).toString())
+        assertTrue(!appended.last().info.internal)
+        assertTrue(events.none { it is AgentEvent.ToolStarted || it is AgentEvent.ToolFinished })
     }
 
     @Test
