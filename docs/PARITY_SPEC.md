@@ -7,17 +7,17 @@ Tags: **[core]** essential for parity · **[root]** needs root · **[lsposed]** 
 Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the language setting is just "Follow system"). Installing over an existing copy signed with the same key keeps keys, models and permissions.
 
 
-**Status legend (updated 2026-11-25 after a full audit of both apps).** `[x]` means the new app has the behaviour and a user can reach it. Open items carry **partial** or **missing**. A tick covers behaviour only: the old app's *look* (Miuix theme, blue accent, layout and copy details) is tracked separately in "Gap list" at the end, because the new app started from a different visual style. Per-item evidence (file and line) is in the batch PRs and `docs/PARITY_STATUS.md`.
+**Status legend (updated 2026-11-26, re-checked against the current app after the Miuix UI, home and drawer, settings, bubble and overlay, feature-screen, chat/models/voice and update batches).** §1–§16 hold 440 items: **412 done, 21 partial, 7 missing.** `[x]` means the new app has the behaviour and a user can reach it. Open items carry **partial:** or **missing:** with the reason. The new app now uses the old Miuix look (pure black, blue accent, large titles, Miuix switches and cards); what is still open, including the COUI style, is summarised in "Gap list" at the end. Per-item evidence (file and line) is in the batch PRs and `docs/PARITY_STATUS.md`.
 
 ---
 
 ## 1. Onboarding & permissions
 
-- [ ] There is no setup wizard. A short startup splash opens straight onto the home chat. [core] — **partial**
-- [ ] With no provider configured, the empty state tells the user to add one, and sending is blocked with a "configure a model first" message. [core] — **partial**
+- [x] There is no setup wizard. A short startup splash opens straight onto the home chat. [core]
+- [x] With no provider configured, the empty state tells the user to add one, and sending is blocked with a "configure a model first" message. [core]
 - [x] The home empty state shows a "How can I help you?" headline and four suggestion cards: analyze the current screen (screenshot plus description), open a named messaging app, browse the web (the agent browser summarizes today's tech news), and check memory pressure (reads kernel memory and pressure stats and summarizes them). [core]
 - [x] A Permissions & status page shows an overall health line ("All good" or "N items need attention"). Each row shows Available / Missing / Issue / Not enabled with a Grant or Go-to-settings action. [core]
-- [ ] The conversation sidebar shows a "Permissions need attention" hint when something is missing. [core] — **partial**
+- [x] The conversation sidebar shows a "Permissions need attention" hint when something is missing. [core]
 - [x] Accessibility service, labelled "Atom Agent": reads the screen, taps, swipes, types and takes screenshots. Needed for screen control. [core]
 - [x] Display over other apps (floating window), for the bubble, run capsule and overlays. [core] [battery]
 - [x] Notification access (listener). Searchable notification history starts recording from the moment it is granted. [core]
@@ -26,7 +26,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Calendar read and write. [core]
 - [x] Do Not Disturb access, so silent, vibrate and ring can be switched without root. [core]
 - [x] Post notifications, used for running-task controls, background command results and scheduled task results. [core]
-- [ ] Promoted (Live Update) notifications: during a run the task shows as a status-bar capsule ("Working" / "Answering") and on the lock screen. The user can turn it off. [core] — **missing**
+- [x] Promoted (Live Update) notifications: during a run the task shows as a status-bar capsule ("Working" / "Answering") and on the lock screen. The user can turn it off. [core]
 - [x] Microphone, for voice input. If it is denied, keyboard input stays available and the app links to its own permission settings. [core]
 - [x] Local network access (Android 17 "Nearby devices"), for LAN models, MCP servers, the built-in browser and terminals. Internet access works without it. [core]
 - [x] All files access is optional and only used for shared/public directories. The private workspace and import/export work without it. [core]
@@ -43,7 +43,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 ## 2. Chat & conversation UX
 
 ### Layout
-- [ ] Top bar: drawer button on the left. In the centre, a model capsule (provider logo, model name, chevron), or the conversation title with the model as subtitle. On the right, an overflow menu (new conversation, open terminal, open browser, more). [core] — **partial**
+- [x] Top bar: drawer button on the left. In the centre, a model capsule (provider logo, model name, chevron), or the conversation title with the model as subtitle. On the right, an overflow menu (new conversation, open terminal, open browser, more). [core]
 - [x] The conversation list sits beside the chat and is revealed by a horizontal drag or the drawer button. The chat dims under a scrim, and tapping the scrim closes the list. [core]
 - [x] The sidebar has a floating search capsule plus Permissions and Settings buttons at the bottom, and dock entries for "Models" and "Characters". [core]
 - [x] Conversations are grouped as Pinned / Today / Yesterday / Recent. Each row previews the last message, "Atom is reasoning", or the tool being called. [core]
@@ -79,7 +79,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Tool details expand to the exact command (Copy command) and the result. Browser steps show a live page preview. [core]
 - [x] Citations from provider-hosted web search become clickable links. Gemini Google-search suggestions show under the answer and open in the external browser. [core]
 - [x] Generated images appear as inline cards (see §13). [core]
-- [ ] Older history loads automatically on scroll-up, with a retry if loading fails. The reading position is restored when the conversation is reopened. [core] — **partial**
+- [x] Older history loads automatically on scroll-up, with a retry if loading fails. The reading position is restored when the conversation is reopened. [core]
 
 ### Message actions
 - [x] Copy answer, copy code, read aloud. [core]
@@ -120,7 +120,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Gemini 4 reasoning presets: Neon and Hydrogen offer Default/Low/Medium/High/XHigh (server default High, reasoning cannot be turned off). Carbon offers Default/Low/Medium/High (server default Medium). [core]
 
 ### Provider management
-- [ ] The Model providers page has a search box, an "Add new provider" group and a "Configured providers (N)" list. Each row shows logo, name, base URL, protocol, model count, a "built-in" badge, and a radio button / check for the current provider. [core] — **partial**
+- [x] The Model providers page has a search box, an "Add new provider" group and a "Configured providers (N)" list. Each row shows logo, name, base URL, protocol, model count, a "built-in" badge, and a radio button / check for the current provider. [core]
 - [x] Add from the models.dev community catalog. It works from a bundled snapshot, refreshes online and caches, and never sends the user's keys. The user picks a provider and models, and they are imported as a custom provider that is disabled and has no key until the user adds one. [core]
 - [x] Add an OpenAI-compatible provider (for ChatGPT, DeepSeek, Kimi, GLM, Qwen and others), with an endpoint mode of Chat Completions or Responses API. [core]
 - [x] Add an Anthropic provider (official or compatible API). [core]
@@ -143,20 +143,20 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] One global default provider and model ("Set as default"). [core]
 - [x] A "Choose model" bottom sheet opens from the home capsule, with an All / per-provider filter and search. The choice is saved per conversation. [core]
 - [x] Settings → "Reasoning enabled by default" toggle and "Default reasoning effort" (Model default / levels). [core]
-- [ ] Separate model choices, each able to "follow the primary model": floating assistant, subagents, title generation, each scheduled task, voice smart-correction (always the chat model), image generation (its own service). [core] — **partial**
+- [x] Separate model choices, each able to "follow the primary model": floating assistant, subagents, title generation, each scheduled task, voice smart-correction (always the chat model), image generation (its own service). [core]
 
 ## 4. Voice
 
 - [x] Chat dictation: tap the mic to record, then tap again or "Done". The text is inserted at the cursor as an editable draft and never overwrites existing text. [core]
 - [x] Hold-to-talk in chat: press and hold the mic, release to transcribe and send, slide away to cancel ("Release to send, slide away to cancel"). [core]
-- [ ] Assistant overlay voice: one recognition starts automatically when the overlay opens. Streaming services can auto-send after a pause of 1, 1.5, 2 (default) or 3 s, or never. Hold-to-talk is also available. [core] — **partial**
+- [x] Assistant overlay voice: one recognition starts automatically when the overlay opens. Streaming services can auto-send after a pause of 1, 1.5, 2 (default) or 3 s, or never. Hold-to-talk is also available. [core]
 - [x] Live recognition preview for streaming services. Upload-then-transcribe services show only progress states (Connecting / Listening / Recognizing / Uploading / Proofreading). [core]
 - [x] One recording lasts at most 60 s (DeepSeek allows 120 s / 8 MiB). [core]
 - [x] "Enable speech recognition" master switch. When off, the mic disappears from chat and the overlay, and the overlay opens to text input with the keyboard so the IME's own voice input can be used. [core]
-- [ ] Recognition services (one active): Qwen Realtime (default), Qwen Short audio, Qwen File transcription (uploads to the user's own Alibaba OSS bucket), Doubao Streaming 2.0, MiMo, DeepSeek. [core] — **partial**
+- [ ] Recognition services (one active): Qwen Realtime (default), Qwen Short audio, Qwen File transcription (uploads to the user's own Alibaba OSS bucket), Doubao Streaming 2.0, MiMo, DeepSeek. [core] — **partial:** all six services are there; the default is the phone's own recognizer instead of Qwen Realtime, so a fresh install works without a key (owner decision D15)
 - [x] Qwen region (Beijing or Singapore, must match the key) and an optional base URL. Doubao: resource ID and optional legacy App ID + Access Token. MiMo and DeepSeek: separate keys. DeepSeek reuses the model-provider key if left blank. [core]
 - [x] Recognition language: blank means auto (zh, en, yue and so on for Qwen). MiMo offers Auto / Chinese / English. [core]
-- [ ] Smart correction (optional): the current chat model makes one cautious proofreading pass to fix homophones and mixed-language terms, waits at most about 8 s, and keeps the raw text on failure. [core] — **partial**
+- [x] Smart correction (optional): the current chat model makes one cautious proofreading pass to fix homophones and mixed-language terms, waits at most about 8 s, and keeps the raw text on failure. [core]
 - [x] Recording storage page (for file transcription): OSS region, endpoint, bucket, prefix, AccessKey ID and secret. Objects are private and deleted after transcription; cleanup is retried. [core]
 - [x] Spoken answers (TTS) services: Off (default), Qwen, Doubao, Gemini, MiniMax, MiMo, DeepSeek. [core]
 - [x] Qwen voices: Cherry (default), Serena, Ethan, Chelsie, Momo, Vivian, Moon, Maia, Kai, Nofish, Bella, Katerina, Vincent, Neil, Dylan, Jada, plus Beijing-dialect male and Shanghai-dialect female voices. [core]
@@ -164,12 +164,12 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Gemini TTS: model Gemini 3.8 Flash (quality) or Flash-Lite (lower latency); voices Kore, Puck, Charon, Aoede, Zephyr, Leda, Sulafat, Achernar (each described as firm, upbeat, informative and so on); optional reading-style text. [core]
 - [x] MiniMax TTS: Speech 2.8 Turbo or HD; Mandarin voices (mature, sweet, girl, elegant, young male, elite male, executive, news anchor); speed 0.5–2x; number normalization; China or overseas site. [core]
 - [x] MiMo TTS: Default, Rock Candy, Jasmine, Soda, Birch, Mia, Chloe, Milo, Dean; optional reading style (natural-language tone, emotion, speed or dialect, up to 500 chars). [core]
-- [ ] DeepSeek TTS: Starfish and Tide voices, streaming, automatic language detection. [core] — **partial**
+- [x] DeepSeek TTS: Starfish and Tide voices, streaming, automatic language detection. [core]
 - [x] "Custom voice" / enter a voice ID by hand. A saved ID is matched back to its preset name. [core]
 - [x] Settings page has "Test recognition" and "Preview voice" (editable preview text up to 500 chars). Both use the unsaved form and may cost money. Changes need an explicit Save. [core]
 - [x] Read aloud on any answer. Tables, code, images, HTML and bare URLs are skipped; list numbering and task state are spoken. A "Filter Markdown formatting before reading aloud" toggle exists. [core]
-- [ ] Auto read-aloud toggle in the chat "More" menu reads each completed turn's final answer. It is hidden when no TTS is configured. [core] — **partial**
-- [ ] Assistant overlay "Speak answers automatically" (off by default) speaks only the final answers to voice questions while the overlay is visible. [core] — **partial**
+- [x] Auto read-aloud toggle in the chat "More" menu reads each completed turn's final answer. It is hidden when no TTS is configured. [core]
+- [x] Assistant overlay "Speak answers automatically" (off by default) speaks only the final answers to voice questions while the overlay is visible. [core]
 - [x] Chat read-aloud keeps playing in the background or on the lock screen, with a "Atom is reading aloud" notification and a Stop button. [core] [battery]
 - [x] Interruption: starting a recording stops playback. Losing audio focus or unplugging headphones stops playback. Closing or hiding the owner page ends the audio task. Nothing is spoken late after the fact. [core]
 - [x] If the cloud TTS fails (bad key, timeout, refusal), the app falls back to the Android system voice instead of showing an error. [core]
@@ -178,8 +178,8 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 
 ## 5. Screen control & automation
 
-- [ ] Observe the screen: UI tree plus an optional screenshot, at original resolution. [core] — **partial**
-- [ ] Tap by element (preferred), by coordinate, or by area. [core] — **partial**
+- [x] Observe the screen: UI tree plus an optional screenshot, at original resolution. [core]
+- [x] Tap by element (preferred), by coordinate, or by area. [core]
 - [x] Long-press by element or coordinate. [core]
 - [x] Swipe up/down/left/right. Scroll the page or a specific element. [core]
 - [x] Text input: replace, append, clear, optionally submit. The field is read back afterwards to confirm. [core]
@@ -194,7 +194,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Exclusive phone control: one task drives the UI at a time and others wait in line. The agent can explicitly release control. [core]
 - [x] A run capsule overlay appears during phone actions and shows status. Tapping it reveals Pause, Resume, Add input (steer), and Stop. While paused, the user has control and other UI tasks wait. [core] [battery]
 - [x] An edge glow / light on the main screen while the agent operates it. [battery]
-- [ ] A result card when done ("Result ready" / "Open Atom" / "Open screen" / "Done"). [core] — **partial**
+- [x] A result card when done ("Result ready" / "Open Atom" / "Open screen" / "Done"). [core]
 - [x] Background virtual display: cross-app tasks run on a hidden screen so the user's foreground is untouched. Routing is automatic: if the target app is already in front, or is the launcher/system UI, the agent works on the main screen. Settings toggle: "Background virtual display". [root] [lsposed] [battery]
 - [x] A live mini viewfinder sits inside the run capsule. Tapping it expands a stage window for live preview, direct touch takeover ("Take over" / "Continue"), "Fullscreen" projection, or "Collapse stage". [root] [lsposed] [battery]
 - [x] Hand-back to the user ("Present to main screen"): when the hidden task reaches a payment confirmation, QR code or final result page, that page moves smoothly onto the real screen. [root] [lsposed]
@@ -218,24 +218,24 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Calendar event search by title, location or description. [core]
 - [x] Gallery photos and screenshots: search by file name or album path. [core]
 - [x] Audio file search by title, file name or artist. [core]
-- [ ] Recordings: normal and call recordings, plus recording summaries and transcripts. [core] *(summaries: ColorOS)* — **partial**
+- [ ] Recordings: normal and call recordings, plus recording summaries and transcripts. [core] *(summaries: ColorOS)* — **partial:** normal and call recordings are found; summaries and transcripts come from the ColorOS recorder and need a ColorOS device
 - [x] Shared-storage documents and files search. [core]
-- [ ] Download history (system download tasks and files). [core] — **partial**
+- [x] Download history (system download tasks and files). [core]
 - [x] Recent apps and foreground usage time (needs usage access). [core]
 - [x] Current app and screen context: the digital-assistant overlay attaches a screenshot plus the foreground app's content at wake time. [core]
 - [x] Clipboard history saved by the system keyboard. [root]
 - [x] Health summary for a time window: steps, sleep, exercise, body metrics (from Health Connect data). [root]
-- [ ] Alarms list and active timers. [core] — **partial**
+- [ ] Alarms list and active timers. [core] — **partial:** shows the next system alarm plus the alarms and timers Atom set; the full list of other alarms needs the ColorOS clock and a ColorOS device
 - [x] Wi-Fi saved passwords. [root]
 - [x] Device status: battery and charging, memory, storage, OS version. Network status: connection type, Wi-Fi state, internet validated. Device environment: lock screen, DND, audio output, external display. [core]
-- [ ] Memory ranking (top processes) and storage ranking (per-app data and cache). [core] — **partial**
-- [ ] Notes and to-dos search; read a note by ID. [root] *(ColorOS)* — **missing**
-- [ ] System memory search ("Breeno/Xiaobu memory"): bills, schedules, pickup codes, deliveries, saved places, attachments. [root] [lsposed] *(ColorOS)* — **missing**
-- [ ] Personal orders: food delivery, shopping, parcels, tickets, travel. Saved places. [root] *(ColorOS)* — **missing**
-- [ ] Bills search plus "Summarize bills" (exact totals over a time range, split into income, expense, transfer and unknown, top categories). [root] *(ColorOS)* — **missing**
-- [ ] To-do leads, calendar to-dos, memory collections, life events, flights, hotel bookings, train trips. [root] *(ColorOS)* — **missing**
+- [x] Memory ranking (top processes) and storage ranking (per-app data and cache). [core]
+- [ ] Notes and to-dos search; read a note by ID. [root] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
+- [ ] System memory search ("Breeno/Xiaobu memory"): bills, schedules, pickup codes, deliveries, saved places, attachments. [root] [lsposed] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
+- [ ] Personal orders: food delivery, shopping, parcels, tickets, travel. Saved places. [root] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
+- [ ] Bills search plus "Summarize bills" (exact totals over a time range, split into income, expense, transfer and unknown, top categories). [root] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
+- [ ] To-do leads, calendar to-dos, memory collections, life events, flights, hotel bookings, train trips. [root] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
 - [x] Read the full detail of any earlier search hit. [core]
-- [ ] QQ and WeChat chat-image caches: recent image file listings, which can then be viewed. [root] — **missing**
+- [ ] QQ and WeChat chat-image caches: recent image file listings, which can then be viewed. [root] — **partial:** no dedicated listing; with root the private-storage reader can browse those folders, but the images are not shown
 - [x] Read-only inspection of other apps' private databases and files when no dedicated tool exists. [root]
 - [x] The agent is told to sample several sources for broad "know me" questions rather than asking permission again for each source the user has already enabled. [core]
 
@@ -248,7 +248,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Sound mode (normal / vibrate / silent). Without root this needs DND access. [core]
 - [x] Do Not Disturb (priority only / alarms only / total silence). [core]
 - [x] Wi-Fi and Bluetooth toggles. [root]
-- [ ] Mobile data, airplane mode, location, NFC, battery saver, personal hotspot (keeps the existing name and password). [root] — **partial**
+- [x] Mobile data, airplane mode, location, NFC, battery saver, personal hotspot (keeps the existing name and password). [root]
 - [x] Media controls: play, pause, toggle, next, previous, stop, without touching the UI. [core]
 - [x] Freeze, unfreeze and force-stop apps. [root]
 - [x] Read and write protected Android settings keys (system, secure, global). [root]
@@ -256,16 +256,16 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Inspect app: version, UID, install source and path, enabled/stopped state, permission list. [core]
 - [x] Every state change reports before → after and whether it was verified (for example "Auto-rotate: off → on"). An unconfirmed change is reported as unconfirmed, never as success. [core]
 - [x] Rootless mode: dedicated root tools are hidden. The terminal and file tools run as the app user and Linux runs via PRoot. Nothing escalates silently. [core]
-- [ ] **No Shizuku support in the old app.** "Rootless" means standard permissions only. Adding Shizuku would go beyond parity. [core] — **partial**
+- [x] **No Shizuku support in the old app.** "Rootless" means standard permissions only. Adding Shizuku would go beyond parity. [core] *New app: standard permissions, plus Shizuku as an extra tier.*
 
 ## 8. Terminal & Linux
 
 - [x] A user terminal opens from the home overflow menu. Console (full PTY) mode is the default, with "Simple mode" (a block view of command, output and exit code) available. [core]
-- [ ] Console: real xterm-256color terminal with colours, cursor movement, alternate screen, line drawing, wide CJK glyphs, scrollback, bracketed paste, resizing on rotation and keyboard changes, and a JetBrains Mono font. [core] — **partial**
+- [x] Console: real xterm-256color terminal with colours, cursor movement, alternate screen, line drawing, wide CJK glyphs, scrollback, bracketed paste, resizing on rotation and keyboard changes, and a JetBrains Mono font. [core]
 - [x] Key bar: Esc, Tab, Ctrl/Alt (tap for one-shot, long-press to lock), arrow keys with auto-repeat, Enter, Home/End, PgUp/PgDn, common symbols, Paste, show/hide keyboard. [core]
 - [x] Simple mode: command, output and exit code per block. ANSI colours are rendered, progress bars collapse to their final state, and input works while a command runs (REPLs, prompts). Copy command / Copy output / Reuse command. [core]
 - [x] Up to 6 concurrent sessions per mode. Session list: new, switch, restart, close. Sessions survive leaving the page. [core] [battery]
-- [ ] Environments: Android shell (app user, or root with Magisk/KernelSU/APatch BusyBox) and Linux. [core] — **partial**
+- [x] Environments: Android shell (app user, or root with Magisk/KernelSU/APatch BusyBox) and Linux. [core]
 - [x] Linux distribution choice: Alpine (musl, lightweight) or Debian Trixie (glibc, broader compatibility). [core]
 - [x] Execution mode: Standard (PRoot, no root, app-private) or Root mode (chroot with its own mount namespace). If root is lost, the chroot environment is kept and the user is offered PRoot. [core] [root]
 - [x] Staged install: base environment, then base tools (rg, fd, git, ssh client, curl, jq, sqlite and others), then optional profiles. [core]
@@ -292,7 +292,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 ### Skills
 - [x] Skills page: built-in skills (self-improving-agent, skill-creator, skill-installer) and user-installed skills, each with an enable switch, a description (expandable) and Delete (confirmed). [core]
 - [x] Import a skill from a ZIP via the system file picker (one skill per ZIP; validated for safe paths and sizes). [core]
-- [ ] The agent can install skills from a curated catalog or from any public GitHub repo, tree or blob URL (up to 20 per install). Installed skills work from the next turn and their scripts are never executed automatically. [core] — **partial**
+- [ ] The agent can install skills from a curated catalog or from any public GitHub repo, tree or blob URL (up to 20 per install). Installed skills work from the next turn and their scripts are never executed automatically. [core] — **partial:** install from a GitHub repo, folder or SKILL.md link (up to 20) and ZIP import work; there is no curated catalog to pick from
 - [x] Replace-existing-skill confirmation. Built-in skills cannot be overwritten. Installs are transactional and recover after a failure. [core]
 
 ### MCP
@@ -312,7 +312,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Quick-start presets: Daily evening briefing, Weekday morning digest, Web change radar, Weekly phone & habit review. [core]
 - [x] Editor fields: name, prompt ("What should Atom do"), and schedule (Daily, Weekdays, Weekly with day picker, Interval from minutes up to 7 days, One-time delay, 5-field Cron), with a schedule preview. [core]
 - [x] Notifications: notify every run, only on change, or archive silently. Option to show a progress notification while running. [core]
-- [ ] Advanced: model and reasoning effort (follow global or a specific one), per-task capabilities (chat-only, web & browser, device read, device controls, terminal/files/Linux, MCP, app UI automation (off by default)), result destination (isolated archive per run or a dedicated conversation channel), missed-run policy (catch up once within 3 h, or skip), quiet hours 23:00–07:30, max duration (2/5/10/15 min). [core] [battery] — **partial**
+- [x] Advanced: model and reasoning effort (follow global or a specific one), per-task capabilities (chat-only, web & browser, device read, device controls, terminal/files/Linux, MCP, app UI automation (off by default)), result destination (isolated archive per run or a dedicated conversation channel), missed-run policy (catch up once within 3 h, or skip), quiet hours 23:00–07:30, max duration (2/5/10/15 min). [core] [battery]
 - [x] Task detail: Run now, Stop, a task memo used to compare against the previous run (clearable), a run timeline (live progress or the full conversation, with follow-up), Delete. [core]
 - [x] Reliability: alarm-based wake-ups, rescheduled after reboot, app update, or time and timezone changes. Overlapping runs are skipped. The task auto-pauses after repeated failures. UI tasks on a locked phone without a virtual display send a "ready to run" reminder instead. [core] [battery]
 - [x] Two notification channels: results and alerts (failures, auto-pause, waiting for unlock). [core]
@@ -332,7 +332,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 
 ### Persistent bubble
 - [x] An optional always-on floating bubble (Settings → Floating assistant → Floating bubble). It needs the overlay permission. [core] [battery]
-- [ ] Appearance: a round orb with a minimal atom glyph (nucleus with crossing orbits), three accent arcs, breathing and spinning only while working. When idle it is a static image to save CPU. [core] [battery] — **partial**
+- [x] Appearance: a round orb with a minimal atom glyph (nucleus with crossing orbits), three accent arcs, breathing and spinning only while working. When idle it is a static image to save CPU. [core] [battery]
 - [x] States: idle, thinking/working, paused, dragging (it swells), and brace (bracing at the dismiss target). [core]
 - [x] Tap opens the mini chat. [core]
 - [x] Hold opens a radial hold menu anchored to the bubble, with icon-only buttons: Hide (X), Open chat, Talk (mic). A hint reads "hold the bubble for actions". [core]
@@ -348,7 +348,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 
 ### Full-screen assistant overlay (system assistant entry)
 - [x] An edge-to-edge overlay drawn over the current app when Atom is invoked as the assistant. [core]
-- [ ] Entry animation: a halo and light band run down the screen edge, then a coloured wave ripple appears at the bottom that reacts to voice volume (skipped when graphics cannot render it). [core] [battery] — **partial**
+- [x] Entry animation: a halo and light band run down the screen edge, then a coloured wave ripple appears at the bottom that reacts to voice volume (skipped when graphics cannot render it). [core] [battery]
 - [x] Three suggestion chips: Summarize screen, Explain this page, Extract key info. [core]
 - [x] Listens first, with a keyboard toggle. Recognition errors show next to the input with a link to voice settings. [core]
 - [x] The screenshot, foreground app and page content captured at wake time are sent automatically with the question. Follow-ups reuse that snapshot and note when it was taken. [core]
@@ -359,14 +359,14 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 
 ## 11. System integration
 
-- [ ] Registers as the system digital assistant (voice interaction service, assist from the lock screen, uses assist screenshots and structured screen content). Settings shows the current default (Atom / other app / not set) and opens the system picker. [core] — **partial**
+- [x] Registers as the system digital assistant (voice interaction service, assist from the lock screen, uses assist screenshots and structured screen content). Settings shows the current default (Atom / other app / not set) and opens the system picker. [core]
 - [x] Handles the system ASSIST action, so the long-press or assistant gesture opens Atom. [core]
-- [ ] Declares a speech recognition service ("Atom speech recognition"), which Android requires for assistant eligibility. [core] — **partial**
+- [x] Declares a speech recognition service ("Atom speech recognition"), which Android requires for assistant eligibility. [core]
 - [x] Accessibility service "Atom Agent". [core]
 - [x] Notification listener "Atom notification history". [core]
 - [x] Share target for any file type, single or multiple. [core]
-- [ ] Notification channels: Running tasks (Open / Stop), Background command results, Scheduled task results, Scheduled task alerts, Read aloud, Assistant voice ("Atom is listening / reading aloud" with Stop). [core] — **partial**
-- [ ] Live Update / promoted status-bar capsule while running ("Working" / "Answering"). [core] — **missing**
+- [ ] Notification channels: Running tasks (Open / Stop), Background command results, Scheduled task results, Scheduled task alerts, Read aloud, Assistant voice ("Atom is listening / reading aloud" with Stop). [core] — **partial:** all channels exist, but read-aloud uses the Assistant voice channel instead of its own "Read aloud" channel
+- [x] Live Update / promoted status-bar capsule while running ("Working" / "Answering"). [core]
 - [x] Boot, app-update and time-change receivers that reschedule tasks. [core]
 - [x] File sharing out of the app (generated images, exported files) through a secure share provider. [core]
 - [x] Power-key long-press target: System default / Gemini / Atom. [lsposed] *(ColorOS, HyperOS)*
@@ -382,30 +382,30 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 
 ### Settings root
 - [x] LLM providers: Model providers (shows "provider / model"), Reasoning enabled by default (switch), Default reasoning effort (picker, "Model default" and levels). [core]
-- [ ] Context & extensions: Automatic context compaction (switch, on), Auto-generate titles, Memory, Subagent, Skills, MCP servers, Scheduled Tasks, Characters. [core] — **partial**
-- [ ] Tools: Tool list, Web search and reading, AI image generation, Permissions, System enhancements, Linux environment, Workspace and files. [core] — **partial**
-- [ ] General: Appearance & Theme, Language, Floating assistant, Speech, Keep screen on while running, Data backup, About. [core] — **partial**
+- [x] Context & extensions: Automatic context compaction (switch, on), Auto-generate titles, Memory, Subagent, Skills, MCP servers, Scheduled Tasks, Characters. [core]
+- [x] Tools: Tool list, Web search and reading, AI image generation, Permissions, System enhancements, Linux environment, Workspace and files. [core]
+- [x] General: Appearance & Theme, Language, Floating assistant, Speech, Keep screen on while running, Data backup, About. [core]
 
 ### Tool list / capabilities
 - [x] Master switches: Enable web search, reading and browser; Enable device direct tools; Allow reading of sensitive device information; Allow sensitive device operation; Enable terminal/file tools; Enable memory; Provider-hosted web search; AI image generation. Most are on by default; hosted search is off. [core]
-- [ ] Tool cards grouped as Screens & controls, Text & clipboard, Applications & systems, Personal context, System & built-in apps, Terminal & files, Web tools, Document vision, Memory. Each card has an info/description view and jump links where relevant. "This device" vs "All capabilities" views. [core] — **partial**
+- [x] Tool cards grouped as Screens & controls, Text & clipboard, Applications & systems, Personal context, System & built-in apps, Terminal & files, Web tools, Document vision, Memory. Each card has an info/description view and jump links where relevant. "This device" vs "All capabilities" views. [core]
 - [x] Switches are re-checked before every tool call, so turning one off takes effect mid-run. [core]
 
 ### Appearance & Theme
-- [ ] UI style: Miuix (default) or COUI, switchable live without losing state. [core] — **missing**
+- [ ] UI style: Miuix (default) or COUI, switchable live without losing state. [core] — **missing:** COUI is deferred until Miuix is complete (decision D8); the UI style row says "COUI style coming soon"
 - [x] Theme mode: Follow system, Light, Dark. [core]
-- [ ] Monet colours (system dynamic colour), colour style (Tonal Spot, Neutral, Vibrant, Expressive, Rainbow, Fruit Salad, Monochrome, Fidelity, Content, CMF). [core] — **partial**
-- [ ] Accent colour: System, Blue, Purple, Pink, Red, Orange, Yellow, Green, Teal. [core] — **partial**
+- [x] Monet colours (system dynamic colour), colour style (Tonal Spot, Neutral, Vibrant, Expressive, Rainbow, Fruit Salad, Monochrome, Fidelity, Content, CMF). [core]
+- [x] Accent colour: System, Blue, Purple, Pink, Red, Orange, Yellow, Green, Teal. [core]
 - [x] Pure black background in dark mode (on by default, true #000000). [core]
-- [ ] Blur effects, top-bar blur style (gradient band or progressive), progressive blur (can be turned off for performance). [core] [battery] — **partial**
+- [x] Blur effects, top-bar blur style (gradient band or progressive), progressive blur (can be turned off for performance). [core] [battery]
 - [x] Swipe-back-anywhere gesture. Predictive back animation. [core]
 
 ### Floating assistant
 - [x] Floating bubble switch. [core]
-- [ ] Assistant model (follow primary or a specific model) and reasoning level (follow default or a specific level), for the power-key / system-assistant overlay. [core] — **partial**
+- [x] Assistant model (follow primary or a specific model) and reasoning level (follow default or a specific level), for the power-key / system-assistant overlay. [core]
 
 ### Auto-generate titles
-- [ ] Enable auto-title, title model (follow conversation or a specific model), reasoning level (Auto minimal/off, Model default, levels). [core] — **partial**
+- [x] Enable auto-title, title model (follow conversation or a specific model), reasoning level (Auto minimal/off, Model default, levels). [core]
 
 ### Speech
 - [x] Overview, Speech recognition, Spoken answers, Recording storage (OSS), Assistant group (auto-speak, auto-send pause), Smart correction, Filter Markdown, Test and Preview, Save. See §4. [core]
@@ -437,7 +437,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Follow system (English only). [core]
 
 ### About
-- [ ] Version, Check for updates ("Already on the latest version" / "Update available: latest X, current Y" → Download), Source code (GitHub, with a star prompt), Feedback. [core] — **partial**
+- [x] Version, Check for updates ("Already on the latest version" / "Update available: latest X, current Y" → Download), Source code (GitHub, with a star prompt), Feedback. [core]
 
 ## 13. Files, web browsing, image generation, other tools
 
@@ -461,14 +461,14 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Model presets (as labelled): Gemini Nano Banana 2.1 (recommended), Gemini 3.1 Flash-Lite, Gemini 3.1 Flash, Gemini 3 Pro, Gemini 2.5 Flash; gpt-image-2.6-flare, gpt-image-2.6-sunburst, gpt-image-2.5-flare, gpt-image-2.5-sunburst, gpt-image-1.5 (gpt-image-1 flagged as retired); Grok Imagine 2.0 (up to 5 references); Seedream 5.5, 5.0 Pro, 5.0 Flash, 5.0 Lite, 4.5; Qwen-Image 2.0 Pro (recommended), 2.0; SiliconFlow Qwen-Image, Qwen-Image-Edit, Kolors, FLUX schnell; or a custom model ID. [core]
 - [x] Defaults: aspect ratio (Auto, 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3), quality (Standard/High), resolution (1K/2K/4K, or fixed by the model), Doubao watermark (off), Qwen smart prompt enhancement, Qwen watermark (off). [core]
 - [x] "Test generation" with a preview. Save settings. [core]
-- [ ] Image cards: Generating / Editing N images with an elapsed timer, then completed or failed. Actions: Save (to Pictures/Atom), Save all, Share, Edit (attaches the image to the composer for a follow-up), view the prompt. [core] — **partial**
+- [x] Image cards: Generating / Editing N images with an elapsed timer, then completed or failed. Actions: Save (to Pictures/Atom), Save all, Share, Edit (attaches the image to the composer for a follow-up), view the prompt. [core]
 - [x] Generated images gallery: count and size, view, save, share, delete one, Clear all (confirmed). [core]
 
 ### Phone app operations
 - [x] Calendar: list writable calendars, read, create one or a batch (up to 30) with reminders, update, delete (a whole recurring series only when explicit). Results are verified by reading back. [core]
-- [ ] Alarms: create via the system clock (opens the clock to confirm on failure), list, change time, enable/disable, delete. [core] (edit/delete: [root] *(ColorOS)*) — **partial**
+- [ ] Alarms: create via the system clock (opens the clock to confirm on failure), list, change time, enable/disable, delete. [core] (edit/delete: [root] *(ColorOS)*) — **partial:** create, list, change, enable/disable and delete go through the clock app; editing or deleting in place needs the ColorOS clock and a ColorOS device
 - [x] Timers up to 24 h, list active timers. [core]
-- [ ] Notes: create, read, move to trash. [root] *(ColorOS)* — **missing**
+- [ ] Notes: create, read, move to trash. [root] *(ColorOS)* — **missing:** ColorOS-only private data; needs a ColorOS device to build and test (decision D12)
 
 ## 14. Privacy, updates, backup/restore, export/import, logging
 
@@ -481,7 +481,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] After import, subscription connections stay disabled until the user signs in again. If the default model cannot be restored, the user is asked to reselect it. [core]
 - [x] Speech credentials and OAuth tokens are not included in backups. [core]
 - [x] Per-conversation Markdown export. Character card export. Image save/share. File export from the workspace. [core]
-- [ ] Update channel: checks the project's own GitHub Releases and offers a download link. There are no automatic installs. [core] — **partial**
+- [x] Update channel: checks the project's own GitHub Releases and offers a download link. There are no automatic installs. [core]
 - [x] Logging: release builds never log prompts, responses, keys, commands, file paths or tool results. [core]
 - [x] "Clear all browser data" (cookies, cache, site data, sign-ins). [core]
 - [x] Notification history is kept locally only (7 days, 1000 entries). [core]
@@ -494,7 +494,7 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 - [x] Deleting a running conversation stops and saves first. [core]
 - [x] Reply language follows the user's language. [core]
 - [x] Usage and token accounting, including cache hits, per session (§2). [core]
-- [ ] A foreground execution service holds terminal, PRoot and agent tasks, and releases itself when the last task ends. Notification stop actions reclaim the tasks. [core] [battery] — **partial**
+- [x] A foreground execution service holds terminal, PRoot and agent tasks, and releases itself when the last task ends. Notification stop actions reclaim the tasks. [core] [battery]
 - [x] Wake lock only while an unpaused run is executing. It never wakes a phone the user locked. [core] [battery]
 - [x] No polling, and no extra background timers when idle (this was an explicit design goal; the idle bubble animation was removed because it cost about 13% CPU). [battery]
 - [x] Known open items in the old app (gaps, not parity targets): the bubble status pill (working / hands-on / paused / waiting approval next to the face) is not finished; keyboard-height fit is tuned to one device; old conversation titles are not rewritten.
@@ -504,19 +504,19 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 
 ## 16. Added after the full audit (items the first pass missed)
 
-These come from the old app's screens, string resources and manifest. Each is tagged with the section it belongs to. None are ticked yet: they still need checking against the new app.
+These come from the old app's screens, string resources and manifest. Each is tagged with the section it belongs to. All were checked against the new app on 2026-11-26.
 
 ### From §1 Onboarding & permissions
 - [x] Startup: there is no custom splash. The system launch splash is held until the appearance settings have loaded, so the first frame already uses the right theme and UI style. [core]
 - [x] The sidebar's "Permissions need attention" hint only fires for 4 core items: background running, floating window, accessibility, notifications. [core]
 - [x] The Permissions page contains exactly the 12 rows listed in Appendix A, in that order. Microphone, exact alarm and all-files access are not on it. They are requested where they are used: the voice mic, the scheduled-task health banners, the workspace and shared folders. [core]
-- [ ] Settings root has a "Permissions" group: Floating window permissions (Authorized / Not authorized in red), Accessibility enhancement tools (Enabled / Disabled), and Enforce accessibility (LSPosed only). [core]
+- [x] Settings root has a "Permissions" group: Floating window permissions (Authorized / Not authorized in red), Accessibility enhancement tools (Enabled / Disabled), and Enforce accessibility (LSPosed only). [core]
 - [x] When local-network access is denied, explain it ("You can allow Nearby devices…") and fall back to app settings if the system page cannot be opened. [core]
 
 ### From §2 Chat & conversation UX
 - [x] The sidebar dock has **5** entries in this order: Models (trailing value = active model, or "Not set"), Characters, Tools, Skills, Scheduled Tasks. [core]
-- [ ] The sidebar header reads "Atom" and has a new-conversation button. The empty list shows "No conversations yet" / "Tap the new chat button above to start". A search with no hits shows "No matching conversations". [core]
-- [ ] Conversation row anatomy:
+- [x] The sidebar header reads "Atom" and has a new-conversation button. The empty list shows "No conversations yet" / "Tap the new chat button above to start". A search with no hits shows "No matching conversations". [core]
+- [x] Conversation row anatomy:
   - The title, or the preview when there is no title.
   - A second line with the character name for character chats.
   - An accent-coloured run-status line while running.
@@ -527,9 +527,9 @@ These come from the old app's screens, string resources and manifest. Each is ta
 - [x] Rename dialog: title "Rename conversation", field hint "Conversation name", Save. [core]
 - [x] The home overflow menu holds New conversation, Open terminal, Open browser, and an "Enable auto read-aloud" / "Disable auto read-aloud" toggle with speaker / mute icons. The toggle only shows when TTS is configured. [core]
 - [x] The composer placeholder changes with context: "Ask Atom to do something" normally, "Atom is working…" while running, "Say something to <name>…" in a character chat. [core]
-- [ ] Edit mode: a banner says "Sending will replace this message and everything after it" or "Sending will replace this message". The send button becomes "Save message" in character chats ("Saving updates this message in place…"). A "Cancel edit" action is available. [core]
+- [ ] Edit mode: a banner says "Sending will replace this message and everything after it" or "Sending will replace this message". The send button becomes "Save message" in character chats ("Saving updates this message in place…"). A "Cancel edit" action is available. [core] — **partial:** the banner and Cancel edit are there; character chats edit a message in an "Edit message" dialog instead of a "Save message" composer mode
 - [x] A user message shows an "Edited" label once edited. Long-pressing a user bubble opens a menu with copy / edit / delete. [core]
-- [ ] The action row under an answer fades in only after the reveal finishes. Icon buttons in this order:
+- [x] The action row under an answer fades in only after the reveal finishes. Icon buttons in this order:
   1. Copy (turns into a check, "Copied")
   2. Read aloud
   3. Edit character reply (character chats only)
@@ -542,18 +542,18 @@ These come from the old app's screens, string resources and manifest. Each is ta
 - [x] Full-screen image viewer for chat images: Save (to Pictures/Atom), Share, "Continue editing". [core]
 - [x] Work header while running: "Analyzing task" or "Working · step N". When finished: "Analysis complete" or "Completed N steps". A step group shows "N calls". Each step's result reads Done / Completed / Failed. [core]
 - [x] Browser tool steps show a progress line "Loading · N%" and an "Open current browser" button. [core]
-- [ ] A long-history guard asks the user to scroll up to the start of the turn before continuing ("Scroll up to the user message that started this turn before continuing"). After compaction, a notice says the earlier context was compressed. [core] — **partial**
+- [ ] A long-history guard asks the user to scroll up to the start of the turn before continuing ("Scroll up to the user message that started this turn before continuing"). After compaction, a notice says the earlier context was compressed. [core] — **partial:** the compaction notice is there; the scroll-up guard is not
 - [x] System notices that appear inline in the chat: "Stopped", "The run completed without a text response.", "Runtime failed", "Couldn't save the conversation. Please try again.", "Regeneration was interrupted. The original reply has been kept.", and the context-compaction statuses (completed, stopped, failed, interrupted). [core]
 - [x] Labels for provider-hosted tools that appear in the timeline: Web search, File search, Code execution, Computer use, Image generation, MCP tool. They show as "Running <x>". [core]
-- [ ] The empty state in a character chat shows a 68 dp round avatar, the character name and "The story begins here". There are no suggestion cards there. [core]
+- [x] The empty state in a character chat shows a 68 dp round avatar, the character name and "The story begins here". There are no suggestion cards there. [core]
 
 ### From §3 Models & providers
-- [ ] Provider detail is split into two tabs, "Configuration" and "Model". [core]
-- [ ] Anthropic providers have an editable "anthropic-version" field. [core]
+- [x] Provider detail is split into two tabs, "Configuration" and "Model". [core]
+- [x] Anthropic providers have an editable "anthropic-version" field. [core]
 - [x] Gemini providers label the hosted-search toggle "Google Search". [core]
-- [ ] In the model list, tapping a model sets it as current. Long-press enters multi-select with Select all / Select none. A pencil button opens "Edit model parameters". There is no separate "Set as default model" button; that string is an orphan. [core]
+- [x] In the model list, tapping a model sets it as current. Long-press enters multi-select with Select all / Select none. A pencil button opens "Edit model parameters". There is no separate "Set as default model" button; that string is an orphan. [core]
 - [x] The model parameter sheet includes "Restore automatic" for the detected capabilities and "Covered model automatic capabilities". It also explains how Gemini and Vertex reasoning levels work. [core]
-- [ ] Save outcomes for a provider: "Created and selected as the current model provider", "Saved and selected as the current model provider", "Saved, provider not enabled". A successful test reports "Connected (verified model: X)" for Vertex, or the fetched-model count. [core]
+- [ ] Save outcomes for a provider: "Created and selected as the current model provider", "Saved and selected as the current model provider", "Saved, provider not enabled". A successful test reports "Connected (verified model: X)" for Vertex, or the fetched-model count. [core] — **partial:** the three save outcomes are there; Test connection shows the model's reply and the time taken, not "Connected (verified model: X)" or a fetched-model count
 - [x] The models.dev catalog page:
   - A "Catalog status" card whose source line reads Built-in catalog snapshot / Local cached catalog / Online catalog, plus "Updated <time>".
   - "Importable providers (N)" and a Refresh button.
@@ -566,84 +566,84 @@ These come from the old app's screens, string resources and manifest. Each is ta
 - [x] The dictation bar has Cancel and Done. Labels: "Voice input", "Finish dictation". During hold-to-talk the hint switches to "Release to cancel" once the finger slides off. After release it reads "Transcribing and sending…". [core]
 - [x] Progress copy: "Waiting for file transcription, tap to cancel anytime". The overlay input placeholder is "Message Atom…", and the mic hint is "Tap to speak". [core]
 - [x] Default preview text for "Preview voice": a short self-introduction followed by a mock meeting reminder (the "Hi, I'm Atom…" string). [core]
-- [ ] Voices are grouped as "Female" / "Male". MiMo also has language-specific defaults (Chinese and English, female and male). [core] — **partial**
+- [ ] Voices are grouped as "Female" / "Male". MiMo also has language-specific defaults (Chinese and English, female and male). [core] — **partial:** voices are grouped Female / Male; MiMo has one "Default" voice instead of separate Chinese and English, female and male defaults
 
 ### From §5 Screen control & automation
 - [x] Run capsule copy:
   - The capsule is labelled "<status>. Tap to show controls".
   - The input field hint reads "Add instructions; Atom continues the current task".
   - Status texts: Reasoning, Generating answer, Stopping, Paused, Continuing, "Finishing up. Add input after the result appears", "Additional input not supported here", "Additional input received. Continuing", Result ready, Request failed. [core]
-- [ ] The virtual-display stage card shows a "Background canvas" label in automatic mode and "Manual control" during takeover. [root] [lsposed]
-- [ ] The background virtual display switch lives on the **Settings root** (Tools group), default on. It does not live on System enhancements. [root] [lsposed]
+- [ ] The virtual-display stage card shows a "Background canvas" label in automatic mode and "Manual control" during takeover. [root] [lsposed] — **partial:** the stage card reads "Atom is working here" / "You are in control" instead; not yet checked on a rooted or LSPosed phone
+- [x] The background virtual display switch lives on the **Settings root** (Tools group), default on. It does not live on System enhancements. [root] [lsposed]
 
 ### From §8 Terminal & Linux
-- [ ] The terminal toolbar has an environment segmented switch on the left: Android and the selected Linux distribution. The toast reads "Switched to X". On the right are icons for Sessions, Background tasks, and the Console / Simple mode toggle. [core]
-- [ ] If Linux is not installed, the terminal shows "Linux environment is not installed yet" with "Install now". Simple mode's empty hint explains that this is a persistent shell. [core]
-- [ ] Sessions dialog: "New session", rows marked Current / Running / Idle / Exited, Restart, Close. "Session ended; reconnected" and "Reconnect" appear when a session drops. [core]
-- [ ] Linux page sections appear step by step: Files and directories (shared folders and file browser need the base environment); Optional tools need the base tools. [core]
-- [ ] Default distribution: Debian, unless only Alpine is already installed. [core]
-- [ ] Shared-folder dialog: a directory picker ("No subfolders here", "Cannot open this directory"), a Mount name field, and "Mount: <path>". Removing asks for confirmation ("Files in the source directory are not deleted"). [core]
+- [x] The terminal toolbar has an environment segmented switch on the left: Android and the selected Linux distribution. The toast reads "Switched to X". On the right are icons for Sessions, Background tasks, and the Console / Simple mode toggle. [core]
+- [x] If Linux is not installed, the terminal shows "Linux environment is not installed yet" with "Install now". Simple mode's empty hint explains that this is a persistent shell. [core]
+- [x] Sessions dialog: "New session", rows marked Current / Running / Idle / Exited, Restart, Close. "Session ended; reconnected" and "Reconnect" appear when a session drops. [core]
+- [x] Linux page sections appear step by step: Files and directories (shared folders and file browser need the base environment); Optional tools need the base tools. [core]
+- [x] Default distribution: Debian, unless only Alpine is already installed. [core]
+- [x] Shared-folder dialog: a directory picker ("No subfolders here", "Cannot open this directory"), a Mount name field, and "Mount: <path>". Removing asks for confirmation ("Files in the source directory are not deleted"). [core]
 
 ### From §9 Memory, skills, MCP, subagents, scheduled tasks, characters
-- [ ] Skills has a "Removed" group: a missing built-in skill shows "Click to reinstall". Built-in skills have no delete action. User skills have a "More actions" menu with View description and delete. [core]
-- [ ] Toasts after a skill change: "\"X\" was removed from Atom." and "\"X\" is enabled and will be available from the next conversation turn." [core]
-- [ ] MCP: enabling a tool that is not read-only asks "Enable this tool?" with an explanation. The truncation banner names the reason: the 2,048-tool limit, the 64-page limit, the size budget, or a duplicate cursor. [core]
-- [ ] Subagent settings: built-in profiles are listed by their lowercase names (explore / coder / plan) and only open a read-only view. "New Subagent" is in the empty state and as "+" in the top bar. [core]
-- [ ] Subagent details sheet: "Prompt" (or "Prompt (Resumed)"), "Streaming" or "Summary", "N earlier steps folded", token chips "In / Cached / Out". Status values: Running… / Stopped / Incomplete / Completed · N tool calls. [core]
-- [ ] Scheduled task detail has an "Enable schedule" switch, with the summaries "Automatically wakes…" and "Automatic triggers paused; you can still run manually anytime". [core]
-- [ ] Scheduled task toasts: "Started background test run", "This task is already running", "Stopping current run…", "Task memo cleared", "Failed to save scheduled task". [core]
-- [ ] Scheduled task defaults are listed in Appendix A: show-progress off, device controls off, quiet hours off, 5 consecutive failures before auto-pause. [core]
-- [ ] Run timeline rows show a trigger source (Scheduled / Manual run / Catch-up), a status (Running, Delivered, No change, Skipped, Failed, Timed out, Stopped) and a duration. Tapping one gives "Tap to watch live progress" or "Tap to view full conversation and follow up". [core]
-- [ ] Default character: one built-in character named "Xiaoman". When the library is empty, it offers "Restore default character". [core]
-- [ ] Character detail layout:
+- [ ] Skills has a "Removed" group: a missing built-in skill shows "Click to reinstall". Built-in skills have no delete action. User skills have a "More actions" menu with View description and delete. [core] — **partial:** built-in skills have only a switch and user skills have the More actions menu; there is no "Removed" group with "Click to reinstall" (built-in skills cannot be removed, so it would never show)
+- [x] Toasts after a skill change: "\"X\" was removed from Atom." and "\"X\" is enabled and will be available from the next conversation turn." [core]
+- [x] MCP: enabling a tool that is not read-only asks "Enable this tool?" with an explanation. The truncation banner names the reason: the 2,048-tool limit, the 64-page limit, the size budget, or a duplicate cursor. [core]
+- [x] Subagent settings: built-in profiles are listed by their lowercase names (explore / coder / plan) and only open a read-only view. "New Subagent" is in the empty state and as "+" in the top bar. [core]
+- [ ] Subagent details sheet: "Prompt" (or "Prompt (Resumed)"), "Streaming" or "Summary", "N earlier steps folded", token chips "In / Cached / Out". Status values: Running… / Stopped / Incomplete / Completed · N tool calls. [core] — **partial:** everything except the "Prompt (Resumed)" label
+- [x] Scheduled task detail has an "Enable schedule" switch, with the summaries "Automatically wakes…" and "Automatic triggers paused; you can still run manually anytime". [core]
+- [x] Scheduled task toasts: "Started background test run", "This task is already running", "Stopping current run…", "Task memo cleared", "Failed to save scheduled task". [core]
+- [x] Scheduled task defaults are listed in Appendix A: show-progress off, device controls off, quiet hours off, 5 consecutive failures before auto-pause. [core]
+- [x] Run timeline rows show a trigger source (Scheduled / Manual run / Catch-up), a status (Running, Delivered, No change, Skipped, Failed, Timed out, Stopped) and a duration. Tapping one gives "Tap to watch live progress" or "Tap to view full conversation and follow up". [core]
+- [ ] Default character: one built-in character named "Xiaoman". When the library is empty, it offers "Restore default character". [core] — **partial:** the built-in character is "Lumen", with "Restore Lumen" when it is gone; shipping "Xiaoman" instead is an owner decision (Q6)
+- [x] Character detail layout:
   - Hero: avatar with "Change avatar", name, "By <creator>", Favorite.
   - A greeting chooser with "Read full text"; if there is no greeting, "No preset greeting — you start the conversation".
   - Start chat.
   - Use my persona switch and Edit my persona.
   - "Character profile".
   - A "Manage" group: Edit character, Story memory, Duplicate character, Export PNG character card, Export JSON character card, Compatibility notes, Delete character. [core]
-- [ ] Story memory page: Reload and Save memory. A conflict notice appears if a chat changed it meanwhile: "Story memory was updated by a conversation. Your draft is preserved…". [core]
-- [ ] Editor note: "Third-party scripts and extension UIs in character cards are not executed, and their data is preserved when exporting." [core]
+- [x] Story memory page: Reload and Save memory. A conflict notice appears if a chat changed it meanwhile: "Story memory was updated by a conversation. Your draft is preserved…". [core]
+- [x] Editor note: "Third-party scripts and extension UIs in character cards are not executed, and their data is preserved when exporting." [core]
 
 ### From §10 Floating bubble & overlay
 - [x] Mini-chat model chip shows "No model" when nothing is configured. [core]
-- [ ] The mini-chat empty state uses the Atom/octopus emblem image. [core]
-- [ ] The bubble's status line reads "<status> · hold the bubble for actions". [core]
+- [x] The mini-chat empty state uses the Atom/octopus emblem image. [core]
+- [x] The bubble's status line reads "<status> · hold the bubble for actions". [core]
 
 ### From §11 System integration
 - [x] Execution notification: title "Atom is running", text "N task(s) are running. Return to Atom to check progress.", actions Open and Stop. Low importance. [core]
-- [ ] Background-command notification: title by outcome (completed, timed out, stopped, interrupted, failed), "Exit code N", and the hint "View status and logs under background tasks in Terminal". [core]
-- [ ] Scheduled notification titles: "Task failed: X", "Task paused: X", "Ready to run: X". Fallback bodies: "Scheduled task completed. Tap to view full conversation." and "Execution failed. Tap to inspect details." [core]
-- [ ] Assistant voice notification body: "Active only while the assistant overlay is visible". If the system blocks audio, the error is "The system does not allow the overlay to use audio…". [core] — **partial**
-- [ ] LSPosed module scope declared by the app: system, SystemUI, Google app, ColorOS ColorDirectService, ColorOS AI memory (com.oplus.aimemory), Xiaomi voice assistant, and the Xiaomi home launchers (CN and global). [lsposed]
-- [ ] The ASSIST bridge activity runs translucent, is excluded from recents, has no history, can show over the lock screen and runs in its own `:voice` process. Recognition runs in its own `:recognition` process. [core]
-- [ ] Cleartext HTTP is allowed app-wide (needed for LAN models and MCP). Only English is declared as a locale. [core]
-- [ ] File-share provider paths: the generated-images folder and a cache folder for shared images. [core]
-- [ ] An app-private signature permission guards the accessibility-protection control. A health provider is readable only by holders of the system manage-accessibility permission. [lsposed]
+- [x] Background-command notification: title by outcome (completed, timed out, stopped, interrupted, failed), "Exit code N", and the hint "View status and logs under background tasks in Terminal". [core]
+- [x] Scheduled notification titles: "Task failed: X", "Task paused: X", "Ready to run: X". Fallback bodies: "Scheduled task completed. Tap to view full conversation." and "Execution failed. Tap to inspect details." [core]
+- [ ] Assistant voice notification body: "Active only while the assistant overlay is visible". If the system blocks audio, the error is "The system does not allow the overlay to use audio…". [core] — **partial:** the body text is there; the "system does not allow the overlay to use audio" error is not
+- [ ] LSPosed module scope declared by the app: system, SystemUI, Google app, ColorOS ColorDirectService, ColorOS AI memory (com.oplus.aimemory), Xiaomi voice assistant, and the Xiaomi home launchers (CN and global). [lsposed] — **partial:** the scope covers system, SystemUI, the Google app and the Xiaomi launcher; ColorDirectService, ColorOS AI memory, the Xiaomi voice assistant and the global Xiaomi launcher are not listed
+- [ ] The ASSIST bridge activity runs translucent, is excluded from recents, has no history, can show over the lock screen and runs in its own `:voice` process. Recognition runs in its own `:recognition` process. [core] — **partial:** the lock-screen bridge is translucent, left out of recents and shows over the lock screen; it and recognition run in the main process, not in separate :voice / :recognition processes
+- [ ] Cleartext HTTP is allowed app-wide (needed for LAN models and MCP). Only English is declared as a locale. [core] — **partial:** cleartext is allowed app-wide; the English-only locale list is not declared (the app only has English text, so users see no difference)
+- [x] File-share provider paths: the generated-images folder and a cache folder for shared images. [core]
+- [ ] An app-private signature permission guards the accessibility-protection control. A health provider is readable only by holders of the system manage-accessibility permission. [lsposed] — **partial:** accessibility protection runs inside the module; there is no signature-guarded control and no health provider
 
 ### From §12 Settings
-- [ ] A "System assistant takes over" group on the root, and a "Circle to Search" group that only shows when LSPosed has been seen (see Appendix A). [core] [lsposed]
-- [ ] An "about" group on the root (Version, Check for updates, Feedback, Source Code). The spec puts About under General, but it is a separate group. [core]
-- [ ] Image-gen row summary "On · <backend>" or "Off". [core]
-- [ ] Many labels really are lowercase in the shipped strings: page title "set up", group titles "tool" and "about", buttons "test connection", "create", "save", "delete", "edit", "copy", "return", "reset", "repair", and row labels such as "usage access" and "location permissions". Decide on purpose whether to match this or fix it; it looks like an unfinished translation pass. [core]
+- [x] A "System assistant takes over" group on the root, and a "Circle to Search" group that only shows when LSPosed has been seen (see Appendix A). [core] [lsposed]
+- [x] An "about" group on the root (Version, Check for updates, Feedback, Source Code). The spec puts About under General, but it is a separate group. [core]
+- [x] Image-gen row summary "On · <backend>" or "Off". [core]
+- [x] Many labels really are lowercase in the shipped strings: page title "set up", group titles "tool" and "about", buttons "test connection", "create", "save", "delete", "edit", "copy", "return", "reset", "repair", and row labels such as "usage access" and "location permissions". Decide on purpose whether to match this or fix it; it looks like an unfinished translation pass. [core] *New app: proper capitals on purpose (decision D6, easy to revert).*
 
 ### From §13 Files, web, image generation
-- [ ] Browser address bar: placeholder "Search or enter address". Back and Forward buttons, Stop loading / Refresh. A "More options" menu with Open in another app, Close page, Clear all browser data (confirmed). Error text: "No app can open this webpage". [core]
-- [ ] Image-gen error texts users can see:
+- [x] Browser address bar: placeholder "Search or enter address". Back and Forward buttons, Stop loading / Refresh. A "More options" menu with Open in another app, Close page, Clear all browser data (confirmed). Error text: "No app can open this webpage". [core]
+- [x] Image-gen error texts users can see:
   - The gpt-image-1 retirement notice.
   - "The current model (X) does not support image editing…".
   - Reference-image count limit.
   - Redirect blocked for credential safety.
   - A per-HTTP-status explanation. [core]
-- [ ] Image card: when the local file was cleared it shows "Local image was cleared". After Edit it says "Attached to input. Describe the changes you want.". The prompt is under a "Prompt" label. [core]
-- [ ] Gallery: header "N images · size used (tap to view, save, or share)". Deleting one shows the warning "this local original image can no longer be loaded in chat history". Empty state: "No generated images yet" / "Enable AI image generation and ask Atom to draw…". [core]
+- [x] Image card: when the local file was cleared it shows "Local image was cleared". After Edit it says "Attached to input. Describe the changes you want.". The prompt is under a "Prompt" label. [core]
+- [x] Gallery: header "N images · size used (tap to view, save, or share)". Deleting one shows the warning "this local original image can no longer be loaded in chat history". Empty state: "No generated images yet" / "Enable AI image generation and ask Atom to draw…". [core]
 
 ### From §14 Privacy, backup
-- [ ] Backup **does include** character data (characters, avatars, story memory, persona, chat links, reply candidates), even though the on-screen copy says it only includes conversations, providers and MEMORY.md. It **excludes** all app settings: appearance, speech, web tools, image gen, MCP servers, skills, scheduled tasks, subagents, tool switches, and workspace files. [core]
-- [ ] Backup import refuses to run while agent tasks are running ("Stop running agent tasks first") or while conversations are still saving ("Wait for conversations to finish saving"). [core]
+- [x] Backup **does include** character data (characters, avatars, story memory, persona, chat links, reply candidates), even though the on-screen copy says it only includes conversations, providers and MEMORY.md. It **excludes** all app settings: appearance, speech, web tools, image gen, MCP servers, skills, scheduled tasks, subagents, tool switches, and workspace files. [core] *New app: characters are included too; it also saves app, speech and appearance settings, and the screen lists what is saved.*
+- [x] Backup import refuses to run while agent tasks are running ("Stop running agent tasks first") or while conversations are still saving ("Wait for conversations to finish saving"). [core]
 
 ### From §15 Other
-- [ ] Settings use small coloured icons per row in the COUI skin (blue, orange) and plain rounded Material icons in Miuix. Brand logos for providers and model families come from a bundled set of brand logos (the old set is from Lobe Icons, MIT). [core]
+- [ ] Settings use small coloured icons per row in the COUI skin (blue, orange) and plain rounded Material icons in Miuix. Brand logos for providers and model families come from a bundled set of brand logos (the old set is from Lobe Icons, MIT). [core] — **partial:** Miuix rounded icons and the bundled brand logos are in; the coloured COUI icons wait for the COUI style
 
 ---
 
@@ -680,24 +680,22 @@ Where these disagree with an item above, these win.
 
 ## Gap list (ordered by what users notice most)
 
-1. **Overall look.** The old app uses the Miuix style: pure black page, `#242424` cards, blue accent (Miuix stock blue), blue-grey small group titles, Miuix switches, large collapsing titles, squircle corners. Monet is off by default. The new app is a monochrome white-on-black house style. *(UI batch 1, in progress)*
-2. **First run.** The old app opens straight on the home chat. The new app first shows a full-screen "Permissions & setup" page. With no usable provider, sending must be blocked with a "configure a model first" message.
-3. **Home chat.** Glass round top-bar buttons; a model capsule with the provider logo; four single-line suggestion cards with tinted icon circles (Analyze current screen, Open WhatsApp, Browse the web, Check memory pressure); the composer with a blue "Deep Think" chip, a context ring and a round send/stop button; the overflow menu with the auto read-aloud toggle.
-4. **Conversation drawer.** A push drawer (84% width, at most 340 dp, 16% scrim); header "Atom" plus new chat; dock entries Models, Characters, Tools, Skills, Scheduled Tasks; search pill with Permissions and Settings buttons; row anatomy and the long-press menu.
-5. **Floating bubble.** On by default; the emblem on a dark disc with accent arcs; the radial hold menu (three icon buttons on a 132 dp arc); the bottom dismiss target; mini-chat copy and model chip.
-6. **Settings root order and grouping** (§17 item 1): LLM providers → Context & extensions → Tools → Root and system enhancements → System assistant takes over → Circle to Search → General → Permissions → About.
-7. **Model providers page.** Brand logos, a radio/check for the current provider, a "current" tag, the "Add new provider" group; provider detail with Configuration and Model tabs; tapping a model sets it current.
-8. **Messages.** User bubble shape, the answer action row (copy, read aloud, regenerate, delete, branch, stats pill), reasoning and work-timeline copy.
-9. **Permissions page.** 12 arrow rows with coloured status text; tapping a row acts.
-10. **Tool list.** One switch per tool, the old group order, Enable all / Disable all per group, the "All n/m" filter.
-11. **Notifications.** Live Update status-bar capsule ("Working" / "Answering"); the old notification copy; the Assistant voice channel.
-12. **Voice details.** Hold-to-talk in the assistant overlay; auto read-aloud actually wired; smart correction on the chat model; the default recognition service.
-13. **Assistant overlay.** Coloured entry wave; "Open screen" in the result card.
-14. **Tool behaviour details.** Tap by area, alarms list and edit, download tasks, hotspot with root, screenshots at original size.
-15. **ColorOS-only personal data** (notes, system memory, orders, bills, to-dos, chat-image caches): missing; each needs a ColorOS device to build and test.
-16. **COUI UI style:** missing. Miuix is the default and comes first; COUI is a second full skin.
+Everything users meet day to day (the Miuix look, first run, home chat, drawer, bubble, settings tree, model providers, messages, permissions, tool list, notifications, voice and the assistant overlay) now matches. What is still open:
 
-New-app extras that stay and need a home in the old-style UI: Off/Low/Medium/High/XHigh/Max reasoning levels, on-device models (LiteRT and llama.cpp) with cloud fallback, the "Hey Atom" wake word, audio chat, Linux root mode (chroot) next to PRoot, god-mode device controls with the undo journal (Changes screen), Shizuku tier, event-triggered automations, messenger triage, text size.
+1. **COUI UI style** (§12 UI style, §15 coloured row icons): missing. *Deferred on purpose (D8): Miuix is the old default and is done; COUI is a second full skin.*
+2. **ColorOS-only personal data** (§6 notes, system memory, orders and saved places, bills and bill summaries, to-dos and trips; §13 notes; recording summaries and transcripts): missing. *Needs a ColorOS device and its private providers to build and test (D12).*
+3. **ColorOS clock details** (§6 full alarm list, §13 edit or delete an alarm in place): partial. *Android's alarm intents cover create, change, enable and delete through the clock app; the rest needs the ColorOS clock on a ColorOS device.*
+4. **Defaults that differ on purpose** (§4 recognition service, §16 default character): partial. *Needs an owner decision: the phone's own recognizer instead of Qwen Realtime (D15), "Lumen" instead of "Xiaoman", and DeepSeek Flash as the starting model where the old code picked OpenAI's first model (Q6).*
+5. **Chat edge cases** (§16 long-history scroll-up guard; "Save message" composer mode in character chats): partial. *Small follow-up; character chats already edit in place through a dialog.*
+6. **Voice and notification copy** (§11 separate "Read aloud" channel, §16 overlay audio-blocked error, MiMo language-specific default voices): partial. *Small follow-up; read-aloud already works through the Assistant voice channel.*
+7. **Skills** (§9 curated skill catalog, §16 "Removed" group): partial. *GitHub and ZIP install work; a catalog needs a list the owner is happy to ship.*
+8. **Provider test wording** (§16 "Connected (verified model: X)" / fetched-model count): partial. *Small follow-up; the test already shows the model's reply and timing.*
+9. **Subagent details** (§16 "Prompt (Resumed)" label): partial. *Small follow-up.*
+10. **Background display stage labels** (§16 "Background canvas" / "Manual control"): partial. *Different wording today; needs a rooted or LSPosed phone to check on screen.*
+11. **QQ and WeChat chat-image caches** (§6): partial. *No dedicated tool yet; needs a rooted phone with those apps to build and test.*
+12. **Manifest internals users never see** (§16 LSPosed scope for ColorOS and Xiaomi assistant packages, separate :voice / :recognition processes, declared locale list, signature-guarded accessibility-protection control and health provider): partial. *Low priority; the extra scopes need ColorOS and HyperOS devices, and extra processes cost memory.*
+
+New-app extras that stay, each now placed in the Miuix settings tree: Off/Low/Medium/High/XHigh/Max reasoning levels, on-device models (LiteRT and llama.cpp) with cloud fallback, the "Hey Atom" wake word, audio chat, Linux root mode (chroot) next to PRoot, god-mode device controls with the undo journal (Change history), power tools, Shizuku tier, event-triggered automations, notification history, messenger triage, text size.
 
 ## Top 25 most important for users
 
