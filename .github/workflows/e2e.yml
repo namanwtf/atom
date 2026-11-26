@@ -122,7 +122,7 @@ jobs:
         run: |
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
             -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
-            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 \
+            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 2 -tb 2 \
             --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi

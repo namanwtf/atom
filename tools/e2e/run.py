@@ -35,7 +35,8 @@ AUTHORITY = f"content://{PKG}.e2e"
 SERVER = os.environ.get("E2E_SERVER", "http://127.0.0.1:8080")
 # What the app uses: the emulator's alias for the runner's loopback.
 APP_BASE_URL = os.environ.get("E2E_APP_BASE_URL", "http://10.0.2.2:8080/v1")
-POLL_S = 3
+# Each poll makes the app serialize its runs; on an emulator that translates the app from ARM, keep it light.
+POLL_S = 5
 
 
 def log(msg):
@@ -696,6 +697,15 @@ def main():
             continue
         res = Result(key, title)
         log(f"===== {key}. {title} =====")
+        # A run the previous scenario left going (it timed out) would hold phone control and make this one wait.
+        leftover = [r for r in state().get("runs", []) if r.get("active")]
+        if leftover:
+            log(f"  stopping {len(leftover)} run(s) left from the previous scenario")
+            call("stop")
+            for _ in range(20):
+                time.sleep(3)
+                if not any(r.get("active") for r in state().get("runs", [])):
+                    break
         call("clear")
         clear_crashes()
         m0 = server_metrics()
