@@ -265,7 +265,7 @@ class TaskNotifications(private val context: Context) {
             ?.message?.text?.trim()?.take(300).orEmpty()
 
     private fun base(channel: String) = NotificationCompat.Builder(context, channel)
-        .setSmallIcon(R.drawable.ic_stat_atom)
+        .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
         .setColor(ACCENT)
 
     private fun canPost(): Boolean =

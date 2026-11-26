@@ -150,7 +150,7 @@ class SpoofService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
             .setContentTitle("Location spoofing is on")
             .setContentText(String.format(java.util.Locale.US, "Every app sees %.5f, %.5f", lat, lon))
             .setOngoing(true)

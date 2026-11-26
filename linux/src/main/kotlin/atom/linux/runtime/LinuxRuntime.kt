@@ -146,7 +146,7 @@ class LinuxRuntimeService : Service() {
             PendingIntent.getActivity(this, 1, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
             .setContentTitle("Terminal running")
             .setContentText(parts.joinToString(" · ").ifEmpty { "Finishing" })
             .setOngoing(true)
