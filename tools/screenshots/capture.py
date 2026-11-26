@@ -124,6 +124,9 @@ def shot(name):
         from PIL import Image
 
         img = Image.open(io.BytesIO(png)).convert("RGB")
+        # Half size in the log (the full-size PNG is in the artifact): a whole run then fits in what the log API
+        # returns, which reads only the last few thousand lines.
+        img = img.resize((img.width // 2, img.height // 2))
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=80)
         data = buf.getvalue()
@@ -137,8 +140,8 @@ def shot(name):
         print("  " + t.replace("\n", " ")[:160])
     print(f"=====SHOT {name}.{kind}=====")
     enc = base64.b64encode(data).decode()
-    for i in range(0, len(enc), 4000):
-        print(enc[i : i + 4000])
+    for i in range(0, len(enc), 16000):
+        print(enc[i : i + 16000])
     print("=====END=====")
     sys.stdout.flush()
 
