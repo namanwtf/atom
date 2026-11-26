@@ -1,22 +1,7 @@
 package atom.voice.engine
 
-/**
- * The three openWakeWord-style models, behind an interface so the windowing logic is pure and testable.
- * All buffers are caller-owned and reused.
- */
-internal interface WakeModels : AutoCloseable {
-    /** Number of embeddings the classifier looks at (16 for openWakeWord-trained models). */
-    val classifierFrames: Int
-
-    /** [audio] = [WakePipeline.MEL_INPUT_SAMPLES] raw PCM16 values as floats -> [out] = 8 x 32 mel frames. */
-    fun melspectrogram(audio: FloatArray, out: FloatArray)
-
-    /** [melWindow] = 76 x 32 (transformed) mel frames -> [out] = 96-dim embedding. */
-    fun embedding(melWindow: FloatArray, out: FloatArray)
-
-    /** [embeddings] = [classifierFrames] x 96 -> score in 0..1. */
-    fun classify(embeddings: FloatArray): Float
-}
+import atom.core.ondevice.WakeModels
+import atom.core.ondevice.WakeShapes
 
 /**
  * Streaming feature pipeline matching openWakeWord's `AudioFeatures._streaming_features`:
@@ -27,13 +12,13 @@ internal interface WakeModels : AutoCloseable {
  */
 internal class WakePipeline(private val models: WakeModels) {
     companion object {
-        const val FRAME_SAMPLES = 1280
-        const val CONTEXT_SAMPLES = 160 * 3
-        const val MEL_INPUT_SAMPLES = FRAME_SAMPLES + CONTEXT_SAMPLES
-        const val MEL_FRAMES_PER_CHUNK = 8
-        const val MEL_BINS = 32
-        const val MEL_WINDOW_FRAMES = 76
-        const val EMBEDDING_DIM = 96
+        const val FRAME_SAMPLES = WakeShapes.FRAME_SAMPLES
+        const val CONTEXT_SAMPLES = WakeShapes.CONTEXT_SAMPLES
+        const val MEL_INPUT_SAMPLES = WakeShapes.MEL_INPUT_SAMPLES
+        const val MEL_FRAMES_PER_CHUNK = WakeShapes.MEL_FRAMES_PER_CHUNK
+        const val MEL_BINS = WakeShapes.MEL_BINS
+        const val MEL_WINDOW_FRAMES = WakeShapes.MEL_WINDOW_FRAMES
+        const val EMBEDDING_DIM = WakeShapes.EMBEDDING_DIM
         const val NOT_READY = -1f
     }
 

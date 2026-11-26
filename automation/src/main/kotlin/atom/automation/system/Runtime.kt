@@ -84,6 +84,16 @@ internal class AutomationRuntime private constructor(context: Context) {
         val now = Instant.now()
         val next = listOfNotNull(tasks.earliestWakeup(), rules.earliestWakeup(now)).minOrNull()
         alarms.arm(next?.let { maxOf(it, now.toEpochMilli() + 500) })
+        syncSystemEvents()
+    }
+
+    /**
+     * Boot, clock and time-zone broadcasts start Atom's process; they are wanted only while some automation exists.
+     * With none, the receiver is switched off, so a reboot or a time change never wakes Atom for nothing.
+     */
+    private fun syncSystemEvents() {
+        val s = state.value
+        setComponent(SystemEventReceiver::class.java, s.tasks.any { it.enabled } || s.rules.any { it.enabled })
     }
 
     fun conflicts() = ConflictDetector.find(state.value.rules, ZoneId.systemDefault())
@@ -93,6 +103,7 @@ internal class AutomationRuntime private constructor(context: Context) {
         TriggerService.sync(context, enabled)
         setComponent(BluetoothReceiver::class.java, enabled.any { it.trigger is Trigger.BluetoothConnected || it.trigger is Trigger.BluetoothDisconnected })
         Places.sync(context, enabled.filter { it.trigger is Trigger.Location })
+        syncSystemEvents()
         runCatching { Automations.onListenersChanged() }
     }
 

@@ -58,20 +58,55 @@ jobs:
       - name: Unit tests
         run: ./gradlew test testDebugUnitTest --continue --stacktrace
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build debug APKs (app and on-device AI pack)
+        run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
 
       # The minified (R8) release variant, unsigned: it has no signingConfig. Signing happens only in release.yml.
       # Building it here shows shrinker and lint-vital problems on the pull request instead of on main.
-      - name: Build release APK (unsigned)
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Build release APKs (unsigned)
+        run: ./gradlew :app:assembleRelease :ondevice-pack:assembleRelease --stacktrace
 
-      - name: Report APK size
+      - name: Report APK sizes
         run: |
-          for apk in app/build/outputs/apk/release/*.apk; do
-            echo "::notice title=Release APK size::$(basename "$apk"): $(( $(stat -c %s "$apk") / 1024 / 1024 )) MB"
-            unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $8}' | sort -rn | head -n 12
+          for apk in app/build/outputs/apk/release/*.apk ondevice-pack/build/outputs/apk/release/*.apk; do
+            kb=$(( $(stat -c %s "$apk") / 1024 ))
+            echo "::notice title=Release APK size::$(basename "$apk"): $(( kb / 1024 )).$(( kb % 1024 * 10 / 1024 )) MB ($kb KB)"
+            unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $2, $8}' | sort -rn | head -n 14
           done
+
+      # The app carries no on-device engine: those libraries and the wake-word models live only in the pack, and
+      # the pack's native libraries are stored uncompressed (the linker maps them straight from the APK).
+      - name: Check what each APK carries
+        run: |
+          set -euo pipefail
+          app=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          pack=$(ls ondevice-pack/build/outputs/apk/release/*.apk | head -n 1)
+          banned='lib/[^ ]*/lib(litertlm_jni|LiteRt|LiteRtClGlAccelerator|litert_jni|tensorflowlite_jni|atom_llama|c\+\+_shared)\.so|assets/wakeword/'
+          if unzip -l "$app" | grep -E "$banned"; then
+            echo "::error::The app APK contains on-device engine files (above); they belong in the on-device AI pack."
+            exit 1
+          fi
+          unzip -l "$pack" | grep -E 'lib/arm64-v8a/libatom_llama\.so' >/dev/null || { echo "::error::The pack has no llama.cpp library"; exit 1; }
+          unzip -l "$pack" | grep -E 'assets/wakeword/hey_atom\.tflite' >/dev/null || { echo "::error::The pack has no wake-word model"; exit 1; }
+          compressed=$(unzip -lv "$pack" | awk '$8 ~ /^lib\/.*\.so$/ && $2 != "Stored" {print $8}')
+          if [ -n "$compressed" ]; then
+            echo "::error::Native libraries in the pack must be stored uncompressed: $compressed"
+            exit 1
+          fi
+          echo "Pack native libraries:"
+          unzip -lv "$pack" | awk '$8 ~ /^lib\// {print $1, $2, $8}'
+          # Classes the pack defines, by package (Kotlin, kotlinx and Atom's core come from the app at run time).
+          dexdump=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | tail -n 1 || true)
+          if [ -n "$dexdump" ]; then
+            tmp=$(mktemp -d)
+            unzip -q -o "$pack" 'classes*.dex' -d "$tmp"
+            defs=$( (for dex in "$tmp"/classes*.dex; do "$dexdump" "$dex"; done) | grep -E "^  Class descriptor" | sed -E "s/.*'L([^;]*);'.*/\1/" || true)
+            echo "Pack classes by package (top 15 of $(wc -l <<< "$defs") classes):"
+            (awk -F/ '{print $1"/"$2"/"$3}' <<< "$defs" | sort | uniq -c | sort -rn | head -n 15) || true
+            if grep -qx 'kotlin/collections/CollectionsKt' <<< "$defs"; then
+              echo "::warning::The pack carries its own Kotlin standard library"
+            fi
+          fi
 
       - name: Release readiness
         # The weekly release PR (release/next into main) may auto-merge, so it must not go green until the
@@ -88,11 +123,13 @@ jobs:
             exit 1
           fi
 
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v7
         with:
           name: atom-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            ondevice-pack/build/outputs/apk/debug/*.apk
           retention-days: 14
 
       - name: Upload test reports

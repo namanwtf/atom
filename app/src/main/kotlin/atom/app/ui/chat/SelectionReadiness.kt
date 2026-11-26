@@ -3,6 +3,8 @@ package atom.app.ui.chat
 import atom.app.AppGraph
 import atom.app.data.EngineSelection
 import atom.app.engine.ModelInfo
+import atom.app.ondevice.OnDevicePack
+import atom.app.ondevice.PackState
 import atom.core.home.ModelReadiness
 import atom.core.home.ProviderFacts
 import atom.llm.cloud.AuthMethod
@@ -19,6 +21,8 @@ internal data class Readiness(
     val signedIn: Set<String>,
     val installed: List<InstalledModel>,
     val unreadable: Set<String> = emptySet(),
+    /** The on-device AI pack is installed (or still being checked at start-up): on-device models can run. */
+    val packReady: Boolean = true,
 ) {
     val facts: List<ProviderFacts> = providers.map { p ->
         ProviderFacts(p.id, p.enabled, p.keyOptional, accountAuth = p.auth != AuthMethod.ApiKey, modelIds = p.models.map { it.id })
@@ -35,7 +39,7 @@ internal data class Readiness(
             customBaseUrl = selection.baseUrl,
             customId = Providers.CUSTOM_ID,
         )
-        is EngineSelection.Local -> ModelReadiness.localReady(selection.installedModelId, installed.map { it.id })
+        is EngineSelection.Local -> ModelReadiness.localReady(selection.installedModelId, installed.map { it.id }, packReady)
     }
 
     companion object {
@@ -44,9 +48,14 @@ internal data class Readiness(
             graph.providers.providers,
             graph.vault.savedProviders,
             graph.vault.signedInProviders,
-            graph.models.installed,
+            graph.models.installed.combine(OnDevicePack.state) { installed, pack -> installed to packUsable(pack) },
             graph.vault.unreadable,
-        ) { providers, saved, signedIn, installed, unreadable -> Readiness(providers, saved, signedIn, installed, unreadable) }
+        ) { providers, saved, signedIn, local, unreadable ->
+            Readiness(providers, saved, signedIn, local.first, unreadable, packReady = local.second)
+        }
+
+        /** Ready, or still checking at start-up (so a saved on-device choice does not flash "Not selected"). */
+        fun packUsable(state: PackState): Boolean = state is PackState.Ready || state == PackState.Checking
     }
 }
 
@@ -56,6 +65,7 @@ internal data class Readiness(
  */
 internal fun notReadyReason(selection: EngineSelection?, ready: Readiness?, info: ModelInfo): NotReady? {
     if (selection == null) return NotReady.Configure
+    if (selection is EngineSelection.Local && ready != null && !ready.packReady) return NotReady.NeedsPack
     val exists = runCatching { info.exists(selection) }.getOrDefault(true)
     if (exists && (ready == null || ready.usable(selection))) return null
     val provider = (selection as? EngineSelection.Cloud)?.let { runCatching { info.provider(it) }.getOrNull() }

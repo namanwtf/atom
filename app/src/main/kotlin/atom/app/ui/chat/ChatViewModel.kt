@@ -89,6 +89,9 @@ enum class NotReady {
 
     /** The stored key could not be decrypted (for example after a restore to another phone). */
     KeyUnreadable,
+
+    /** An on-device model is selected but the optional on-device AI pack is not installed (or must be updated). */
+    NeedsPack,
 }
 
 /** The reasoning chip and effort picker for the current conversation's model. */
@@ -309,7 +312,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             candidates = if (id != null) candidatesOf(conversation, b[id]) else emptyMap(),
             character = id?.let { b[it]?.snapshot },
             loadFailed = id != null && failed == id && stored?.id != id && live == null,
-            hasProviders = ready == null || ready.providers.any { it.enabled } || ready.installed.isNotEmpty(),
+            hasProviders = ready == null || ready.providers.any { it.enabled } || (ready.packReady && ready.installed.isNotEmpty()),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 

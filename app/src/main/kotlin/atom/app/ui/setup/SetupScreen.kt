@@ -277,8 +277,8 @@ private fun VoiceGroup() {
     val settings by graph.settings.settings.collectAsStateWithLifecycle(initialValue = null)
     val wake by Wake.state.collectAsStateWithLifecycle()
     var assistant by remember { mutableStateOf(AssistantRole.isHeld(context)) }
-    val modelReady = remember { Wake.isModelAvailable(context) }
-    val heyAtom = settings?.heyAtom == true
+    val modelReady by Wake.modelAvailable.collectAsStateWithLifecycle()
+    val heyAtom = settings?.heyAtom == true && modelReady
     val screenOff = settings?.heyAtomScreenOff == true
 
     LifecycleResumeEffect(Unit) {
@@ -338,8 +338,8 @@ private fun VoiceGroup() {
                     WakeState.Off -> stringResource(R.string.voice_hey_atom_text)
                 }
             },
-            enabled = modelReady,
-            onClick = { toggleHeyAtom(!heyAtom) },
+            // Without the on-device AI pack the row opens the screen that downloads it.
+            onClick = { if (modelReady) toggleHeyAtom(!heyAtom) else Wake.openPackSettings?.invoke() },
             trailing = { AtomSwitch(checked = heyAtom, onCheckedChange = ::toggleHeyAtom, enabled = modelReady) },
         )
         AnimatedVisibility(

@@ -922,6 +922,7 @@ private fun needsModelText(info: EngineInfo): String {
     return when {
         info.reason == NotReady.SignIn && provider != null -> stringResource(R.string.home_sign_in_needed, provider)
         info.reason == NotReady.KeyUnreadable && provider != null -> stringResource(R.string.mdl_route_key_unreadable, provider)
+        info.reason == NotReady.NeedsPack -> stringResource(R.string.route_needs_pack)
         else -> stringResource(R.string.chat_configure_model)
     }
 }

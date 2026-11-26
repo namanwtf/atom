@@ -6,8 +6,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** The fields of a GitHub release this app uses. */
 @Serializable
@@ -100,6 +98,11 @@ object Releases {
     /** Asset names the release workflow publishes: `atom-<version>.apk`. No path separators can match. */
     private val APK_NAME = Regex("atom-[0-9A-Za-z][0-9A-Za-z._+-]*\\.apk")
 
+    /** The optional on-device AI pack published next to the app: `atom-ondevice-<version>.apk`. Never an app update. */
+    const val PACK_PREFIX = "atom-ondevice-"
+
+    fun packAssetName(version: String): String = "$PACK_PREFIX$version.apk"
+
     /** Largest APK the updater will download. Atom with its native engines is far below this. */
     const val MAX_APK_BYTES = 2L * 1024 * 1024 * 1024
 
@@ -112,7 +115,9 @@ object Releases {
         val prefix = "https://github.com/${slug.trim()}/releases/download/"
         fun usable(a: GithubAsset) = a.state == "uploaded" && a.downloadUrl.startsWith(prefix) &&
             !a.downloadUrl.substring(prefix.length).contains("..")
-        val apks = release.assets.filter { APK_NAME.matches(it.name) && usable(it) && it.size in 1..MAX_APK_BYTES }
+        val apks = release.assets.filter {
+            APK_NAME.matches(it.name) && !it.name.startsWith(PACK_PREFIX) && usable(it) && it.size in 1..MAX_APK_BYTES
+        }
         val version = SemVer.parse(release.tagName)?.toString()
         val apk = apks.firstOrNull { version != null && it.name == "atom-$version.apk" } ?: apks.singleOrNull() ?: return null
         val sha = release.assets.firstOrNull { it.name == apk.name + ".sha256" && usable(it) } ?: return null
@@ -139,7 +144,7 @@ object UpdateChecker {
         if (!force) cachedFor(repo)?.let { return it }
         val status = withContext(Dispatchers.IO) {
             try {
-                val (code, body) = get("https://api.github.com/repos/$repo/releases/latest")
+                val (code, body) = ReleaseFiles.apiGet("https://api.github.com/repos/$repo/releases/latest")
                 when (code) {
                     200 -> Releases.evaluate(repo, currentVersion, Releases.parseRelease(body))
                     404 -> UpdateStatus.NoReleases
@@ -154,23 +159,5 @@ object UpdateChecker {
         }
         if (status !is UpdateStatus.Failed) cached = Triple(repo, System.currentTimeMillis(), status)
         return status
-    }
-
-    private fun get(url: String): Pair<Int, String> {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty("Accept", "application/vnd.github+json")
-            conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            conn.setRequestProperty("User-Agent", "Atom-Android")
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.use { s -> s.readBytes().toString(Charsets.UTF_8).take(1_000_000) } ?: ""
-            return code to body
-        } finally {
-            conn.disconnect()
-        }
     }
 }

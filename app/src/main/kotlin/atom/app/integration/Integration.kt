@@ -17,7 +17,11 @@ import atom.overlay.Overlay
 import atom.vdisplay.route.DisplayAccessibility
 import atom.vdisplay.route.DisplayRouter
 import atom.vdisplay.system.SystemPrefs
+import atom.app.ondevice.OnDevicePack
+import atom.app.ui.Routes
+import atom.core.ondevice.WakeModelsLoad
 import atom.voice.Wake
+import atom.voice.WakeModelSource
 import atom.voice.WakePolicy
 import atom.voice.speech.Speech
 import atom.web.Web
@@ -25,6 +29,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -51,6 +57,18 @@ internal object Integration {
             proofreader = ChatProofreader(graph),
             wakePreferences = AppWakePreferences(graph),
         )
+        // "Hey Atom" models and runtime come from the optional on-device AI pack.
+        Wake.modelSource = PackWakeModels
+        Wake.openPackSettings = { NavRequests.open(Routes.ON_DEVICE) }
+        // The pack can appear (download, start-up check) or go (removed) at any time: re-apply a saved "Hey Atom".
+        graph.appScope.launch {
+            OnDevicePack.ready.drop(1).distinctUntilChanged().collect {
+                val s = graph.settings.current()
+                if (s.heyAtom) {
+                    Wake.setEnabled(app, true, WakePolicy(screenOffListening = s.heyAtomScreenOff, listenWhileCharging = Speech.config.value.wakeWhileCharging))
+                }
+            }
+        }
 
         // Overlay: deep links, model chip, the real phone-control lease, the voice module's dictation and voice.
         Overlay.hooks = AppOverlayHooks(app, graph)
@@ -124,6 +142,23 @@ internal object Integration {
             NavRequests.reset()
         }
     }
+}
+
+/** The wake-word models, read from the on-device AI pack through its interface. Never throws. */
+private object PackWakeModels : WakeModelSource {
+    override val available: StateFlow<Boolean> get() = OnDevicePack.ready
+
+    override fun load(): WakeModelsLoad {
+        return try {
+            val engines = OnDevicePack.engines() ?: return WakeModelsLoad.Failed(NO_PACK)
+            val path = OnDevicePack.loadedPath() ?: return WakeModelsLoad.Failed(NO_PACK)
+            engines.wakeModels(path)
+        } catch (e: Throwable) {
+            WakeModelsLoad.Failed("The on-device AI pack could not be loaded: " + (e.message ?: e.javaClass.simpleName).take(200))
+        }
+    }
+
+    private const val NO_PACK = "Needs the on-device AI pack (Settings > LLM providers > On-device models)"
 }
 
 /** [DisplayRouter]'s accessibility adapter over the device module's [DisplayUi]. */

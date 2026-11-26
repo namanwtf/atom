@@ -8,10 +8,8 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -25,9 +23,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
 
 /** Progress of an in-app update the user started from About. */
 sealed interface InstallState {
@@ -106,11 +101,13 @@ object UpdateInstaller {
         _state.value = InstallState.Downloading(0, apk.size)
         scope.launch {
             val file = try {
-                val f = download(app, apk)
+                val f = ReleaseFiles.download(apk, File(app.cacheDir, DIR)) { done, total ->
+                    _state.value = InstallState.Downloading(done, total)
+                }
                 _state.value = InstallState.Verifying
                 verifyApk(app, f)
                 f
-            } catch (e: UpdateError) {
+            } catch (e: ReleaseFileException) {
                 _state.value = InstallState.Failed(e.message ?: "unknown error")
                 return@launch
             } catch (e: IOException) {
@@ -164,78 +161,16 @@ object UpdateInstaller {
         _state.value = state
     }
 
-    private class UpdateError(message: String) : Exception(message)
-
     private fun openInstallPermission(context: Context) {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }
 
-    /** Cache dir for downloads. Holds plain files only, so a flat, non-recursive clean is enough. */
-    private fun cleanDir(context: Context): File {
-        val dir = File(context.cacheDir, DIR)
-        dir.mkdirs()
-        dir.listFiles().orEmpty().forEach { if (it.isFile) it.delete() }
-        return dir
-    }
-
-    private fun download(context: Context, apk: ReleaseApk): File {
-        val dir = cleanDir(context)
-        val shaText = fetchSmall(apk.sha256Url)
-        val expected = UpdateVerify.parseSha256(shaText, apk.name) ?: throw UpdateError("checksum file is unreadable")
-        val part = File(dir, apk.name + ".part")
-        val md = MessageDigest.getInstance("SHA-256")
-        var done = 0L
-        val conn = open(apk.url)
-        try {
-            if (conn.responseCode != 200) throw UpdateError("GitHub answered HTTP ${conn.responseCode}")
-            if (conn.url.protocol != "https") throw UpdateError("insecure redirect")
-            conn.inputStream.use { input ->
-                part.outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var lastReport = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        done += n
-                        if (done > apk.size || done > Releases.MAX_APK_BYTES) throw UpdateError("download is larger than published")
-                        md.update(buf, 0, n)
-                        out.write(buf, 0, n)
-                        if (done - lastReport >= 256 * 1024) {
-                            lastReport = done
-                            _state.value = InstallState.Downloading(done, apk.size)
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            part.delete()
-            throw e
-        } finally {
-            conn.disconnect()
-        }
-        if (done != apk.size) {
-            part.delete()
-            throw UpdateError("download is incomplete")
-        }
-        if (!UpdateVerify.hashMatches(expected, UpdateVerify.hex(md.digest()))) {
-            part.delete()
-            throw UpdateError("checksum does not match")
-        }
-        val target = File(dir, apk.name)
-        if (!part.renameTo(target)) {
-            part.delete()
-            throw UpdateError("could not save the download")
-        }
-        return target
-    }
-
     private fun verifyApk(context: Context, file: File) {
-        val pm = context.packageManager
-        val installed = facts(installedInfo(pm, context.packageName))
-            ?: throw UpdateError("could not read this app's signature")
-        val candidate = facts(archiveInfo(pm, file.path))
+        val installed = ReleaseFiles.installedFacts(context)
+            ?: throw ReleaseFileException("could not read this app's signature")
+        val candidate = ReleaseFiles.archiveFacts(context, file.path)
         when (val c = UpdateVerify.check(installed, candidate)) {
             UpdateVerify.ApkCheck.Ok -> Unit
             UpdateVerify.ApkCheck.Unreadable -> fail(file, "the download is not a readable APK")
@@ -247,7 +182,7 @@ object UpdateInstaller {
 
     private fun fail(file: File, reason: String): Nothing {
         file.delete()
-        throw UpdateError(reason)
+        throw ReleaseFileException(reason)
     }
 
     private fun install(context: Context, file: File) {
@@ -313,64 +248,6 @@ object UpdateInstaller {
 
     private fun cancelNotification(context: Context) {
         runCatching { context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID) }
-    }
-
-    private fun installedInfo(pm: PackageManager, name: String): PackageInfo? = runCatching {
-        if (Build.VERSION.SDK_INT >= 33) {
-            pm.getPackageInfo(name, PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(name, PackageManager.GET_SIGNING_CERTIFICATES)
-        }
-    }.getOrNull()
-
-    private fun archiveInfo(pm: PackageManager, path: String): PackageInfo? = runCatching {
-        if (Build.VERSION.SDK_INT >= 33) {
-            pm.getPackageArchiveInfo(path, PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNING_CERTIFICATES)
-        }
-    }.getOrNull()
-
-    private fun facts(info: PackageInfo?): UpdateVerify.ApkFacts? {
-        if (info == null) return null
-        val signing = info.signingInfo ?: return null
-        fun digest(s: Signature) = UpdateVerify.sha256Hex(s.toByteArray())
-        val current = signing.apkContentsSigners.orEmpty().map(::digest).toSet()
-        val history = if (signing.hasMultipleSigners()) emptyList() else signing.signingCertificateHistory.orEmpty().map(::digest)
-        return UpdateVerify.ApkFacts(info.packageName, info.longVersionCode, current, history)
-    }
-
-    private fun open(url: String): HttpURLConnection {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        // github.com answers release downloads with a redirect to its own download host; https only.
-        conn.instanceFollowRedirects = true
-        conn.setRequestProperty("Accept", "application/octet-stream")
-        conn.setRequestProperty("User-Agent", "Atom-Android")
-        return conn
-    }
-
-    private fun fetchSmall(url: String): String {
-        val conn = open(url)
-        try {
-            if (conn.responseCode != 200) throw UpdateError("GitHub answered HTTP ${conn.responseCode}")
-            if (conn.url.protocol != "https") throw UpdateError("insecure redirect")
-            return conn.inputStream.use { s ->
-                val buf = ByteArray(4096)
-                var len = 0
-                while (len < buf.size) {
-                    val n = s.read(buf, len, buf.size - len)
-                    if (n < 0) break
-                    len += n
-                }
-                String(buf, 0, len, Charsets.UTF_8)
-            }
-        } finally {
-            conn.disconnect()
-        }
     }
 }
 

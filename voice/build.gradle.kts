@@ -21,8 +21,6 @@ android {
     }
 
     buildFeatures { compose = true }
-
-    androidResources { noCompress += "tflite" }
 }
 
 dependencies {
@@ -33,8 +31,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     // Cloud speech services (HTTP + WebSocket).
     implementation(libs.okhttp)
-    // LiteRT (TFLite runtime) for the wake-word models; CPU + XNNPack only.
-    implementation("com.google.ai.edge.litert:litert:2.4.0")
 
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.kotlinx.coroutines.test)

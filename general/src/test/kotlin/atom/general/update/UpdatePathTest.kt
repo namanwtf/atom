@@ -111,6 +111,35 @@ class UpdatePathTest {
         assertEquals("atom-4.0.1.apk", Releases.pickApk(SLUG, release("v4.0.5", apkAssets("4.0.1")))?.name)
     }
 
+    @Test fun theOnDevicePackIsNeverAnAppUpdate() {
+        val withPack = apkAssets("4.0.3") + listOf(
+            asset("atom-ondevice-4.0.3.apk", "$DL/v4.0.3"),
+            asset("atom-ondevice-4.0.3.apk.sha256", "$DL/v4.0.3"),
+        )
+        assertEquals("atom-4.0.3.apk", Releases.pickApk(SLUG, release("v4.0.3", withPack))?.name)
+        // A release with only the pack offers no app download.
+        assertNull(Releases.pickApk(SLUG, release("v4.0.3", withPack.filter { it.name.startsWith("atom-ondevice-") })))
+        val pack = assertNotNull(ReleaseFiles.asset(SLUG, release("v4.0.3", withPack), Releases.packAssetName("4.0.3")))
+        assertEquals("$DL/v4.0.3/atom-ondevice-4.0.3.apk.sha256", pack.sha256Url)
+        assertNull(ReleaseFiles.asset(SLUG, release("v4.0.3", apkAssets("4.0.3")), Releases.packAssetName("4.0.3")))
+    }
+
+    @Test fun thePackMustMatchTheAppExactly() {
+        val pkg = "io.github.namanwtf.atom.ondevice"
+        val pack = UpdateVerify.ApkFacts(pkg, installed.versionCode, setOf(CERT))
+        assertEquals(UpdateVerify.PackCheck.Ok, UpdateVerify.checkPack(installed, pack, pkg))
+        assertEquals(UpdateVerify.PackCheck.Ok, UpdateVerify.checkPack(installed, pack.copy(signers = setOf(CERT.uppercase())), pkg))
+        assertIs<UpdateVerify.PackCheck.WrongVersion>(UpdateVerify.checkPack(installed, pack.copy(versionCode = installed.versionCode + 1), pkg))
+        assertIs<UpdateVerify.PackCheck.WrongPackage>(UpdateVerify.checkPack(installed, pack.copy(packageName = "io.github.namanwtf.atom"), pkg))
+        assertEquals(UpdateVerify.PackCheck.SignerMismatch, UpdateVerify.checkPack(installed, pack.copy(signers = setOf(OTHER)), pkg))
+        // No key rotation for code that runs inside the app.
+        assertEquals(
+            UpdateVerify.PackCheck.SignerMismatch,
+            UpdateVerify.checkPack(installed, pack.copy(signers = setOf(OTHER), signerHistory = listOf(CERT, OTHER)), pkg),
+        )
+        assertEquals(UpdateVerify.PackCheck.Unreadable, UpdateVerify.checkPack(installed, null, pkg))
+    }
+
     @Test fun onlyTheReleaseBuildInstallsReleasesOverItself() {
         assertTrue(Releases.canSelfUpdate("io.github.namanwtf.atom"))
         assertFalse(Releases.canSelfUpdate("io.github.namanwtf.atom.debug"))
