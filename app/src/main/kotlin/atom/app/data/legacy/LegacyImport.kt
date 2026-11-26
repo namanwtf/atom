@@ -30,6 +30,9 @@ import atom.llm.cloud.OAuthTokens
 import atom.llm.cloud.ProviderConfig
 import atom.llm.cloud.legacy.LegacyProviders
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.security.KeyStore
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
@@ -43,6 +46,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -99,18 +103,17 @@ object LegacyImport {
             } else if (state?.noticeShown == false) {
                 state.report?.let { _notice.value = describe(app, it) }
             }
-            // An import that finished before memory was imported: bring the old memory over by itself.
-            readState(app)?.let { s ->
-                if (s.completedAt != null && !s.memoryImported && oldMemoryFile(app) != null) {
-                    mutex.withLock { readState(app)?.let { writeState(app, importMemory(app, it, Counts())) } }
-                }
+            // The old memory, while it waits to be imported: on its own, also after the database is gone.
+            if (memoryPending(app, readState(app))) {
+                mutex.withLock { if (memoryPending(app, readState(app))) retryMemoryLocked(app) }
+                _changes.update { it + 1 }
             }
             // A week after a clean import: remove the old files (a cheap check of the marker the rest of the time).
             if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) {
                 mutex.withLock {
-                    if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) removeLocked(app)
+                    if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) removeLocked(app, manual = false)
                 }
-                _changes.value++
+                _changes.update { it + 1 }
             }
             Unit
         }
@@ -120,8 +123,39 @@ object LegacyImport {
     fun cleanupOffer(context: Context): LegacyCleanup.Offer {
         val app = context.applicationContext
         val state = readState(app)
-        val left = LegacyCleanup.existing(app.dataDir, state?.memoryImported == true).isNotEmpty()
-        return LegacyCleanup.offer(left, available(app), state)
+        val memoryImported = state?.memoryImported == true
+        val left = LegacyCleanup.existing(app.dataDir, memoryImported).isNotEmpty()
+        return LegacyCleanup.offer(left, available(app), state, LegacyCleanup.strandedMemory(app.dataDir, memoryImported))
+    }
+
+    /** Deletes the previous app's memory file that could not be imported: the separate, explicit choice. */
+    suspend fun removeOldMemory(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        try {
+            mutex.withLock { LegacyCleanup.deleteMemory(app.dataDir) }
+        } finally {
+            _changes.update { it + 1 }
+        }
+    }
+
+    private fun memoryPending(app: Context, state: LegacyImportState?): Boolean =
+        LegacyImportPlan.shouldRetryMemory(state, oldMemoryFile(app) != null, LegacyImportPlan.shouldAutoRun(available(app), state))
+
+    /** One more try at the old memory, with [mutex] held. A first "too large" posts its notice once. */
+    private suspend fun retryMemoryLocked(app: Context) {
+        val counts = Counts()
+        var state = importMemory(app, readState(app) ?: LegacyImportState(), counts)
+        // The rest was removed already: the memory file goes now that it is in Atom 4.
+        if (state.memoryImported && state.legacyCleanedAt != null) LegacyCleanup.deleteMemory(app.dataDir)
+        if (counts.memoryTooLarge && !state.memoryNoticeShown) {
+            state = state.copy(memoryNoticeShown = true)
+            postNotice(app.getString(R.string.import_memory_too_large))
+        }
+        writeState(app, state)
+    }
+
+    private fun postNotice(text: String) {
+        _notice.update { old -> if (old.isNullOrBlank()) text else "$old\n\n$text" }
     }
 
     /**
@@ -132,15 +166,29 @@ object LegacyImport {
     suspend fun removeOldData(context: Context): LegacyCleanup.Removal = withContext(Dispatchers.IO) {
         val app = context.applicationContext
         try {
-            mutex.withLock { removeLocked(app) }
+            mutex.withLock { removeLocked(app, manual = true) }
         } finally {
-            _changes.value++
+            _changes.update { it + 1 }
         }
     }
 
-    /** Called with [mutex] held, so no import reads the files meanwhile. */
-    private fun removeLocked(app: Context): LegacyCleanup.Removal {
-        val memoryImported = readState(app)?.memoryImported == true
+    /**
+     * Called with [mutex] held, so no import reads the files meanwhile. The old memory is tried once more first, so
+     * it is never stranded; if it still cannot be imported its file is kept ([LegacyCleanup.Removal.DoneMemoryKept]).
+     */
+    private suspend fun removeLocked(app: Context, manual: Boolean): LegacyCleanup.Removal {
+        var state = readState(app) ?: LegacyImportState()
+        if (!state.memoryImported && oldMemoryFile(app) != null) {
+            val counts = Counts()
+            state = importMemory(app, state, counts)
+            if (counts.memoryTooLarge && !state.memoryNoticeShown) {
+                state = state.copy(memoryNoticeShown = true)
+                // A manual removal says so in its own message.
+                if (!manual) postNotice(app.getString(R.string.import_memory_too_large))
+            }
+            writeState(app, state)
+        }
+        val memoryImported = state.memoryImported
         val hadMemory = LegacyCleanup.existing(app.dataDir, memoryImported).any { it.memory }
         val left = LegacyCleanup.deleteFiles(app.dataDir, memoryImported)
         val keyStore = runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }.getOrNull()
@@ -160,7 +208,11 @@ object LegacyImport {
         }
         if (left.isNotEmpty() || keysLeft) return LegacyCleanup.Removal.Partial
         writeState(app, LegacyCleanup.markCleaned(readState(app) ?: LegacyImportState(), System.currentTimeMillis()))
-        return if (hadMemory) LegacyCleanup.Removal.DoneWithMemory else LegacyCleanup.Removal.Done
+        return when {
+            LegacyCleanup.strandedMemory(app.dataDir, memoryImported) -> LegacyCleanup.Removal.DoneMemoryKept
+            hadMemory -> LegacyCleanup.Removal.DoneWithMemory
+            else -> LegacyCleanup.Removal.Done
+        }
     }
 
     fun dismissNotice(context: Context) {
@@ -180,12 +232,21 @@ object LegacyImport {
             val (state, report) = importLocked(app, graph)
             // Finished only without an error or a failed item; otherwise the next start tries again (a few times).
             val completed = if (LegacyImportPlan.isComplete(report)) report.at else null
-            writeState(app, state.copy(completedAt = completed ?: state.completedAt, report = report, noticeShown = manual))
+            writeState(
+                app,
+                state.copy(
+                    completedAt = completed ?: state.completedAt,
+                    report = report,
+                    noticeShown = manual,
+                    // The report says it (as the notice, or in the manual result): not again on its own.
+                    memoryNoticeShown = state.memoryNoticeShown || report.memoryTooLarge,
+                ),
+            )
             _notice.value = if (manual) null else describe(app, report)
             report
         } finally {
             mutex.unlock()
-            _changes.value++
+            _changes.update { it + 1 }
         }
     }
 
@@ -230,7 +291,11 @@ object LegacyImport {
         if (r.failedProviders > 0) lines += count(R.plurals.import_failed_providers, r.failedProviders)
         if (r.failedConversations > 0) lines += count(R.plurals.import_failed_conversations, r.failedConversations)
         if (r.failedSignIns > 0) lines += count(R.plurals.import_failed_sign_ins, r.failedSignIns)
-        if (r.failedMemory) lines += context.getString(R.string.import_memory_failed)
+        if (r.memoryTooLarge) {
+            lines += context.getString(R.string.import_memory_too_large)
+        } else if (r.failedMemory) {
+            lines += context.getString(R.string.import_memory_failed)
+        }
         if (r.withoutToolDetails > 0) lines += count(R.plurals.import_without_tool_details, r.withoutToolDetails)
         if (r.truncatedMessages > 0) lines += count(R.plurals.import_truncated, r.truncatedMessages)
         if (r.damagedMessages > 0) lines += count(R.plurals.import_damaged, r.damagedMessages)
@@ -255,6 +320,7 @@ object LegacyImport {
         var failedSignIns = 0
         var memory = false
         var failedMemory = false
+        var memoryTooLarge = false
         var damaged = 0
         var truncated = 0
         var withoutToolDetails = 0
@@ -317,6 +383,7 @@ object LegacyImport {
             failedSignIns = counts.failedSignIns,
             memory = counts.memory,
             failedMemory = counts.failedMemory,
+            memoryTooLarge = counts.memoryTooLarge,
             damagedMessages = counts.damaged,
             truncatedMessages = counts.truncated,
             withoutToolDetails = counts.withoutToolDetails,
@@ -391,7 +458,16 @@ object LegacyImport {
                             }
                             SignInResult.Unusable -> counts.signInAgain += config.displayName
                             // Not recorded, so the next run tries again (and the run does not count as complete).
-                            SignInResult.Failed -> counts.failedSignIns++
+                            SignInResult.Failed -> {
+                                val failures = state.signInFailures[row.id] ?: 0
+                                // After the automatic attempts a lasting read error counts as "sign in again".
+                                if (LegacyImportPlan.signInFailureIsFinal(failures)) {
+                                    counts.signInAgain += config.displayName
+                                } else {
+                                    counts.failedSignIns++
+                                }
+                                state = state.copy(signInFailures = state.signInFailures + (row.id to failures + 1))
+                            }
                         }
                     }
                 }
@@ -434,18 +510,31 @@ object LegacyImport {
     /**
      * The old long-term memory, once, through Atom 4's memory store: as the whole memory while Atom 4's is still
      * empty, otherwise added under [LegacyImportPlan.MEMORY_HEADING]. No file means there is nothing to bring over.
+     * A failure leaves [LegacyImportState.memoryImported] false, so the file is kept and tried again at the next start.
      */
     private suspend fun importMemory(app: Context, initial: LegacyImportState, counts: Counts): LegacyImportState {
         if (initial.memoryImported) return initial
         val file = oldMemoryFile(app) ?: return initial.copy(memoryImported = true)
         return try {
-            val text = file.takeIf { it.length() <= MemoryText.MAX_BYTES }?.readText()
-            if (text != null && ExtendFeature.importMemory(app, text, LegacyImportPlan.MEMORY_HEADING)) {
-                if (text.isNotBlank()) counts.memory = true
-                initial.copy(memoryImported = true)
+            val result = if (file.length() > MemoryText.MAX_BYTES) {
+                ExtendFeature.MemoryImport.TooLarge
             } else {
-                counts.failedMemory = true
-                initial
+                val text = file.readText()
+                ExtendFeature.importMemory(app, text, LegacyImportPlan.MEMORY_HEADING).also {
+                    if (it == ExtendFeature.MemoryImport.Saved && text.isNotBlank()) counts.memory = true
+                }
+            }
+            when (result) {
+                ExtendFeature.MemoryImport.Saved -> initial.copy(memoryImported = true)
+                ExtendFeature.MemoryImport.TooLarge -> {
+                    counts.failedMemory = true
+                    counts.memoryTooLarge = true
+                    initial
+                }
+                ExtendFeature.MemoryImport.Busy -> {
+                    counts.failedMemory = true
+                    initial
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -622,11 +711,16 @@ object LegacyImport {
         runCatching {
             val target = markerFile(app)
             val tmp = File(target.parentFile, target.name + ".tmp")
-            tmp.writeText(state.encode())
+            FileOutputStream(tmp).use { out ->
+                out.write(state.encode().toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
             if (!tmp.renameTo(target)) {
                 target.delete()
                 tmp.renameTo(target)
             }
+            // The rename itself, so a removal never runs on a marker that a crash could roll back.
+            target.parentFile?.let { dir -> runCatching { FileChannel.open(dir.toPath(), StandardOpenOption.READ).use { it.force(true) } } }
         }
     }
 

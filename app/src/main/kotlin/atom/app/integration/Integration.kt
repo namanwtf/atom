@@ -95,6 +95,8 @@ internal object Integration {
 
             override suspend fun removeOldData() = atom.app.data.legacy.LegacyImport.removeOldData(app)
 
+            override suspend fun removeOldMemory() = atom.app.data.legacy.LegacyImport.removeOldMemory(app)
+
             override fun changes() = atom.app.data.legacy.LegacyImport.changes
         }
         GeneralHooks.onImported = {

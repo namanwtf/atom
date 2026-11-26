@@ -131,9 +131,19 @@ class LegacyCleanupTest {
         assertEquals(listOf(LegacyCleanup.DATABASE), LegacyCleanup.existing(data, memoryImported = false))
         assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = false))
         assertTrue(memory.isFile, "not imported: kept")
+        assertTrue(LegacyCleanup.strandedMemory(data, memoryImported = false))
+        assertFalse(LegacyCleanup.strandedMemory(data, memoryImported = true))
+        assertEquals(Offer.MemoryOnly, LegacyCleanup.offer(oldFilesExist = false, databaseExists = false, state = null, strandedMemory = true))
         assertEquals(listOf(LegacyCleanup.MEMORY), LegacyCleanup.existing(data, memoryImported = true))
         assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = true))
         assertFalse(memory.exists())
+
+        // Deleting a memory that could not be imported is its own step.
+        File(data, "files/memory/MEMORY.md.bak").writeText("x")
+        File(data, "files/memory/notes.txt").writeText("x")
+        assertTrue(LegacyCleanup.deleteMemory(data))
+        assertFalse(LegacyCleanup.strandedMemory(data, memoryImported = false))
+        assertTrue(File(data, "files/memory/notes.txt").isFile, "only the listed memory files")
     }
 
     @Test
