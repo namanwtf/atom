@@ -302,6 +302,7 @@ object UpdateInstaller {
             )
             val n = Notification.Builder(context, CHANNEL)
                 .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+                .setColor(android.graphics.Color.BLACK)
                 .setContentTitle(context.getString(R.string.update_ready_title))
                 .setContentText(context.getString(R.string.update_ready_text))
                 .setContentIntent(open)

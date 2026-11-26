@@ -93,6 +93,7 @@ object AssistantVoiceNotice {
         ).build()
         val builder = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(title)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

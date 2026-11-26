@@ -1,6 +1,13 @@
 package atom.ui.theme
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -80,16 +87,32 @@ object AtomIcons {
             .build()
 }
 
-/** The Atom emblem, the same artwork as the launcher icon. */
+/**
+ * The Atom emblem, the same artwork as the launcher icon. [fill] is the share of the box the emblem's
+ * outer ring covers (the launcher foreground keeps the emblem inside the adaptive-icon safe zone, at 56%).
+ */
 @Composable
-fun AtomMark(modifier: Modifier = Modifier.size(28.dp)) {
+fun AtomMark(modifier: Modifier = Modifier.size(28.dp), fill: Float = 0.87f) {
+    val scale = fill / EMBLEM_SHARE
     Image(
         painter = painterResource(R.mipmap.ic_launcher_fg),
         contentDescription = null,
-        // The launcher foreground keeps the emblem inside the adaptive-icon safe zone; undo that padding here.
         modifier = modifier.graphicsLayer {
-            scaleX = 1.55f
-            scaleY = 1.55f
+            scaleX = scale
+            scaleY = scale
         },
     )
 }
+
+/** The emblem on a black disc, filling 80% of it: the app's badge wherever the brand appears. */
+@Composable
+fun AtomBadge(size: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(size).clip(CircleShape).background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        AtomMark(Modifier.fillMaxSize(), fill = 0.8f)
+    }
+}
+
+private const val EMBLEM_SHARE = 242f / 432f

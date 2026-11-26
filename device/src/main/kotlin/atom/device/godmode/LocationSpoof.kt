@@ -151,6 +151,7 @@ class SpoofService : Service() {
         )
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle("Location spoofing is on")
             .setContentText(String.format(java.util.Locale.US, "Every app sees %.5f, %.5f", lat, lon))
             .setOngoing(true)

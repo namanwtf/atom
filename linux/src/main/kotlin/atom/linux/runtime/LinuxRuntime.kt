@@ -147,6 +147,7 @@ class LinuxRuntimeService : Service() {
         }
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle("Terminal running")
             .setContentText(parts.joinToString(" · ").ifEmpty { "Finishing" })
             .setOngoing(true)

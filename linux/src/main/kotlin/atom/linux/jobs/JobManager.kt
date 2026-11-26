@@ -290,6 +290,7 @@ class JobManager private constructor(context: Context) {
         }
         val n = Notification.Builder(app, CHANNEL)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(JobRules.notificationTitle(r))
             .setContentText(JobRules.notificationText(r).substringBefore('\n'))
             .setStyle(Notification.BigTextStyle().bigText(JobRules.notificationText(r)))

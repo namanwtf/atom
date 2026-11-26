@@ -57,6 +57,7 @@ internal class Notifier(private val context: Context) {
 
     fun listening(count: Int): Notification = NotificationCompat.Builder(context, CH_LISTENING)
         .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+        .setColor(android.graphics.Color.BLACK)
         .setContentTitle(if (count == 1) "1 automation is listening" else "$count automations are listening")
         .setContentText("Waiting for phone events. Uses no battery while idle.")
         .setContentIntent(openApp(null))
@@ -68,6 +69,7 @@ internal class Notifier(private val context: Context) {
     private fun base(channel: String, title: String, text: String, conversationId: String?) =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(title)
             .setContentText(text.lineSequence().firstOrNull { it.isNotBlank() }?.take(200) ?: "")
             .setStyle(NotificationCompat.BigTextStyle().bigText(text.take(1500)))

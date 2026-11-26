@@ -339,7 +339,7 @@ private fun ReasoningChip(ui: ReasoningUi, enabled: Boolean, callbacks: Composer
                 .padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(HomeGlyphs.Orbit, null, Modifier.size(14.5.dp), tint = content)
+            Icon(HomeGlyphs.Lightbulb, null, Modifier.size(14.5.dp), tint = content)
             Spacer(Modifier.width(5.dp))
             Text(label, fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
         }
