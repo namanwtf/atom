@@ -41,7 +41,19 @@ involved:
 - It also runs every Monday on main.
 
 A run takes about an hour: roughly 15 minutes to build, then the scenarios. A first request carries Atom's whole system
-prompt and tool list, which a CPU needs minutes to read; later steps reuse the server's prompt cache.
+prompt and core tool schemas (about 4,000 tokens), which the runner's CPU, shared with the emulator, needs minutes to
+read. So the runner reads it once, in a warm-up task (scenario 0, not scored) with the app in the background, and the
+scenarios after it reuse the server's cached prompt. The system prompt carries no clock time (the time rides on the
+latest user message), so that prefix is the same in every task.
+
+Each task also starts on the same device clock: with `adb root` (google_apis emulator images allow it), the clock is
+set to 09:00 today before every run, so the time a task sees is the same from run to run. Without root the clock runs
+as usual and the log says so. The emulator has no lock screen (`locksettings set-disabled true`): an agent may lock the
+phone, and the next task needs the screen. Before each task the runner wakes the screen, closes the shade, goes home and
+makes sure Atom's accessibility service is connected (it turns it off and on again when it is not). A task that runs
+past its time limit is stopped, so the single model slot is free for the next one, and the time limit counts as a
+failed check. If the emulator itself stops answering, the remaining scenarios are marked "not run" and the scorecard is
+still printed.
 
 ### Scenarios
 
@@ -51,14 +63,15 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 
 | | Scenario | Passes when |
 |---|---|---|
-| a | Vibe coding: "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output." | Terminal or shell tools are called and the answer contains 5 |
-| b | Agent browser: "Open the agent browser and summarize the top story on https://example.com." | `browser_open` is called (not `open_url`) and there is an answer |
+| a | Vibe coding: "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output." | Terminal or shell tools are called, one of their results shows the script printing 5, and the answer contains 5 |
+| b | Agent browser: "Open the agent browser and summarize the top story on https://example.com." | `browser_open` is called (not `open_url`) and loads the page without an error, and there is an answer |
+| o | Agent browser, end to end: "Use the agent browser to open https://example.com, read the page, and tell me in one sentence what it says." | Browser tools are called without WebView threading errors, `browser_open` succeeds, the page text reaches the model and the answer summarizes it |
 | c | Phone control: "Turn on Do Not Disturb." | A Do Not Disturb tool is called and `settings get global zen_mode` is no longer 0 |
 | d | Context: a notification "Dinner / Pizza at 8" is posted, then "What was my last notification about?" | A notification tool is called and the answer mentions Pizza or Dinner |
 | e | Scheduling: "Every day at 9am remind me to drink water." | `scheduled_task_create` is called and a new scheduled task exists |
 | f | Stop mid-task: a longer task, stopped from the running-task notification after its first tool call | The run ends as stopped, its partial history is saved and the app is alive |
 | g | Characters: open the library and tap Lumen | No crash |
-| h | Bubble: open the floating bubble, type into the mini chat and send | The bubble's conversation gets a reply |
+| h | Bubble: open the floating bubble, type into the mini chat and send | The message leaves the composer, the run comes from the bubble, and the bubble's conversation gets a reply |
 | i | Battery fix: the boot / clock receiver, after e created a task | The receiver is enabled while an enabled task exists |
 | j | Battery fix: an ordinary notification is posted | It is in the searchable notification history (only progress updates are skipped) |
 | k | Battery fix: "Hey Atom" on (needs the on-device pack, which the job installs), screen off, then plugged in | Listening with the screen on, paused with the screen off on battery, listening again when plugged in |
@@ -67,7 +80,13 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | p | Make a website: "Make a one-page site that says hello." (optional) | Site tools are called, `files/sites/<site>/index.html` says hello, `site_preview` returns its local URL and that server serves the page with the live reload script |
 | l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
-All of them are core except p: the job fails if any core scenario fails. p is marked optional because the 3B test
+Bubble send (h): the mini chat moves up for the on-screen keyboard, and the accessibility bounds of its Send button can
+still be those from before the move, so a tap there landed on the keyboard's Enter key. The runner therefore taps Send's
+x on the row of the composer field, whose bounds are fresh because its text just changed; if the message is still in
+the composer after that, it closes the keyboard (the first Back closes only the keyboard) and finds Send again. The log
+shows the bounds each tap used.
+
+All of them are core except the warm-up (0) and p: the job fails if any core scenario fails. p is marked optional because the 3B test
 model may not manage a whole site; its result is still printed and shown as "FAIL (optional)" in the scorecard. Every scenario also fails on any entry in the crash buffer
 (`adb logcat -b crash`).
 
