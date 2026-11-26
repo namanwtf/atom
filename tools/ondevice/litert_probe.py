@@ -148,7 +148,7 @@ def run_case(engine, name, messages, sampler, max_out=768, thinking=None):
     conv = engine.create_conversation(**kwargs)
     try:
         rendered = conv.render_message_to_string(last)
-        print(f"rendered last turn ({len(rendered)} chars): {rendered[-400:]!r}")
+        print(f"rendered last turn ({len(rendered)} chars): ...{rendered[-160:]!r}")
     except Exception as e:  # noqa: BLE001
         print(f"render failed: {e}")
     t0 = time.time()
@@ -180,48 +180,63 @@ def run_case(engine, name, messages, sampler, max_out=768, thinking=None):
     return text
 
 
+def near_limit(engine, system, target):
+    """Browser turns trimmed so the whole prompt is about [target] tokens."""
+    turns = browser_turns(pages=6)
+    msgs = [{"role": "system", "content": system}] + turns
+    while sum(len(engine.tokenize(m["content"])) for m in msgs) + 12 * len(msgs) > target and len(msgs) > 3:
+        # Drop the oldest assistant/tool-result pair after the task.
+        del msgs[2:4]
+    return msgs
+
+
 def main():
-    path = sys.argv[1]
-    wanted = set(sys.argv[2:])
-    peek(path)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("model")
+    ap.add_argument("--backend", default="cpu", choices=["cpu", "gpu"])
+    ap.add_argument("--activation", default=None, choices=[None, "fp32", "fp16"])
+    ap.add_argument("--max-tokens", type=int, default=8192, help="EngineConfig.maxNumTokens; 0 = the model's own")
+    ap.add_argument("--peek", action="store_true")
+    ap.add_argument("cases", nargs="*")
+    a = ap.parse_args()
+    path = a.model
+    wanted = set(a.cases)
+    if a.peek:
+        peek(path)
 
-    def make(max_tokens):
-        return litert_lm.Engine(path, backend=interfaces.Backend.CPU(), max_num_tokens=max_tokens)
-
-    app_first = [{"role": "system", "content": system_with_tools(CORE_TOOLS)}, {"role": "user", "content": TASK}]
-    app_browser = [{"role": "system", "content": system_with_tools(CORE_TOOLS + BROWSER_TOOLS)}] + browser_turns()
-    app_long = [{"role": "system", "content": system_with_tools(CORE_TOOLS + BROWSER_TOOLS)}] + browser_turns(pages=6)
-    chat = [{"role": "system", "content": COMPACT}, {"role": "user", "content": "Hi! What is the capital of France?"}]
-
-    for max_tokens in (8192, None):
-        label = "app maxNumTokens=8192" if max_tokens else "model default maxNumTokens"
-        print(f"\n##### engine: {label} #####")
-        engine = make(max_tokens)
-        try:
-            for tok in ("<|im_start|>", "<|im_end|>", "<think>", "</think>", "<tool_call>"):
-                try:
-                    print(f"tokenize({tok!r}) = {engine.tokenize(tok)}")
-                except Exception as e:  # noqa: BLE001
-                    print(f"tokenize failed: {e}")
-            sys_tokens = len(engine.tokenize(app_first[0]["content"]))
-            br_tokens = sum(len(engine.tokenize(m["content"])) for m in app_browser)
-            long_tokens = sum(len(engine.tokenize(m["content"])) for m in app_long)
-            print(f"first request system prompt: {sys_tokens} tokens; browser step request: {br_tokens} tokens; "
-                  f"long browser request: {long_tokens} tokens")
-            cases = [
-                ("chat/app-sampler", chat, APP_SAMPLER),
-                ("first-step/app-sampler", app_first, APP_SAMPLER),
-                ("first-step/qwen-sampler", app_first, QWEN_NON_THINKING),
-                ("browser-step/app-sampler", app_browser, APP_SAMPLER),
-                ("browser-step/qwen-sampler", app_browser, QWEN_NON_THINKING),
-                ("long/app-sampler", app_long, APP_SAMPLER),
-            ]
-            for name, msgs, sampler in cases:
-                if wanted and name.split("/")[0] not in wanted:
-                    continue
-                run_case(engine, f"{label} {name}", msgs, sampler)
-        finally:
-            engine.close()
+    from litert_lm._ffi import ActivationDataType
+    backend = interfaces.Backend.GPU() if a.backend == "gpu" else interfaces.Backend.CPU()
+    act = {"fp32": ActivationDataType.FLOAT32, "fp16": ActivationDataType.FLOAT16}.get(a.activation)
+    label = f"{a.backend} act={a.activation or 'default'} maxNumTokens={a.max_tokens or 'model'}"
+    print(f"\n##### engine: {label} #####", flush=True)
+    engine = litert_lm.Engine(path, backend=backend, max_num_tokens=a.max_tokens or None, activation_data_type=act)
+    try:
+        app_first = [{"role": "system", "content": system_with_tools(CORE_TOOLS)}, {"role": "user", "content": TASK}]
+        app_browser = [{"role": "system", "content": system_with_tools(CORE_TOOLS + BROWSER_TOOLS)}] + browser_turns()
+        chat = [{"role": "system", "content": COMPACT}, {"role": "user", "content": "Hi! What is the capital of France?"}]
+        near = near_limit(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3700)
+        fits = near_limit(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3000)
+        for name, msgs in (("first", app_first), ("browser", app_browser), ("near", near), ("fits", fits)):
+            print(f"{name} request: {sum(len(engine.tokenize(m['content'])) for m in msgs)} tokens in {len(msgs)} messages")
+        no_think = interfaces.ThinkingConfig(enable_thinking=False)
+        cases = [
+            ("chat/app-sampler", chat, APP_SAMPLER, None),
+            ("chat/qwen-no-think", chat, QWEN_NON_THINKING, no_think),
+            ("first/app-sampler", app_first, APP_SAMPLER, None),
+            ("first/qwen-no-think", app_first, QWEN_NON_THINKING, no_think),
+            ("fits/app-sampler", fits, APP_SAMPLER, None),
+            ("fits/qwen-no-think", fits, QWEN_NON_THINKING, no_think),
+            ("near/app-sampler", near, APP_SAMPLER, None),
+            ("browser/app-sampler", app_browser, APP_SAMPLER, None),
+        ]
+        for name, msgs, sampler, thinking in cases:
+            if wanted and name.split("/")[0] not in wanted and name not in wanted:
+                continue
+            run_case(engine, f"{label} {name}", msgs, sampler, thinking=thinking)
+            sys.stdout.flush()
+    finally:
+        engine.close()
 
 
 if __name__ == "__main__":
