@@ -72,6 +72,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -143,6 +144,8 @@ internal class MessageActions(
     val onContinueEditing: ((String) -> Unit)? = null,
     /** Conversation whose live browser the "Open current browser" step action opens. */
     val conversationId: String? = null,
+    /** "Report a problem" under a failed run; null hides it. */
+    val onReportProblem: (() -> Unit)? = null,
 )
 
 private const val PAGE = 40
@@ -234,7 +237,7 @@ internal fun TranscriptList(
                 when (item) {
                     is ChatItem.User -> UserBubble(item, actions, state.canEdit)
                     is ChatItem.Turn -> TurnView(item, actions, state.canEdit, showStats = item.key == lastTurnKey && !state.running)
-                    is ChatItem.Notice -> NoticeRow(item.text, item.error)
+                    is ChatItem.Notice -> NoticeRow(item.text, item.error, actions.onReportProblem?.takeIf { item.error })
                     is ChatItem.Compacted -> CompactedRow(item.key, item.summary)
                 }
             }
@@ -1136,16 +1139,27 @@ internal fun MenuAction(text: String, icon: ImageVector, onClick: () -> Unit) {
 // ---------------------------------------------------------------- Notices and live status
 
 @Composable
-private fun NoticeRow(text: String, error: Boolean) {
+private fun NoticeRow(text: String, error: Boolean, onReport: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.Info, null, Modifier.size(14.dp), tint = if (error) colors.error else colors.onSurfaceVariant)
-        Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = if (error) colors.onSurface else colors.onSurfaceVariant, textAlign = TextAlign.Center)
+    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Info, null, Modifier.size(14.dp), tint = if (error) colors.error else colors.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text(text, style = MaterialTheme.typography.labelMedium, color = if (error) colors.onSurface else colors.onSurfaceVariant, textAlign = TextAlign.Center)
+        }
+        if (onReport != null) {
+            Text(
+                stringResource(R.string.chat_report_problem),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onReport)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 

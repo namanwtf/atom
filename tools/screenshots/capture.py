@@ -98,6 +98,16 @@ def find(pattern):
     return None
 
 
+def find_last(pattern):
+    """Like find, but the last match in the hierarchy (a list row below a card with the same title)."""
+    rx = re.compile(pattern, re.I)
+    hit = None
+    for text, desc, bounds in dump():
+        if bounds and (rx.search(text or "") or rx.search(desc or "")):
+            hit = bounds
+    return hit
+
+
 def tap_bounds(b):
     x, y = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
     sh(f"input tap {x} {y}")
@@ -332,6 +342,74 @@ def crash_log():
     sys.stdout.flush()
 
 
+def type_into(label_pattern, text):
+    """Taps the field labelled `label_pattern` and types `text` (spaces as %s, as `input text` needs)."""
+    if not tap(label_pattern, wait=1.2):
+        return False
+    sh("input text " + text.replace(" ", "%s"))
+    time.sleep(1)
+    return True
+
+
+def failed_run_report(p):
+    """A sample failed run (debug only): its "Report a problem" action, then the report it opens."""
+    if not demo("failed"):
+        return
+    shot(p + "08_chat_failed_run")
+    if tap("^Report a problem$", wait=4.0):
+        shot(p + "08b_report_from_chat")
+        if tap("^Screenshot$", wait=2.0):
+            shot(p + "08c_report_with_screenshot")
+        for i in range(1, 3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(1)
+            shot(p + f"08d_report_preview_{i}")
+        back()
+    if tap("^More options$", wait=1.2):
+        tap("^New conversation$", wait=1.5)
+    demo("clear", wait=2)
+
+
+def routines(p):
+    """Ready-made routines: the empty list's card, a routine opened in the editor and saved, the list with it, Price
+    watch's question, then the saved task deleted again so the next pass starts from an empty list."""
+    launch("automation/tasks", wait=3)
+    shot(p + "21b_routines_empty")
+    if not tap("^Morning brief$", wait=3.0):
+        return
+    shot(p + "21c_routine_editor")
+    sh("input swipe 540 1800 540 700 300")
+    time.sleep(1)
+    shot(p + "21c_routine_editor_scrolled")
+    if not tap("^Save$", wait=3.0):
+        back()
+        return
+    # A notification permission ask may follow the first save; the runner granted it, so usually nothing shows.
+    shot(p + "21d_routines_list")
+    if tap("^Price watch$", wait=2.0):
+        shot(p + "21e_price_watch_ask")
+        type_into("^Item, for example", "Example headphones")
+        type_into("^Where: a shop name", "example.com")
+        shot(p + "21f_price_watch_filled")
+        if tap("^Continue$", wait=3.0):
+            shot(p + "21g_price_watch_editor")
+            back()
+        else:
+            back()
+    # Delete the saved Morning brief (the row under the routine card of the same name).
+    b = find_last("^Morning brief$")
+    if b:
+        tap_bounds(b)
+        time.sleep(2.5)
+        for _ in range(3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(0.8)
+        if tap("^Delete scheduled task$", wait=1.5):
+            tap("^Delete$", wait=2.0)
+    shot(p + "21h_routines_after_delete")
+    back()
+
+
 def character_detail(p):
     """Opens the built-in character from the library: its detail screen once crashed the whole app."""
     try:
@@ -450,10 +528,11 @@ def main():
         ("25_web_search", "web/search"),
         ("26_images", "web/images"),
         ("27_about", "general/about"),
+        ("27b_report", "report"),
         ("28_backup", "general/backup"),
         ("29_system", "vdisplay/system"),
     ]
-    EXTRA_SCROLLS = {"10_settings": 4, "16_tools": 2, "15_permissions": 1}
+    EXTRA_SCROLLS = {"10_settings": 4, "16_tools": 2, "15_permissions": 1, "27_about": 1, "27b_report": 2}
     only = os.environ.get("SHOT_ROUTES")
     for name, route in routes:
         if only and route not in only.split(","):
@@ -471,6 +550,9 @@ def main():
         back()
 
     character_detail(p)
+    if not only:
+        failed_run_report(p)
+        routines(p)
 
     if mode != "dark":
         return
