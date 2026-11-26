@@ -67,7 +67,8 @@ internal class BackgroundTools(private val context: Context) {
 
     private fun open() = T(
         "background_open_app",
-        "Open an app on a hidden background display so the user's own screen is untouched, then work in it with " +
+        "Open an app on a hidden background display so the user's own screen is untouched (preferred over open_app " +
+            "for tasks in other apps), then work in it with " +
             "background_look / background_act. Routing is automatic: if the app is already on screen, or is the " +
             "home screen or system UI, the answer says to use the normal screen tools instead. Optional uri opens a " +
             "deep link in that app.",

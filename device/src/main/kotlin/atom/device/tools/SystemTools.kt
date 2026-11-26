@@ -16,6 +16,7 @@ import android.os.PowerManager
 import atom.core.tool.Risk
 import atom.core.tool.Tool
 import atom.core.tool.ToolResult
+import atom.core.tool.optBoolean
 import atom.core.tool.optInt
 import atom.core.tool.optString
 import atom.core.tool.schema
@@ -85,7 +86,8 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
     private fun openApp() = SimpleTool(
         name = "open_app",
         description = "Open an installed app by name (fuzzy, e.g. \"maps\", \"whats app\") or exact package name. " +
-            "Works without accessibility; reports whether the app's window was actually seen.",
+            "Works without accessibility; reports whether the app's window was actually seen. Opens on the user's own " +
+            "screen: when background_open_app is offered, prefer it for tasks in other apps.",
         risk = Risk.Act,
         usesPhoneUi = true,
         parameters = schema {
@@ -93,6 +95,7 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
         },
     ) { args, _ ->
         val query = args.string("app")
+        if (WebLinkRouting.meansBuiltInBrowser(query)) return@SimpleTool ToolResult.error(WebLinkRouting.BUILT_IN_BROWSER_HINT)
         val apps = withContext(Dispatchers.IO) { Apps.launchable(app) }
         val ranked = AppMatcher.rank(query, apps.map { it.entry })
         val best = ranked.firstOrNull()
@@ -126,20 +129,27 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
 
     private fun openUrl() = SimpleTool(
         name = "open_url",
-        description = "Open a web link or app deep link (https://…, geo:, tel:, mailto:, app schemes) with its default handler.",
+        description = "Open a link OUTSIDE Atom, in another app: deep links (geo:, tel:, mailto:, sms:, market:, app " +
+            "schemes) or, only when the user asks for their own browser or a specific app, a web page (set external=true). " +
+            "Never use it to read, search, summarize or browse websites: that is Atom's built-in agent browser " +
+            "(browser_open) or web_search / read_page.",
         risk = Risk.Act,
         usesPhoneUi = true,
         parameters = schema {
-            string("url", "The URL or deep link.", required = true)
+            string("url", "The deep link or URL.", required = true)
+            boolean(
+                "external",
+                "true only when the user asked to open this web page in their own browser or another app. Plain " +
+                    "http(s) pages are refused without it.",
+            )
         },
     ) { args, _ ->
         val raw = args.string("url").trim()
-        val withScheme = if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(raw)) raw else "https://$raw"
-        val uri = Uri.parse(withScheme)
-        val scheme = uri.scheme?.lowercase()
-        if (scheme in setOf("file", "content", "javascript", "intent")) {
-            return@SimpleTool ToolResult.error("Opening $scheme: links is not allowed.")
+        WebLinkRouting.openUrlRefusal(raw, external = args.optBoolean("external") == true)?.let {
+            return@SimpleTool ToolResult.error(it)
         }
+        val withScheme = WebLinkRouting.withScheme(raw)
+        val uri = Uri.parse(withScheme)
         val intent = Intent(Intent.ACTION_VIEW, uri)
             .addCategory(Intent.CATEGORY_BROWSABLE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
