@@ -24,6 +24,9 @@ internal object WebTools {
         Risk.Read,
         gate,
     ) {
+        // The built-in search may try several sources and then the agent browser; each step has its own timeout.
+        override val timeoutMs: Long get() = 75_000
+
         override suspend fun exec(args: JsonObject, ctx: ToolContext): ToolResult {
             val query = args.string("query").trim()
             if (query.isEmpty()) return ToolResult.error("Empty query")

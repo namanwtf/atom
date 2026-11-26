@@ -3,10 +3,12 @@ package atom.web.search
 import atom.web.ProviderKeys
 import atom.web.SecretStore
 import atom.web.net.Http
+import atom.web.net.HttpResult
 import atom.web.net.HttpSpec
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.Base64
 import java.util.Locale
 
 data class SearchResult(val title: String, val url: String, val snippet: String)
@@ -44,9 +46,93 @@ object SearchParsers {
         return out.distinctBy { it.url }
     }
 
-    fun isDuckDuckGoChallenge(html: String): Boolean =
+    /**
+     * DuckDuckGo Lite (lite.duckduckgo.com/lite/): a table where each result is an `a.result-link` row followed by a
+     * `td.result-snippet` row. Sponsored rows and ad redirects are skipped. Null when the page is a bot challenge.
+     */
+    fun duckDuckGoLite(html: String): List<SearchResult>? {
+        if (isDuckDuckGoChallenge(html, marker = "result-link")) return null
+        val out = ArrayList<SearchResult>()
+        // Index in [out] of the result a snippet row belongs to; -1 after a skipped (sponsored) link.
+        var open = -1
+        for (n in Html.parse(html).walk()) {
+            if (n.tag == "a" && n.classes().contains("result-link")) {
+                open = -1
+                if (n.ancestors().any { a -> a.tag == "tr" && a.classes().any { it.contains("sponsored") } }) continue
+                val url = unwrapDuckLink(n.attr("href") ?: continue) ?: continue
+                if (url.contains("duckduckgo.com/y.js") || url.contains("/y.js?")) continue
+                out += SearchResult(clean(n.text()), url, "")
+                open = out.lastIndex
+            } else if (n.tag == "td" && n.classes().contains("result-snippet") && open >= 0) {
+                out[open] = out[open].copy(snippet = clean(n.text()))
+                open = -1
+            }
+        }
+        return out.distinctBy { it.url }
+    }
+
+    /**
+     * Bing's HTML results: `li.b_algo` blocks with the link in `h2 > a` and the snippet in `.b_caption p`. Bing's
+     * click-tracking links (`/ck/a?...&u=a1<base64>`) are unwrapped. Null when the page has no results list (a
+     * captcha or consent page).
+     */
+    fun bing(html: String): List<SearchResult>? {
+        if (!html.contains("b_results")) return null
+        val out = ArrayList<SearchResult>()
+        for (li in Html.parse(html).walk().filter { it.tag == "li" && it.classes().contains("b_algo") }) {
+            val a = li.walk().firstOrNull { it.tag == "h2" }?.walk()?.firstOrNull { it.tag == "a" && it.attr("href") != null } ?: continue
+            val url = unwrapBingLink(a.attr("href") ?: continue) ?: continue
+            val caption = li.walk().firstOrNull { it.classes().contains("b_caption") }
+            val block = caption?.walk()?.firstOrNull { it.tag == "p" } ?: caption ?: li.walk().firstOrNull { it.tag == "p" }
+            // Bing puts a small "Web" label at the start of some snippets.
+            val label = block?.walk()?.firstOrNull { it.classes().contains("algoSlug_icon") }?.text().orEmpty()
+            val snippet = clean(block?.text().orEmpty()).removePrefix(clean(label)).trim()
+            out += SearchResult(clean(a.text()), url, snippet)
+        }
+        return out.distinctBy { it.url }
+    }
+
+    fun unwrapBingLink(href: String): String? {
+        val h = Entities.decode(href.trim())
+        val uri = runCatching { URI(h) }.getOrNull() ?: return null
+        val host = uri.host.orEmpty().lowercase()
+        if (host.isEmpty()) return null
+        if ((host == "bing.com" || host.endsWith(".bing.com")) && uri.path.orEmpty().startsWith("/ck/")) {
+            val u = uri.rawQuery.orEmpty().split('&').firstOrNull { it.startsWith("u=") }?.removePrefix("u=") ?: return null
+            val encoded = URLDecoder.decode(u, "UTF-8").removePrefix("a1")
+            val decoded = runCatching { String(Base64.getUrlDecoder().decode(encoded.trimEnd('=').padBase64()), Charsets.UTF_8) }.getOrNull()
+            return decoded?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        }
+        return h.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+    }
+
+    private fun String.padBase64(): String = this + "=".repeat((4 - length % 4) % 4)
+
+    /**
+     * Mojeek's results page: `ul.results-standard > li` with `a.title` and `p.s`. Empty for its "No pages found"
+     * page, null for anything else without a results list.
+     */
+    fun mojeek(html: String): List<SearchResult>? {
+        val root = Html.parse(html)
+        val lists = root.walk().filter { it.tag == "ul" && it.classes().contains("results-standard") }.toList()
+        if (lists.isEmpty()) return if (html.contains("No pages found", ignoreCase = true)) emptyList() else null
+        val out = ArrayList<SearchResult>()
+        for (li in lists.flatMap { it.elements().filter { e -> e.tag == "li" }.toList() }) {
+            val a = li.walk().firstOrNull { it.tag == "a" && it.classes().contains("title") }
+                ?: li.walk().firstOrNull { it.tag == "h2" }?.walk()?.firstOrNull { it.tag == "a" }
+                ?: continue
+            val url = Entities.decode(a.attr("href")?.trim() ?: continue).takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: continue
+            val snippet = li.walk().firstOrNull { it.tag == "p" && it.classes().contains("s") }?.text().orEmpty()
+            out += SearchResult(clean(a.text()), url, clean(snippet))
+        }
+        return out.distinctBy { it.url }
+    }
+
+    fun isDuckDuckGoChallenge(html: String): Boolean = isDuckDuckGoChallenge(html, marker = "result__a")
+
+    private fun isDuckDuckGoChallenge(html: String, marker: String): Boolean =
         html.contains("anomaly-modal", true) || html.contains("challenge-form", true) ||
-            (html.contains("bots", true) && !html.contains("result__a"))
+            (html.contains("bots", true) && !html.contains(marker))
 
     fun unwrapDuckLink(href: String): String? {
         val h = Entities.decode(href.trim())
@@ -93,6 +179,8 @@ object SearchParsers {
     private fun clean(s: String) = s.replace(Regex("\\s+"), " ").trim()
 
     private fun Node.classes(): List<String> = attr("class")?.split(' ', '\t', '\n')?.filter { it.isNotEmpty() } ?: emptyList()
+
+    private fun Node.ancestors(): Sequence<Node> = generateSequence(parent) { it.parent }
 }
 
 /** Builds the HTTP requests for the configurable backends. Pure, so it is unit-tested. */
@@ -127,7 +215,13 @@ class WebServices(
     private val config: () -> WebConfig,
     private val keys: ProviderKeys,
     private val secrets: SecretStore,
+    /** The agent browser, for the built-in search's last web tier; null where there is none (tests). */
+    private val renderer: PageRenderer? = null,
+    /** How the built-in search makes its requests: one request per source, with short timeouts. */
+    fetch: suspend (HttpSpec) -> HttpResult = { Http.execute(it, Http.quickClient, maxBytes = 2 * 1024 * 1024) },
 ) {
+    private val builtIn = BuiltInSearch(fetch, renderer = { renderer?.takeIf { config().browserEnabled } })
+
     private val pageCache = object : LinkedHashMap<String, PageText>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PageText>?) = size > 8
     }
@@ -160,42 +254,7 @@ class WebServices(
         }
     }
 
-    private suspend fun builtInSearch(query: String, n: Int): SearchOutcome {
-        val ddg = runCatching {
-            val r = Http.execute(
-                HttpSpec(
-                    "POST",
-                    "https://html.duckduckgo.com/html/",
-                    mapOf("Accept" to "text/html", "Accept-Language" to Locale.getDefault().toLanguageTag()),
-                    "q=" + URLEncoder.encode(query, "UTF-8") + "&kl=",
-                    contentType = "application/x-www-form-urlencoded",
-                ),
-                maxBytes = 2 * 1024 * 1024,
-            )
-            if (!r.ok || SearchParsers.isDuckDuckGoChallenge(r.text)) null else SearchParsers.duckDuckGo(r.text)
-        }.getOrNull()
-        if (!ddg.isNullOrEmpty()) return SearchOutcome(ddg.take(n), "DuckDuckGo")
-        val lang = Locale.getDefault().language.takeIf { it.length == 2 } ?: "en"
-        val wiki = runCatching { wikipedia(query, n, lang) }.getOrNull()?.takeIf { it.isNotEmpty() }
-            ?: runCatching { if (lang != "en") wikipedia(query, n, "en") else null }.getOrNull()
-        if (!wiki.isNullOrEmpty()) {
-            return SearchOutcome(
-                wiki,
-                "Wikipedia",
-                "General web search was unavailable, so these are Wikipedia results. For other sites, use the browser tools (browser_open with a search URL).",
-            )
-        }
-        throw WebException(
-            "Built-in search is unavailable right now. Try the browser (browser_open https://www.google.com/search?q=...) or set a search service in Settings > Web search and reading.",
-        )
-    }
-
-    private suspend fun wikipedia(query: String, n: Int, lang: String): List<SearchResult> {
-        val url = "https://$lang.wikipedia.org/w/rest.php/v1/search/page?q=" + URLEncoder.encode(query, "UTF-8") + "&limit=$n"
-        val r = Http.get(url, mapOf("User-Agent" to "AtomAgent/1.0 (Android on-device assistant; bot)", "Api-User-Agent" to "AtomAgent/1.0"))
-        if (!r.ok) return emptyList()
-        return SearchParsers.wikipedia(r.text, lang)
-    }
+    private suspend fun builtInSearch(query: String, n: Int): SearchOutcome = builtIn.search(query, n)
 
     suspend fun read(url: String): PageText {
         synchronized(pageCache) { pageCache[url] }?.let { return it }
