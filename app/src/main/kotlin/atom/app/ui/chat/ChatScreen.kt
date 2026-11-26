@@ -550,7 +550,7 @@ private const val GLASS_PUSH = 0.3f
  * Opacity of the glass pane's tint over the chat. The pane is one translucent surface in every state (sliding,
  * open, closing), so nothing pops in or swaps when it settles; the chat shows through faintly, dimmed by the scrim.
  */
-private const val GLASS_PANE_ALPHA = 0.93f
+private const val GLASS_PANE_ALPHA = 0.96f
 
 @Composable
 private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, content: @Composable () -> Unit) {
