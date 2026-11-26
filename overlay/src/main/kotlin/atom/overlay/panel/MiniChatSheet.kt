@@ -279,11 +279,15 @@ private fun HeaderButton(glyph: Glyph, label: String, onClick: () -> Unit) {
 private fun ModelChip() {
     val context = LocalContext.current
     val hooks = Overlay.hooks
-    val label = remember { hooks.modelLabel(RunSource.Bubble) ?: hooks.modelLabel(RunSource.Chat) } ?: stringResource(R.string.overlay_no_model)
-    val pickable = remember { hooks.modelPickerIntent(context, RunSource.Bubble) != null }
+    // Collected, so the chip follows a model change made while the panel is open (or since it was last shown).
+    val chipFlow = remember(hooks) { hooks.modelChip(RunSource.Bubble) }
+    val chip = chipFlow?.collectAsState()?.value
+    val label = chip?.label?.ifBlank { null }
+        ?: hooks.modelLabel(RunSource.Bubble) ?: hooks.modelLabel(RunSource.Chat) ?: stringResource(R.string.overlay_no_model)
+    val pickable = remember(hooks) { hooks.modelPickerIntent(context, RunSource.Bubble) != null }
     Text(
         label,
-        color = Warm.Text,
+        color = if (chip?.ready == false) Warm.Muted else Warm.Text,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,

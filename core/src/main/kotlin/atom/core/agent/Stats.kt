@@ -32,7 +32,10 @@ data class SessionStats(
     val compactions: Int = 0,
     val compactionTokens: Long = 0,
     val compactionSavedTokens: Long = 0,
-    /** Model requests that read nothing from the prompt cache (counted once the provider reports caching). */
+    /**
+     * Model requests with input tokens that read nothing from the prompt cache. Every such call counts, including
+     * those before the provider first reported caching; the UI shows the figure only once [cacheReported].
+     */
     val cacheMisses: Int = 0,
     val subagentRuns: Int = 0,
     val subagentToolCalls: Int = 0,

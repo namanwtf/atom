@@ -15,6 +15,12 @@ import kotlinx.coroutines.flow.asStateFlow
 /** One message in the mini chat or the assistant reply card. */
 data class OverlayMessage(val fromUser: Boolean, val text: String)
 
+/**
+ * The mini chat's model chip: [label] is the model name when [ready], else what home shows ("Not selected",
+ * "Sign in to …"). While not ready a send is blocked with [blocked] (the home chat's "configure a model" line).
+ */
+data class ModelChipState(val label: String, val ready: Boolean, val blocked: String? = null)
+
 /** What the overlays need from the app. Every member has a working default. */
 interface OverlayHooks {
     /** Opens the full app on [conversationId] (the chat list or a new chat when null). */
@@ -27,6 +33,12 @@ interface OverlayHooks {
 
     /** Short label for the model chip, e.g. "DeepSeek Flash". Null shows "Default model". */
     fun modelLabel(source: RunSource): String? = null
+
+    /**
+     * The model chip for runs from [source] with the same readiness as the home chat, kept current as the model,
+     * keys or sign-ins change. Null falls back to [modelLabel] with no readiness check.
+     */
+    fun modelChip(source: RunSource): StateFlow<ModelChipState>? = null
 
     /** Where tapping the model chip goes; null makes the chip read-only. */
     fun modelPickerIntent(context: Context, source: RunSource): Intent? = null

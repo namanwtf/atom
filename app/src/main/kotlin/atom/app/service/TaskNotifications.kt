@@ -73,6 +73,17 @@ class TaskNotifications(private val context: Context) {
             .setContentIntent(openApp())
             .addAction(0, context.getString(R.string.notif_open), openApp())
             .addAction(0, context.getString(R.string.action_stop), broadcast(TaskActionReceiver.ACTION_STOP_ALL, null, REQ_STOP_ALL))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                base(CH_TASK)
+                    .setContentTitle(context.getString(R.string.notif_running_tasks))
+                    .setContentText(context.resources.getQuantityString(R.plurals.notif_running_count, active.size, active.size))
+                    .setOngoing(true)
+                    .setSilent(true)
+                    .setGroup(GROUP_RUNS)
+                    .setGroupSummary(true)
+                    .build(),
+            )
             .build()
     }
 
@@ -114,7 +125,44 @@ class TaskNotifications(private val context: Context) {
             builder.addAction(0, context.getString(R.string.action_stop), broadcast(TaskActionReceiver.ACTION_STOP, id, REQ_STOP + childId(id)))
         }
         if (promote) promoteAsLiveUpdate(builder, run)
+        builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicRunNotification(run, asGroupChild, promote))
         return builder.build()
+    }
+
+    /**
+     * What the lock screen shows of a running task when notifications hide sensitive content: "Atom is running"
+     * and a status word, never the conversation title, the tool or any answer text. It stays promotable so the
+     * status-bar chip keeps its word.
+     */
+    private fun publicRunNotification(run: LiveRun?, asGroupChild: Boolean, promote: Boolean): Notification {
+        val word = context.getString(chipText(run))
+        val builder = base(CH_TASK)
+            .setContentTitle(context.getString(R.string.notif_working_title))
+            .setContentText(word)
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+        if (asGroupChild) builder.setGroup(GROUP_RUNS)
+        if (promote && Build.VERSION.SDK_INT >= LiveUpdate.MIN_SDK) {
+            builder.setColorized(false).setRequestPromotedOngoing(true).setShortCriticalText(word)
+        }
+        return builder.build()
+    }
+
+    private fun chipText(run: LiveRun?): Int = when (
+        LiveUpdate.chip(
+            paused = run?.phase == RunPhase.Paused,
+            waitingForUser = run?.pending != null,
+            usingTool = run?.currentTool != null,
+            streamingAnswer = run != null && run.stream.text.isNotEmpty(),
+        )
+    ) {
+        LiveUpdate.Chip.Working -> R.string.live_working
+        LiveUpdate.Chip.Answering -> R.string.run_answering
+        LiveUpdate.Chip.Paused -> R.string.run_paused
+        LiveUpdate.Chip.Waiting -> R.string.live_waiting
     }
 
     /**
@@ -124,21 +172,9 @@ class TaskNotifications(private val context: Context) {
      */
     private fun promoteAsLiveUpdate(builder: NotificationCompat.Builder, run: LiveRun?) {
         if (Build.VERSION.SDK_INT < LiveUpdate.MIN_SDK) return
-        val chip = LiveUpdate.chip(
-            paused = run?.phase == RunPhase.Paused,
-            waitingForUser = run?.pending != null,
-            usingTool = run?.currentTool != null,
-            streamingAnswer = run != null && run.stream.text.isNotEmpty(),
-        )
-        val text = when (chip) {
-            LiveUpdate.Chip.Working -> R.string.live_working
-            LiveUpdate.Chip.Answering -> R.string.run_answering
-            LiveUpdate.Chip.Paused -> R.string.run_paused
-            LiveUpdate.Chip.Waiting -> R.string.live_waiting
-        }
         builder.setColorized(false)
             .setRequestPromotedOngoing(true)
-            .setShortCriticalText(context.getString(text))
+            .setShortCriticalText(context.getString(chipText(run)))
     }
 
     private fun titleOf(run: LiveRun): String = run.conversation.title.ifBlank { context.getString(R.string.notif_working_title) }
@@ -156,9 +192,23 @@ class TaskNotifications(private val context: Context) {
         else -> context.getString(R.string.notif_thinking)
     }
 
-    /** Heads-up so the user can answer while Atom is driving another app. */
+    /**
+     * Heads-up so the user can answer while Atom is driving another app. On the lock screen only "Atom needs your
+     * approval" shows (no action text, no buttons), and Allow asks for the device credential first (Android 12+;
+     * [TaskActionReceiver] also ignores Allow while the device is locked, which covers Android 11).
+     */
     fun showApproval(pending: PendingApproval) {
         if (!canPost()) return
+        val publicVersion = base(CH_APPROVAL)
+            .setContentTitle(context.getString(R.string.notif_waiting_title))
+            .setContentText(context.getString(R.string.notif_unlock_to_answer))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setContentIntent(openApp())
+            .build()
+        val allow = NotificationCompat.Action.Builder(0, context.getString(R.string.confirm_allow), approvalAction(pending.id, approve = true))
+            .setAuthenticationRequired(true)
+            .build()
         val notification = base(CH_APPROVAL)
             .setContentTitle(context.getString(R.string.confirm_title))
             .setContentText(pending.action)
@@ -169,7 +219,9 @@ class TaskNotifications(private val context: Context) {
             .setAutoCancel(true)
             .setContentIntent(openApp())
             .addAction(0, context.getString(R.string.confirm_deny), approvalAction(pending.id, approve = false))
-            .addAction(0, context.getString(R.string.confirm_allow), approvalAction(pending.id, approve = true))
+            .addAction(allow)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion)
             .build()
         notifySafely(null, ID_APPROVAL, notification)
     }
@@ -190,6 +242,15 @@ class TaskNotifications(private val context: Context) {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text.ifBlank { title }))
             .setAutoCancel(true)
             .setContentIntent(openConversation(run.conversation.id))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                // The lock screen gets only "Task done" (or failed): no conversation title, no answer text.
+                base(CH_RESULT)
+                    .setContentTitle(title)
+                    .setContentText(context.getString(R.string.notif_unlock_to_see))
+                    .setAutoCancel(true)
+                    .build(),
+            )
             .build()
         notifySafely(TAG_RESULT, childId(run.conversation.id), notification)
     }

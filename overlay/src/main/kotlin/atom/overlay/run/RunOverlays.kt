@@ -164,18 +164,22 @@ internal object RunOverlays {
 
     fun stop() {
         val v = view ?: return
+        // Without a host the stop cannot be delivered, so the capsule must not claim "Stopping".
+        val host = OverlayRuntime.host() ?: return
         stoppingId = v.conversationId
-        OverlayRuntime.host()?.stop(v.conversationId)
+        host.stop(v.conversationId)
         expanded = false
         endSteer()
     }
 
     fun answer(approved: Boolean) {
+        if (locked) return
         val pending = view?.pending ?: return
         OverlayRuntime.host()?.answer(pending.id, approved)
     }
 
     fun beginSteer() {
+        if (locked) return
         val v = view
         CapsuleStatuses.steerBlocked(v?.answering == true, v?.toolRunning == true, OverlayRuntime.host() != null)?.let {
             flash(it)
@@ -187,6 +191,10 @@ internal object RunOverlays {
     }
 
     fun sendSteer() {
+        if (locked) {
+            endSteer()
+            return
+        }
         val v = view
         val text = steerText.trim()
         if (v != null && text.isNotEmpty()) {
@@ -243,36 +251,57 @@ internal object RunOverlays {
         resultTimer?.cancel()
         resultTimer = null
         result = null
-        unwatchUnlock()
         refresh()
     }
 
     /**
-     * True while the keyguard is locked. The result card may draw over the lock screen (accessibility overlay), so
-     * until the user unlocks it shows only the outcome: no answer text, no Copy, no buttons that open anything.
+     * True while the keyguard is locked. The capsule and the result card may draw over the lock screen
+     * (accessibility overlay), so while locked the capsule shows only its phase and Stop (no approval buttons, no
+     * steer field, no step text, no viewfinder) and the result card only the outcome (no answer text, no Copy, no
+     * buttons that open anything). Watched while either window exists: the screen turning off counts as locked
+     * at once, and turning on or the user unlocking re-reads the keyguard.
      */
     var locked by mutableStateOf(false)
         private set
-    private var unlockReceiver: BroadcastReceiver? = null
+    private var lockReceiver: BroadcastReceiver? = null
 
-    private fun watchUnlock() {
-        val app = OverlayRuntime.app
-        locked = app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
-        if (!locked || unlockReceiver != null) return
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, intent: Intent) {
-                locked = false
-                unwatchUnlock()
-            }
+    private fun keyguardLocked(): Boolean =
+        OverlayRuntime.app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
+    private fun updateLocked(value: Boolean) {
+        if (locked == value) return
+        locked = value
+        if (value) {
+            endSteer()
+            expanded = false
         }
-        runCatching {
-            ContextCompat.registerReceiver(app, receiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED)
-        }.onSuccess { unlockReceiver = receiver }
     }
 
-    private fun unwatchUnlock() {
-        val receiver = unlockReceiver ?: return
-        unlockReceiver = null
+    private fun watchLock() {
+        if (lockReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> updateLocked(true)
+                    Intent.ACTION_USER_PRESENT -> updateLocked(false)
+                    else -> updateLocked(keyguardLocked())
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        runCatching {
+            ContextCompat.registerReceiver(OverlayRuntime.app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        }.onSuccess { lockReceiver = receiver }
+        updateLocked(keyguardLocked())
+    }
+
+    private fun unwatchLock() {
+        val receiver = lockReceiver ?: return
+        lockReceiver = null
         runCatching { OverlayRuntime.app.unregisterReceiver(receiver) }
     }
 
@@ -282,7 +311,7 @@ internal object RunOverlays {
         expanded = false
         endSteer()
         result = r
-        watchUnlock()
+        watchLock()
         resultTimer?.cancel()
         resultTimer = OverlayRuntime.scope.launch {
             delay(RESULT_MS)
@@ -307,6 +336,7 @@ internal object RunOverlays {
         glowPaused = next?.phase == RunPhase.Paused
         if (next != null) ensureCapsule() else removeCapsule()
         if (result != null) ensureResultWindow() else removeResultWindow()
+        if (next != null || result != null) watchLock() else unwatchLock()
         Bubble.setPassThrough(next != null && next.phase != RunPhase.Paused)
     }
 
@@ -321,7 +351,7 @@ internal object RunOverlays {
         viewfinder = Overlay.viewfinder?.shows(run) == true,
         mood = BubbleReducer.moodOf(run),
         toolRunning = run.steps.any { it.state == StepState.Running },
-        answering = run.text.isNotBlank() && run.steps.none { it.state == StepState.Running },
+        answering = CapsuleStatuses.answerStarted(run.text) && run.steps.none { it.state == StepState.Running },
     )
 
     /** The run behind the capsule, for the viewfinder slot. */

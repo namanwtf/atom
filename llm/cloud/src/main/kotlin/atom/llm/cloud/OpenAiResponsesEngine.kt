@@ -216,7 +216,7 @@ internal class ResponsesStreamDecoder(private val errors: ErrorMapper) {
             "response.reasoning_summary_text.delta", "response.reasoning_text.delta" ->
                 event.str("delta")?.takeIf { it.isNotEmpty() }?.let { out += LlmEvent.ReasoningDelta(it) }
             "response.output_item.added" -> event.obj("item")?.let { item ->
-                HostedToolKind.fromWireType(item.str("type"))?.let { out += LlmEvent.HostedTool(it, running = true) }
+                HostedToolKind.fromWireType(item.str("type"))?.let { out += LlmEvent.HostedTool(it, running = true, callId = item.str("id")) }
                 if (item.str("type") == "function_call") {
                     val key = item.str("id") ?: item.str("call_id") ?: "idx${event.int("output_index")}"
                     pending[key] = PendingCall(item.str("call_id") ?: key, item.str("name").orEmpty()).also { call ->
@@ -273,7 +273,7 @@ internal class ResponsesStreamDecoder(private val errors: ErrorMapper) {
     }
 
     private fun itemDone(item: JsonObject): List<LlmEvent> {
-        HostedToolKind.fromWireType(item.str("type"))?.let { return listOf(LlmEvent.HostedTool(it, running = false)) }
+        HostedToolKind.fromWireType(item.str("type"))?.let { return listOf(LlmEvent.HostedTool(it, running = false, callId = item.str("id"))) }
         when (item.str("type")) {
             "function_call" -> {
                 val key = item.str("id") ?: item.str("call_id")

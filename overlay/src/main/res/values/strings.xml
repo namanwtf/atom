@@ -101,6 +101,7 @@
     <string name="overlay_result_ready">Result ready</string>
     <string name="overlay_result_failed">Request failed</string>
     <string name="overlay_result_ready_locked">Result ready</string>
+    <string name="overlay_unlock_to_answer">Unlock to answer</string>
     <string name="overlay_open_screen">Open screen</string>
     <string name="overlay_cancel">Cancel</string>
     <string name="overlay_open_atom">Open Atom</string>

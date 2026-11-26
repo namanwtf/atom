@@ -59,6 +59,9 @@ object WebFeature : AtomFeature {
         ImageBackend.SiliconFlow -> "SiliconFlow"
     }
 
+    /** "Web search and reading" in Settings. Off also keeps provider-hosted search out of runs. */
+    fun webEnabled(context: Context): Boolean = WebSettings.of(context).value.enabled
+
     /** For the Tool list: why the web, browser or image tools are absent (feature off), or null when they are on. */
     fun toolsOffReason(context: Context, cardId: String): String? {
         val web = WebSettings.of(context).value

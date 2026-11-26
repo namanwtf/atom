@@ -136,6 +136,12 @@ internal object MiniChat {
         if (running) {
             host.steer(id, prompt)
         } else {
+            // Same block as the home chat: no run starts on a model that is not set up.
+            val chip = Overlay.hooks.modelChip(RunSource.Bubble)?.value
+            if (chip != null && !chip.ready) {
+                notice = chip.blocked ?: OverlayRuntime.app.getString(R.string.overlay_not_ready)
+                return
+            }
             val started = host.start(prompt, id, RunSource.Bubble)
             when {
                 started == null && id != null -> host.steer(id, prompt)
