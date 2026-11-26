@@ -45,22 +45,16 @@ def diagnose(label):
     print(sh("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -4"))
     print(sh(f"dumpsys activity processes | grep -A3 -E 'ProcessRecord.*{re.escape(PKG)}' | head -20"))
     if pid:
-        # Java stacks of every thread; needs a root adbd, which the emulator image allows.
-        adb("root", timeout=60)
-        adb("wait-for-device", timeout=120)
-        time.sleep(3)
-        stacks = sh(f"debuggerd -j {pid}", timeout=120)
-        blocks = stacks.split("\n\n")
-        main = [b for b in blocks if b.startswith('"main"')]
-        print("--- main thread ---")
-        print((main[0] if main else stacks[:6000])[:6000])
-        busy = [b for b in blocks if "Runnable" in b.splitlines()[0] or "Blocked" in b.splitlines()[0]] if blocks else []
-        print(f"--- runnable/blocked threads ({len(busy)}) ---")
-        for b in busy[:12]:
-            print(b[:1500])
-            print()
-        print("--- app log (last 250 lines) ---")
-        print("\n".join(adb("logcat", "-d", "--pid", pid, timeout=60).decode(errors="replace").splitlines()[-250:]))
+        # The debug build's watchdog logs the main thread's Java stack while it is stuck (a SIGQUIT dump would crash
+        # an app the emulator runs through ARM translation, so none is taken).
+        print("--- main thread (AtomWatchdog) ---")
+        print("\n".join(adb("logcat", "-d", "-s", "AtomWatchdog:*", timeout=60).decode(errors="replace").splitlines()[-200:]))
+        print("--- app log since start (warnings and errors, first 200) ---")
+        lines = adb("logcat", "-d", "--pid", pid, "*:W", timeout=60).decode(errors="replace").splitlines()
+        print("\n".join(lines[:200]))
+        print("--- activity manager ---")
+        print("\n".join(l for l in adb("logcat", "-d", timeout=60).decode(errors="replace").splitlines()
+                        if re.search(r"ActivityTaskManager|ActivityManager|WindowManager", l) and PKG in l)[-3000:])
     print("--- crash buffer ---")
     print(adb("logcat", "-d", "-b", "crash", timeout=60).decode(errors="replace")[-6000:] or "(empty)")
     print("--- system errors (last 80) ---")
