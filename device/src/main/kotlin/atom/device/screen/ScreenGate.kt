@@ -24,6 +24,9 @@ internal object ScreenGate {
 
     const val LOCKED_TOO_LONG = atom.core.tool.PhoneScreen.LOCKED_TOO_LONG
 
+    const val LOCKED_NOW = "The phone's screen is off or locked, so the screen cannot be read or used right now. " +
+        "Try the screen action again; it waits for the user to unlock."
+
     /** Installs the gate the agent loop uses before screen tools. */
     fun install(context: Context) {
         val app = context.applicationContext
@@ -39,7 +42,7 @@ internal object ScreenGate {
     /** True at once when the screen is usable; otherwise waits (up to [WAIT_MS]) for it, marking [taskId] as waiting. */
     suspend fun await(context: Context, taskId: String): Boolean {
         if (usable(context)) return true
-        ScreenWait.begin(taskId)
+        val token = ScreenWait.begin(taskId)
         try {
             return withTimeoutOrNull(WAIT_MS) {
                 suspendCancellableCoroutine { cont ->
@@ -69,7 +72,7 @@ internal object ScreenGate {
                 }
             } ?: false
         } finally {
-            ScreenWait.end(taskId)
+            ScreenWait.end(token)
         }
     }
 }

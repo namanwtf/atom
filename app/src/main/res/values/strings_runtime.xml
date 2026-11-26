@@ -28,6 +28,7 @@
     <string name="run_paused_hint">Paused. You have the phone.</string>
     <string name="run_waiting_control">Waiting for phone control</string>
     <string name="run_waiting_unlock">Waiting for the screen to be unlocked</string>
+    <string name="notif_open_to_review">Open to review</string>
     <string name="run_retrying">Retrying model request (%1$d of %2$d) in %3$d s</string>
     <string name="run_retrying_short">Retrying model request</string>
     <string name="run_compacting">Compacting context…</string>

@@ -32,7 +32,7 @@ data class HostStep(
     val durationMs: Long? = null,
 )
 
-data class HostApproval(val id: Long, val action: String, val expiresAtMillis: Long)
+data class HostApproval(val id: Long, val action: String, val expiresAtMillis: Long, val reason: String? = null)
 
 /** A live or just-finished agent run, as seen from outside the chat screen. */
 data class HostRun(

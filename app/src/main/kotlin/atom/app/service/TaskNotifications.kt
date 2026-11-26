@@ -211,6 +211,10 @@ class TaskNotifications(private val context: Context) {
         val allow = NotificationCompat.Action.Builder(0, context.getString(R.string.confirm_allow), approvalAction(pending.id, approve = true))
             .setAuthenticationRequired(true)
             .build()
+        // Allow from the shade only when the whole request fits in the few lines a notification shows. A long or
+        // multi-line command (an innocent first line, blank lines, then something else) or one that could grant the
+        // whole task is answered in the app's dialog, where all of it is visible: tapping opens it.
+        val answerInApp = ApprovalText.needsFullView(pending.action, pending.taskGrantable)
         val notification = base(CH_APPROVAL)
             .setContentTitle(context.getString(R.string.confirm_title))
             .setContentText(pending.action)
@@ -221,7 +225,7 @@ class TaskNotifications(private val context: Context) {
             .setAutoCancel(true)
             .setContentIntent(openApp())
             .addAction(0, context.getString(R.string.confirm_deny), approvalAction(pending.id, approve = false))
-            .addAction(allow)
+            .apply { if (answerInApp) addAction(0, context.getString(R.string.notif_open_to_review), openApp()) else addAction(allow) }
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(publicVersion)
             .build()
@@ -340,4 +344,13 @@ class TaskNotifications(private val context: Context) {
         /** Black, so phones draw the emblem on a black disc like the launcher icon. */
         private const val ACCENT = 0xFF000000.toInt()
     }
+}
+
+/** When an approval must be read in full (in the app) instead of allowed from a notification. Pure, unit tested. */
+internal object ApprovalText {
+    const val MAX_LINES = 3
+    const val MAX_CHARS = 200
+
+    fun needsFullView(action: String, taskGrantable: Boolean): Boolean =
+        taskGrantable || action.length > MAX_CHARS || action.lines().size > MAX_LINES
 }

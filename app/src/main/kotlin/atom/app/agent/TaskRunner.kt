@@ -594,8 +594,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             holdsMutex.withLock {
                 // A run waiting for the screen to be unlocked is parked: no wake lock while it waits (the screen-on and
                 // user-present broadcasts wake it).
-                val waiting = atom.ui.feature.ScreenWait.tasks.value
-                val now = synchronized(lock) { executions.values.count { !it.paused.value && it.runId !in waiting } }
+                val now = synchronized(lock) { executions.values.count { !it.paused.value && !atom.ui.feature.ScreenWait.waiting(it.runId) } }
                 graph.runPower.update(now, graph.settings.current().keepScreenOn)
             }
         }
@@ -664,7 +663,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             phase = run.phase,
             text = run.stream.text.ifEmpty { if (!run.active) lastAnswer?.message?.text.orEmpty() else "" },
             steps = steps,
-            pending = run.pending?.let { HostApproval(it.id, it.action, it.expiresAtMillis) },
+            pending = run.pending?.let { HostApproval(it.id, it.action, it.expiresAtMillis, it.reason) },
             queued = queues[run.conversation.id]?.items?.value?.map { it.text }.orEmpty(),
             error = run.error,
         )
