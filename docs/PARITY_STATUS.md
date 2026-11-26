@@ -60,12 +60,20 @@ Known small follow-ups (reviewed, not blocking): the mini chat checks the assist
 
 ## Waiting for the owner
 
-| # | Item | Status |
+The owner asked (2026-11-26) not to be involved in technical decisions: the agents decide and only bring simple, non-technical actions to the owner. Technical questions raised earlier were closed as decisions D19–D23 below.
+
+Only these need the owner:
+
+| # | What to do | Why only the owner can |
 |---|---|---|
-| Q1 | **Commit identity.** The owner asked for today's commits to come from their GitHub account and for today's non-main commits to be re-authored and force-pushed. The session's permission checks refused the identity change and the force-push, so commits are still made under the session's default identity, and `fix/ci-temp-delete-guard` keeps its original author. The owner can approve this, or re-author locally with `git rebase --exec 'git commit --amend --no-edit --reset-author'`. | Blocked: needs owner approval |
-| Q2 | **Merging.** PR #1 (CI fix) is green and ready. PR #2 is the integration PR into `main`. PR #5 (README) is standalone. | Owner action |
-| Q3 | **Signing secrets.** Releases must be signed with the old app's key (SHA-256 `F3:BA:9F:48:…:8F:A7`) or old installs can't update. This session can't see repository secrets. Add `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` to this repository (the values the old repository used). The release workflow refuses to publish without them and checks the certificate. | Owner action |
-| Q4 | **Data migration from the old app.** A one-time importer now brings over providers, API keys, ChatGPT/Grok sign-ins (when still valid), the default model and conversations, automatically on first start and again from Settings > General > Data backup; old files are only read ([IMPORT.md](IMPORT.md)). MCP servers, skills, scheduled tasks and other settings are not imported. Accessibility and notification-access grants are tied to class names and must be re-enabled after updating. | Done (importer) |
-| Q5 | **Licensing of upstream-derived parts of the old app.** The old app documents its agent foundation as a fork of an upstream app (GPL-3.0) and its bubble design as adapted from another (Apache-2.0). The new app reuses neither: it is new code, and its bubble uses only the owner's emblem. Old-app provider logos came from Lobe Icons (MIT); if the new app should show brand logos, they would be taken from the Lobe Icons project itself with attribution. OK? | Owner decision |
-| Q6 | **Defaults.** The old code's clean install lands on OpenAI's first model; the old screenshots show DeepSeek Flash; the new app pre-selects DeepSeek Flash. The old app also ships one default character with a Chinese name. Keep DeepSeek Flash, and should the new app ship a default character? | Owner decision |
-| Q7 | **Cross-session messages.** The session that relayed the owner's updates runs on the owner's computer; this cloud session may not message it without the owner's in-person approval, so no reply was sent. | Info |
+| O1 | **Add four secrets to this GitHub repository** (Settings → Secrets and variables → Actions): `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, with the same values the old repository used. | They are the app's signing key. Without them no release is published, and old installs can't update. The agents can't see or create them, and a new key would break updates. |
+| O2 | **Merge the PRs on GitHub** in this order: #1, then #2, then #5. | Merging into `main` publishes a release to users, so it stays the owner's call. |
+| O3 | *(Optional)* **Allow commits under your GitHub account**, if you want the history to show your name instead of the session's. | It changes the identity on your repository; the session's permission checks refused it without you. |
+
+| # | Closed decision | Choice |
+|---|---|---|
+| D19 | Data from the old app | Imported automatically on first start (providers, keys, sign-ins, default model, conversations); old files deleted 7 days after a fully successful import, because the old app kept API keys unencrypted. Atom 4 keeps keys encrypted with the Android Keystore. |
+| D20 | Brand logos | Keep the Lobe Icons logos (MIT, credited in NOTICE and on the licences screen). |
+| D21 | Upstream-derived parts of the old app | Not reused. Atom 4 is new code; the bubble uses only the owner's emblem. Nothing to license. |
+| D22 | Starting model, default character, speech recognizer | DeepSeek Flash stays the starting model; no default character is shipped beyond the built-in example; speech uses the phone's own recognizer until the user adds a cloud key. |
+| D23 | Mentions of other apps | None in Atom 4 (files, commits, PR texts), enforced by CI. The old repository is not edited: it is being retired, and any push to it publishes a release to existing users. |
