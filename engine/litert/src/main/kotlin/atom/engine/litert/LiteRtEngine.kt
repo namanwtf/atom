@@ -84,19 +84,27 @@ class LiteRtEngine(
     override val id: String = "litert:" + File(modelPath).name
 
     /**
-     * The context the model file was built for. LiteRT-LM models have a fixed KV cache (Qwen3 0.6B: 4096 tokens);
-     * asking for more is silently capped by the runtime, so a prompt planned for the larger window does not fit and
-     * every token beyond it is lost. Null when the file does not say, or its context is dynamic.
+     * What the model file says about itself. Its context: LiteRT-LM models have a fixed KV cache (Qwen3 0.6B: 4096
+     * tokens), asking for more is capped by the runtime ("Passed in max_num_tokens (8192) is larger than what the
+     * static model supports (4096)"), and a prompt planned for the larger window is refused or runs out of room
+     * (null when the file does not say or its context is dynamic). And whether it is a thinking model.
      */
-    private val modelContext: Int? by lazy {
+    private val facts: ModelFacts by lazy {
         runCatching {
-            ModelInfo.from(modelPath).use { info -> info.maxContextTokens().takeIf { it > 0 && !info.isDynamicContext() } }
-        }.getOrNull()
+            ModelInfo.from(modelPath).use { info ->
+                ModelFacts(
+                    context = runCatching { info.maxContextTokens().takeIf { it > 0 && !info.isDynamicContext() } }.getOrNull(),
+                    thinks = runCatching { (info as? ModelInfo.Llm)?.supportsThinking() }.getOrNull() == true,
+                )
+            }
+        }.getOrDefault(ModelFacts(context = null, thinks = false))
     }
+
+    private class ModelFacts(val context: Int?, val thinks: Boolean)
 
     /** The window this engine really has: the configured one, never more than the model's own. */
     private val effectiveContext: Int
-        get() = modelContext?.let { minOf(it, contextWindow) } ?: contextWindow
+        get() = facts.context?.let { minOf(it, contextWindow) } ?: contextWindow
 
     /** `vision` becomes true once a vision-capable model has been loaded with its vision encoder. */
     override val capabilities: EngineCapabilities
@@ -112,7 +120,9 @@ class LiteRtEngine(
             val eng = withContext(worker) { ensureLoaded() }
             val plan = toConversationPlan(request.messages, visionLoaded)
             val maxOut = request.maxOutputTokens.coerceAtLeast(1)
-            val thinking = thinkingFor(request.reasoning, effectiveContext)
+            // Only a thinking model (Qwen3) is told whether to think; others keep their defaults untouched.
+            val thinks = facts.thinks
+            val thinking = !thinks || thinkingFor(request.reasoning, effectiveContext)
 
             val conversation = withContext(worker) {
                 try {
