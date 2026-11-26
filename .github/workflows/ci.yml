@@ -66,6 +66,25 @@ jobs:
       - name: Build release APK (unsigned)
         run: ./gradlew :app:assembleRelease --stacktrace
 
+      # The end-to-end test hook (app/src/debug, docs/TESTING.md) must exist in debug builds and never in a release.
+      - name: Debug-only hooks stay out of release
+        run: |
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n1)
+          has_hook() {
+            "$aapt2" dump xmltree --file AndroidManifest.xml "$1" | grep -q 'atom.app.e2e' && return 0
+            unzip -p "$1" 'classes*.dex' | grep -aq 'atom/app/e2e'
+          }
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            has_hook "$apk" || { echo "::error::$apk lacks the e2e hook; the check below would prove nothing"; exit 1; }
+          done
+          for apk in app/build/outputs/apk/release/*.apk; do
+            if has_hook "$apk"; then
+              echo "::error::$apk contains the debug-only e2e hook (atom.app.e2e)"
+              exit 1
+            fi
+            echo "$apk: no debug hooks"
+          done
+
       - name: Report APK size
         run: |
           for apk in app/build/outputs/apk/release/*.apk; do
