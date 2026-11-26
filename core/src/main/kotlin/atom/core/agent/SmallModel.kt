@@ -29,7 +29,7 @@ object SmallModel {
     private val AGENT_WORDS = listOf(
         // the agent browser and the web
         "browser", "browse", "website", "web page", "webpage", "go to", "search for", "search the", "look up",
-        "google", "news", "http", "www",
+        "google", "news", "http", "https", "www",
         // operating the phone
         "open", "tap", "click", "scroll", "swipe", "turn on", "turn off", "switch on", "switch off",
         "enable", "disable", "settings", "set an alarm", "set a timer", "remind me", "send",
