@@ -23,8 +23,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # SHA-256 of the release signing certificate of the installs this app updates (lower-case, no colons).
-  EXPECTED_CERT_SHA256: f3ba9f48e153a99798bb0d7c74c241d8d0c3f9c1db2686f7b50c28f187cb8fa7
+  # SHA-256 of Atom's release signing certificate (lower-case, no colons). Every release must carry it, or
+  # installed copies could not update. The key itself lives only in the repository secrets.
+  EXPECTED_CERT_SHA256: d2b83bec14ad2b0ee6a01885461a0a9dbd78a4b3d374d292714de863b47a4578
   BUILD_TOOLS: "36.0.0"
 
 jobs:
@@ -38,11 +39,12 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Optional: the key alias defaults to "atom" and the key password to the keystore password.
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'atom' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
         run: |
           missing=""
-          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -192,8 +194,9 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Optional: the key alias defaults to "atom" and the key password to the keystore password.
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'atom' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
           VERSION: ${{ steps.version.outputs.version }}
           CODE: ${{ steps.version.outputs.code }}
         run: |
