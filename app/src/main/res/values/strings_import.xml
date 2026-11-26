@@ -20,7 +20,8 @@
     </plurals>
     <string name="import_selection">Your default model was carried over.</string>
     <string name="import_memory">Your long-term memory was carried over.</string>
-    <string name="import_memory_failed">Your long-term memory could not be carried over (it may be too large together with Atom 4\'s). Importing again retries it.</string>
+    <string name="import_memory_failed">Your previous memory could not be carried over this time. Atom tries again at the next start; the old memory is kept until then.</string>
+    <string name="import_memory_too_large">Your previous memory is too large to merge. Shorten Atom\'s memory in Memory, then Atom will retry.</string>
     <string name="import_sign_in_again">Sign in again: %1$s.</string>
     <plurals name="import_failed_providers">
         <item quantity="one">%d provider could not be read; importing again retries it.</item>

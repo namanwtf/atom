@@ -124,13 +124,27 @@ object MemoryText {
 
     /**
      * [current] with [imported] brought in: [imported] replaces an empty memory, and is otherwise added at the end
-     * under its own `# [heading]`. Blank [imported], or one already contained in [current], changes nothing, so a
-     * repeated import never adds it twice.
+     * under its own `# [heading]`, with its headings one level deeper so they stay inside that section. Blank
+     * [imported], or one already contained in [current], changes nothing, so a repeated import never adds it twice.
      */
     fun merge(current: String, imported: String, heading: String): String {
         val add = imported.trim('\n').trimEnd()
-        if (add.isBlank() || (!isEmpty(current) && current.contains(add))) return current
+        if (add.isBlank()) return current
         if (isEmpty(current)) return add + "\n"
-        return current.trimEnd('\n') + "\n\n# " + heading.trim() + "\n\n" + add + "\n"
+        val nested = demoteHeadings(add)
+        if (current.contains(nested)) return current
+        return current.trimEnd('\n') + "\n\n# " + heading.trim() + "\n\n" + nested + "\n"
+    }
+
+    /** Every heading of [text] one level deeper (`######` stays), outside code fences. */
+    fun demoteHeadings(text: String): String {
+        var fenced = false
+        return text.lines().joinToString("\n") { line ->
+            when {
+                line.trimStart().startsWith("```") -> line.also { fenced = !fenced }
+                !fenced && HEADING.matches(line) && !line.startsWith("######") -> "#$line"
+                else -> line
+            }
+        }
     }
 }

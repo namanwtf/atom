@@ -45,24 +45,34 @@ object ExtendFeature : AtomFeature {
         return ExtendRuntime.memory.file
     }
 
+    enum class MemoryImport {
+        Saved,
+
+        /** Together with the current memory it would be over [MemoryText.MAX_BYTES]; nothing was written. */
+        TooLarge,
+
+        /** The memory kept changing underneath; nothing was written. */
+        Busy,
+    }
+
     /**
      * Brings memory over from another app (the previous Atom) through the memory store: [text] becomes the whole
      * memory while it is still empty, otherwise it is added at the end under [heading] (see [MemoryText.merge]).
-     * False when it could not be saved (for example over the size limit).
      */
-    suspend fun importMemory(context: Context, text: String, heading: String): Boolean {
+    suspend fun importMemory(context: Context, text: String, heading: String): MemoryImport {
         ExtendRuntime.init(context)
         val store = ExtendRuntime.memory
         // A write from the agent or the editor in between only means trying again on the new content.
         repeat(3) {
             val current = store.current()
             when (store.save(MemoryText.merge(current.text, text, heading), current.hash)) {
-                is MemoryEdit.Saved -> return true
-                is MemoryEdit.Rejected -> return false
+                is MemoryEdit.Saved -> return MemoryImport.Saved
+                // The store rejects a save for one reason only: the size limit.
+                is MemoryEdit.Rejected -> return MemoryImport.TooLarge
                 is MemoryEdit.Conflict -> Unit
             }
         }
-        return false
+        return MemoryImport.Busy
     }
 
     override val entries: List<FeatureEntry>
