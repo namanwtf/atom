@@ -86,6 +86,68 @@ class RuntimeEdgeTest {
         assertTrue(result.text.contains("timed out after 60s"))
     }
 
+    // ------------------------------------------------------------------ Waiting for an unlocked screen
+
+    private class ScreenTool(private val takesMs: Long = 0) : Tool {
+        override val spec = ToolSpec("read_screen", "read", schema())
+        override val risk = Risk.Read
+        override val needsUnlockedScreen = true
+        override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult {
+            delay(takesMs)
+            return ToolResult.ok("screen read")
+        }
+    }
+
+    /** The wait for the user to unlock is not part of the tool's timeout: no misleading "timed out" afterwards. */
+    @Test
+    fun waitingForTheScreenDoesNotCountAgainstTheToolTimeout() = runTest {
+        val waitedFor = mutableListOf<String>()
+        atom.core.tool.PhoneScreen.gate = atom.core.tool.PhoneScreen.Gate { id ->
+            waitedFor += id
+            delay(5 * 60_000) // the user unlocks after five minutes
+            true
+        }
+        try {
+            val config = AgentConfig("m", "sys", toolTimeoutMs = 60_000)
+            val events = Agent(callThenAnswer("read_screen"), ToolRegistry(listOf(ScreenTool())), config)
+                .run(listOf(ChatMessage.user("go")), FixedContext()).toList()
+            val result = events.filterIsInstance<AgentEvent.ToolFinished>().single().result
+            assertFalse(result.isError, result.text)
+            assertEquals("screen read", result.text)
+            assertEquals(1, waitedFor.size)
+        } finally {
+            atom.core.tool.PhoneScreen.gate = null
+        }
+    }
+
+    @Test
+    fun aScreenThatStaysLockedEndsTheCallWithAClearReason() = runTest {
+        atom.core.tool.PhoneScreen.gate = atom.core.tool.PhoneScreen.Gate { false }
+        try {
+            val events = Agent(callThenAnswer("read_screen"), ToolRegistry(listOf(ScreenTool())), AgentConfig("m", "sys"))
+                .run(listOf(ChatMessage.user("go")), FixedContext()).toList()
+            val result = events.filterIsInstance<AgentEvent.ToolFinished>().single().result
+            assertTrue(result.isError)
+            assertEquals(atom.core.tool.PhoneScreen.LOCKED_TOO_LONG, result.text)
+        } finally {
+            atom.core.tool.PhoneScreen.gate = null
+        }
+    }
+
+    @Test
+    fun toolsThatDoNotNeedTheScreenNeverWait() = runTest {
+        var asked = false
+        atom.core.tool.PhoneScreen.gate = atom.core.tool.PhoneScreen.Gate { asked = true; false }
+        try {
+            val events = Agent(callThenAnswer("slow"), ToolRegistry(listOf(SlowTool("slow", takesMs = 10))), AgentConfig("m", "sys"))
+                .run(listOf(ChatMessage.user("go")), FixedContext()).toList()
+            assertFalse(events.filterIsInstance<AgentEvent.ToolFinished>().single().result.isError)
+            assertFalse(asked)
+        } finally {
+            atom.core.tool.PhoneScreen.gate = null
+        }
+    }
+
     // ------------------------------------------------------------------ Retry policy
 
     @Test

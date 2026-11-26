@@ -603,11 +603,13 @@ def s_screen_off_ui(res):
         return
     calls_before = len(run.get("toolCalls", []))
     screen_off()
-    waiting, note = False, ""
+    waiting, note, lock_while_waiting = False, "", False
     for _ in range(12):  # about a minute with the screen off
         time.sleep(5)
         st = state()
-        waiting = waiting or bool(st.get("screenWait"))
+        if st.get("screenWait"):
+            waiting = True
+            lock_while_waiting = lock_while_waiting or task_wake_lock()
         texts = notification_texts()
         if "unlocked" in texts:
             note = "Waiting for the screen to be unlocked"
@@ -623,6 +625,7 @@ def s_screen_off_ui(res):
     res.check(calls_off <= 2, f"did not spin while the screen was off ({calls_off} calls)")
     res.check(waiting, "waited for the screen to be unlocked")
     res.check(bool(note), "notification said it is waiting for the screen to be unlocked")
+    res.check(not lock_while_waiting, "no task wake lock while it waited (the wait is woken by the unlock)")
     res.check(completed(run), f"carried on and completed after unlocking ({run['phase']})")
     res.check(bool(answer(run)), "an answer")
 

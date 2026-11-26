@@ -182,7 +182,7 @@ class TaskNotifications(private val context: Context) {
     private fun statusOf(run: LiveRun): String = when {
         run.pending != null -> context.getString(R.string.notif_waiting_text)
         run.phase == RunPhase.Paused -> context.getString(R.string.run_paused)
-        run.currentTool != null && atom.ui.feature.ScreenWait.waiting.value -> context.getString(R.string.run_waiting_unlock)
+        atom.ui.feature.ScreenWait.waiting(run.runId) -> context.getString(R.string.run_waiting_unlock)
         run.phase == RunPhase.WaitingForControl -> context.getString(R.string.run_waiting_control)
         run.retry != null -> context.getString(R.string.run_retrying_short)
         run.compacting -> context.getString(R.string.run_compacting)

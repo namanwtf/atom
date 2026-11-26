@@ -576,7 +576,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
         scope.launch {
             holdsMutex.withLock {
-                val now = synchronized(lock) { executions.values.count { !it.paused.value } }
+                // A run waiting for the screen to be unlocked is parked: no wake lock while it waits (the screen-on and
+                // user-present broadcasts wake it).
+                val waiting = atom.ui.feature.ScreenWait.tasks.value
+                val now = synchronized(lock) { executions.values.count { !it.paused.value && it.runId !in waiting } }
                 graph.runPower.update(now, graph.settings.current().keepScreenOn)
             }
         }
@@ -587,6 +590,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     init {
         // "Keep screen on while running" applies at once, also to a run already going.
         scope.launch { graph.settings.settings.map { it.keepScreenOn }.distinctUntilChanged().collect { refreshHolds() } }
+        // A run starting or ending a wait for the screen to be unlocked changes what holds the wake lock.
+        scope.launch { atom.ui.feature.ScreenWait.tasks.collect { refreshHolds() } }
     }
 
     /** The conversation's own model if it still exists, else the default; second is a notice when it fell back. */

@@ -144,6 +144,7 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
     override val spec: ToolSpec get() = inner.spec
     override val risk: Risk get() = inner.risk
     override val usesPhoneUi: Boolean get() = inner.usesPhoneUi
+    override val needsUnlockedScreen: Boolean get() = inner.needsUnlockedScreen
     override val timeoutMs: Long? get() = inner.timeoutMs
 
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult {

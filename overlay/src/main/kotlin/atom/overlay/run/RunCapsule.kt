@@ -165,7 +165,8 @@ private fun phaseAccent(v: CapsuleView): Color = when {
 
 @Composable
 private fun phaseLabel(v: CapsuleView): String = stringResource(
-    when (RunOverlays.statusOf(v, atom.ui.feature.ScreenWait.waiting.collectAsState().value)) {
+    // Only the run holding phone control runs screen tools, so a waiting run is the one this capsule shows.
+    when (RunOverlays.statusOf(v, atom.ui.feature.ScreenWait.tasks.collectAsState().value.isNotEmpty())) {
         CapsuleStatus.Starting -> R.string.overlay_phase_starting
         CapsuleStatus.Reasoning -> R.string.overlay_phase_reasoning
         CapsuleStatus.Working -> R.string.overlay_phase_working

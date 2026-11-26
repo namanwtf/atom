@@ -22,6 +22,12 @@ internal class UiTools(private val context: Context) {
     private val screenChars = 6_000
 
     fun all(): List<Tool> = listOf(readScreen(), tap(long = false), tap(long = true), typeText(), paste(), scroll(), swipe(), globalAction())
+        .map { ScreenTool(it) }
+
+    /** The screen tools wait for an unlocked screen before they run (see [atom.core.tool.PhoneScreen]). */
+    private class ScreenTool(inner: Tool) : Tool by inner {
+        override val needsUnlockedScreen: Boolean get() = true
+    }
 
     private fun readScreen() = SimpleTool(
         name = "read_screen",

@@ -146,8 +146,9 @@ jobs:
               echo "::error::$apk contains the debug-only e2e hook (atom.app.e2e)"
               exit 1
             fi
-            if "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -q 'DebugPackReceiver'; then
-              echo "::error::$apk contains the debug-only pack receiver (DebugPackReceiver)"
+            # Debug-only components (the release variant has its own no-op atom.app.debug.DebugLaunch, so match names).
+            if "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -E 'DebugPackReceiver|MainThreadWatchdog|atom\.app\.debug\.'; then
+              echo "::error::$apk contains debug-only components (above)"
               exit 1
             fi
             echo "$apk: no debug hooks"

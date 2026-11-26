@@ -53,6 +53,12 @@ interface Tool {
     val usesPhoneUi: Boolean get() = false
 
     /**
+     * True when the tool needs the screen on and unlocked (reading the screen, gestures, typing). The runtime waits
+     * for that through [PhoneScreen] before the call, outside the call's timeout.
+     */
+    val needsUnlockedScreen: Boolean get() = false
+
+    /**
      * How long one call may run before it is cut off, overriding the run's default tool timeout. Long tools
      * (subagents, downloads, builds) return their own limit; null uses the default.
      */

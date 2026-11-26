@@ -52,7 +52,7 @@ class AgentService : LifecycleService() {
             // Only re-post when what the notifications show changes, never per streamed token.
             // A screen action waiting for the screen to be unlocked changes the text too.
             graph.tasks.liveRuns
-                .combine(atom.ui.feature.ScreenWait.waiting) { runs, waiting -> runs.values.sortedBy { it.startedAt } to waiting }
+                .combine(atom.ui.feature.ScreenWait.tasks) { runs, waiting -> runs.values.sortedBy { it.startedAt } to waiting }
                 .distinctUntilChanged { a, b -> a.second == b.second && a.first.map(Key::of) == b.first.map(Key::of) }
                 .map { it.first }
                 .collect { runs ->

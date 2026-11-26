@@ -541,6 +541,13 @@ class Agent(
             return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
         }
 
+        // The screen went off or locked mid-task: wait for it here, not inside the tool's timeout, so the model never
+        // sees a misleading "timed out" for an action that simply waited for the user to unlock.
+        if (tool.needsUnlockedScreen) {
+            val gate = atom.core.tool.PhoneScreen.gate
+            if (gate != null && !gate.awaitUsable(ctx.taskId)) return ToolResult.error(atom.core.tool.PhoneScreen.LOCKED_TOO_LONG)
+        }
+
         val limit = tool.timeoutMs?.takeIf { it > 0 } ?: config.toolTimeoutMs
         return try {
             withTimeout(limit) { tool.run(args, ctx) }

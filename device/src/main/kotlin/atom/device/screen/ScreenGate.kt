@@ -22,9 +22,13 @@ internal object ScreenGate {
     /** How long one action waits before telling the agent the screen stayed locked. */
     const val WAIT_MS = 10 * 60 * 1000L
 
-    const val LOCKED_TOO_LONG =
-        "The phone's screen stayed off or locked for 10 minutes, so the screen cannot be read or used. " +
-            "Tell the user to unlock the phone to continue."
+    const val LOCKED_TOO_LONG = atom.core.tool.PhoneScreen.LOCKED_TOO_LONG
+
+    /** Installs the gate the agent loop uses before screen tools. */
+    fun install(context: Context) {
+        val app = context.applicationContext
+        atom.core.tool.PhoneScreen.gate = atom.core.tool.PhoneScreen.Gate { taskId -> await(app, taskId) }
+    }
 
     fun usable(context: Context): Boolean {
         val power = context.getSystemService(PowerManager::class.java)
@@ -32,10 +36,10 @@ internal object ScreenGate {
         return power?.isInteractive != false && keyguard?.isKeyguardLocked != true
     }
 
-    /** True at once when the screen is usable; otherwise waits (up to [WAIT_MS]) for it. */
-    suspend fun await(context: Context): Boolean {
+    /** True at once when the screen is usable; otherwise waits (up to [WAIT_MS]) for it, marking [taskId] as waiting. */
+    suspend fun await(context: Context, taskId: String): Boolean {
         if (usable(context)) return true
-        ScreenWait.set(true)
+        ScreenWait.begin(taskId)
         try {
             return withTimeoutOrNull(WAIT_MS) {
                 suspendCancellableCoroutine { cont ->
@@ -65,7 +69,7 @@ internal object ScreenGate {
                 }
             } ?: false
         } finally {
-            ScreenWait.set(false)
+            ScreenWait.end(taskId)
         }
     }
 }
