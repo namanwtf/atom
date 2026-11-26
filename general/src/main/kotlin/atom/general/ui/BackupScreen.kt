@@ -59,6 +59,9 @@ private sealed interface BackupDialog {
 
     /** Confirm removing the previous app's files; [unimported] adds the warning that unimported data is lost. */
     data class RemoveOld(val unimported: Boolean) : BackupDialog
+
+    /** Confirm deleting the previous app's memory, which could not be imported. */
+    data object RemoveOldMemory : BackupDialog
 }
 
 @Composable
@@ -230,7 +233,16 @@ internal fun BackupScreen(nav: FeatureNav) {
                         trailing = { RowChevron() },
                     )
                 }
-                if (legacy != null && cleanupOffer != LegacyCleanup.Offer.Hidden) {
+                if (legacy != null && cleanupOffer == LegacyCleanup.Offer.MemoryOnly) {
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_memory),
+                        subtitle = stringResource(R.string.backup_legacy_memory_sub),
+                        icon = ScreenIcons.Shield,
+                        enabled = !working,
+                        onClick = { dialog = BackupDialog.RemoveOldMemory },
+                        trailing = { RowChevron() },
+                    )
+                } else if (legacy != null && cleanupOffer != LegacyCleanup.Offer.Hidden) {
                     val unimported = cleanupOffer == LegacyCleanup.Offer.Unimported
                     GroupRow(
                         title = stringResource(R.string.backup_legacy_remove),
@@ -328,6 +340,7 @@ internal fun BackupScreen(nav: FeatureNav) {
                                 when (result) {
                                     LegacyCleanup.Removal.Done -> R.string.backup_legacy_removed
                                     LegacyCleanup.Removal.DoneWithMemory -> R.string.backup_legacy_removed_memory
+                                    LegacyCleanup.Removal.DoneMemoryKept -> R.string.backup_legacy_removed_memory_kept
                                     LegacyCleanup.Removal.Partial -> R.string.backup_legacy_remove_partial
                                 },
                             ),
@@ -338,6 +351,31 @@ internal fun BackupScreen(nav: FeatureNav) {
                 destructive = true,
             )
         }
+        BackupDialog.RemoveOldMemory -> AtomDialog(
+            title = stringResource(R.string.backup_legacy_memory_title),
+            body = stringResource(R.string.backup_legacy_memory_body),
+            confirm = stringResource(R.string.backup_legacy_memory_confirm),
+            onConfirm = {
+                dialog = null
+                val hook = legacy
+                if (hook != null) scope.launch {
+                    working = true
+                    val done = try {
+                        hook.removeOldMemory()
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        false
+                    }
+                    working = false
+                    dialog = BackupDialog.Message(
+                        context.getString(R.string.backup_legacy_memory),
+                        context.getString(if (done) R.string.backup_legacy_memory_removed else R.string.backup_legacy_remove_partial),
+                    )
+                }
+            },
+            onDismiss = { dialog = null },
+            destructive = true,
+        )
         is BackupDialog.Busy -> {
             val stop = GeneralHooks.stopTasks
             AtomDialog(

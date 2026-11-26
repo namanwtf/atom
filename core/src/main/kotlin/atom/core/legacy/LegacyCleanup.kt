@@ -46,7 +46,7 @@ object LegacyCleanup {
 
     /** Long-term memory (an AtomicFile: the file, its backup and an unfinished write). */
     val MEMORY = Target("files/" + LegacyFiles.MEMORY, memory = true)
-    private val MEMORY_FILES = listOf(MEMORY, Target(MEMORY.path + ".bak", memory = true), Target(MEMORY.path + ".new", memory = true))
+    val MEMORY_FILES = listOf(MEMORY, Target(MEMORY.path + ".bak", memory = true), Target(MEMORY.path + ".new", memory = true))
 
     private fun bak(t: Target) = Target(t.path + ".bak")
 
@@ -88,10 +88,17 @@ object LegacyCleanup {
 
         /** Imports ran but none finished cleanly: allowed, with a warning that what was not imported is lost. */
         Unimported,
+
+        /** Only the old memory is left, and it could not be imported: deleting it is a separate, explicit choice. */
+        MemoryOnly,
     }
 
-    fun offer(oldFilesExist: Boolean, databaseExists: Boolean, state: LegacyImportState?): Offer = when {
-        !oldFilesExist -> Offer.Hidden
+    /**
+     * [oldFilesExist] counts the files a removal would delete; [strandedMemory] is an old memory file that was not
+     * imported, which a removal keeps.
+     */
+    fun offer(oldFilesExist: Boolean, databaseExists: Boolean, state: LegacyImportState?, strandedMemory: Boolean = false): Offer = when {
+        !oldFilesExist -> if (strandedMemory) Offer.MemoryOnly else Offer.Hidden
         state?.completedAt != null -> Offer.Ready
         // Without the database nothing can be imported (sign-ins need its provider rows).
         !databaseExists -> Offer.Ready
@@ -120,6 +127,16 @@ object LegacyCleanup {
         return existing(dataDir, memoryImported)
     }
 
+    /** True when an old memory file is there that was not imported (so a removal keeps it). */
+    fun strandedMemory(dataDir: File, memoryImported: Boolean): Boolean =
+        !memoryImported && MEMORY_FILES.any { exists(File(dataDir, it.path)) }
+
+    /** Deletes the old memory files with [File.delete]; true when none is left. */
+    fun deleteMemory(dataDir: File): Boolean {
+        for (target in MEMORY_FILES) runCatching { File(dataDir, target.path).delete() }
+        return MEMORY_FILES.none { exists(File(dataDir, it.path)) }
+    }
+
     /** What a removal did, for the message shown after it. */
     enum class Removal {
         /** Every file and key is gone. */
@@ -127,6 +144,9 @@ object LegacyCleanup {
 
         /** As [Done], and the old memory file (already in Atom 4's memory) was among them. */
         DoneWithMemory,
+
+        /** As [Done], but the old memory file was kept: it could not be imported (see [Offer.MemoryOnly]). */
+        DoneMemoryKept,
 
         /** Something could not be removed; it is tried again later. */
         Partial,

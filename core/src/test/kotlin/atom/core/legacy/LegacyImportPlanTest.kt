@@ -29,9 +29,27 @@ class LegacyImportPlanTest {
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedConversations = 1)))
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedProviders = 1)))
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedSignIns = 1)), "a sign-in that failed to read is retried")
-        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedMemory = true)))
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(failedMemory = true, memoryTooLarge = true)), "memory never blocks the rest")
         assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(memory = true)))
         assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(signInAgain = listOf("xAI"))), "a sign-in to redo is not retried")
+    }
+
+    @Test
+    fun oldMemoryIsRetriedOnItsOwn() {
+        assertTrue(LegacyImportPlan.shouldRetryMemory(LegacyImportState(completedAt = 5), oldMemoryExists = true, autoRunPending = false))
+        assertTrue(LegacyImportPlan.shouldRetryMemory(null, true, false), "also when the database is gone and nothing ran")
+        assertTrue(LegacyImportPlan.shouldRetryMemory(LegacyImportState(attempts = 3, legacyCleanedAt = 9), true, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(memoryImported = true), true, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(), false, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(), true, autoRunPending = true), "the full import tries it")
+    }
+
+    @Test
+    fun anUnreadableSignInIsGivenUpAfterTheAutomaticAttempts() {
+        assertFalse(LegacyImportPlan.signInFailureIsFinal(0))
+        assertFalse(LegacyImportPlan.signInFailureIsFinal(LegacyImportPlan.MAX_AUTO_ATTEMPTS - 2))
+        assertTrue(LegacyImportPlan.signInFailureIsFinal(LegacyImportPlan.MAX_AUTO_ATTEMPTS - 1))
+        assertTrue(LegacyImportPlan.signInFailureIsFinal(10))
     }
 
     @Test
