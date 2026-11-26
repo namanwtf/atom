@@ -38,17 +38,44 @@ something, it tries again by itself on the next start (up to three starts), and 
 - A built-in provider you removed in Atom 4 before the import stays removed.
 - A single message longer than about a million characters is shortened, with a note saying so.
 
-## Your old data is left alone
+## The import only reads
 
-The import only reads. It never changes, moves or deletes any file of the earlier app, and it never overwrites a
-provider, key or sign-in you set up in Atom 4 yourself (it only adds what is missing). To read the database safely,
-Atom 4 makes a temporary copy (with its write-ahead log and journal, so an unfinished write is completed or undone on
-the copy only) in its cache folder and deletes it right after. Without room for a copy, it reads the original only
-when that cannot touch any file; otherwise it stops and asks for free space. Nothing leaves the phone, and keys are
-never written to logs.
+The import never changes, moves or deletes any file of the earlier app, and it never overwrites a provider, key or
+sign-in you set up in Atom 4 yourself (it only adds what is missing). To read the database safely, Atom 4 makes a
+temporary copy (with its write-ahead log and journal, so an unfinished write is completed or undone on the copy only)
+in its cache folder and deletes it right after. Without room for a copy, it reads the original only when that cannot
+touch any file; otherwise it stops and asks for free space. Nothing leaves the phone, and keys are never written to
+logs.
 
-The earlier app's files keep using storage until you clear Atom's storage in Android's settings, which also clears
-Atom 4's own data. [UPDATES.md](UPDATES.md) lists the file names each app uses.
+## Your old files are removed a week later
+
+The earlier app kept your API keys **unencrypted** in its database. Atom 4 stores the imported keys in its own vault,
+encrypted with a key held in the Android Keystore. So the old copy is not kept forever:
+
+- **7 days after an import that brought everything over** (no error, no provider or conversation that failed), Atom 4
+  deletes the earlier app's files the next time it starts. The week is there so you can still run the import again if
+  something looks off. A sign-in that had to be redone does not hold this up: the old sign-in could not be used anyway.
+- **Earlier, by hand**: **Settings > General > Data backup > Remove previous Atom's data** deletes them right away,
+  after you confirm. The row is shown only while old files are on the phone. Until an import has run it says
+  "Import first".
+- **If no import ever finished cleanly** (for example it keeps failing), nothing is deleted automatically. The row
+  stays available, with a warning that whatever was not imported yet will be lost.
+
+Your imported data stays in Atom 4. After the removal, the "Import from previous Atom" row goes away, since there is
+nothing left to import. What is removed, under the app's data folder, and nothing else:
+
+| What | Path |
+|---|---|
+| Database, with the plaintext API keys | `databases/atom.db`, `atom.db-wal`, `atom.db-shm`, `atom.db-journal` |
+| Sign-in files | `no_backup/provider_credentials/` (the whole folder) |
+| Settings | `files/datastore/atom_settings.preferences_pb` |
+| Saved secrets (MCP tokens, voice and image-generation keys) | `shared_prefs/atom_mcp_secrets.xml`, `atom_speech_secrets.xml`, `atom_image_gen_secrets.xml` |
+| Android Keystore keys, each only once its files are gone | `atom_provider_credentials_v1`, `atom_mcp_credentials_v1`, `atom_speech_credentials_v1`, `atom_image_gen_credentials_v1` |
+
+None of these names starts with `atom4`, the prefix of every Atom 4 store ([UPDATES.md](UPDATES.md)), so Atom 4's
+own data is never touched. Other leftovers of the earlier app (pictures it generated, character folders, terminal
+and skills files, the bubble chat) are not removed; clearing Atom's storage in Android's settings removes them, along
+with Atom 4's own data.
 
 ## For developers
 
@@ -61,3 +88,9 @@ Atom 4's own data. [UPDATES.md](UPDATES.md) lists the file names each app uses.
   (providers, models and sign-ins). The Android side is `app/src/main/kotlin/atom/app/data/legacy/`.
 - What was imported is recorded in `files/atom4_legacy_import.json` (old ids to Atom 4 ids). Each old item is
   imported at most once; something you delete in Atom 4 afterwards does not come back.
+- Removal of the old files: the list and the rules (`completedAt` plus 7 days, never without a clean import, once,
+  recorded as `legacyCleanedAt`) are in `core/src/main/kotlin/atom/core/legacy/LegacyCleanup.kt`, with tests that the
+  list holds no Atom 4 name. The check runs at app start and only reads the marker until it is due. Files are deleted
+  with `File.delete()`, the sign-in folder with `deleteTreeNoFollow()` (links are removed, never followed); the
+  removal waits for a running import, and the time is recorded only once every file and key is gone (otherwise it is
+  tried again at the next start).

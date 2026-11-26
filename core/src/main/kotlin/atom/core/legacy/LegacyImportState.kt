@@ -30,6 +30,8 @@ data class LegacyImportState(
     val report: LegacyImportReport? = null,
     /** False while the result of the last run still waits to be shown once. */
     val noticeShown: Boolean = true,
+    /** When the previous app's files and Keystore keys were removed ([LegacyCleanup]); null while they may remain. */
+    val legacyCleanedAt: Long? = null,
 ) {
     fun encode(): String = json.encodeToString(serializer(), this)
 

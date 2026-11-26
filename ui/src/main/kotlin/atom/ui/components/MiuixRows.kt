@@ -354,7 +354,10 @@ fun AtomDialog(
     WindowDialog(show = show, title = title, summary = summary, onDismissRequest = onDismiss, content = content)
 }
 
-/** The Miuix dialog button pair: secondary dismiss on the left, primary confirm on the right. */
+/**
+ * The Miuix dialog button pair: secondary dismiss on the left, primary confirm on the right. [destructive] draws the
+ * confirm button in the error colour, for deletes.
+ */
 @Composable
 fun DialogButtons(
     confirmText: String,
@@ -363,6 +366,7 @@ fun DialogButtons(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     confirmEnabled: Boolean = true,
+    destructive: Boolean = false,
 ) {
     Row(modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(text = dismissText, onClick = onDismiss, modifier = Modifier.weight(1f))
@@ -372,7 +376,11 @@ fun DialogButtons(
             onClick = onConfirm,
             modifier = Modifier.weight(1f),
             enabled = confirmEnabled,
-            colors = ButtonDefaults.textButtonColorsPrimary(),
+            colors = if (destructive) {
+                ButtonDefaults.textButtonColors(color = MiuixTheme.colorScheme.error, textColor = MiuixTheme.colorScheme.onError)
+            } else {
+                ButtonDefaults.textButtonColorsPrimary()
+            },
         )
     }
 }

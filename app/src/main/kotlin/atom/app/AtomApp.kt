@@ -52,7 +52,8 @@ class AtomApp : Application() {
         graph.appScope.launch { graph.tasks.recover() }
 
         // Once, when the previous Atom's data is on this phone: keys, sign-ins and conversations (docs/IMPORT.md).
-        // Off the main thread, after every module is installed; old files are only read.
+        // Off the main thread, after every module is installed. Old files are only read, and removed a week after a
+        // clean import.
         graph.appScope.launch(Dispatchers.IO) { runCatching { atom.app.data.legacy.LegacyImport.onAppStart(this@AtomApp, graph) } }
 
         registerActivityLifecycleCallbacks(KeepScreenOn())

@@ -14,6 +14,7 @@ import atom.app.data.TitleSource
 import atom.core.io.deleteTreeNoFollow
 import atom.core.legacy.ImportedConversation
 import atom.core.legacy.ImportedEntry
+import atom.core.legacy.LegacyCleanup
 import atom.core.legacy.LegacyConversations
 import atom.core.legacy.LegacyFiles
 import atom.core.legacy.LegacyImportPlan
@@ -27,6 +28,7 @@ import atom.llm.cloud.OAuthTokens
 import atom.llm.cloud.ProviderConfig
 import atom.llm.cloud.legacy.LegacyProviders
 import java.io.File
+import java.security.KeyStore
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -52,8 +54,11 @@ import kotlinx.serialization.json.Json
  *
  * Runs once in the background on the first start that finds `databases/atom.db`, and again on request from the
  * backup screen. Every old item is imported at most once (see [LegacyImportState]); nothing the user set up in Atom 4
- * is overwritten, and no old file is changed or deleted. Keys and tokens are never logged and nothing leaves the
- * device. What was imported is recorded in `files/atom4_legacy_import.json`.
+ * is overwritten, and the import itself never changes or deletes an old file. Keys and tokens are never logged and
+ * nothing leaves the device. What was imported is recorded in `files/atom4_legacy_import.json`.
+ *
+ * The previous app kept API keys unencrypted, so its files are removed [LegacyCleanup.DELAY_MS] after a clean import
+ * (checked at app start), or earlier from the backup screen ([removeOldData]).
  */
 object LegacyImport {
     private const val MARKER = "atom4_legacy_import.json"
@@ -87,8 +92,53 @@ object LegacyImport {
             } else if (state?.noticeShown == false) {
                 state.report?.let { _notice.value = describe(app, it) }
             }
+            // A week after a clean import: remove the old files (a cheap check of the marker the rest of the time).
+            if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) {
+                mutex.withLock {
+                    if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) removeLocked(app)
+                }
+            }
             Unit
         }
+    }
+
+    /** What the backup screen offers for the previous app's files (a few file checks and the marker). */
+    fun cleanupOffer(context: Context): LegacyCleanup.Offer {
+        val app = context.applicationContext
+        val left = LegacyCleanup.existing(app.dataDir).isNotEmpty()
+        return LegacyCleanup.offer(left, available(app), readState(app))
+    }
+
+    /**
+     * Deletes the previous app's files and then its Keystore keys, waiting for an import that is running. True when
+     * nothing is left; otherwise what remains is tried again by the next removal.
+     */
+    suspend fun removeOldData(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        mutex.withLock { removeLocked(app) }
+    }
+
+    /** Called with [mutex] held, so no import reads the files meanwhile. */
+    private fun removeLocked(app: Context): Boolean {
+        val left = LegacyCleanup.deleteFiles(app.dataDir)
+        val keyStore = runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }.getOrNull()
+        var keysLeft = keyStore == null
+        for (key in LegacyCleanup.KEYS) {
+            // A key stays while the file it sealed is still there.
+            if (key.after in left) {
+                keysLeft = true
+                continue
+            }
+            val store = keyStore ?: continue
+            val removed = runCatching {
+                if (store.containsAlias(key.alias)) store.deleteEntry(key.alias)
+                !store.containsAlias(key.alias)
+            }.getOrDefault(false)
+            if (!removed) keysLeft = true
+        }
+        val done = left.isEmpty() && !keysLeft
+        if (done) writeState(app, LegacyCleanup.markCleaned(readState(app) ?: LegacyImportState(), System.currentTimeMillis()))
+        return done
     }
 
     fun dismissNotice(context: Context) {
