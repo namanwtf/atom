@@ -12,6 +12,12 @@
     <string name="run_regenerate_interrupted">Regeneration was interrupted. The original reply has been kept.</string>
     <string name="run_compaction_stopped">Context compaction was stopped. The full context is kept.</string>
     <string name="run_step_limit">Stopped at the step limit before finishing.</string>
+    <string name="run_stuck">Stopped because the last steps kept repeating without new results.</string>
+    <string name="run_step_limit_banner">Reached this run\'s step limit. Continue to pick up where it stopped.</string>
+    <string name="run_stuck_banner">The run stopped because it was going in circles. Continue to try again from here.</string>
+    <string name="run_continue">Continue</string>
+    <!-- Sent as the user's message when they tap Continue after a run stopped at its step limit. -->
+    <string name="run_continue_prompt">Continue where you left off.</string>
     <string name="run_model_gone">%1$s is no longer available, so this conversation uses %2$s.</string>
     <string name="run_small_model_agent">Heads-up: this is a very small on-device model. Tiny models often can\'t do multi-step tasks like using the browser or operating the phone, and may answer from memory instead. For tasks like this, pick a larger model.</string>
     <string name="run_window_unknown">This model\'s context window is unknown, so automatic compaction is off.</string>

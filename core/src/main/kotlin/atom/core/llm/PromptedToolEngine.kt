@@ -19,7 +19,11 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
     override val capabilities: EngineCapabilities get() = inner.capabilities.copy(nativeToolCalls = true)
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> {
-        if (request.tools.isEmpty()) return inner.stream(request)
+        if (request.tools.isEmpty()) {
+            // A request without tools (the step-limit wrap-up) can still carry earlier calls the inner engine
+            // cannot read natively.
+            return inner.stream(if (hasToolTurns(request.messages)) request.copy(messages = asPlainText(request.messages)) else request)
+        }
         val rewritten = request.copy(messages = rewrite(request.messages, request.tools), tools = emptyList())
         return flow {
             val scanner = ToolCallScanner()
@@ -43,13 +47,28 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         val instructions = toolInstructions(tools)
         val out = mutableListOf<ChatMessage>()
         var hasSystem = false
-        for (msg in messages) {
-            out += when (msg.role) {
-                Role.System -> {
-                    hasSystem = true
-                    ChatMessage.system(msg.text + "\n\n" + instructions)
-                }
-                Role.Assistant -> ChatMessage.assistant(
+        for (msg in asPlainText(messages)) {
+            out += if (msg.role == Role.System) {
+                hasSystem = true
+                ChatMessage.system(msg.text + "\n\n" + instructions)
+            } else {
+                msg
+            }
+        }
+        if (!hasSystem) out.add(0, ChatMessage.system(instructions))
+        return out
+    }
+
+    companion object {
+        fun hasToolTurns(messages: List<ChatMessage>): Boolean = messages.any { it.role == Role.Tool || it.toolCalls.isNotEmpty() }
+
+        /**
+         * The conversation with tool calls and results written out as `<tool_call>` / `<tool_result>` text, for a
+         * request that declares no tools. Other messages are unchanged.
+         */
+        fun asPlainText(messages: List<ChatMessage>): List<ChatMessage> = messages.map { msg ->
+            when (msg.role) {
+                Role.Assistant -> if (msg.toolCalls.isEmpty()) msg else ChatMessage.assistant(
                     msg.text + msg.toolCalls.joinToString("") { "\n<tool_call>" + encodeCall(it) + "</tool_call>" },
                 )
                 Role.Tool -> ChatMessage(
@@ -57,16 +76,14 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
                     listOf(ContentPart.Text("<tool_result name=\"${msg.toolName}\">\n${msg.text}\n</tool_result>")) +
                         msg.parts.filterIsInstance<ContentPart.Image>(),
                 )
-                Role.User -> msg
+                else -> msg
             }
         }
-        if (!hasSystem) out.add(0, ChatMessage.system(instructions))
-        return out
-    }
 
-    private fun encodeCall(call: ToolCall): String {
-        val args = runCatching { Json.parseToJsonElement(call.argumentsJson) }.getOrElse { JsonObject(emptyMap()) }
-        return JsonObject(mapOf("name" to JsonPrimitive(call.name), "arguments" to args)).toString()
+        private fun encodeCall(call: ToolCall): String {
+            val args = runCatching { Json.parseToJsonElement(call.argumentsJson) }.getOrElse { JsonObject(emptyMap()) }
+            return JsonObject(mapOf("name" to JsonPrimitive(call.name), "arguments" to args)).toString()
+        }
     }
 
     private fun toolInstructions(tools: List<ToolSpec>): String =

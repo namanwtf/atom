@@ -735,7 +735,7 @@ private fun ChatPane(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (subagents > 0) SubagentChip(subagents, subagentsRunning, onOpenSubagents)
-            Banners(state, needsModel, onDismissNeedsModel, onOpenModels = onOpenModels)
+            Banners(state, needsModel, onDismissNeedsModel, onOpenModels = onOpenModels, onContinue = vm::continueRun)
             Composer(input, state, attachments, editing, editReplacesLater, composerCallbacks, micSlot)
         }
     }
@@ -996,7 +996,13 @@ private fun TitleBlock(
 // ---------------------------------------------------------------- Banners
 
 @Composable
-private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel: () -> Unit, onOpenModels: () -> Unit) {
+private fun Banners(
+    state: ChatUiState,
+    needsModel: Boolean,
+    onDismissNeedsModel: () -> Unit,
+    onOpenModels: () -> Unit,
+    onContinue: (prompt: String) -> Boolean,
+) {
     val colors = MaterialTheme.colorScheme
     if (needsModel) {
         QuietBanner(
@@ -1030,6 +1036,21 @@ private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel
             onDismiss = { dismissedError = true },
             action = stringResource(R.string.screen_models),
             onAction = onOpenModels,
+        )
+    }
+    // The last run stopped at its step limit: offer to carry on in a new run of the same conversation.
+    val stopTexts = setOf(stringResource(R.string.run_step_limit), stringResource(R.string.run_stuck))
+    val stepLimit = (state.items.lastOrNull() as? atom.app.agent.ChatItem.Notice)?.takeIf { !it.error && !state.running && it.text in stopTexts }
+    var dismissedStepLimit by remember(stepLimit?.key) { mutableStateOf(false) }
+    if (stepLimit != null && !dismissedStepLimit) {
+        val prompt = stringResource(R.string.run_continue_prompt)
+        QuietBanner(
+            AtomIcons.Bolt,
+            colors.primary,
+            stringResource(if (stepLimit.text == stopTexts.first()) R.string.run_step_limit_banner else R.string.run_stuck_banner),
+            onDismiss = { dismissedStepLimit = true },
+            action = stringResource(R.string.run_continue),
+            onAction = { if (onContinue(prompt)) dismissedStepLimit = true },
         )
     }
 }

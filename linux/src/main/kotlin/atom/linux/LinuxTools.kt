@@ -2,7 +2,10 @@ package atom.linux
 
 import android.content.Context
 import atom.core.llm.ToolSpec
+import atom.core.tool.PerCallRisk
 import atom.core.tool.Risk
+import atom.core.tool.ShellRisk
+import atom.core.tool.ShellScope
 import atom.core.tool.Tool
 import atom.core.tool.ToolContext
 import atom.core.tool.ToolResult
@@ -67,6 +70,28 @@ object LinuxTools {
             "(Alpine is about 4 MB; Debian is larger but has more packages), then try again."
     }
 
+    /** Where a command in [env] runs, for [ShellRisk]; [cwdKnown] is false for a session whose cwd may have moved. */
+    internal fun scope(app: Context, env: ShellEnv, cwdKnown: Boolean = true): ShellScope = when (env) {
+        ShellEnv.Linux -> {
+            val chroot = (LinuxEnv.get(app).state.value as? LinuxState.Ready)?.mode == RunMode.Chroot
+            ShellScope.distro(app.packageName, privileged = chroot).let { if (cwdKnown) it else it.copy(cwd = null) }
+        }
+        ShellEnv.Android, ShellEnv.Root -> ShellScope.android(
+            packageName = app.packageName,
+            dataDir = app.applicationInfo.dataDir,
+            cacheDir = app.cacheDir.path,
+            workDirs = listOf(LinuxEnv.get(app).paths.workspace.path),
+            cwd = if (!cwdKnown) null else if (env == ShellEnv.Android) app.filesDir.path else "/",
+            privileged = env == ShellEnv.Root,
+        )
+    }
+
+    /** The risk of running [command] in the env named by [envName] (null = linux); an unknown env asks. */
+    internal fun commandRisk(app: Context, command: String, envName: String?, cwdKnown: Boolean = true): Risk {
+        val env = parseEnv(envName) ?: return Risk.Sensitive
+        return ShellRisk.classify(command, scope(app, env, cwdKnown))
+    }
+
     internal fun blockText(command: String, b: SimpleBlock?): String = buildString {
         append("$ ").append(command).append('\n')
         if (b == null) {
@@ -79,8 +104,11 @@ object LinuxTools {
     }
 }
 
-private class RunTool(private val app: Context) : Tool {
+private class RunTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
+
+    // Only commands that could seriously harm the system or the user's data ask first.
+    override fun riskFor(args: JsonObject): Risk = LinuxTools.commandRisk(app, args.optString("command").orEmpty(), args.optString("env"))
     // timeout_s goes up to 600; the command enforces its own limit, this only has to outlast it.
     override val timeoutMs: Long = 615_000
     override val spec = ToolSpec(
@@ -124,8 +152,20 @@ private class RunTool(private val app: Context) : Tool {
     }
 }
 
-private class SessionTool(private val app: Context) : Tool {
+private class SessionTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
+
+    // A session keeps its cwd between commands, so relative paths count as unknown.
+    override fun riskFor(args: JsonObject): Risk = when (args.optString("action")) {
+        "send" -> {
+            val entry = args.optString("id")?.let(TerminalSessions::find)
+            val env = entry?.env ?: ShellEnv.Root
+            ShellRisk.classify(args.optString("input").orEmpty(), LinuxTools.scope(app, env, cwdKnown = false))
+        }
+        // Opening or closing a shell runs nothing; each command sent to it is judged on its own.
+        "open", "close" -> Risk.Act
+        else -> Risk.Sensitive
+    }
     // open waits up to 15 s for the shell, send up to wait_s (120 s max).
     override val timeoutMs: Long = 140_000
     override val spec = ToolSpec(
@@ -222,8 +262,10 @@ private class SessionReadTool : Tool {
     }
 }
 
-private class JobStartTool(private val app: Context) : Tool {
+private class JobStartTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
+
+    override fun riskFor(args: JsonObject): Risk = LinuxTools.commandRisk(app, args.optString("command").orEmpty(), args.optString("env"))
     override val spec = ToolSpec(
         name = "terminal_job_start",
         description = "Start a command in the background; it keeps running after your reply ends and the user is notified " +

@@ -81,7 +81,12 @@ object WebFeature : AtomFeature {
     fun takeOverRoute(conversationId: String) = ROUTE_SESSION + conversationId
 
     internal fun services(context: Context): WebServices = services ?: synchronized(this) {
-        services ?: WebServices({ WebSettings.of(context).value }, HostKeys, HostSecrets).also { services = it }
+        services ?: WebServices(
+            { WebSettings.of(context).value },
+            HostKeys,
+            HostSecrets,
+            renderer = atom.web.browser.BrowserSearch(context.applicationContext),
+        ).also { services = it }
     }
 
     internal fun generator(context: Context): ImageGenerator = generator ?: synchronized(this) {

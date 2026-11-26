@@ -9,6 +9,7 @@ import atom.core.llm.LlmEvent
 import atom.core.llm.LlmException
 import atom.core.llm.LlmFailure
 import atom.core.llm.LlmRequest
+import atom.core.llm.PromptedToolEngine
 import atom.core.llm.PromptedTools
 import atom.core.llm.ToolSpec
 import atom.core.llm.ReasoningEffort
@@ -46,6 +47,15 @@ data class AgentConfig(
     val autoCompact: Boolean = true,
     /** Fraction of the usable window at which the conversation is compacted automatically. */
     val compactAt: Double = ContextMeter.DEFAULT_COMPACT_AT,
+    /**
+     * When the run stops before the model finished (the step budget ran out, or the loop guard found it stuck), this
+     * is sent as an internal user turn, after a sentence saying why, in one more model call with no tools, so the
+     * model reports what it did, what it found and what is left instead of the run ending without an answer. Null
+     * ends the run with a fixed notice.
+     */
+    val wrapUpPrompt: String? = Agent.WRAP_UP,
+    /** Whether the loop guard may end a run that keeps repeating itself without new information. */
+    val stopWhenStuck: Boolean = true,
 ) {
     /**
      * What one prompt may actually use: the model window minus room for the answer, or the policy's deliberate
@@ -85,7 +95,14 @@ data class AgentConfig(
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
 }
 
-enum class StopReason { Completed, StepLimit, OutputLimit }
+enum class StopReason {
+    Completed,
+    StepLimit,
+    OutputLimit,
+
+    /** The loop guard ended a run whose recent steps repeated earlier ones without bringing new information. */
+    Stuck,
+}
 
 /** Metadata the app stores next to a message the agent appended. */
 data class MessageInfo(
@@ -195,10 +212,14 @@ class Agent(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /** Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. */
+    /**
+     * Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. At the step
+     * limit the model gets one last call without tools to write its reply ([AgentConfig.wrapUpPrompt]).
+     */
     fun run(history: List<ChatMessage>, ctx: ToolContext, control: RunControl = RunControl.None): Flow<AgentEvent> = flow {
         val state = RunState(history)
         val guard = LoopGuard()
+        var stuckAt: Int? = null
 
         for (step in 1..config.maxSteps) {
             control.checkpoint()
@@ -241,6 +262,7 @@ class Agent(
                 return@flow
             }
 
+            val results = ArrayList<ToolResult>(turn.calls.size)
             for (call in turn.calls) {
                 control.checkpoint()
                 emit(AgentEvent.ToolStarted(call))
@@ -253,19 +275,77 @@ class Agent(
                     ChatMessage.toolResult(call, result.toParts()),
                     MessageInfo(durationMs = duration, isError = result.isError, sensitive = result.sensitive),
                 )
+                results += result
             }
 
-            guard.nudgeFor(turn.calls)?.let { append(state, ChatMessage.user(it), MessageInfo(internal = true)) }
+            val verdict = guard.after(turn.calls, results)
+            if (verdict.stuck && config.stopWhenStuck) {
+                stuckAt = step
+                break
+            }
+            // On the last step the wrap-up request below takes the place of a nudge.
+            if (verdict.nudge != null && step < config.maxSteps) append(state, ChatMessage.user(verdict.nudge), MessageInfo(internal = true))
         }
 
+        val stuck = stuckAt != null
+        val steps = stuckAt ?: config.maxSteps
+        val wrapped = config.wrapUpPrompt?.let { wrapUp(state, control, (if (stuck) STUCK_REASON else STEP_LIMIT_REASON) + " " + it) }
         emit(
             AgentEvent.Done(
-                finalText = "Stopped after ${config.maxSteps} steps without finishing.",
-                reason = StopReason.StepLimit,
-                steps = config.maxSteps,
+                finalText = wrapped ?: if (stuck) {
+                    "Stopped after $steps steps: the last steps repeated earlier ones without new information."
+                } else {
+                    "Stopped after ${config.maxSteps} steps without finishing."
+                },
+                reason = if (stuck) StopReason.Stuck else StopReason.StepLimit,
+                steps = steps,
                 newMessages = state.appended.toList(),
             ),
         )
+    }
+
+    /**
+     * The run is ending before the model finished (step budget spent, or stuck): one last request without tools, so
+     * the model tells the user where things stand.
+     * Returns its text, or null when the call failed or came back empty (the caller keeps its fixed notice). Any
+     * tool call the model makes anyway is dropped: nothing runs after the limit.
+     */
+    private suspend fun FlowCollector<AgentEvent>.wrapUp(state: RunState, control: RunControl, prompt: String): String? {
+        control.checkpoint()
+        append(state, ChatMessage.user(prompt), MessageInfo(internal = true))
+        state.toolTokens = 0
+        maybeCompact(state)
+        val messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packing)
+        val request = LlmRequest(
+            model = config.model,
+            messages = messages,
+            tools = emptyList(),
+            maxOutputTokens = config.maxOutputTokens,
+            reasoning = config.reasoning,
+        )
+        val turn = try {
+            streamWithRetry(request)
+        } catch (e: LlmException) {
+            // Some providers refuse tool calls in the history of a request that declares no tools; the same
+            // conversation as plain text carries everything the model needs for its reply.
+            if (e.retryable) return null
+            try {
+                streamWithRetry(request.copy(messages = PromptedToolEngine.asPlainText(messages)))
+            } catch (e: LlmException) {
+                return null
+            }
+        }
+        state.inTokens += turn.stats.inputTokens
+        state.outTokens += turn.stats.outputTokens
+        emit(AgentEvent.ModelCall(turn.stats))
+        emit(AgentEvent.Usage(state.inTokens, state.outTokens))
+        if (turn.text.isBlank()) return null
+        val answer = ChatMessage.assistant(turn.text)
+        append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
+        state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
+        state.sinceReport = 0
+        emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
+        return turn.text
     }
 
     private inner class RunState(history: List<ChatMessage>) {
@@ -456,7 +536,8 @@ class Agent(
 
         if (tool.usesPhoneUi) control.acquirePhone()
 
-        if (tool.risk == Risk.Sensitive && !ctx.confirm(tool.approvalText(args) ?: describe(call))) {
+        val risk = runCatching { tool.riskFor(args) }.getOrDefault(Risk.Sensitive)
+        if (risk == Risk.Sensitive && !ctx.confirm(tool.approvalText(args) ?: describe(call))) {
             return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
         }
 
@@ -479,29 +560,85 @@ class Agent(
         return "${call.name}($args)"
     }
 
-    private companion object {
-        const val KEEP_RECENT_SHARE = 0.3
+    companion object {
+        /** What the final internal user turn asks for when a run ends before the model finished. */
+        const val WRAP_UP =
+            "Reply to the user now: what you did, what you found, what's left, and how they can continue " +
+                "(for example by asking you to carry on)."
+
+        /** Says why the run ends; put before [AgentConfig.wrapUpPrompt]. */
+        const val STEP_LIMIT_REASON = "You've reached this run's step limit, so no more tools will run."
+        const val STUCK_REASON =
+            "This run is stopping because its last steps repeated earlier actions without bringing new information, " +
+                "so no more tools will run."
+
+        private const val KEEP_RECENT_SHARE = 0.3
 
         /** Growth (share of the window) needed after one automatic compaction before the next. */
-        const val MIN_GROWTH_SHARE = 0.1
+        private const val MIN_GROWTH_SHARE = 0.1
     }
 }
 
 /**
- * Stops the most common phone-agent failure: re-issuing the same action because the model assumes it
- * did not land. Every repeat is a wasted model call, which is wasted battery.
+ * Stops the most common phone-agent failure: re-issuing the same action because the model assumes it did not land,
+ * or circling through the same few actions (scroll down, scroll up, read the screen...) without learning anything.
+ * Every repeat is a wasted model call, which is wasted battery.
+ *
+ * Two signals, per step:
+ * - the identical set of calls [threshold] times in a row gets a nudge;
+ * - a step is stale when every call in it was made before (within the last [window] steps) and returned the same
+ *   result as then: it brought no new information. [staleNudgeAt] stale steps in a row get a nudge; [staleStopAt]
+ *   in a row mean the run is stuck and should end (with the model's wrap-up reply).
+ * A step with any new call or any changed result resets the stale streak, so long runs that keep making progress are
+ * never stopped by it.
  */
-internal class LoopGuard(private val threshold: Int = 3) {
+internal class LoopGuard(
+    private val threshold: Int = 3,
+    private val staleNudgeAt: Int = 4,
+    private val staleStopAt: Int = 8,
+    private val window: Int = 24,
+) {
+    data class Verdict(val nudge: String? = null, val stuck: Boolean = false)
+
     private var lastSignature: String? = null
     private var repeats = 0
+    private var staleStreak = 0
+    private val seen = ArrayDeque<Set<String>>()
+
+    fun after(calls: List<ToolCall>, results: List<ToolResult>): Verdict {
+        val keys = calls.mapIndexed { i, c -> callKey(c) + "=>" + digest(results.getOrNull(i)) }.toSet()
+        val stale = keys.isNotEmpty() && keys.all { k -> seen.any { k in it } }
+        seen.addLast(keys)
+        while (seen.size > window) seen.removeFirst()
+        staleStreak = if (stale) staleStreak + 1 else 0
+        if (staleStreak >= staleStopAt) return Verdict(stuck = true)
+        nudgeFor(calls)?.let { return Verdict(nudge = it) }
+        if (staleStreak == staleNudgeAt) {
+            return Verdict(
+                nudge = "Your last $staleNudgeAt steps repeated earlier actions and returned nothing new. Stop circling. " +
+                    "Try a clearly different approach, or, if you are blocked or already have the answer, stop and reply to the user.",
+            )
+        }
+        return Verdict()
+    }
 
     fun nudgeFor(calls: List<ToolCall>): String? {
-        val signature = calls.joinToString("|") { it.name + ":" + it.argumentsJson.filterNot(Char::isWhitespace) }
+        val signature = calls.joinToString("|") { callKey(it) }
         repeats = if (signature == lastSignature) repeats + 1 else 1
         lastSignature = signature
         if (repeats < threshold) return null
         repeats = 0
         return "You have issued the identical action $threshold times in a row. Stop repeating it. " +
             "Re-read the current state, then either take a different action or explain what is blocking you."
+    }
+
+    private fun callKey(c: ToolCall) = c.name + ":" + c.argumentsJson.filterNot(Char::isWhitespace)
+
+    /** What a result said, ignoring per-call noise (the browser card's preview file name). */
+    private fun digest(r: ToolResult?): String {
+        if (r == null) return "-"
+        val text = r.text.lineSequence().filterNot { it.startsWith("Preview: ") }.joinToString("\n")
+        val images = r.images.joinToString(",") { it.hashCode().toString() }
+        return "${r.isError}:${text.hashCode()}:${text.length}:$images"
     }
 }

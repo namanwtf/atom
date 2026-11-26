@@ -61,11 +61,24 @@ interface Tool {
     suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult
 
     /**
+     * The risk of one call with [args], which decides whether it asks the user first. By default the tool's [risk];
+     * tools whose danger depends on what they are asked to do (a shell running `ls` or `rm -rf /sdcard`) judge each
+     * call, see [ShellRisk]. [risk] stays the worst case, for scoping and listings. Must not throw.
+     */
+    fun riskFor(args: JsonObject): Risk = risk
+
+    /**
      * Plain-English text for the approval a [Risk.Sensitive] call asks for, e.g. what an automation compiles to.
      * Null (the default) shows the tool name and its arguments. Must not throw; wrappers forward it.
      */
     suspend fun approvalText(args: JsonObject): String? = null
 }
+
+/**
+ * Marks a tool that judges each call with [Tool.riskFor] (its [Tool.risk] is the worst case), so wrappers that add
+ * their own confirmation can tell a call the runtime already asks about from one that runs without asking.
+ */
+interface PerCallRisk
 
 class ToolRegistry(tools: Iterable<Tool>) {
     private val byName: Map<String, Tool> = tools.associateBy { it.spec.name }

@@ -49,7 +49,13 @@ private class FakeTool(name: String, override val risk: Risk, override val usesP
 }
 
 /** First call asks for [toolName] when it is offered; the next call answers with a summary naming the task. */
-private class ScriptedEngine(private val toolName: String?, override val capabilities: EngineCapabilities = CAPS, private val slowMs: Long = 0) : LlmEngine {
+private class ScriptedEngine(
+    private val toolName: String?,
+    override val capabilities: EngineCapabilities = CAPS,
+    private val slowMs: Long = 0,
+    /** Keep calling [toolName] for as long as it is offered (never finishes on its own). */
+    private val alwaysCall: Boolean = false,
+) : LlmEngine {
     override val id = "fake"
     val requests = mutableListOf<LlmRequest>()
 
@@ -58,8 +64,8 @@ private class ScriptedEngine(private val toolName: String?, override val capabil
         if (slowMs > 0) delay(slowMs)
         val task = request.messages.first { it.role == Role.User }.text
         val usedTool = request.messages.any { it.role == Role.Tool }
-        if (!usedTool && toolName != null && request.tools.any { it.name == toolName }) {
-            emit(LlmEvent.ToolCallReady(ToolCall("c-${task.hashCode()}", toolName, "{}")))
+        if ((alwaysCall || !usedTool) && toolName != null && request.tools.any { it.name == toolName }) {
+            emit(LlmEvent.ToolCallReady(ToolCall("c-${task.hashCode()}-${requests.size}", toolName, """{"n":${requests.size}}""")))
             emit(LlmEvent.Usage(100, 10))
             emit(LlmEvent.Finished(FinishReason.ToolCalls))
         } else {
@@ -187,6 +193,19 @@ class SubagentTest {
         assertEquals(listOf("Summary for: plan A", "Summary for: look B"), outs.map { it.summary })
         assertEquals(1, provider.acquired.size)
         assertEquals(1, provider.released)
+    }
+
+    @Test
+    fun stepLimitStillEndsWithTheSubagentsSummary(): Unit = runBlocking {
+        val engine = ScriptedEngine("read_file", alwaysCall = true)
+        val out = runner(engine).run(SubagentTask(BuiltInSubagents.explore, "map the repo"), Ctx())
+        assertEquals(SubagentStatus.Partial, out.status)
+        assertTrue(out.summary.startsWith("Summary for: map the repo"), out.summary)
+        assertTrue("step limit" in out.summary)
+        assertEquals(60, out.toolCalls)
+        val last = engine.requests.last()
+        assertTrue(last.tools.isEmpty(), "the wrap-up call offers no tools")
+        assertEquals(atom.core.agent.Agent.STEP_LIMIT_REASON + " " + SubagentRunner.WRAP_UP, last.messages.last().text)
     }
 
     @Test

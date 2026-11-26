@@ -272,6 +272,30 @@ def s_browser(res):
     res.check(bool(answer(run)), "non-empty answer")
 
 
+def s_browser_read(res):
+    """m. Agent browser end to end: the page loads in Atom's own browser, its text is read, and the model summarizes it.
+
+    Guards the 4.0.4 failure where every browser_open died with "WebView method was called on thread ...".
+    """
+    run = agent_task(
+        res,
+        "Use the agent browser to open https://example.com, read the page, and tell me in one sentence what it says.",
+        600,
+    )
+    if run is None:
+        return
+    calls = run.get("toolCalls", [])
+    browser = [c for c in calls if c["name"].startswith("browser_")]
+    res.check(bool(browser), f"browser tools called: {[c['name'] for c in browser] or 'none'}")
+    threading = [c for c in browser if "thread" in (c.get("result") or "").lower() and c.get("isError")]
+    res.check(not threading, "no WebView threading errors" + (f": {threading[0].get('result', '')[:200]}" if threading else ""))
+    opened = [c for c in browser if c["name"] == "browser_open" and not c.get("isError")]
+    res.check(bool(opened), "browser_open succeeded")
+    read = [c for c in browser if not c.get("isError") and "example domain" in (c.get("result") or "").lower()]
+    res.check(bool(read), "the page text (Example Domain) reached the model")
+    res.check(re.search(r"example|illustrative|domain", answer(run), re.I) is not None, "the answer summarizes the page")
+
+
 def zen_mode():
     return sh("settings get global zen_mode").strip()
 
@@ -643,6 +667,7 @@ SCENARIOS = [
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
     ("b", "Agent browser: example.com", s_browser),
+    ("m", "Agent browser: open, read and summarize", s_browser_read),
     ("a", "Vibe coding: hello.py in the terminal", s_vibe),
     ("f", "Stop mid-task", s_stop),
     ("h", "Bubble mini chat", s_bubble),
