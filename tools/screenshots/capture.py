@@ -348,6 +348,9 @@ def type_into(label_pattern, text):
 
 def failed_run_report(p):
     """A sample failed run (debug only): its "Report a problem" action, then the report it opens."""
+    # From a cold start, so the chat is the only screen and the sample opens in front.
+    sh(f"am force-stop {PKG}")
+    launch(wait=6)
     if not demo("failed"):
         return
     shot(p + "08_chat_failed_run")
