@@ -116,7 +116,23 @@ def state():
             if attempt == 4:
                 log(f"state unreadable: {e}")
             time.sleep(2)
+    check_device()
     return {"runs": [], "scheduledTasks": [], "unreadable": True}
+
+
+class DeviceGone(Exception):
+    """The emulator itself stopped answering: nothing after this can be measured."""
+
+
+def check_device():
+    try:
+        r = subprocess.run(["adb", "get-state"], capture_output=True, timeout=20)
+        if r.stdout.decode(errors="replace").strip() == "device":
+            return
+        detail = (r.stdout + r.stderr).decode(errors="replace").strip()
+    except subprocess.TimeoutExpired:
+        detail = "adb get-state timed out"
+    raise DeviceGone(f"the emulator stopped answering ({detail})")
 
 
 def run_ids():
@@ -597,49 +613,70 @@ def main():
     only = set(a.lower() for a in sys.argv[1:]) or set(filter(None, os.environ.get("E2E_ONLY", "").lower().split(",")))
     setup()
     results = []
+    gone = None
     for key, title, fn in SCENARIOS:
         if only and key not in only and key != "0":
             continue
         res = Result(key, title, core=key != "0")
-        log(f"===== {key}. {title} =====")
-        call("clear")
-        # Whatever the last task did to the screen (locked it, left a panel or the shade open), start awake and home.
-        sh("input keyevent KEYCODE_WAKEUP")
-        sh("wm dismiss-keyguard")
-        sh("cmd statusbar collapse")
-        sh("input keyevent KEYCODE_HOME")
-        if not ensure_accessibility(wait_s=10):
-            res.notes.append("accessibility service not connected")
-        clear_crashes()
-        m0 = server_metrics()
-        t0 = time.time()
-        try:
-            fn(res)
-        except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
-            res.check(False, f"harness error: {type(e).__name__}: {e}")
-        res.duration = time.time() - t0
-        res.speed = speed(m0, server_metrics())
-        crash = crash_log()
-        if res.check(not crash, "no crash in logcat -b crash") is False:
-            print("=====CRASH " + key + "=====")
-            # The head carries the exception and the app's own frames; Compose's layout frames follow.
-            print("\n".join(crash.splitlines()[:80]))
-            print("=====END=====")
-        res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
-        try:
-            shot(f"e2e_{key}_end")
-        except Exception as e:
-            log(f"screenshot failed: {e}")
-        log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
-        for n in res.notes:
-            log("  " + n)
         results.append(res)
-        # Leave the next scenario a clean home chat.
-        sh("input keyevent KEYCODE_HOME")
-        time.sleep(1)
+        if gone:
+            res.check(False, "not run: " + gone)
+            continue
+        try:
+            run_one(res, fn)
+        except DeviceGone as e:
+            gone = str(e)
+            res.check(False, gone)
+            res.passed = False
+            log(f"{key}: FAIL; {gone}. The remaining scenarios cannot run.")
     scorecard(results)
     failed = [r for r in results if r.core and not r.passed]
     sys.exit(1 if failed else 0)
+
+
+def run_one(res, fn):
+    key = res.key
+    log(f"===== {key}. {res.title} =====")
+    call("clear")
+    # Whatever the last task did to the screen (locked it, left a panel or the shade open), start awake and home.
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh("cmd statusbar collapse")
+    sh("input keyevent KEYCODE_HOME")
+    if not ensure_accessibility(wait_s=10):
+        res.notes.append("accessibility service not connected")
+    clear_crashes()
+    m0 = server_metrics()
+    t0 = time.time()
+    try:
+        fn(res)
+    except DeviceGone:
+        raise
+    except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
+        res.check(False, f"harness error: {type(e).__name__}: {e}")
+    res.duration = time.time() - t0
+    res.speed = speed(m0, server_metrics())
+    try:
+        crash = crash_log()
+    except subprocess.TimeoutExpired:
+        check_device()
+        crash = ""
+    if res.check(not crash, "no crash in logcat -b crash") is False:
+        print("=====CRASH " + key + "=====")
+        # The head carries the exception and the app's own frames; Compose's layout frames follow.
+        print("\n".join(crash.splitlines()[:80]))
+        print("=====END=====")
+    res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
+    try:
+        shot(f"e2e_{key}_end")
+    except Exception as e:
+        log(f"screenshot failed: {e}")
+    log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
+    for n in res.notes:
+        log("  " + n)
+    # Leave the next scenario a clean home chat.
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(1)
 
 
 def scorecard(results):

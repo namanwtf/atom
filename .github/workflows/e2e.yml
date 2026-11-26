@@ -118,6 +118,14 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
+      # The model server and the emulator need the memory the build daemons still hold (the emulator was seen to die
+      # with them running).
+      - name: Stop the build daemons
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
+
       - name: Start the model server
         run: |
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
