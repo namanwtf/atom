@@ -168,7 +168,14 @@ def launch(route=None, wait=4):
     args = ["shell", "am", "start", "-W", "-n", ACTIVITY]
     if route:
         args += ["--es", EXTRA_ROUTE, route]
-    r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
+    try:
+        r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        # Print why the app did not come up (main-thread stack, log, crash buffer) before failing.
+        from startup_check import diagnose
+
+        diagnose("launch_timeout")
+        fail(f"launch of {ACTIVITY} {route or ''} did not complete within 60 s")
     text = (r.stdout + r.stderr).decode(errors="replace")
     if r.returncode != 0 or "Error" in text:
         fail(f"launch of {ACTIVITY} {route or ''} failed: {text.strip()[:400]}")

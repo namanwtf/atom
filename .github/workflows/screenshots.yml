@@ -74,11 +74,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            mkdir -p shots
+            python3 tools/screenshots/startup_check.py baseline || touch shots/startup_failed
             python3 tools/screenshots/capture.py pack-missing
             python3 tools/screenshots/install_pack.py ondevice-pack/build/outputs/apk/debug/ondevice-pack-debug.apk
+            python3 tools/screenshots/startup_check.py pack-installed 3 || touch shots/startup_failed
             python3 tools/screenshots/capture.py dark
             python3 tools/screenshots/capture.py light
             echo "=====CRASH BUFFER====="; adb logcat -d -b crash | tail -n 80; echo "=====END====="
+            test ! -f shots/startup_failed
 
       - name: Upload screenshots
         if: always()
