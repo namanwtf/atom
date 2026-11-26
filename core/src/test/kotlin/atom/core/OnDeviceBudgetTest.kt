@@ -2,6 +2,7 @@ package atom.core
 
 import atom.core.agent.Agent
 import atom.core.agent.AgentConfig
+import atom.core.agent.AgentEvent
 import atom.core.agent.ContextPacker
 import atom.core.agent.ContextPolicy
 import atom.core.llm.ChatMessage
@@ -87,5 +88,37 @@ class OnDeviceBudgetTest {
         val total = sent.messages.sumOf(ContextPacker::estimate) + toolTokens + config.maxOutputTokens
         assertTrue(total <= 4_096 - ContextPolicy.SHARED_MARGIN + 100, "messages + tools + answer = $total tokens")
         assertEquals("search the news and summarize it", sent.messages[1].text)
+    }
+
+    @Test
+    fun compactionUsesTheSharedWindowNotTheMessageCap() {
+        val config = local().copy(contextWindow = 4_096)
+        assertEquals(4_096 - 512, config.usableWindow)
+        // Tools are counted the way the prompt carries them: the compact list in a 4096-token window.
+        assertEquals(ContextPacker.estimate(PromptedTools.instructions(tools, compact = true)), config.toolTokens(tools))
+        assertEquals(ContextPacker.estimateTools(tools), AgentConfig("m", "s").toolTokens(tools))
+    }
+
+    @Test
+    fun aConversationThatFitsIsNotCompactedEarly() = runTest {
+        // About 2850 tokens: past 85% of the 3200-token message cap, well inside 85% of what the window leaves.
+        val history = buildList {
+            repeat(4) { i ->
+                add(ChatMessage.user("question $i " + "q".repeat(1_390)))
+                add(ChatMessage.assistant("answer $i " + "a".repeat(1_392)))
+            }
+            add(ChatMessage.user("go"))
+        }
+        fun run(config: AgentConfig) = Agent(
+            ScriptedEngine(listOf(listOf(LlmEvent.TextDelta("done"), LlmEvent.Finished(FinishReason.Stop)))),
+            ToolRegistry(emptyList()),
+            config,
+        ).run(history, FixedContext())
+
+        val shared = run(local().copy(contextWindow = 4_096)).toList()
+        assertTrue(shared.none { it is AgentEvent.Compacting }, "compacted although the prompt fits")
+        // The same conversation under the old rule (threshold from the 3200-token cap) would have compacted.
+        val capped = AgentConfig("m", "s", maxOutputTokens = 512, contextWindow = 4_096, context = ContextPolicy(budgetTokens = 3_200))
+        assertTrue(run(capped).toList().any { it is AgentEvent.Compacting })
     }
 }

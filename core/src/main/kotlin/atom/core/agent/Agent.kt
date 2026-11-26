@@ -53,7 +53,11 @@ data class AgentConfig(
      */
     val usableWindow: Int?
         get() = contextWindow?.takeIf { it > 0 }?.let { w ->
-            context.budgetTokens?.let { minOf(w, it) } ?: ContextPolicy.promptBudget(w, maxOutputTokens)
+            // A shared on-device window: the prompt (messages and tools) may use all of it but the answer. The
+            // messages' own cap ([ContextPolicy.budgetTokens]) is about packing, not about when to compact.
+            context.sharedWindow?.takeIf { it > 0 }?.let { s -> ContextPolicy.promptBudget(minOf(w, s), maxOutputTokens) }
+                ?: context.budgetTokens?.let { minOf(w, it) }
+                ?: ContextPolicy.promptBudget(w, maxOutputTokens)
         }
 
     /** The packing policy with its budget resolved: the deliberate cap, else the usable window, else a generous default. */
@@ -66,10 +70,16 @@ data class AgentConfig(
      */
     fun packingFor(tools: List<ToolSpec>): ContextPolicy {
         val shared = context.sharedWindow?.takeIf { it > 0 } ?: return packing
-        val toolTokens = if (tools.isEmpty()) 0 else ContextPacker.estimate(PromptedTools.instructions(tools, PromptedTools.compact(shared)))
+        val toolTokens = toolTokens(tools)
         val cap = maxOf(context.budgetTokens ?: shared, ContextPolicy.SHARED_MIN_BUDGET)
         val left = shared - maxOutputTokens - toolTokens - ContextPolicy.SHARED_MARGIN
         return context.copy(budgetTokens = left.coerceIn(ContextPolicy.SHARED_MIN_BUDGET, cap))
+    }
+
+    /** What [tools] cost in the prompt: as [PromptedTools] writes them with a shared window, else as JSON schemas. */
+    fun toolTokens(tools: List<ToolSpec>): Int {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return ContextPacker.estimateTools(tools)
+        return if (tools.isEmpty()) 0 else ContextPacker.estimate(PromptedTools.instructions(tools, PromptedTools.compact(shared)))
     }
 
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
@@ -194,7 +204,7 @@ class Agent(
             control.checkpoint()
             deliverSteering(state, control)
             val specs = exposure.specs()
-            state.toolTokens = ContextPacker.estimateTools(specs)
+            state.toolTokens = config.toolTokens(specs)
             maybeCompact(state)
 
             val request = LlmRequest(
