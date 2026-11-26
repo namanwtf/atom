@@ -273,7 +273,7 @@ def s_browser(res):
 
 
 def s_browser_read(res):
-    """m. Agent browser end to end: the page loads in Atom's own browser, its text is read, and the model summarizes it.
+    """o. Agent browser end to end: the page loads in Atom's own browser, its text is read, and the model summarizes it.
 
     Guards the 4.0.4 failure where every browser_open died with "WebView method was called on thread ...".
     """
@@ -667,7 +667,7 @@ SCENARIOS = [
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
     ("b", "Agent browser: example.com", s_browser),
-    ("m", "Agent browser: open, read and summarize", s_browser_read),
+    ("o", "Agent browser: open, read and summarize", s_browser_read),
     ("a", "Vibe coding: hello.py in the terminal", s_vibe),
     ("f", "Stop mid-task", s_stop),
     ("h", "Bubble mini chat", s_bubble),
