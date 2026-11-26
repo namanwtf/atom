@@ -23,10 +23,11 @@ involved:
 - **Server:** a pinned [llama.cpp](https://github.com/ggml-org/llama.cpp) release (`llama-server`, Linux x64, CPU), checked
   against a pinned SHA-256. It serves an OpenAI-compatible API on port 8080 with `--jinja`, so tool calls are parsed
   from the model's own chat template.
-- **Model:** Qwen2.5 3B Instruct, Q4_K_M GGUF (about 2 GB), from Hugging Face at a pinned revision, checked against a
-  pinned SHA-256 and cached between runs. It was chosen because it fits a 4-vCPU / 16 GB runner, is quick enough on the
-  CPU, and has native tool calling. Pins live at the top of `e2e.yml`; a mismatch fails the job early and prints the
-  values a new pin needs.
+- **Model:** Qwen3 4B Instruct 2507 (the non-thinking variant), Q4_K_M GGUF (about 2.5 GB), from Hugging Face at a
+  pinned revision, checked against a pinned SHA-256 and cached between runs. It fits a 4-vCPU / 16 GB runner, is quick
+  enough on the CPU, and has native tool calling. Qwen2.5 3B was tried first: a little faster, but it called tools
+  almost at random. Pins live at the top of `e2e.yml`; a mismatch fails the job early and prints the values a new pin
+  needs (set the checksum to zeros to have a run print them).
 - **The app:** the emulator reaches the runner as `10.0.2.2`. A debug-only hook (below) adds a provider named "Local
   test model" (`http://10.0.2.2:8080/v1`, no key, the server's model id and its real context window), selects it and
   finishes onboarding, so nothing has to be typed into the setup screens.
@@ -38,12 +39,12 @@ involved:
   branch run it without the label. Ordinary pull requests skip it, so their checks stay fast.
 - It also runs every Monday on main.
 
-A run takes about an hour or a little more: a few minutes to build and boot, then the scenarios. Atom's first request
-carries its whole system prompt and every tool schema (about 17,000 tokens today), which the runner's CPU, shared with
-the emulator, reads at roughly 20-30 tokens a second. So the runner reads it once, in a warm-up task that is not
-scored, and every scenario after it reuses the server's cached prompt. For that cache to match, the emulator's clock is
-set to the same minute (09:00 today, through `adb root`) before each task starts: the system prompt states the time to
-the minute, ahead of the tool list. A leaner prompt makes all of this faster.
+A run takes under an hour: about 10 minutes to build and boot, then the scenarios. Atom's first request carries its
+whole system prompt and tool schemas (about 4,000 tokens; it was 17,000 before the tool list was trimmed), which the
+runner's CPU, shared with the emulator, reads at roughly 20-35 tokens a second. So the runner reads it once, in a
+warm-up task that is not scored, and every scenario after it reuses the server's cached prompt. For that cache to
+match, the emulator's clock is set to the same minute (09:00 today, through `adb root`) before each task starts: the
+system prompt states the time to the minute, ahead of the tool list.
 
 ### Scenarios
 
