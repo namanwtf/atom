@@ -7,7 +7,7 @@ Tags: **[core]** essential for parity · **[root]** needs root · **[lsposed]** 
 Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the language setting is just "Follow system"). Installing over an existing copy signed with the same key keeps keys, models and permissions.
 
 
-**Status legend (updated 2026-11-26, re-checked against the current app after the Miuix UI, home and drawer, settings, bubble and overlay, feature-screen, chat/models/voice and update batches).** §1–§16 hold 440 items: **412 done, 21 partial, 7 missing.** `[x]` means the new app has the behaviour and a user can reach it. Open items carry **partial:** or **missing:** with the reason. The new app now uses the old Miuix look (pure black, blue accent, large titles, Miuix switches and cards); what is still open, including the COUI style, is summarised in "Gap list" at the end. Per-item evidence (file and line) is in the batch PRs and `docs/PARITY_STATUS.md`.
+**Status legend (updated 2026-11-26, re-checked against the current app).** §1–§16 hold 440 items: **412 done, 21 partial, 7 missing.** `[x]` means the new app has the behaviour and a user can reach it. Open items carry **partial:** or **missing:** with the reason. The new app now uses the old Miuix look (pure black, blue accent, large titles, Miuix switches and cards); what is still open, including the COUI style, is summarised in "Gap list" at the end. Numbered decisions (D3, D8, …) are listed in [`DECISIONS.md`](DECISIONS.md).
 
 ---
 
@@ -153,7 +153,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Live recognition preview for streaming services. Upload-then-transcribe services show only progress states (Connecting / Listening / Recognizing / Uploading / Proofreading). [core]
 - [x] One recording lasts at most 60 s (DeepSeek allows 120 s / 8 MiB). [core]
 - [x] "Enable speech recognition" master switch. When off, the mic disappears from chat and the overlay, and the overlay opens to text input with the keyboard so the IME's own voice input can be used. [core]
-- [ ] Recognition services (one active): Qwen Realtime (default), Qwen Short audio, Qwen File transcription (uploads to the user's own Alibaba OSS bucket), Doubao Streaming 2.0, MiMo, DeepSeek. [core] — **partial:** all six services are there; the default is the phone's own recognizer instead of Qwen Realtime, so a fresh install works without a key (owner decision D15)
+- [ ] Recognition services (one active): Qwen Realtime (default), Qwen Short audio, Qwen File transcription (uploads to the user's own Alibaba OSS bucket), Doubao Streaming 2.0, MiMo, DeepSeek. [core] — **partial:** all six services are there; the default is the phone's own recognizer instead of Qwen Realtime, so a fresh install works without a key (decision D15)
 - [x] Qwen region (Beijing or Singapore, must match the key) and an optional base URL. Doubao: resource ID and optional legacy App ID + Access Token. MiMo and DeepSeek: separate keys. DeepSeek reuses the model-provider key if left blank. [core]
 - [x] Recognition language: blank means auto (zh, en, yue and so on for Qwen). MiMo offers Auto / Chinese / English. [core]
 - [x] Smart correction (optional): the current chat model makes one cautious proofreading pass to fix homophones and mixed-language terms, waits at most about 8 s, and keeps the raw text on failure. [core]
@@ -594,7 +594,7 @@ These come from the old app's screens, string resources and manifest. Each is ta
 - [x] Scheduled task toasts: "Started background test run", "This task is already running", "Stopping current run…", "Task memo cleared", "Failed to save scheduled task". [core]
 - [x] Scheduled task defaults are listed in Appendix A: show-progress off, device controls off, quiet hours off, 5 consecutive failures before auto-pause. [core]
 - [x] Run timeline rows show a trigger source (Scheduled / Manual run / Catch-up), a status (Running, Delivered, No change, Skipped, Failed, Timed out, Stopped) and a duration. Tapping one gives "Tap to watch live progress" or "Tap to view full conversation and follow up". [core]
-- [ ] Default character: one built-in character named "Xiaoman". When the library is empty, it offers "Restore default character". [core] — **partial:** the built-in character is "Lumen", with "Restore Lumen" when it is gone; shipping "Xiaoman" instead is an owner decision (Q6)
+- [ ] Default character: one built-in character named "Xiaoman". When the library is empty, it offers "Restore default character". [core] — **partial:** the built-in character is "Lumen", with "Restore Lumen" when it is gone; no other default character is shipped (D22)
 - [x] Character detail layout:
   - Hero: avatar with "Change avatar", name, "By <creator>", Favorite.
   - A greeting chooser with "Read full text"; if there is no greeting, "No preset greeting — you start the conversation".
@@ -685,7 +685,7 @@ Everything users meet day to day (the Miuix look, first run, home chat, drawer, 
 1. **COUI UI style** (§12 UI style, §15 coloured row icons): missing. *Deferred on purpose (D8): Miuix is the old default and is done; COUI is a second full skin.*
 2. **ColorOS-only personal data** (§6 notes, system memory, orders and saved places, bills and bill summaries, to-dos and trips; §13 notes; recording summaries and transcripts): missing. *Needs a ColorOS device and its private providers to build and test (D12).*
 3. **ColorOS clock details** (§6 full alarm list, §13 edit or delete an alarm in place): partial. *Android's alarm intents cover create, change, enable and delete through the clock app; the rest needs the ColorOS clock on a ColorOS device.*
-4. **Defaults that differ on purpose** (§4 recognition service, §16 default character): partial. *Needs an owner decision: the phone's own recognizer instead of Qwen Realtime (D15), "Lumen" instead of "Xiaoman", and DeepSeek Flash as the starting model where the old code picked OpenAI's first model (Q6).*
+4. **Defaults that differ on purpose** (§4 recognition service, §16 default character): partial. *Chosen on purpose: the phone's own recognizer instead of Qwen Realtime (D15), "Lumen" instead of "Xiaoman", and DeepSeek Flash as the starting model where the old code picked OpenAI's first model (D22).*
 5. **Chat edge cases** (§16 long-history scroll-up guard; "Save message" composer mode in character chats): partial. *Small follow-up; character chats already edit in place through a dialog.*
 6. **Voice and notification copy** (§11 separate "Read aloud" channel, §16 overlay audio-blocked error, MiMo language-specific default voices): partial. *Small follow-up; read-aloud already works through the Assistant voice channel.*
 7. **Skills** (§9 curated skill catalog, §16 "Removed" group): partial. *GitHub and ZIP install work; a catalog needs a list the owner is happy to ship.*

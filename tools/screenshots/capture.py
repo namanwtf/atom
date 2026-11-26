@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Drive a CI emulator through Atom's main screens and print every screenshot into the job log.
 
-Runs only on GitHub's disposable runners (never on a personal machine). Workflow artifacts are not
-reachable from every review environment, so each screenshot is printed as base64 JPEG between
-markers; tools/screenshots/extract.py turns a downloaded log back into image files.
+Runs only on GitHub's disposable runners (never on a personal machine). Besides the uploaded artifact,
+each screenshot is printed as base64 JPEG between markers, so a job log alone is enough;
+tools/screenshots/extract.py turns a downloaded log back into image files.
 
-Each shot also prints the visible texts from a UI hierarchy dump, which is the "window dump"
-evidence PROJECT.md asks for.
+Each shot also prints the visible texts from a UI hierarchy dump, so the screen's wording can be
+checked without opening the image.
 """
 
 import base64
