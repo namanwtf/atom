@@ -1,110 +1,145 @@
-# Atom
+<p align="center">
+  <img src="docs/assets/hero.png" alt="Atom: the AI agent that lives on your phone" width="100%">
+</p>
 
-**An AI agent that lives on your phone.**
+<p align="center">
+  <a href="https://github.com/namanwtf/atom/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/namanwtf/atom?label=Download&style=for-the-badge&color=4078EF"></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0-2b2b2b?style=for-the-badge"></a>
+  <img alt="Android 14+" src="https://img.shields.io/badge/Android-14%2B-2b2b2b?style=for-the-badge&logo=android&logoColor=white">
+  <img alt="No telemetry" src="https://img.shields.io/badge/Telemetry-none-2b2b2b?style=for-the-badge">
+</p>
 
-Atom reads the screen, taps through apps, runs commands, remembers what matters and keeps working while you do something else. It runs on the phone itself, talks to the model you choose, and keeps your data between you and that model.
-
-| Home | Hold menu | Mini chat |
-| --- | --- | --- |
-| ![Home](docs/screenshots/home.jpg) | ![The bubble's hold menu](docs/screenshots/bubble_menu.jpg) | ![The mini chat](docs/screenshots/mini_chat.jpg) |
-
-| Model providers | Settings | Light theme |
-| --- | --- | --- |
-| ![Model providers](docs/screenshots/models.jpg) | ![Settings](docs/screenshots/settings.jpg) | ![Home in the light theme](docs/screenshots/home_light.jpg) |
-
-Taken on an Android emulator by this repository's CI, on a fresh install with no API key set (hence "Not selected").
+<p align="center"><b>Chat apps can tell you how to do something. Atom does it.</b><br>
+It reads your screen, taps through your apps, runs real Linux tools, remembers what matters to you,<br>and keeps working in the background while you get on with your day. On your phone, with the model you choose.</p>
 
 ---
 
-## What Atom does
+<p align="center">
+  <img src="docs/assets/showcase-everyday.png" alt="Atom home, the mini chat over any app, and the bubble's hold menu" width="100%">
+</p>
 
-### Operates your phone
-- Drives apps through Android accessibility: reads the screen, taps, types, scrolls and swipes, then checks the screen again before it reports success. When an action can't be confirmed, Atom says so.
-- A run capsule floats over other apps while a task runs: pause, take over, add instructions mid-task or stop. On Android 16 the task also shows as a Live Update in the status bar.
-- With root or the LSPosed module, cross-app tasks can run on a hidden virtual display and hand the result back to your screen when you are needed, for example on a payment page or a QR code.
+## Why Atom
 
-### Is always one tap away
-- A floating bubble: tap for a mini chat that runs the full agent, hold for quick actions, drag it anywhere or drop it on the dismiss target.
-- Can be your phone's digital assistant: the assistant gesture opens an overlay over the current app that already knows what is on screen.
-- Voice in and out: dictation, hold-to-talk, auto-send after a pause, a choice of cloud recognition and speech services with the system voice as fallback, and an on-device **"Hey Atom"** wake word.
+Every assistant you use today is a visitor: you open it, type, read the answer and then do the work yourself. Your phone is the one computer that is always with you and already knows your day, and it has no agent of its own.
 
-### Knows your context, when you ask
-Notifications (with a searchable 7-day history kept on the phone), SMS and one-time codes, contacts, call log, calendar (read and write), photos, files, downloads, recordings, location, app usage, device status and health data. Each source needs its own Android permission, and Atom only reads what a task needs.
+Atom is that agent. Not a chat window with an API key, but a full agent runtime with real reach into the phone:
 
-### Controls the device
-- Volume, Do Not Disturb, sound mode, flashlight, brightness, connectivity toggles, media playback, alarms and timers, each checked before and after.
-- With root: freeze, unfreeze and stop apps, protected settings, system logs, private app data (read-only), and more. Rootless phones can use **Shizuku** for many of these.
-- Every device change is written to an **undo journal**, so you can see what changed and put it back.
+- 📱 **It operates apps for you.** It reads what's on screen, taps, types and scrolls, then checks the screen again before it says "done". If it can't confirm something worked, it tells you.
+- 🫧 **It's one tap away, everywhere.** A floating bubble sits over any app: tap it for a mini chat, hold it for quick actions, or make Atom your phone's assistant so the assistant gesture opens it already knowing what's on screen.
+- 🧠 **It knows your context, when you ask.** Notifications, messages and one-time codes, calendar, contacts, photos, files, location and more, each behind its own Android permission and read only when a task needs it.
+- 🐧 **It has a real workbench.** A full terminal and Alpine or Debian Linux on the phone, with Python, Node, git and SSH. Atom writes code, runs it, reads the errors and fixes them.
+- ⏰ **It works while you don't.** Scheduled tasks and phone-event automations run in the background and report back: a morning digest, a price watch, a weekly cleanup.
+- 🔒 **It stays yours.** No telemetry, no analytics, no accounts. API keys are encrypted with the phone's hardware-backed keystore. Your chats go only to the model you pick, or nowhere at all with an on-device model.
 
-### Has a workbench
-- A full terminal with multiple sessions, and Alpine or Debian **Linux on the phone**, running in PRoot without root or in a chroot with root.
-- Python, Node, SSH, git, ripgrep, jq, sqlite and APK tools on request. Background commands and services keep running and notify you when they finish.
+## See it
 
-### Grows with you
-- **Memory:** a long-term memory file you can read and edit, which Atom maintains itself.
-- **Skills:** installable capability packages, from any public GitHub repository.
-- **MCP:** connect Model Context Protocol servers and choose which tools Atom may use.
-- **Subagents:** Explore, Coder and Plan, plus your own, running in parallel with their own context.
-- **Scheduled tasks and automations:** run Atom on a schedule or on phone events, with quiet hours and notify-on-change.
+<table>
+<tr>
+<td width="34%" align="center" valign="top">
+  <img src="docs/assets/bubble-demo.gif" alt="The floating bubble: hold for actions, drag anywhere, tap for a mini chat" width="260"><br>
+  <sub><b>The bubble.</b> Hold it for actions, drag it anywhere, tap it to chat over whatever you're doing. It remembers where you left it.</sub>
+</td>
+<td valign="top">
+
+**Things you can just ask:**
+
+> "Open WhatsApp and tell Rahul I'll be 10 minutes late."
+
+> "What's the OTP that just came in?"
+
+> "Turn on Do Not Disturb until 7 and set an alarm for 6:45."
+
+> "Summarize today's tech news and send me the three most interesting links."
+
+> "Every weekday at 7:45, give me my calendar, the weather and anything urgent in my notifications."
+
+> "Clone this repo, run its tests and tell me why they fail."
+
+> "Look at my screen and explain this error."
+
+</td>
+</tr>
+</table>
+
+## Bring any model
+
+<p align="center">
+  <img src="docs/assets/showcase-models.png" alt="Model providers, the per-chat model picker and settings" width="100%">
+</p>
+
+- **Built in:** OpenAI, Anthropic, Gemini (AI Studio and Vertex AI), DeepSeek, Qwen (Alibaba Bailian), Kimi, MiMo, MiniMax, StepFun, SiliconFlow, OpenRouter, xAI, Groq and Mistral.
+- **Anything compatible:** any OpenAI- or Anthropic-compatible endpoint, including your own server on the local network, plus the models.dev catalog.
+- **Use plans you already pay for:** sign in with a ChatGPT (Codex) or Grok subscription instead of an API key.
+- **Fully offline:** on-device models via LiteRT-LM and llama.cpp, with an optional cloud fallback.
+- **Think harder when it matters:** reasoning effort per conversation, from Off to Max, limited to what the model supports.
+
+## A workbench in your pocket
+
+<p align="center">
+  <img src="docs/assets/showcase-power.png" alt="Terminal, Linux environment and scheduled tasks" width="100%">
+</p>
+
+- A real terminal with multiple sessions, and **Linux on the phone**: Alpine or Debian, in PRoot (no root) or in a chroot (with root).
+- Python, Node, SSH, git, ripgrep, jq and APK tools on request. Background commands keep running and notify you when they finish.
+- **Device control** with before → after checks: volume, Do Not Disturb, sound mode, flashlight, brightness, toggles, media, alarms and timers. With root or Shizuku it goes deeper: freeze apps, protected settings, logs. Every change lands in an **undo journal**, so you can see what changed and put it back.
+
+## Grows with you
+
+<p align="center">
+  <img src="docs/assets/showcase-extend.png" alt="Skills, MCP servers and characters" width="100%">
+</p>
+
+- **Memory:** a long-term memory you can read and edit, which Atom keeps up to date itself.
+- **Skills:** installable capability packs, from any public GitHub repository.
+- **MCP:** connect Model Context Protocol servers and choose exactly which tools Atom may use.
+- **Subagents:** Explore, Coder and Plan, plus your own, working in parallel with their own context.
+- **Voice:** dictation, hold-to-talk, spoken answers with many voices, and an on-device **"Hey Atom"** wake word.
+- **Browser and images:** an agent browser you can take over, web search and page reading, and AI image generation and editing.
 - **Characters:** persona chats with character cards, worldbooks and story memory.
-- **Web and images:** an agent browser you can take over, web search and page reading, and AI image generation and editing with a gallery.
 
-### Works with your model
-- Built-in providers: OpenAI, Anthropic, Gemini (AI Studio and Vertex AI), DeepSeek, Alibaba Bailian (Qwen), Kimi, MiMo, MiniMax, StepFun, SiliconFlow, OpenRouter, xAI, Groq and Mistral.
-- Any OpenAI-compatible or Anthropic-compatible endpoint, the models.dev catalog, remote model lists and a connection test.
-- Sign in with a ChatGPT (Codex) or Grok subscription instead of an API key.
-- Reasoning effort per conversation: Off, Low, Medium, High, XHigh or Max, limited to what the model supports.
-- **On-device models** (LiteRT-LM and llama.cpp) that work offline, with an optional cloud fallback.
+## Safe by design
 
-### Coming
-- A second interface style (COUI).
-- ColorOS-only data sources: notes, orders, bills and system memory.
+Giving an AI real control of a phone only works if you can trust it, so Atom is built around that:
 
----
+- **You stay in charge.** Optional "ask before taps and typing", approvals for sensitive actions, per-tool switches that take effect even mid-task, and a Stop button that always works.
+- **Locked means locked.** Answers never pop up over the lock screen, and approving an action from there needs your fingerprint or PIN.
+- **Honest results.** Atom reports what it confirmed, not what it hoped happened.
+- **Open source.** Every line is here to read, under the GPL.
 
-## Requirements
+## Get started
+
+1. Download `atom-<version>.apk` from **[Releases](https://github.com/namanwtf/atom/releases/latest)** and install it (Android may ask you to allow installs from your browser).
+2. Open Atom, add a model (an API key, a subscription sign-in or an on-device model) and say hello.
+3. Optional: turn on the accessibility service so Atom can operate apps, and enable the floating bubble.
+
+Updates arrive inside the app under **Settings → About → Check for updates**, verified before they install.
 
 | | |
 |---|---|
-| Android | 14 or newer |
-| CPU | ARM64 |
-| Optional | Root (Magisk, KernelSU or APatch), Shizuku, or the LSPosed module, each unlocking more device control |
+| **Android** | 14 or newer |
+| **CPU** | ARM64 |
+| **Optional extras** | Root (Magisk, KernelSU or APatch), Shizuku or the LSPosed module unlock deeper device control |
 
-Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, files and the web need nothing beyond the app. Screen control needs the accessibility service.
+Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, files and the web need nothing beyond the app.
 
-## Install
+## FAQ
 
-Download the APK from [Releases](https://github.com/namanwtf/atom/releases). Releases are built and signed by GitHub Actions when `main` changes.
+**Do I need root?** No. Root, Shizuku or LSPosed only add extras such as freezing apps or running cross-app tasks on a hidden screen.
 
-Installing a newer Atom over an existing one keeps your data and permissions. You never need to uninstall first. Atom checks this repository's Releases from Settings → About and installs an update only after verifying its checksum and signing key; Android asks you to confirm.
+**Does it cost anything?** Atom is free and open source. You pay your model provider (or use a subscription you already have, or a free on-device model).
 
-## Build
+**Will it drain my battery?** Atom only works when you give it something to do. Background schedules wake it briefly, and animations stop when it's idle.
 
-Atom is built and tested only on GitHub's disposable runners: every pull request runs unit tests, builds the debug APK and takes emulator screenshots (see [`.github/workflows`](.github/workflows)). Please don't build or run the test suite on a personal machine: some tests create and delete files, and CI is the supported path.
+**Where does my data go?** It stays on your phone, except the messages sent to the model provider you choose. There is no telemetry and no Atom server.
 
-## Privacy
+## Building
 
-- No telemetry, no analytics and no tracking SDKs.
-- API keys and sign-in tokens are encrypted on the device and never included in backups.
-- Your conversations go only to the model provider you configure, or nowhere when you use an on-device model.
-- Updates come only from this repository.
+Atom is built and tested only on GitHub's runners: every pull request runs the unit tests, builds the app and takes screenshots on an Android emulator (see [`.github/workflows`](.github/workflows)). Please don't run the build or tests on a personal machine; use CI.
 
-## License
+## License and credits
 
-Atom is free software under the [GNU General Public License v3.0 or later](LICENSE).
+Atom is free software under the [GNU General Public License v3.0 or later](LICENSE). The license grants no rights to the "Atom" name or logo (GPL-3.0 §7(e)): modified versions must use their own name and branding. See [NOTICE](NOTICE).
 
-Under GPL-3.0 section 7(e), the license grants no rights to use the "Atom" name or logo: modified versions must use their own name and branding. See [NOTICE](NOTICE).
+Built on great open-source work, including llama.cpp/ggml, LiteRT-LM, OkHttp, Kotlin and kotlinx, Jetpack Compose, Miuix, Shizuku, PRoot, JetBrains Mono and Lobe Icons. Full list with licences in [NOTICE](NOTICE).
 
-## Credits
-
-Atom builds on these open-source projects (details and licences in [NOTICE](NOTICE)):
-
-- [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp) (MIT)
-- LiteRT-LM and LiteRT by Google (Apache-2.0)
-- OkHttp by Square (Apache-2.0)
-- Kotlin, kotlinx.coroutines and kotlinx.serialization by JetBrains (Apache-2.0)
-- AndroidX and Jetpack Compose by Google (Apache-2.0)
-- Shizuku API by RikkaApps (Apache-2.0)
-- Haze by Chris Banes (Apache-2.0)
-- [PRoot](https://github.com/termux/proot) (GPL-2.0-or-later) and talloc (LGPL-3.0-or-later)
-- XZ for Java (0BSD)
+<p align="center"><b>If Atom saves you a few taps, a ⭐ helps more people find it.</b></p>
