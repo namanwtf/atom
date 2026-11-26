@@ -8,6 +8,8 @@ import atom.core.llm.LlmEngine
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
 import atom.core.llm.Role
+import atom.core.llm.ToolCallIds
+import atom.core.tool.ToolLoadout
 import atom.core.llm.ToolCall
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -117,8 +119,31 @@ internal class OpenAiChatEngine(
             }
             pendingImages.clear()
         }
+        // Mistral takes only nine-letter-and-digit ids; ids made by other providers (or old builds) are mapped to
+        // that form, deterministically so a call and its result still match.
+        val wireId: (String) -> String = if (family == Family.MISTRAL) ToolCallIds::strict else ToolCallIds::safe
+        // Thinking vendors that need each tool-call turn's reasoning back (DeepSeek, Kimi...) reject a call turn
+        // without it. The run's own tool preload has none: it goes as a plain note instead of a tool-call turn.
+        val asNote = if (!replay) emptySet() else history.flatMap { m ->
+            val loaderOnly = m.toolCalls.isNotEmpty() && m.toolCalls.all { it.name == ToolLoadout.LOADER }
+            if (loaderOnly && ReplayCaches.chatReasoning.get(m.toolCalls.first().id) == null) m.toolCalls.map { it.id } else emptyList()
+        }.toSet()
         for (message in history) {
             if (message.role != Role.Tool) flushImages()
+            if (message.role == Role.Assistant && message.toolCalls.isNotEmpty() && message.toolCalls.all { it.id in asNote }) {
+                if (message.text.isNotBlank()) addJsonObject {
+                    put("role", "assistant")
+                    put("content", message.text)
+                }
+                continue
+            }
+            if (message.role == Role.Tool && message.toolCallId in asNote) {
+                addJsonObject {
+                    put("role", "user")
+                    put("content", "[Tools loaded for this task]\n" + message.text)
+                }
+                continue
+            }
             when (message.role) {
                 Role.System -> addJsonObject {
                     put("role", "system")
@@ -139,7 +164,7 @@ internal class OpenAiChatEngine(
                             }
                             putJsonArray("tool_calls") {
                                 for (call in message.toolCalls) addJsonObject {
-                                    put("id", call.id)
+                                    put("id", wireId(call.id))
                                     put("type", "function")
                                     putJsonObject("function") {
                                         put("name", call.name)
@@ -153,7 +178,7 @@ internal class OpenAiChatEngine(
                 Role.Tool -> {
                     addJsonObject {
                         put("role", "tool")
-                        put("tool_call_id", message.toolCallId.orEmpty())
+                        put("tool_call_id", wireId(message.toolCallId.orEmpty()))
                         put("content", message.text.ifEmpty { "(no output)" })
                     }
                     pendingImages += message.parts.filterIsInstance<ContentPart.Image>()

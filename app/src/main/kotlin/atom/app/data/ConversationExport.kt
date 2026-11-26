@@ -16,12 +16,14 @@ object ConversationExport {
         for (m in c.messages) {
             val msg = m.message
             when {
+                // Agent-internal turns (loop-guard nudges, the run's own tool preload) are not part of the record.
+                m.hidden -> Unit
                 m.kind == EntryKind.Notice -> append("\n> ").append(msg.text.replace("\n", "\n> ")).append('\n')
                 m.kind == EntryKind.Summary -> {
                     append("\n<details><summary>Context summary</summary>\n\n")
                     append(msg.text.substringAfter('\n')).append("\n\n</details>\n")
                 }
-                msg.role == Role.User && !m.hidden -> {
+                msg.role == Role.User -> {
                     append("\n## User\n\n").append(msg.text).append('\n')
                     m.attachments.forEach { a ->
                         if (a.kind == AttachmentKind.Image) images++

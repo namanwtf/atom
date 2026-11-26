@@ -255,6 +255,7 @@ class Agent(
         for (step in 1..config.maxSteps) {
             control.checkpoint()
             deliverSteering(state, control)
+            exposure.onStep(step)
             var specs = exposure.specs()
             // A small shared window that the tools have overfilled (enable_tools, groups from history): the oldest
             // optional groups go first, so the request still fits instead of being refused by the runtime.

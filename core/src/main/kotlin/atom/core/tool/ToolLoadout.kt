@@ -2,6 +2,7 @@ package atom.core.tool
 
 import atom.core.llm.ChatMessage
 import atom.core.llm.ToolCall
+import atom.core.llm.ToolCallIds
 import atom.core.llm.ToolSpec
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +17,9 @@ interface ToolExposure {
 
     /** Offers fewer tools (the oldest optional group goes), for a request that would not fit; false when it cannot. */
     fun shrink(): Boolean = false
+
+    /** The agent is about to build the request of [step] (1-based). */
+    fun onStep(step: Int) {}
 
     /** Every tool, every request: the behaviour without a [ToolLoadout]. */
     class All(private val registry: ToolRegistry) : ToolExposure {
@@ -67,17 +71,40 @@ class ToolLoadout(
     @Synchronized
     override fun specs(): List<ToolSpec> = tools.filter { visible(it.spec.name) }.map { it.spec } + listOfNotNull(loader?.spec)
 
-    /** Unloads the group loaded first; the model can load it again with [LOADER] or by calling one of its tools. */
+    /** The step each loaded group was last loaded or used in; groups from earlier turns count as long unused. */
+    private val touched = HashMap<String, Int>()
+    private var step = 0
+
+    private fun touch(group: String, at: Int = step) {
+        touched[group] = at
+    }
+
+    @Synchronized
+    override fun onStep(step: Int) {
+        this.step = step
+    }
+
+    /**
+     * Unloads one group so a request fits: first one not loaded or used for [STALE_STEPS] steps (longest unused
+     * first), else any not touched in this step or the one before. A group just loaded or used is never dropped, so
+     * the offered set does not flap from step to step. The model can load a dropped group again with [LOADER] or by
+     * calling one of its tools. False when nothing may go.
+     */
     @Synchronized
     override fun shrink(): Boolean {
-        val oldest = loaded.firstOrNull() ?: return false
-        loaded -= oldest
+        fun last(g: String) = touched[g] ?: LONG_AGO
+        val droppable = loaded.filter { last(it) < step - 1 }
+        val victim = droppable.filter { last(it) <= step - STALE_STEPS }.minByOrNull(::last)
+            ?: droppable.minByOrNull(::last)
+            ?: return false
+        loaded -= victim
         return true
     }
 
     @Synchronized
     override fun onCall(name: String) {
         if (!visible(name)) groupsByTool[name]?.firstOrNull()?.let { load(listOf(it)) }
+        groupsByTool[name]?.filter { it in loaded }?.forEach { touch(it) }
     }
 
     /**
@@ -90,13 +117,17 @@ class ToolLoadout(
             if (c.name == LOADER) {
                 // An earlier load (the model's, or a preload written into the history): its result, with the notes,
                 // is in the history too.
-                for (g in loaderGroups(c.argumentsJson)) if (g in members && loaded.add(g)) notes[g]?.let { sentNotes += it }
+                for (g in loaderGroups(c.argumentsJson)) if (g in members && loaded.add(g)) {
+                    notes[g]?.let { sentNotes += it }
+                    touch(g, LONG_AGO)
+                }
                 continue
             }
             val gs = groupsByTool[c.name] ?: continue
             if (gs.isEmpty() || gs.any { it in loaded }) continue
             val g = gs.first()
             loaded += g
+            touch(g, LONG_AGO)
             notes[g]?.let { sentNotes += it }
         }
     }
@@ -113,7 +144,12 @@ class ToolLoadout(
             if (added.size >= maxGroups) break
             if (g !in members || g in loaded) continue
             loaded += g
-            if (fits(specs())) added += g else loaded -= g
+            if (fits(specs())) {
+                added += g
+                touch(g)
+            } else {
+                loaded -= g
+            }
         }
         val fresh = added.flatMap { notes[it].orEmpty() }.distinct().filter { sentNotes.add(it) }
         return Preloaded(added, fresh)
@@ -126,7 +162,7 @@ class ToolLoadout(
          * (with the groups' notes). It stays in the conversation's history, where [preload] finds it next turn, and
          * leaves the system prompt (the cached prefix) unchanged. Null when nothing was loaded.
          */
-        fun asExchange(loadout: ToolLoadout): Pair<ToolCall, ToolResult>? {
+        fun asExchange(loadout: ToolLoadout, takenIds: Set<String> = emptySet()): Pair<ToolCall, ToolResult>? {
             if (groups.isEmpty()) return null
             val args = JsonObject(mapOf("groups" to JsonPrimitive(groups.joinToString(","))))
             val text = buildString {
@@ -134,7 +170,8 @@ class ToolLoadout(
                 groups.forEach { g -> append("\n- ").append(g).append(": ").append(loadout.members.getValue(g).joinToString()) }
                 notes.forEach { append("\n\n").append(it) }
             }
-            return ToolCall(id = "preload_" + groups.joinToString("_"), name = LOADER, argumentsJson = args.toString()) to ToolResult.ok(text)
+            // An id in the one form every provider accepts (Mistral: nine letters and digits), new in the conversation.
+            return ToolCall(id = ToolCallIds.fresh(takenIds), name = LOADER, argumentsJson = args.toString()) to ToolResult.ok(text)
         }
     }
 
@@ -150,10 +187,14 @@ class ToolLoadout(
             val group = if (w in members) w else groupsByTool[w]?.firstOrNull { it in loaded } ?: groupsByTool[w]?.firstOrNull()
             when {
                 group == null -> if (groupsByTool[w]?.isEmpty() == true) already += w else unknown += w
-                group in loaded -> already += group
+                group in loaded -> {
+                    already += group
+                    touch(group)
+                }
                 else -> {
                     loaded += group
                     added += group
+                    touch(group)
                 }
             }
         }
@@ -216,5 +257,10 @@ class ToolLoadout(
 
     companion object {
         const val LOADER = "enable_tools"
+
+        /** Groups unused for this many steps go first when a request has to shed tools. */
+        const val STALE_STEPS = 3
+
+        private const val LONG_AGO = -1_000
     }
 }

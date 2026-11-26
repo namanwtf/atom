@@ -112,6 +112,20 @@ class DegenerateOutputTest {
         "<tool_call>{\"name\": \"browser_open\", \"arguments\": {\"url\": \"https://news.google.com/topics/technology\"}}</tool_call>",
     )
 
+    @Test
+    fun loopsThatNeverCloseAreCaughtToo() {
+        // A fence, a tool call or a table that never ends is judged after MAX_UNJUDGED characters.
+        assertTrue(trips("Here is the code:\n```\n" + "#1#11#111".repeat(400)))
+        assertTrue(trips("<tool_call>{\"name\": \"type_text\", \"arguments\": {\"text\": \"" + "1#".repeat(1_500)))
+        assertTrue(trips("| a | b |\n|---|---|\n" + "|1|1|\n".repeat(600)))
+    }
+
+    @Test
+    fun longRealBlocksStillPass() = assertNoFalseAlarm(
+        "```kotlin\n" + (100..400).joinToString("\n") { "val x$it = $it" } + "\n```\nThose are the constants.",
+        "| n | square |\n|---|---|\n" + (100..400).joinToString("\n") { "| $it | ${it * it} |" } + "\n",
+    )
+
     private fun assertNoFalseAlarm(vararg samples: String) {
         for (s in samples) {
             assertFalse(trips(s), "false alarm on: $s")
