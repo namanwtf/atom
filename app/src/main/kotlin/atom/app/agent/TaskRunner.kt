@@ -804,20 +804,32 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 )
                 loadout.preload(history.messages)
                 val registry = ToolRegistry(loadout.all)
+                val autoCompact = settings.autoCompaction
+                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools)
+                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
+                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                // The groups the request most likely needs are loaded now, so the model rarely has to call
+                // enable_tools first (small models almost never do). Their notes go into the system prompt.
+                val preloaded = atom.core.agent.ToolPreload.apply(
+                    loadout,
+                    atom.automation.ToolRouter.route(
+                        request = request.prompt ?: history.messages.lastOrNull { it.role == Role.User }?.text.orEmpty(),
+                        recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
+                        minScore = if (atom.core.agent.ToolPreload.small(baseConfig)) atom.automation.ToolRouter.STRONG - 1 else 1,
+                    ),
+                    baseConfig,
+                )
                 val basePrompt = SystemPrompt.build(
                     tier = shell.tier,
                     onDevice = engine.onDevice,
-                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second },
+                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second } + preloaded.notes,
                     onDemandTools = loadout.loader != null,
                 )
                 val systemPrompt = character?.let { basePrompt + "\n\n" + it.prompt.systemWithPostHistory() } ?: basePrompt
                 // The clock time rides on the latest user message, so the system prompt (and the cached prefix) stays
                 // the same all day. Character chats keep their own framing.
                 val messages = if (character == null) SystemPrompt.withTime(history.messages) else history.messages
-                val autoCompact = settings.autoCompaction
-                val config = engine.agentConfig(systemPrompt = systemPrompt, tools = registry.specs, slowApprovals = settings.confirmActTools)
-                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
-                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                val config = baseConfig.copy(systemPrompt = systemPrompt)
                 if (debuggable) logRequestSize(systemPrompt, messages, loadout.specs(), registry.specs, config)
                 val notice = listOfNotNull(
                     fallbackNotice?.takeIf { roleSelection == null },
@@ -1373,6 +1385,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         const val TITLE_TIMEOUT_MS = 20_000L
         const val KEEP_FINISHED = 6
         val RUN_SCOPED = setOf("release_phone_control")
+
+        /** Messages at the end of the history whose tool calls count as "recently used" for tool routing. */
+        const val RECENT_FOR_ROUTING = 8
 
         /** About two frames at 60 Hz: smooth to the eye, far fewer recompositions than per token. */
         const val TEXT_FLUSH_MS = 32L
