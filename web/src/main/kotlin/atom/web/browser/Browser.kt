@@ -58,6 +58,15 @@ data class PageState(
     val previewPath: String? = null,
 )
 
+/**
+ * Fails loudly when a WebView is touched off the main looper (Android then throws "WebView method was called on
+ * thread ..." deep inside the WebView, or misbehaves). Unit tests run without a looper and pass through.
+ */
+internal fun assertMain() {
+    val main = Looper.getMainLooper() ?: return
+    check(Looper.myLooper() == main) { "WebView used off the main thread (${Thread.currentThread().name})" }
+}
+
 /** Shared WebView setup: no file or content access, no mixed content, no geolocation, Safe Browsing on. */
 internal object WebViewSecurity {
     @SuppressLint("SetJavaScriptEnabled")
@@ -206,7 +215,18 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
         }
     }
 
+    /**
+     * Runs [block] with the WebView on the main looper, where every WebView call must happen. Callable from any
+     * thread; on the main thread it runs at once. Tool code reaches the WebView only through this and the methods
+     * below, never directly from a background dispatcher.
+     */
+    suspend fun <T> onMain(block: suspend (WebView) -> T): T = withContext(Dispatchers.Main.immediate) { block(webView) }
+
+    /** The page's current URL, read on the main thread. */
+    suspend fun url(): String? = onMain { it.url }
+
     internal fun layoutOffscreen() {
+        assertMain()
         val m = webView.context.resources.displayMetrics
         val w = m.widthPixels.coerceIn(720, 1440)
         val h = (m.heightPixels.coerceIn(1280, 3200))
@@ -216,14 +236,14 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
 
     fun takeNotices(): List<String> = notices.toList().also { notices.clear() }
 
-    suspend fun load(url: String, timeoutMs: Long = 25_000) {
+    suspend fun load(url: String, timeoutMs: Long = 25_000) = onMain { view ->
         waiter = CompletableDeferred()
-        webView.loadUrl(url)
+        view.loadUrl(url)
         awaitLoad(timeoutMs)
     }
 
     /** Waits for the current navigation (if any) to finish, then a short settle for scripts. */
-    suspend fun awaitLoad(timeoutMs: Long = 25_000) {
+    suspend fun awaitLoad(timeoutMs: Long = 25_000) = onMain {
         val w = waiter ?: CompletableDeferred<Unit>().also { waiter = it }
         withTimeoutOrNull(timeoutMs) { w.await() }
         waiter = null
@@ -231,25 +251,32 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
     }
 
     /** Lets a click or submit start a navigation, and waits for it if it did. */
-    suspend fun settleAfterAction() {
+    suspend fun settleAfterAction() = onMain {
         val before = navigations
         waiter = CompletableDeferred()
         kotlinx.coroutines.delay(700)
         if (navigations != before || state.value.loading) awaitLoad(20_000) else waiter = null
+        Unit
     }
 
-    suspend fun eval(script: String): String? = suspendCancellableCoroutine { cont ->
-        webView.evaluateJavascript(script) { raw ->
-            val decoded = runCatching {
-                val el = Json.parseToJsonElement(raw ?: "null")
-                if (el is JsonPrimitive && el.isString) el.content else if (raw == "null") null else raw
-            }.getOrNull()
-            if (cont.isActive) cont.resume(decoded)
+    suspend fun eval(script: String): String? = onMain { view ->
+        suspendCancellableCoroutine { cont ->
+            view.evaluateJavascript(script) { raw ->
+                val decoded = runCatching {
+                    val el = Json.parseToJsonElement(raw ?: "null")
+                    if (el is JsonPrimitive && el.isString) el.content else if (raw == "null") null else raw
+                }.getOrNull()
+                if (cont.isActive) cont.resume(decoded)
+            }
         }
     }
 
-    /** Draws the visible viewport. [maxSide] bounds the long side of the bitmap. */
+    /** Draws the visible viewport on the main thread. [maxSide] bounds the long side of the bitmap. */
+    suspend fun captureOnMain(maxSide: Int): Bitmap? = onMain { capture(maxSide) }
+
+    /** Draws the visible viewport. Main thread only. [maxSide] bounds the long side of the bitmap. */
     fun capture(maxSide: Int): Bitmap? {
+        assertMain()
         if (webView.width == 0 || webView.height == 0) layoutOffscreen()
         val w = webView.width
         val h = webView.height
@@ -266,7 +293,7 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
 
     /** Saves a small JPEG of the viewport for the chat card; keeps the last few per session. */
     suspend fun preview(cacheDir: File): String? {
-        val bmp = capture(540) ?: return null
+        val bmp = captureOnMain(540) ?: return null
         val dir = File(cacheDir, "browser_previews").apply { mkdirs() }
         val safe = key.replace(Regex("[^A-Za-z0-9_-]"), "_").take(40)
         val file = File(dir, "${safe}_${previewSeq++}.jpg")
@@ -280,6 +307,7 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
     }
 
     internal fun destroy() {
+        assertMain()
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.stopLoading()
         webView.webChromeClient = null
