@@ -24,6 +24,8 @@ import atom.core.legacy.LegacyJournal
 import atom.core.legacy.LegacyModelRow
 import atom.core.legacy.LegacyProviderRow
 import atom.core.legacy.LegacySelection
+import atom.extend.ExtendFeature
+import atom.extend.memory.MemoryText
 import atom.llm.cloud.OAuthTokens
 import atom.llm.cloud.ProviderConfig
 import atom.llm.cloud.legacy.LegacyProviders
@@ -74,6 +76,11 @@ object LegacyImport {
     /** The result of an automatic run, shown once on the chat screen until dismissed. */
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
+    private val _changes = MutableStateFlow(0)
+
+    /** Bumped after every run and removal, so the backup screen checks its rows again. */
+    val changes: StateFlow<Int> = _changes.asStateFlow()
+
     /** True when the previous app's database is on this device. */
     fun available(context: Context): Boolean = LegacyDatabase.source(context).isFile
 
@@ -92,11 +99,18 @@ object LegacyImport {
             } else if (state?.noticeShown == false) {
                 state.report?.let { _notice.value = describe(app, it) }
             }
+            // An import that finished before memory was imported: bring the old memory over by itself.
+            readState(app)?.let { s ->
+                if (s.completedAt != null && !s.memoryImported && oldMemoryFile(app) != null) {
+                    mutex.withLock { readState(app)?.let { writeState(app, importMemory(app, it, Counts())) } }
+                }
+            }
             // A week after a clean import: remove the old files (a cheap check of the marker the rest of the time).
             if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) {
                 mutex.withLock {
                     if (LegacyCleanup.shouldAutoClean(readState(app), System.currentTimeMillis())) removeLocked(app)
                 }
+                _changes.value++
             }
             Unit
         }
@@ -105,27 +119,35 @@ object LegacyImport {
     /** What the backup screen offers for the previous app's files (a few file checks and the marker). */
     fun cleanupOffer(context: Context): LegacyCleanup.Offer {
         val app = context.applicationContext
-        val left = LegacyCleanup.existing(app.dataDir).isNotEmpty()
-        return LegacyCleanup.offer(left, available(app), readState(app))
+        val state = readState(app)
+        val left = LegacyCleanup.existing(app.dataDir, state?.memoryImported == true).isNotEmpty()
+        return LegacyCleanup.offer(left, available(app), state)
     }
 
     /**
-     * Deletes the previous app's files and then its Keystore keys, waiting for an import that is running. True when
-     * nothing is left; otherwise what remains is tried again by the next removal.
+     * Deletes the previous app's files and then its Keystore keys, waiting for an import that is running. What
+     * remains after a partial removal is tried again by the next one. The old memory file is kept until it was
+     * imported.
      */
-    suspend fun removeOldData(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun removeOldData(context: Context): LegacyCleanup.Removal = withContext(Dispatchers.IO) {
         val app = context.applicationContext
-        mutex.withLock { removeLocked(app) }
+        try {
+            mutex.withLock { removeLocked(app) }
+        } finally {
+            _changes.value++
+        }
     }
 
     /** Called with [mutex] held, so no import reads the files meanwhile. */
-    private fun removeLocked(app: Context): Boolean {
-        val left = LegacyCleanup.deleteFiles(app.dataDir)
+    private fun removeLocked(app: Context): LegacyCleanup.Removal {
+        val memoryImported = readState(app)?.memoryImported == true
+        val hadMemory = LegacyCleanup.existing(app.dataDir, memoryImported).any { it.memory }
+        val left = LegacyCleanup.deleteFiles(app.dataDir, memoryImported)
         val keyStore = runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }.getOrNull()
         var keysLeft = keyStore == null
         for (key in LegacyCleanup.KEYS) {
-            // A key stays while the file it sealed is still there.
-            if (key.after in left) {
+            // A key stays while a file it sealed is still there.
+            if (key.after.any { it in left }) {
                 keysLeft = true
                 continue
             }
@@ -136,9 +158,9 @@ object LegacyImport {
             }.getOrDefault(false)
             if (!removed) keysLeft = true
         }
-        val done = left.isEmpty() && !keysLeft
-        if (done) writeState(app, LegacyCleanup.markCleaned(readState(app) ?: LegacyImportState(), System.currentTimeMillis()))
-        return done
+        if (left.isNotEmpty() || keysLeft) return LegacyCleanup.Removal.Partial
+        writeState(app, LegacyCleanup.markCleaned(readState(app) ?: LegacyImportState(), System.currentTimeMillis()))
+        return if (hadMemory) LegacyCleanup.Removal.DoneWithMemory else LegacyCleanup.Removal.Done
     }
 
     fun dismissNotice(context: Context) {
@@ -163,6 +185,7 @@ object LegacyImport {
             report
         } finally {
             mutex.unlock()
+            _changes.value++
         }
     }
 
@@ -202,9 +225,12 @@ object LegacyImport {
             )
         }
         if (r.selectionImported) lines += context.getString(R.string.import_selection)
+        if (r.memory) lines += context.getString(R.string.import_memory)
         if (r.signInAgain.isNotEmpty()) lines += context.getString(R.string.import_sign_in_again, r.signInAgain.distinct().joinToString(", "))
         if (r.failedProviders > 0) lines += count(R.plurals.import_failed_providers, r.failedProviders)
         if (r.failedConversations > 0) lines += count(R.plurals.import_failed_conversations, r.failedConversations)
+        if (r.failedSignIns > 0) lines += count(R.plurals.import_failed_sign_ins, r.failedSignIns)
+        if (r.failedMemory) lines += context.getString(R.string.import_memory_failed)
         if (r.withoutToolDetails > 0) lines += count(R.plurals.import_without_tool_details, r.withoutToolDetails)
         if (r.truncatedMessages > 0) lines += count(R.plurals.import_truncated, r.truncatedMessages)
         if (r.damagedMessages > 0) lines += count(R.plurals.import_damaged, r.damagedMessages)
@@ -226,6 +252,9 @@ object LegacyImport {
         val signInAgain = ArrayList<String>()
         var failedProviders = 0
         var failedConversations = 0
+        var failedSignIns = 0
+        var memory = false
+        var failedMemory = false
         var damaged = 0
         var truncated = 0
         var withoutToolDetails = 0
@@ -264,6 +293,7 @@ object LegacyImport {
                 }
                 Unit
             }
+            state = importMemory(app, state, counts)
         } catch (e: CancellationException) {
             writeState(app, state)
             throw e
@@ -284,6 +314,9 @@ object LegacyImport {
             signInAgain = counts.signInAgain,
             failedProviders = counts.failedProviders,
             failedConversations = counts.failedConversations,
+            failedSignIns = counts.failedSignIns,
+            memory = counts.memory,
+            failedMemory = counts.failedMemory,
             damagedMessages = counts.damaged,
             truncatedMessages = counts.truncated,
             withoutToolDetails = counts.withoutToolDetails,
@@ -350,11 +383,16 @@ object LegacyImport {
                     val signedIn = providerId in vault.signedInProviders.first() || providerId in vault.savedProviders.first()
                     if (!LegacyImportPlan.shouldImportSignIn(state, row, signedIn)) {
                         state = state.copy(signIns = state.signIns + row.id)
-                    } else if (importSignIn(app, graph, row, config, now)) {
-                        counts.signIns++
-                        state = state.copy(signIns = state.signIns + row.id)
                     } else {
-                        counts.signInAgain += config.displayName
+                        when (importSignIn(app, graph, row, config, now)) {
+                            SignInResult.Imported -> {
+                                counts.signIns++
+                                state = state.copy(signIns = state.signIns + row.id)
+                            }
+                            SignInResult.Unusable -> counts.signInAgain += config.displayName
+                            // Not recorded, so the next run tries again (and the run does not count as complete).
+                            SignInResult.Failed -> counts.failedSignIns++
+                        }
                     }
                 }
             } catch (e: CancellationException) {
@@ -378,13 +416,49 @@ object LegacyImport {
         }
     }
 
-    /** True when the old sign-in was usable and is now stored for [config]. */
-    private suspend fun importSignIn(app: Context, graph: AppGraph, row: LegacyProviderRow, config: ProviderConfig, now: Long): Boolean {
-        val read = LegacyCredentials.read(app, row.id) as? LegacyCredentials.Read.Plain ?: return false
-        val signIn = LegacyProviders.signIn(read.json, row, now) as? LegacyProviders.SignIn.Usable ?: return false
+    private enum class SignInResult { Imported, Unusable, Failed }
+
+    /** Imports the old sign-in for [config] when it is usable. [SignInResult.Failed] is a read error worth retrying. */
+    private suspend fun importSignIn(app: Context, graph: AppGraph, row: LegacyProviderRow, config: ProviderConfig, now: Long): SignInResult {
+        val read = when (val r = LegacyCredentials.read(app, row.id)) {
+            is LegacyCredentials.Read.Plain -> r
+            LegacyCredentials.Read.Failed -> return SignInResult.Failed
+            else -> return SignInResult.Unusable
+        }
+        val signIn = LegacyProviders.signIn(read.json, row, now) as? LegacyProviders.SignIn.Usable ?: return SignInResult.Unusable
         graph.vault.setOauthTokens(config.id, json.encodeToString(OAuthTokens.serializer(), signIn.tokens))
         graph.providers.update(config.id) { it.copy(auth = signIn.method) }
-        return true
+        return SignInResult.Imported
+    }
+
+    /**
+     * The old long-term memory, once, through Atom 4's memory store: as the whole memory while Atom 4's is still
+     * empty, otherwise added under [LegacyImportPlan.MEMORY_HEADING]. No file means there is nothing to bring over.
+     */
+    private suspend fun importMemory(app: Context, initial: LegacyImportState, counts: Counts): LegacyImportState {
+        if (initial.memoryImported) return initial
+        val file = oldMemoryFile(app) ?: return initial.copy(memoryImported = true)
+        return try {
+            val text = file.takeIf { it.length() <= MemoryText.MAX_BYTES }?.readText()
+            if (text != null && ExtendFeature.importMemory(app, text, LegacyImportPlan.MEMORY_HEADING)) {
+                if (text.isNotBlank()) counts.memory = true
+                initial.copy(memoryImported = true)
+            } else {
+                counts.failedMemory = true
+                initial
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            counts.failedMemory = true
+            initial
+        }
+    }
+
+    /** The old memory file (its AtomicFile backup when present, as that is the valid copy), or null. */
+    private fun oldMemoryFile(app: Context): File? {
+        val main = File(app.filesDir, LegacyFiles.MEMORY)
+        return listOf(File(main.path + ".bak"), main).firstOrNull { it.isFile }
     }
 
     private suspend fun importSelection(

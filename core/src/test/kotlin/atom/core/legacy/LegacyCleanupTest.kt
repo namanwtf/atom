@@ -100,13 +100,40 @@ class LegacyCleanupTest {
         for (key in LegacyCleanup.KEYS) {
             assertFalse(key.alias.startsWith("atom4"), key.alias)
             assertFalse(key.alias in atom4Names, key.alias)
-            assertTrue(key.after in LegacyCleanup.TARGETS, key.alias)
+            assertTrue(key.after.isNotEmpty() && key.after.all { it in LegacyCleanup.TARGETS }, key.alias)
         }
+        assertEquals(LegacyCleanup.KEYS.size, LegacyCleanup.KEYS.map { it.alias }.toSet().size)
         assertEquals(
             listOf("databases/atom.db", "databases/atom.db-wal", "databases/atom.db-shm", "databases/atom.db-journal"),
             LegacyCleanup.TARGETS.map { it.path }.filter { it.startsWith("databases/") },
         )
-        assertTrue(LegacyCleanup.KEYS.any { it.alias == "atom_provider_credentials_v1" && it.after == LegacyCleanup.CREDENTIALS })
+        assertTrue(LegacyCleanup.KEYS.any { it.alias == "atom_provider_credentials_v1" && it.after == listOf(LegacyCleanup.CREDENTIALS) })
+        val paths = LegacyCleanup.TARGETS.map { it.path }
+        // The saved secrets, each with the copy a crashed commit leaves, and the settings' unfinished write.
+        for (name in listOf("atom_mcp_secrets", "atom_speech_secrets", "atom_image_gen_secrets", "atom_web_tools_secrets")) {
+            assertTrue("shared_prefs/$name.xml" in paths, name)
+            assertTrue("shared_prefs/$name.xml.bak" in paths, name)
+        }
+        assertTrue("files/datastore/atom_settings.preferences_pb.tmp" in paths)
+        assertEquals(
+            listOf("files/memory/MEMORY.md", "files/memory/MEMORY.md.bak", "files/memory/MEMORY.md.new"),
+            LegacyCleanup.TARGETS.filter { it.memory }.map { it.path },
+        )
+        val webTools = LegacyCleanup.KEYS.single { it.alias == "atom_web_tools_credentials_v1" }
+        assertEquals(listOf("shared_prefs/atom_web_tools_secrets.xml", "shared_prefs/atom_web_tools_secrets.xml.bak"), webTools.after.map { it.path })
+    }
+
+    @Test
+    fun keepsTheOldMemoryUntilItWasImported() {
+        val data = tempDir()
+        val memory = File(data, "files/memory/MEMORY.md").apply { parentFile.mkdirs(); writeText("- likes tea") }
+        File(data, "databases/atom.db").apply { parentFile.mkdirs(); writeText("x") }
+        assertEquals(listOf(LegacyCleanup.DATABASE), LegacyCleanup.existing(data, memoryImported = false))
+        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = false))
+        assertTrue(memory.isFile, "not imported: kept")
+        assertEquals(listOf(LegacyCleanup.MEMORY), LegacyCleanup.existing(data, memoryImported = true))
+        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = true))
+        assertFalse(memory.exists())
     }
 
     @Test
@@ -116,6 +143,7 @@ class LegacyCleanupTest {
         val precious = File(outside, "keep.txt").apply { writeText("x") }
         fun file(path: String) = File(data, path).apply { parentFile.mkdirs(); writeText("x") }
         for (t in LegacyCleanup.TARGETS) if (!t.directory) file(t.path)
+        assertTrue(LegacyCleanup.TARGETS.single { it.directory } == LegacyCleanup.CREDENTIALS)
         file("no_backup/provider_credentials/a.bin")
         file("no_backup/provider_credentials/b.bin.bak")
         // A link inside the credentials folder is removed as a link, never followed.
@@ -129,17 +157,20 @@ class LegacyCleanupTest {
             "no_backup/atom4_other.bin",
             "shared_prefs/atom4_speech.xml",
             "shared_prefs/atom4_extend_secrets.xml",
+            "shared_prefs/atom4_web.xml",
+            "files/atom4_extend/MEMORY.md",
+            "files/memory/notes.txt",
         ).map(::file)
 
-        assertEquals(LegacyCleanup.TARGETS, LegacyCleanup.existing(data))
-        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data))
-        assertEquals(emptyList(), LegacyCleanup.existing(data))
+        assertEquals(LegacyCleanup.TARGETS, LegacyCleanup.existing(data, memoryImported = true))
+        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = true))
+        assertEquals(emptyList(), LegacyCleanup.existing(data, memoryImported = true))
         keep.forEach { assertTrue(it.isFile, it.path) }
         assertTrue(precious.isFile)
         assertTrue(File(data, "files/datastore").isDirectory, "Atom 4's DataStore folder stays")
 
         // Idempotent: nothing left to do.
-        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data))
+        assertEquals(emptyList(), LegacyCleanup.deleteFiles(data, memoryImported = true))
         keep.forEach { assertTrue(it.isFile, it.path) }
     }
 
@@ -149,7 +180,7 @@ class LegacyCleanupTest {
         // A non-empty folder where a file is expected cannot be removed with File.delete.
         File(data, "databases/atom.db-wal/inner").apply { parentFile.mkdirs(); writeText("x") }
         File(data, "databases/atom.db").apply { writeText("x") }
-        assertEquals(listOf(LegacyCleanup.DATABASE_WAL), LegacyCleanup.deleteFiles(data))
+        assertEquals(listOf(LegacyCleanup.DATABASE_WAL), LegacyCleanup.deleteFiles(data, memoryImported = false))
         assertFalse(File(data, "databases/atom.db").exists())
     }
 }

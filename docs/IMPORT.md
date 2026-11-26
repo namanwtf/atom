@@ -25,10 +25,14 @@ something, it tries again by itself on the next start (up to three starts), and 
   messages (including edits and attached pictures), answers, thinking, tool steps with their full arguments and
   results where the earlier app kept them, and notes such as "Stopped". Times are spread between when each
   conversation started and when it was last used, since the earlier app did not store a time per message.
+- **Long-term memory** (`files/memory/MEMORY.md`), once, through Atom 4's memory: it becomes Atom 4's memory while
+  that is still empty; otherwise it is added at the end under the heading "Imported from the previous Atom". It is
+  never added twice. If it cannot be saved (for example it would make the memory larger than 1 MiB), the notice says
+  so and the run counts as unfinished, so it is tried again.
 
 ## What is not imported
 
-- MCP servers, skills, scheduled tasks, memory and other settings (appearance, voice, web tools, image generation).
+- MCP servers, skills, scheduled tasks and other settings (appearance, voice, web tools, image generation).
 - Character chats keep their messages and are named after the character, but they become normal chats: Atom 4's
   characters are separate, so the character's card and persona are not attached to them.
 - Per-model custom headers and body fields (per-provider ones are imported), and your own models that were switched
@@ -52,9 +56,11 @@ logs.
 The earlier app kept your API keys **unencrypted** in its database. Atom 4 stores the imported keys in its own vault,
 encrypted with a key held in the Android Keystore. So the old copy is not kept forever:
 
-- **7 days after an import that brought everything over** (no error, no provider or conversation that failed), Atom 4
-  deletes the earlier app's files the next time it starts. The week is there so you can still run the import again if
-  something looks off. A sign-in that had to be redone does not hold this up: the old sign-in could not be used anyway.
+- **7 days after an import that brought everything over** (no error, no provider, conversation, sign-in or memory
+  that failed), Atom 4 deletes the earlier app's files the next time it starts. The week is there so you can still
+  run the import again if something looks off. A sign-in file that could not be read because of a Keystore or storage
+  error counts as failed and is tried again. A sign-in the notice asks you to redo does not hold this up: it was
+  signed out, expired for good, or its key is gone, so the old file could not be used anyway.
 - **Earlier, by hand**: **Settings > General > Data backup > Remove previous Atom's data** deletes them right away,
   after you confirm. The row is shown only while old files are on the phone. Until an import has run it says
   "Import first".
@@ -62,25 +68,40 @@ encrypted with a key held in the Android Keystore. So the old copy is not kept f
   stays available, with a warning that whatever was not imported yet will be lost.
 
 Your imported data stays in Atom 4. After the removal, the "Import from previous Atom" row goes away, since there is
-nothing left to import. What is removed, under the app's data folder, and nothing else:
+nothing left to import. The earlier app's MCP servers, skills list and scheduled tasks live in its database, so they
+go with it (Atom 4 does not import them), and so do their saved tokens. What is removed, under the app's data folder,
+and nothing else:
 
 | What | Path |
 |---|---|
 | Database, with the plaintext API keys | `databases/atom.db`, `atom.db-wal`, `atom.db-shm`, `atom.db-journal` |
 | Sign-in files | `no_backup/provider_credentials/` (the whole folder) |
-| Settings | `files/datastore/atom_settings.preferences_pb` |
-| Saved secrets (MCP tokens, voice and image-generation keys) | `shared_prefs/atom_mcp_secrets.xml`, `atom_speech_secrets.xml`, `atom_image_gen_secrets.xml` |
-| Android Keystore keys, each only once its files are gone | `atom_provider_credentials_v1`, `atom_mcp_credentials_v1`, `atom_speech_credentials_v1`, `atom_image_gen_credentials_v1` |
+| Settings | `files/datastore/atom_settings.preferences_pb` and its unfinished write `.preferences_pb.tmp` |
+| Saved secrets (MCP tokens, voice, image-generation and web-tools keys) | `shared_prefs/atom_mcp_secrets.xml`, `atom_speech_secrets.xml`, `atom_image_gen_secrets.xml`, `atom_web_tools_secrets.xml`, each with its crash copy `.xml.bak` |
+| Long-term memory, only once it was imported | `files/memory/MEMORY.md`, `MEMORY.md.bak`, `MEMORY.md.new` |
+| Android Keystore keys, each only once its files are gone | `atom_provider_credentials_v1`, `atom_mcp_credentials_v1`, `atom_speech_credentials_v1`, `atom_image_gen_credentials_v1`, `atom_web_tools_credentials_v1` |
 
 None of these names starts with `atom4`, the prefix of every Atom 4 store ([UPDATES.md](UPDATES.md)), so Atom 4's
-own data is never touched. Other leftovers of the earlier app (pictures it generated, character folders, terminal
-and skills files, the bubble chat) are not removed; clearing Atom's storage in Android's settings removes them, along
-with Atom 4's own data.
+own data is never touched.
+
+### What stays on the phone
+
+These files of the earlier app are not removed:
+
+- pictures it generated (`files/generated_images/`);
+- character files (`files/roleplay/`: avatars, cards and per-character memory);
+- terminal workspace and skill files (`files/workspace`, `files/terminal-user/`, `files/skills/`);
+- the floating-bubble chat history (`files/bubble_history.json`);
+- its memory file, if it could not be imported.
+
+They stay in Atom's private storage, which other apps cannot read. Clearing Atom's storage in Android's settings
+removes them, along with Atom 4's own data.
 
 ## For developers
 
 - Old format: `databases/atom.db` (SQLite, Room schema 30, read with plain SQLite and never through Room),
-  `files/datastore/atom_settings.preferences_pb` (the default model) and
+  `files/datastore/atom_settings.preferences_pb` (the default model), `files/memory/MEMORY.md` (an AtomicFile: a
+  `.bak` copy is the valid one when present) and
   `no_backup/provider_credentials/<sha256(provider id)>.bin` (AES-GCM sign-ins sealed with the Keystore alias
   `atom_provider_credentials_v1`, the provider id as AAD).
 - Pure logic, tested on the JVM: `core/src/main/kotlin/atom/core/legacy/` (chunked values, the DataStore reader, the
@@ -89,8 +110,9 @@ with Atom 4's own data.
 - What was imported is recorded in `files/atom4_legacy_import.json` (old ids to Atom 4 ids). Each old item is
   imported at most once; something you delete in Atom 4 afterwards does not come back.
 - Removal of the old files: the list and the rules (`completedAt` plus 7 days, never without a clean import, once,
-  recorded as `legacyCleanedAt`) are in `core/src/main/kotlin/atom/core/legacy/LegacyCleanup.kt`, with tests that the
-  list holds no Atom 4 name. The check runs at app start and only reads the marker until it is due. Files are deleted
+  recorded as `legacyCleanedAt`; the memory files only after `memoryImported`) are in
+  `core/src/main/kotlin/atom/core/legacy/LegacyCleanup.kt`, with tests that the list holds no Atom 4 name. Memory goes
+  through `ExtendFeature.importMemory` (`MemoryText.merge`, tested in the extend module). The check runs at app start and only reads the marker until it is due. Files are deleted
   with `File.delete()`, the sign-in folder with `deleteTreeNoFollow()` (links are removed, never followed); the
   removal waits for a running import, and the time is recorded only once every file and key is gone (otherwise it is
   tried again at the next start).

@@ -112,16 +112,17 @@
     <string name="backup_problem_nothing">The file has nothing this version of Atom can import.</string>
     <string name="backup_read_failed">Could not read the file.</string>
     <string name="backup_legacy_import">Import from previous Atom</string>
-    <string name="backup_legacy_import_sub">API keys, sign-ins, the default model and conversations from the earlier Atom app on this phone. Only what is not imported yet. The import leaves the old files as they are; they are removed a week after an import that brought everything over.</string>
+    <string name="backup_legacy_import_sub">API keys, sign-ins, the default model, conversations and long-term memory from the earlier Atom app on this phone. Only what is not imported yet. The import leaves the old files as they are; they are removed a week after an import that brought everything over.</string>
     <string name="backup_legacy_remove">Remove previous Atom\'s data</string>
     <string name="backup_legacy_remove_sub">Deletes the old app\'s files, including its unencrypted API keys. Your imported data stays.</string>
     <string name="backup_legacy_remove_import_first">Import first. Once the import has run, this deletes the old app\'s files, including its unencrypted API keys.</string>
     <string name="backup_legacy_remove_unimported">The import did not finish. Deleting the old app\'s files, including its unencrypted API keys, loses whatever was not imported yet.</string>
     <string name="backup_legacy_remove_title">Remove previous Atom\'s data?</string>
-    <string name="backup_legacy_remove_body">This deletes the earlier Atom app\'s database (which holds its API keys unencrypted), its sign-in files, its settings file and saved secrets, and its keys in the Android Keystore. Everything imported into Atom 4 stays, with its API keys encrypted in Atom 4\'s vault. This cannot be undone, and the import cannot be run again afterwards.</string>
+    <string name="backup_legacy_remove_body">This deletes the earlier Atom app\'s database (which holds its API keys unencrypted), its sign-in files, its settings file and saved secrets, and its keys in the Android Keystore. Its MCP servers, skills and scheduled tasks, which Atom 4 does not import, are removed too, along with their saved tokens. Its memory file is deleted only once that memory is in Atom 4. Everything imported into Atom 4 stays, with its API keys encrypted in Atom 4\'s vault. This cannot be undone, and the import cannot be run again afterwards.</string>
     <string name="backup_legacy_remove_body_unimported">\n\nThe import has not finished: providers, keys, sign-ins and conversations that were not imported yet will be lost.</string>
     <string name="backup_legacy_remove_confirm">Remove</string>
-    <string name="backup_legacy_removed">The earlier Atom app\'s data was removed from this phone.</string>
+    <string name="backup_legacy_removed">Removed the previous app\'s database, sign-in files, settings, saved secrets and Keystore keys.</string>
+    <string name="backup_legacy_removed_memory">Removed the previous app\'s database, sign-in files, settings, saved secrets, Keystore keys and memory file (its memory is now in Atom 4).</string>
     <string name="backup_legacy_remove_partial">Some of the earlier Atom app\'s data could not be removed. Try again in a moment.</string>
     <string name="general_backup_section_appearance">Appearance</string>
 

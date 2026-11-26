@@ -6,6 +6,7 @@ import atom.core.tool.Tool
 import atom.extend.mcp.McpServerScreen
 import atom.extend.mcp.McpServersScreen
 import atom.extend.mcp.McpTools
+import atom.extend.memory.MemoryEdit
 import atom.extend.memory.MemoryScreen
 import atom.extend.memory.MemoryText
 import atom.extend.memory.MemoryTools
@@ -42,6 +43,26 @@ object ExtendFeature : AtomFeature {
     fun memoryFile(context: Context): File {
         ExtendRuntime.init(context)
         return ExtendRuntime.memory.file
+    }
+
+    /**
+     * Brings memory over from another app (the previous Atom) through the memory store: [text] becomes the whole
+     * memory while it is still empty, otherwise it is added at the end under [heading] (see [MemoryText.merge]).
+     * False when it could not be saved (for example over the size limit).
+     */
+    suspend fun importMemory(context: Context, text: String, heading: String): Boolean {
+        ExtendRuntime.init(context)
+        val store = ExtendRuntime.memory
+        // A write from the agent or the editor in between only means trying again on the new content.
+        repeat(3) {
+            val current = store.current()
+            when (store.save(MemoryText.merge(current.text, text, heading), current.hash)) {
+                is MemoryEdit.Saved -> return true
+                is MemoryEdit.Rejected -> return false
+                is MemoryEdit.Conflict -> Unit
+            }
+        }
+        return false
     }
 
     override val entries: List<FeatureEntry>
