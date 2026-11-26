@@ -5,9 +5,14 @@ import atom.core.llm.ContentPart
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.Role
 import atom.core.llm.ToolCall
+import java.io.InputStream
 import java.util.UUID
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.DecodeSequenceMode
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeToSequence
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -51,6 +56,8 @@ data class ImportedConversation(
     val damagedRows: Int = 0,
     /** Entries cut to [LegacyConversations.MAX_MESSAGE_CHARS]. */
     val truncatedEntries: Int = 0,
+    /** Tool cards the transcript had no entry for; they keep only the timeline's short previews. */
+    val toolRowsWithoutDetails: Int = 0,
 )
 
 /**
@@ -113,6 +120,7 @@ object LegacyConversations {
             entries = timed,
             damagedRows = messages.count { it.damaged },
             truncatedEntries = builder.truncated,
+            toolRowsWithoutDetails = builder.withoutDetails,
         )
     }
 
@@ -148,8 +156,27 @@ object LegacyConversations {
     /** The image strings of a resolved `images_json` (normally `data:image/...;base64,...` URLs); blanks dropped. */
     fun images(imagesJson: String): List<String> {
         if (imagesJson.isBlank()) return emptyList()
-        val array = runCatching { json.parseToJsonElement(imagesJson) }.getOrNull() as? JsonArray ?: return emptyList()
-        return array.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.takeIf { s -> s.isNotBlank() } }
+        val out = ArrayList<String>()
+        images(imagesJson.byteInputStream(Charsets.UTF_8)) { out += it }
+        return out
+    }
+
+    /**
+     * Streams the image strings of an `images_json` value to [each], one at a time, so only one image is in memory.
+     * Returns false when the value is not a readable JSON array of strings (images before the damage are kept).
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    fun images(input: InputStream, each: (String) -> Unit): Boolean = try {
+        json.decodeToSequence(input, JsonElement.serializer(), DecodeSequenceMode.ARRAY_WRAPPED).forEach { element ->
+            (element as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }?.let(each)
+        }
+        true
+    } catch (e: SerializationException) {
+        false
+    } catch (e: IllegalArgumentException) {
+        false
+    } catch (e: IllegalStateException) {
+        false
     }
 
     private class PendingTool(val call: ToolCall, val result: String?, val isError: Boolean)
@@ -157,6 +184,8 @@ object LegacyConversations {
     private class Builder(private val journal: LegacyJournal, private val maxChars: Int) {
         val entries = ArrayList<ImportedEntry>()
         var truncated = 0
+        var withoutDetails = 0
+        private var toolRound: String? = null
         private val reasoning = StringBuilder()
         private var reasoningMs: Long? = null
         private val tools = ArrayList<PendingTool>()
@@ -180,7 +209,13 @@ object LegacyConversations {
                     }
                     r.elapsedSeconds?.takeIf { it >= 0 }?.let { reasoningMs = (reasoningMs ?: 0L) + it * 1000 }
                 }
-                LegacyMessageRow.TOOL -> tools += tool(r)
+                LegacyMessageRow.TOOL -> {
+                    // `<runId>-tool-<round>-<callId>`: calls of a later round are a separate model turn.
+                    val round = TOOL_ROUND.find(r.id)?.groupValues?.get(1)
+                    if (tools.isNotEmpty() && round != null && toolRound != null && round != toolRound) flushTools()
+                    toolRound = round
+                    tools += tool(r)
+                }
                 LegacyMessageRow.ASSISTANT -> {
                     flushTools()
                     val thought = takeReasoning() ?: journal.reasoningFor(r.id)?.let { cap(it.trim()) to null }
@@ -211,6 +246,7 @@ object LegacyConversations {
         private fun tool(r: LegacyMessageRow): PendingTool {
             val callId = journal.callIdFor(r.id)
             val fromJournal = callId?.let { journal.calls[it] }
+            if (fromJournal == null) withoutDetails++
             val id = uniqueId(callId ?: syntheticId(r.id))
             val name = r.toolName?.takeIf { it.isNotBlank() } ?: fromJournal?.name ?: "tool"
             val args = fromJournal?.argumentsJson?.takeIf { it.isNotBlank() } ?: buildJsonObject {
@@ -277,6 +313,8 @@ object LegacyConversations {
             return text.substring(0, end) + TRUNCATED_NOTE
         }
     }
+
+    private val TOOL_ROUND = Regex("-tool-(\\d+)-")
 
     /** A provider-neutral call id for a row the journal does not know (`call_` + 24 hex characters). */
     fun syntheticId(rowId: String): String =

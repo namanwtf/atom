@@ -8,12 +8,14 @@ import atom.core.legacy.LegacyChunks
 import atom.core.legacy.LegacyConversationRow
 import atom.core.legacy.LegacyConversations
 import atom.core.legacy.LegacyFiles
+import atom.core.legacy.LegacyJournal
 import atom.core.legacy.LegacyMessageRow
 import atom.core.legacy.LegacyModelRow
 import atom.core.legacy.LegacyProviderRow
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 
 /**
@@ -133,7 +135,7 @@ internal class LegacyDatabase private constructor(private val db: SQLiteDatabase
      * Chunked text is resolved (at most [maxChars] per value); [saveImages] turns a user row's image strings into
      * local copies and returns (paths, how many could not be kept).
      */
-    fun messages(conversationId: String, maxChars: Int, saveImages: (List<String>) -> Pair<List<String>, Int>): List<LegacyMessageRow> {
+    fun messages(conversationId: String, maxChars: Int, saveImage: (String) -> String?): List<LegacyMessageRow> {
         if (!hasTable("conversation_messages")) return emptyList()
         val out = ArrayList<LegacyMessageRow>()
         var after = Long.MIN_VALUE
@@ -164,13 +166,19 @@ internal class LegacyDatabase private constructor(private val db: SQLiteDatabase
             }
             if (page.isEmpty()) break
             for (raw in page) {
-                val content = resolve("conversation_messages", raw.id, "content", raw.content, maxChars)
-                val (paths, dropped) = if (raw.type == LegacyMessageRow.USER && raw.images.isNotBlank()) {
-                    val images = resolve("conversation_messages", raw.id, "images", raw.images, IMAGES_MAX)
-                    val list = LegacyConversations.images(images.text)
-                    if (images is LegacyChunks.Resolved.Ok) saveImages(list) else emptyList<String>() to 1
-                } else {
-                    emptyList<String>() to 0
+                // One unit over the limit, so the mapper sees the value is longer and cuts it with a note.
+                val content = LegacyChunks.resolvePrefix(raw.content, maxChars + 1) { n -> chunks("conversation_messages", raw.id, "content", n) }
+                val paths = ArrayList<String>()
+                var dropped = 0
+                if (raw.type == LegacyMessageRow.USER && raw.images.isNotBlank()) {
+                    // Streamed and saved one image at a time, so only one is ever in memory.
+                    val read = stream("conversation_messages", raw.id, "images", raw.images) { input ->
+                        LegacyConversations.images(input) { image ->
+                            val path = saveImage(image)
+                            if (path != null) paths += path else dropped++
+                        }
+                    }
+                    if (read != true) dropped++
                 }
                 out += LegacyMessageRow(
                     id = raw.id,
@@ -194,26 +202,54 @@ internal class LegacyDatabase private constructor(private val db: SQLiteDatabase
         return out
     }
 
-    /** The checkpoint transcript: `journal_json`, or `history_json` when the journal is empty. Null when absent or too large. */
-    fun journal(conversationId: String, maxChars: Int): String? {
-        if (!hasTable("conversation_context_checkpoints")) return null
-        return db.rawQuery("SELECT * FROM conversation_context_checkpoints WHERE conversation_id = ?", arrayOf(conversationId)).use { c ->
-            if (!c.moveToFirst()) return@use null
-            val journal = c.str("journal_json")
-            val history = c.str("history_json")
-            val (field, value) = if (journal.isNotBlank()) "journal" to journal else "history" to history
-            val resolved = resolve("conversation_context_checkpoints", conversationId, field, value, maxChars)
-            (resolved as? LegacyChunks.Resolved.Ok)?.text?.takeIf { it.isNotBlank() }
+    /**
+     * The checkpoint transcript (`journal_json`, or `history_json` when the journal is empty), parsed as a stream so a
+     * transcript of any size fits; results are cut to [maxResultChars]. Empty when there is no checkpoint or its
+     * chunks are damaged.
+     */
+    fun journal(conversationId: String, maxResultChars: Int): LegacyJournal {
+        if (!hasTable("conversation_context_checkpoints")) return LegacyJournal.EMPTY
+        val chosen = db.rawQuery("SELECT * FROM conversation_context_checkpoints WHERE conversation_id = ?", arrayOf(conversationId)).use { c ->
+            if (!c.moveToFirst()) {
+                null
+            } else {
+                val journal = c.str("journal_json")
+                if (journal.isNotBlank()) "journal" to journal else "history" to c.str("history_json")
+            }
+        } ?: return LegacyJournal.EMPTY
+        if (chosen.second.isBlank()) return LegacyJournal.EMPTY
+        return stream("conversation_context_checkpoints", conversationId, chosen.first, chosen.second) { input ->
+            LegacyJournal.parse(input, maxResultChars)
+        } ?: LegacyJournal.EMPTY
+    }
+
+    /**
+     * Reads a possibly chunked value as a UTF-8 stream, one chunk in memory at a time. Null when the reference is
+     * malformed or its chunks are incomplete.
+     */
+    private fun <T> stream(ownerTable: String, ownerId: String, field: String, value: String, block: (InputStream) -> T): T? {
+        if (!LegacyChunks.isRef(value)) return block(value.byteInputStream(Charsets.UTF_8))
+        val ref = LegacyChunks.parseRef(value) ?: return null
+        if (!hasTable(CHUNKS)) return null
+        val args = arrayOf(ownerTable, ownerId, field)
+        val indexes = db.rawQuery("SELECT chunk_index FROM $CHUNKS WHERE owner_table = ? AND owner_id = ? AND field = ?", args).use { c ->
+            buildList { while (c.moveToNext()) add(c.getInt(0)) }
+        }
+        if (LegacyChunks.indexProblem(ref, indexes) != null) return null
+        return db.rawQuery("SELECT content FROM $CHUNKS WHERE owner_table = ? AND owner_id = ? AND field = ? ORDER BY chunk_index", args).use { c ->
+            val pieces = generateSequence { if (c.moveToNext()) c.getString(0).orEmpty() else null }.iterator()
+            block(LegacyChunks.utf8Stream(pieces))
         }
     }
 
     private fun resolve(ownerTable: String, ownerId: String, field: String, value: String, maxChars: Int): LegacyChunks.Resolved =
-        LegacyChunks.resolve(value, maxChars) { chunks(ownerTable, ownerId, field) }
+        LegacyChunks.resolve(value, maxChars) { chunks(ownerTable, ownerId, field, Int.MAX_VALUE) }
 
-    private fun chunks(ownerTable: String, ownerId: String, field: String): List<LegacyChunks.Chunk> {
-        if (!hasTable("agent_text_chunks")) return emptyList()
+    /** The chunk rows of one value with `chunk_index` below [below]. */
+    private fun chunks(ownerTable: String, ownerId: String, field: String, below: Int): List<LegacyChunks.Chunk> {
+        if (!hasTable(CHUNKS)) return emptyList()
         return db.rawQuery(
-            "SELECT chunk_index, content FROM agent_text_chunks WHERE owner_table = ? AND owner_id = ? AND field = ?",
+            "SELECT chunk_index, content FROM $CHUNKS WHERE owner_table = ? AND owner_id = ? AND field = ? AND chunk_index < $below",
             arrayOf(ownerTable, ownerId, field),
         ).use { c -> buildList { while (c.moveToNext()) add(LegacyChunks.Chunk(c.getInt(0), c.getString(1).orEmpty())) } }
     }
@@ -237,14 +273,17 @@ internal class LegacyDatabase private constructor(private val db: SQLiteDatabase
         val resultSummary: String?,
     )
 
-    class NotEnoughSpaceException : IOException("not enough free space to read the previous app's database")
+    /** Too little free space for a temporary copy, and the original cannot be read without touching its files. */
+    class NotEnoughSpaceException : IOException("not enough free space")
 
     companion object {
         private const val PAGE = 128
         private const val ROLEPLAY_MAX = 1_000_000
-        private const val IMAGES_MAX = 30_000_000
+        private const val CHUNKS = "agent_text_chunks"
         private const val SPARE_BYTES = 32L * 1024 * 1024
-        private val SUFFIXES = listOf("", "-wal", "-shm")
+
+        /** The database, its WAL, its WAL index and its rollback journal (a kill mid-write leaves a hot journal). */
+        private val SUFFIXES = listOf("", "-wal", "-shm", "-journal")
 
         fun source(context: Context): File = context.getDatabasePath(LegacyFiles.DATABASE)
 
@@ -256,27 +295,36 @@ internal class LegacyDatabase private constructor(private val db: SQLiteDatabase
             val source = source(context)
             if (!source.isFile) return null
             val files = SUFFIXES.map { File(source.path + it) }.filter { it.isFile }
-            val hasWal = File(source.path + "-wal").let { it.isFile && it.length() > 0 }
             val needed = files.sumOf { it.length() }
-            val root = tempRoot(context)
             if (context.cacheDir.usableSpace >= needed + SPARE_BYTES) {
-                val dir = File(root, UUID.randomUUID().toString())
+                val dir = File(tempRoot(context), UUID.randomUUID().toString())
                 try {
                     if (!dir.mkdirs()) throw IOException("cannot create a temporary folder")
                     for (file in files) file.inputStream().use { input -> File(dir, file.name).outputStream().use { input.copyTo(it) } }
-                    // The copy is ours: read-write lets SQLite apply the copied WAL; without one it is opened read-only.
-                    val flags = if (hasWal) SQLiteDatabase.OPEN_READWRITE else SQLiteDatabase.OPEN_READONLY
-                    return LegacyDatabase(SQLiteDatabase.openDatabase(File(dir, source.name).path, null, flags), dir)
+                    // The copy is ours, so it is opened read-write: SQLite then applies a copied WAL or rolls back a
+                    // copied hot journal on the copy, and can build a WAL index there. The originals are never opened.
+                    val copy = File(dir, source.name).path
+                    return LegacyDatabase(SQLiteDatabase.openDatabase(copy, null, SQLiteDatabase.OPEN_READWRITE), dir)
                 } catch (e: Exception) {
                     runCatching { dir.deleteTreeNoFollow() }
                     throw e
                 }
             }
-            // No room for a copy. Without a WAL a read-only connection never writes, so the original can be read in
-            // place; with one, reading in place could touch its shared-memory file, so the import stops instead.
-            if (hasWal) throw NotEnoughSpaceException()
+            // No room for a copy. A read-only connection to a rollback-journal database with no hot journal never
+            // writes or creates a file, so it may be read in place. Anything else (a WAL file of any size, a WAL-mode
+            // header, a non-empty journal) could make SQLite create or rewrite a file next to it, so the import stops.
+            val wal = File(source.path + "-wal").exists()
+            val journal = File(source.path + "-journal").let { it.isFile && it.length() > 0 }
+            if (wal || journal || isWalMode(source)) throw NotEnoughSpaceException()
             return LegacyDatabase(SQLiteDatabase.openDatabase(source.path, null, SQLiteDatabase.OPEN_READONLY), null)
         }
+
+        /** The SQLite header's file format bytes (offsets 18 and 19) are 2 in WAL mode. Unreadable counts as WAL. */
+        private fun isWalMode(file: File): Boolean = runCatching {
+            val header = ByteArray(20)
+            val n = file.inputStream().use { it.read(header) }
+            n < 20 || header[18].toInt() == 2 || header[19].toInt() == 2
+        }.getOrDefault(true)
     }
 }
 

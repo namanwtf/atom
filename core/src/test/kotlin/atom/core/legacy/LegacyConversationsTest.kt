@@ -243,4 +243,55 @@ class LegacyConversationsTest {
         assertTrue(LegacyConversations.images("").isEmpty())
         assertTrue(LegacyConversations.images("{").isEmpty())
     }
+
+    @Test
+    fun reasoningIsFoundForTheNormalAssistantRowIdForm() {
+        val j = LegacyJournal.parse(journalJson)
+        assertEquals("Summarize", j.reasoningFor("assistant-r1-2-0"))
+        val rows = listOf(row("u", 0, LegacyMessageRow.USER, "q"), row("assistant-r1-2-0", 1, LegacyMessageRow.ASSISTANT, "Two files."))
+        assertEquals("Summarize", assertIs<Message>(LegacyConversations.map(conv, rows, j).entries[1]).reasoning)
+    }
+
+    @Test
+    fun toolCallsOfDifferentRoundsAreSeparateTurns() {
+        val rows = listOf(
+            row("r-tool-1-a", 0, LegacyMessageRow.TOOL) { copy(toolName = "x", toolStatus = "Success", resultSummary = "1") },
+            row("r-tool-1-b", 1, LegacyMessageRow.TOOL) { copy(toolName = "x", toolStatus = "Success", resultSummary = "2") },
+            row("r-tool-2-c", 2, LegacyMessageRow.TOOL) { copy(toolName = "x", toolStatus = "Success", resultSummary = "3") },
+        )
+        val c = LegacyConversations.map(conv, rows)
+        val turns = c.entries.filterIsInstance<Message>().filter { it.message.toolCalls.isNotEmpty() }
+        assertEquals(listOf(2, 1), turns.map { it.message.toolCalls.size })
+        // Each turn is followed by its own results.
+        assertEquals(listOf(Role.Assistant, Role.Tool, Role.Tool, Role.Assistant, Role.Tool), c.entries.map { (it as Message).message.role })
+        assertEquals(3, c.toolRowsWithoutDetails)
+        assertEquals(0, LegacyConversations.map(conv, sample(), LegacyJournal.parse(journalJson)).toolRowsWithoutDetails)
+    }
+
+    @Test
+    fun longValuesAreCutWithANoteAndCounted() {
+        val rows = listOf(row("a", 0, LegacyMessageRow.ASSISTANT, "y".repeat(11)))
+        val c = LegacyConversations.map(conv, rows, maxChars = 10)
+        assertTrue(assertIs<Message>(c.entries[0]).message.text.endsWith(LegacyConversations.TRUNCATED_NOTE))
+        assertEquals(1, c.truncatedEntries)
+    }
+
+    @Test
+    fun aStreamedJournalKeepsWhatWasReadBeforeDamage() {
+        val cut = journalJson.substring(0, journalJson.indexOf("{\"role\":\"assistant\",\"content\":\"Two files."))
+        val j = LegacyJournal.parse(cut.byteInputStream(), Int.MAX_VALUE)
+        assertEquals("call_A", j.callIdFor("r1-tool-1-call_A"))
+        assertEquals("a.txt\nb.txt", j.results["call_A"])
+        // Results are cut (one unit over, so the mapper adds its note).
+        assertEquals("a.tx", LegacyJournal.parse(journalJson.byteInputStream(), 3).results["call_A"])
+    }
+
+    @Test
+    fun imagesAreStreamedOneByOne() {
+        val seen = ArrayList<String>()
+        assertTrue(LegacyConversations.images("""["a","","b"]""".byteInputStream()) { seen += it })
+        assertEquals(listOf("a", "b"), seen)
+        seen.clear()
+        assertFalse(LegacyConversations.images("""["a","b""".byteInputStream()) { seen += it })
+    }
 }

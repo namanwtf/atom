@@ -32,6 +32,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +57,6 @@ import kotlinx.serialization.json.Json
  */
 object LegacyImport {
     private const val MARKER = "atom4_legacy_import.json"
-    private const val JOURNAL_MAX_CHARS = 4_000_000
     private const val MARKER_EVERY = 20
     private const val MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
@@ -78,6 +78,11 @@ object LegacyImport {
             val app = context.applicationContext
             val state = readState(app)
             if (LegacyImportPlan.shouldAutoRun(available(app), state)) {
+                // Counted before the run, so a run that crashes the app still uses up one of its attempts.
+                mutex.withLock {
+                    val current = readState(app) ?: LegacyImportState()
+                    writeState(app, current.copy(attempts = current.attempts + 1))
+                }
                 run(app, graph, manual = false)
             } else if (state?.noticeShown == false) {
                 state.report?.let { _notice.value = describe(app, it) }
@@ -101,7 +106,9 @@ object LegacyImport {
         if (!mutex.tryLock()) return@withContext null
         try {
             val (state, report) = importLocked(app, graph)
-            writeState(app, state.copy(completedAt = report.at, report = report, noticeShown = manual))
+            // Finished only without an error or a failed item; otherwise the next start tries again (a few times).
+            val completed = if (LegacyImportPlan.isComplete(report)) report.at else null
+            writeState(app, state.copy(completedAt = completed ?: state.completedAt, report = report, noticeShown = manual))
             _notice.value = if (manual) null else describe(app, report)
             report
         } finally {
@@ -109,18 +116,50 @@ object LegacyImport {
         }
     }
 
+    /**
+     * A manual run from the backup screen. It runs in the app's scope, so leaving the screen does not stop it; the
+     * caller waits for the text. If the caller goes away first, the result is shown as the notice instead.
+     */
+    suspend fun runManually(context: Context, graph: AppGraph): String {
+        val app = context.applicationContext
+        val job = graph.appScope.async(Dispatchers.IO) { run(app, graph, manual = true) }
+        val report = try {
+            job.await()
+        } catch (e: CancellationException) {
+            graph.appScope.launch {
+                val done = runCatching { job.await() }.getOrNull() ?: return@launch
+                mutex.withLock { readState(app)?.let { writeState(app, it.copy(noticeShown = false)) } }
+                _notice.value = describe(app, done)
+            }
+            throw e
+        }
+        return report?.let { describe(app, it) } ?: app.getString(R.string.import_busy)
+    }
+
     /** The report as the notice and the backup screen show it. */
     fun describe(context: Context, r: LegacyImportReport): String {
         if (r.nothingFound && r.error == null) return context.getString(R.string.import_nothing)
+        val res = context.resources
+        fun count(id: Int, n: Int) = res.getQuantityString(id, n, n)
         val lines = ArrayList<String>()
-        if (!r.nothingFound) lines += context.getString(R.string.import_summary, r.conversations, r.providers, r.keys, r.signIns)
+        if (!r.nothingFound) {
+            lines += context.getString(
+                R.string.import_summary,
+                count(R.plurals.import_conversations, r.conversations),
+                count(R.plurals.import_providers, r.providers),
+                count(R.plurals.import_keys, r.keys),
+                count(R.plurals.import_sign_ins, r.signIns),
+            )
+        }
         if (r.selectionImported) lines += context.getString(R.string.import_selection)
         if (r.signInAgain.isNotEmpty()) lines += context.getString(R.string.import_sign_in_again, r.signInAgain.distinct().joinToString(", "))
-        if (r.failedProviders > 0) lines += context.getString(R.string.import_failed_providers, r.failedProviders)
-        if (r.failedConversations > 0) lines += context.getString(R.string.import_failed_conversations, r.failedConversations)
-        if (r.damagedMessages > 0) lines += context.getString(R.string.import_damaged, r.damagedMessages)
-        if (r.skippedImages > 0) lines += context.getString(R.string.import_images_skipped, r.skippedImages)
-        if (r.characterChats > 0) lines += context.getString(R.string.import_characters, r.characterChats)
+        if (r.failedProviders > 0) lines += count(R.plurals.import_failed_providers, r.failedProviders)
+        if (r.failedConversations > 0) lines += count(R.plurals.import_failed_conversations, r.failedConversations)
+        if (r.withoutToolDetails > 0) lines += count(R.plurals.import_without_tool_details, r.withoutToolDetails)
+        if (r.truncatedMessages > 0) lines += count(R.plurals.import_truncated, r.truncatedMessages)
+        if (r.damagedMessages > 0) lines += count(R.plurals.import_damaged, r.damagedMessages)
+        if (r.skippedImages > 0) lines += count(R.plurals.import_images_skipped, r.skippedImages)
+        if (r.characterChats > 0) lines += count(R.plurals.import_characters, r.characterChats)
         r.error?.let { lines += context.getString(R.string.import_error, it) }
         lines += context.getString(R.string.import_not_included)
         return lines.joinToString("\n")
@@ -138,6 +177,8 @@ object LegacyImport {
         var failedProviders = 0
         var failedConversations = 0
         var damaged = 0
+        var truncated = 0
+        var withoutToolDetails = 0
         var skippedImages = 0
         var selection = false
     }
@@ -161,7 +202,14 @@ object LegacyImport {
                     val modelRows = legacy.models()
                     val selection = LegacySelection.fromFile(readSettings(app))
                     state = importProviders(app, graph, state, providerRows, modelRows, selection, counts, now)
-                    state = importSelection(graph, state, providerRows, modelRows, selection, counts)
+                    // Its own guard: a problem with the default model must not keep the conversations out.
+                    state = try {
+                        importSelection(graph, state, providerRows, modelRows, selection, counts)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        state
+                    }
                     state = importConversations(app, graph, legacy, state, modelRows, counts)
                 }
                 Unit
@@ -169,6 +217,8 @@ object LegacyImport {
         } catch (e: CancellationException) {
             writeState(app, state)
             throw e
+        } catch (e: LegacyDatabase.NotEnoughSpaceException) {
+            error = app.getString(R.string.import_error_space)
         } catch (e: Exception) {
             error = e.message ?: e::class.simpleName ?: "error"
         } finally {
@@ -185,6 +235,8 @@ object LegacyImport {
             failedProviders = counts.failedProviders,
             failedConversations = counts.failedConversations,
             damagedMessages = counts.damaged,
+            truncatedMessages = counts.truncated,
+            withoutToolDetails = counts.withoutToolDetails,
             skippedImages = counts.skippedImages,
             selectionImported = counts.selection,
             nothingFound = nothing,
@@ -207,12 +259,16 @@ object LegacyImport {
         val store = graph.providers
         val vault = graph.vault
         val seeded = LegacyImportPlan.seededPrompt(rows)
+        val removed = store.removedPresets()
         for (row in rows) {
             currentCoroutineContext().ensureActive()
             try {
-                val newId: String = state.providers[row.id] ?: run {
+                var newId = state.providers[row.id]
+                if (newId == null) {
                     val imported = LegacyProviders.toConfig(row, models, seeded, selection.perProvider[row.id])
                     val target = findTarget(store.all(), imported)
+                    // A built-in the user removed in Atom 4 stays removed (and its old key with it).
+                    if (target == null && imported.presetId != null && imported.presetId in removed) continue
                     val id = if (target != null) {
                         // Presence only: nothing is decrypted to decide this.
                         val configured = target.id in vault.savedProviders.first() ||
@@ -225,22 +281,23 @@ object LegacyImport {
                     }
                     counts.providers++
                     state = state.copy(providers = state.providers + (row.id to id))
-                    id
+                    newId = id
                 }
+                val providerId: String = newId ?: continue
                 // Deleted in Atom 4 since an earlier run: leave it deleted.
-                val config = store.get(newId) ?: continue
+                val config = store.get(providerId) ?: continue
                 val key = row.usableApiKey
                 if (key != null && row.id !in state.keys) {
-                    val hasKey = newId in vault.savedProviders.first()
+                    val hasKey = providerId in vault.savedProviders.first()
                     if (LegacyImportPlan.shouldImportKey(state, row.id, key, hasKey)) {
-                        vault.setApiKey(newId, key)
+                        vault.setApiKey(providerId, key)
                         counts.keys++
                     }
                     state = state.copy(keys = state.keys + row.id)
                 }
                 if (row.isOAuth && row.id !in state.signIns) {
                     // Already signed in, or set up with an API key in Atom 4: that setup is kept as it is.
-                    val signedIn = newId in vault.signedInProviders.first() || newId in vault.savedProviders.first()
+                    val signedIn = providerId in vault.signedInProviders.first() || providerId in vault.savedProviders.first()
                     if (!LegacyImportPlan.shouldImportSignIn(state, row, signedIn)) {
                         state = state.copy(signIns = state.signIns + row.id)
                     } else if (importSignIn(app, graph, row, config, now)) {
@@ -329,10 +386,15 @@ object LegacyImport {
                     val saved = ArrayList<String>()
                     try {
                         val row = db.conversation(oldId) ?: continue
-                        val messages = db.messages(oldId, LegacyConversations.MAX_MESSAGE_CHARS) { images ->
-                            saveImages(app, images).also { saved += it.first }
+                        val messages = db.messages(oldId, LegacyConversations.MAX_MESSAGE_CHARS) { image ->
+                            saveImage(app, image)?.also { saved += it }
                         }
-                        val journal = LegacyJournal.parse(db.journal(oldId, JOURNAL_MAX_CHARS))
+                        val journal = try {
+                            db.journal(oldId, LegacyConversations.MAX_MESSAGE_CHARS)
+                        } catch (e: OutOfMemoryError) {
+                            // A single giant transcript entry: the timeline is still imported, with previews only.
+                            LegacyJournal.EMPTY
+                        }
                         val mapped = LegacyConversations.map(row, messages, journal)
                         val selection = LegacySelection.target(mapped.modelRowId, models, state.providers) { p, m -> configs[p]?.model(m) != null }
                             ?.let { (p, m) -> EngineSelection.Cloud(p, m) }
@@ -341,6 +403,8 @@ object LegacyImport {
                         counts.conversations++
                         if (mapped.isCharacterChat) counts.characterChats++
                         counts.damaged += mapped.damagedRows
+                        counts.truncated += mapped.truncatedEntries
+                        if (mapped.toolRowsWithoutDetails > 0) counts.withoutToolDetails++
                         counts.skippedImages += messages.sumOf { it.droppedImages }
                         state = state.copy(conversations = state.conversations + (oldId to target))
                     } catch (e: CancellationException) {
@@ -364,16 +428,10 @@ object LegacyImport {
         return state
     }
 
-    /** Local copies of a user row's inline images (`data:image/...;base64,...`, or a file path that still exists). */
-    private fun saveImages(app: Context, images: List<String>): Pair<List<String>, Int> {
-        val paths = ArrayList<String>()
-        var dropped = 0
-        for (image in images) {
-            val bytes = runCatching { imageBytes(image) }.getOrNull()
-            val attachment = bytes?.let { runCatching { Attachments.saveImageBytes(app, it) }.getOrNull() }
-            if (attachment != null) paths += attachment.path else dropped++
-        }
-        return paths to dropped
+    /** A local copy of one inline image (`data:image/...;base64,...`, or a file path that still exists), or null. */
+    private fun saveImage(app: Context, image: String): String? {
+        val bytes = runCatching { imageBytes(image) }.getOrNull() ?: return null
+        return runCatching { Attachments.saveImageBytes(app, bytes) }.getOrNull()?.path
     }
 
     private fun imageBytes(image: String): ByteArray? {

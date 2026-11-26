@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -92,5 +93,33 @@ class LegacyChunksTest {
     @Test
     fun zeroChunksIsTheEmptyString() {
         assertEquals(Resolved.Ok(""), LegacyChunks.resolve(ref(0, 0)) { emptyList() })
+    }
+
+    @Test
+    fun aPrefixIsKeptForValuesOverTheLimit() {
+        val chunk = "a".repeat(LegacyChunks.MAX_CHUNK)
+        val asked = ArrayList<Int>()
+        val r = LegacyChunks.resolvePrefix(ref(100, 100 * LegacyChunks.MAX_CHUNK), maxLength = 20_000) { n ->
+            asked += n
+            (0 until n).map { Chunk(it, chunk) }
+        }
+        assertIs<Resolved.Ok>(r)
+        assertTrue(r.truncated)
+        assertEquals(20_000, r.text.length)
+        assertEquals(listOf(20_000 / LegacyChunks.MIN_CHUNK + 1), asked, "only the chunks the prefix needs are read")
+
+        val literal = LegacyChunks.resolvePrefix("x".repeat(30), maxLength = 10) { error("unused") }
+        assertEquals(Resolved.Ok("x".repeat(10), truncated = true), literal)
+        assertEquals(Resolved.Ok("abc"), LegacyChunks.resolvePrefix(ref(1, 3), 10) { listOf(Chunk(0, "abc")) })
+        assertIs<Resolved.Corrupt>(LegacyChunks.resolvePrefix(ref(5, 50_000), 10) { listOf(Chunk(1, "abc")) })
+    }
+
+    @Test
+    fun indexChecksAndStreams() {
+        assertNull(LegacyChunks.indexProblem(LegacyChunks.Ref(3, 0), listOf(2, 0, 1)))
+        assertNotNull(LegacyChunks.indexProblem(LegacyChunks.Ref(3, 0), listOf(0, 2)))
+        assertNotNull(LegacyChunks.indexProblem(LegacyChunks.Ref(2, 0), listOf(0, 2)))
+        val text = LegacyChunks.utf8Stream(listOf("hé", "", "llo \uD83D\uDE00").iterator()).readBytes().toString(Charsets.UTF_8)
+        assertEquals("héllo \uD83D\uDE00", text)
     }
 }

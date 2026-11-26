@@ -59,6 +59,9 @@ class ProviderStore internal constructor(private val store: DataStore<Preference
 
     suspend fun all(): List<ProviderConfig> = stored.first().providers
 
+    /** Built-in presets the user removed; they are not brought back (also not by the importer). */
+    suspend fun removedPresets(): Set<String> = stored.first().removedPresets
+
     /** The last loaded value, for synchronous lookups (labels); prefer [get] where suspending is possible. */
     fun peek(id: String): ProviderConfig? = providers.value.firstOrNull { it.id == id }
 

@@ -5,7 +5,8 @@ still on the phone after the update. The first time Atom 4 starts and finds them
 its own storage, in the background. A notice on the chat screen says what was imported and what was not.
 
 You can run it again at any time: **Settings > General > Data backup > Import from previous Atom**. A second run only
-picks up what was not imported before; it never creates duplicates.
+picks up what was not imported before; it never creates duplicates. If a run stops on an error or could not read
+something, it tries again by itself on the next start (up to three starts), and the notice says what is left.
 
 ## What is imported
 
@@ -34,12 +35,16 @@ picks up what was not imported before; it never creates duplicates.
   off (Atom 4's official models are always listed).
 - Results the earlier app never kept: arguments and results of sensitive tools, and pictures inside tool results.
 - A reply that was still running when the earlier app was closed.
+- A built-in provider you removed in Atom 4 before the import stays removed.
+- A single message longer than about a million characters is shortened, with a note saying so.
 
 ## Your old data is left alone
 
 The import only reads. It never changes, moves or deletes any file of the earlier app, and it never overwrites a
 provider, key or sign-in you set up in Atom 4 yourself (it only adds what is missing). To read the database safely,
-Atom 4 makes a temporary copy in its cache folder and deletes it right after. Nothing leaves the phone, and keys are
+Atom 4 makes a temporary copy (with its write-ahead log and journal, so an unfinished write is completed or undone on
+the copy only) in its cache folder and deletes it right after. Without room for a copy, it reads the original only
+when that cannot touch any file; otherwise it stops and asks for free space. Nothing leaves the phone, and keys are
 never written to logs.
 
 The earlier app's files keep using storage until you clear Atom's storage in Android's settings, which also clears

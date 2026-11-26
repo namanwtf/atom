@@ -1,17 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- One-time import from the previous Atom app (docs/IMPORT.md). -->
-    <string name="import_summary">Imported from the previous Atom: %1$d conversations, %2$d providers (%3$d API keys, %4$d sign-ins).</string>
+    <string name="import_summary">Imported from the previous Atom: %1$s, %2$s (%3$s, %4$s).</string>
+    <plurals name="import_conversations">
+        <item quantity="one">%d conversation</item>
+        <item quantity="other">%d conversations</item>
+    </plurals>
+    <plurals name="import_providers">
+        <item quantity="one">%d provider</item>
+        <item quantity="other">%d providers</item>
+    </plurals>
+    <plurals name="import_keys">
+        <item quantity="one">%d API key</item>
+        <item quantity="other">%d API keys</item>
+    </plurals>
+    <plurals name="import_sign_ins">
+        <item quantity="one">%d sign-in</item>
+        <item quantity="other">%d sign-ins</item>
+    </plurals>
     <string name="import_selection">Your default model was carried over.</string>
     <string name="import_sign_in_again">Sign in again: %1$s.</string>
-    <string name="import_failed_providers">%1$d providers could not be read.</string>
-    <string name="import_failed_conversations">%1$d conversations could not be read; importing again retries them.</string>
-    <string name="import_damaged">%1$d damaged messages were imported empty.</string>
-    <string name="import_images_skipped">%1$d images could not be kept and are marked [image].</string>
-    <string name="import_characters">%1$d character chats were imported as normal chats.</string>
+    <plurals name="import_failed_providers">
+        <item quantity="one">%d provider could not be read; importing again retries it.</item>
+        <item quantity="other">%d providers could not be read; importing again retries them.</item>
+    </plurals>
+    <plurals name="import_failed_conversations">
+        <item quantity="one">%d conversation could not be read; importing again retries it.</item>
+        <item quantity="other">%d conversations could not be read; importing again retries them.</item>
+    </plurals>
+    <plurals name="import_without_tool_details">
+        <item quantity="one">%d conversation kept only short previews of some tool steps.</item>
+        <item quantity="other">%d conversations kept only short previews of some tool steps.</item>
+    </plurals>
+    <plurals name="import_truncated">
+        <item quantity="one">%d very long message was shortened.</item>
+        <item quantity="other">%d very long messages were shortened.</item>
+    </plurals>
+    <plurals name="import_damaged">
+        <item quantity="one">%d damaged message was imported empty.</item>
+        <item quantity="other">%d damaged messages were imported empty.</item>
+    </plurals>
+    <plurals name="import_images_skipped">
+        <item quantity="one">%d image could not be kept and is marked [image].</item>
+        <item quantity="other">%d images could not be kept and are marked [image].</item>
+    </plurals>
+    <plurals name="import_characters">
+        <item quantity="one">%d character chat was imported as a normal chat.</item>
+        <item quantity="other">%d character chats were imported as normal chats.</item>
+    </plurals>
     <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old files are left untouched.</string>
     <string name="import_nothing">No data from the previous Atom was found on this phone.</string>
-    <string name="import_error">The import stopped early (%1$s). What was imported is kept; importing again continues.</string>
+    <string name="import_error">The import stopped early (%1$s). What was imported is kept; it continues at the next start or when you import again.</string>
+    <string name="import_error_space">not enough free storage for a temporary copy</string>
     <string name="import_busy">An import is already running.</string>
     <string name="import_notice_interrupted">Interrupted</string>
     <string name="import_notice_retry">The model request was retried</string>
