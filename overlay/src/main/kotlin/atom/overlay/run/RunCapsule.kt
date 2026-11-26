@@ -125,6 +125,7 @@ internal fun RunCapsule() {
     val corner = if (stage) 28.dp else 22.dp
     val accent = phaseAccent(view)
     val shape = RoundedCornerShape(corner)
+    val capsuleDescription = stringResource(R.string.overlay_capsule_cd, phaseLabel(view))
     Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
         Column(
             Modifier
@@ -136,7 +137,8 @@ internal fun RunCapsule() {
                 .shadow(10.dp, shape, ambientColor = accent, spotColor = accent)
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
-                .clickable(enabled = !expanded) { RunOverlays.expanded = true },
+                .clickable(enabled = !expanded) { RunOverlays.expanded = true }
+                .semantics { if (!expanded) contentDescription = capsuleDescription },
         ) {
             CollapsedRow(view, accent, expanded)
             AnimatedVisibility(
@@ -160,13 +162,19 @@ private fun phaseAccent(v: CapsuleView): Color = when {
 
 @Composable
 private fun phaseLabel(v: CapsuleView): String = stringResource(
-    when {
-        v.pending != null -> R.string.overlay_phase_approval
-        v.phase == RunPhase.Starting -> R.string.overlay_phase_starting
-        v.phase == RunPhase.Paused -> R.string.overlay_phase_paused
-        v.phase == RunPhase.WaitingForControl -> R.string.overlay_phase_waiting_control
-        v.phase == RunPhase.WaitingForApproval -> R.string.overlay_phase_approval
-        else -> R.string.overlay_phase_working
+    when (RunOverlays.statusOf(v)) {
+        CapsuleStatus.Starting -> R.string.overlay_phase_starting
+        CapsuleStatus.Reasoning -> R.string.overlay_phase_reasoning
+        CapsuleStatus.Working -> R.string.overlay_phase_working
+        CapsuleStatus.GeneratingAnswer -> R.string.overlay_phase_answering
+        CapsuleStatus.Stopping -> R.string.overlay_phase_stopping
+        CapsuleStatus.Paused -> R.string.overlay_phase_paused
+        CapsuleStatus.WaitingForControl -> R.string.overlay_phase_waiting_control
+        CapsuleStatus.NeedsApproval -> R.string.overlay_phase_approval
+        CapsuleStatus.Continuing -> R.string.overlay_phase_continuing
+        CapsuleStatus.InputReceived -> R.string.overlay_input_received
+        CapsuleStatus.FinishingUp -> R.string.overlay_finishing_up
+        CapsuleStatus.InputUnsupported -> R.string.overlay_input_unsupported
     },
 )
 

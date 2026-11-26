@@ -80,6 +80,14 @@
     <!-- Run capsule -->
     <string name="overlay_phase_starting">Starting</string>
     <string name="overlay_phase_working">Working</string>
+    <string name="overlay_phase_reasoning">Reasoning</string>
+    <string name="overlay_phase_answering">Generating answer</string>
+    <string name="overlay_phase_stopping">Stopping</string>
+    <string name="overlay_phase_continuing">Continuing</string>
+    <string name="overlay_input_received">Additional input received. Continuing</string>
+    <string name="overlay_finishing_up">Finishing up. Add input after the result appears</string>
+    <string name="overlay_input_unsupported">Additional input not supported here</string>
+    <string name="overlay_capsule_cd">%1$s. Tap to show controls</string>
     <string name="overlay_phase_paused">Paused</string>
     <string name="overlay_phase_waiting_control">Waiting for the screen</string>
     <string name="overlay_phase_approval">Needs your OK</string>
@@ -90,8 +98,8 @@
     <string name="overlay_resume">Resume</string>
     <string name="overlay_add_input">Add input</string>
     <string name="overlay_steer_hint">Add instructions; Atom continues the current task</string>
-    <string name="overlay_result_ready">Completed</string>
-    <string name="overlay_result_failed">Failed</string>
+    <string name="overlay_result_ready">Result ready</string>
+    <string name="overlay_result_failed">Request failed</string>
     <string name="overlay_result_ready_locked">Result ready</string>
     <string name="overlay_open_screen">Open screen</string>
     <string name="overlay_cancel">Cancel</string>

@@ -43,6 +43,10 @@ internal data class CapsuleView(
     val queued: Int,
     val viewfinder: Boolean,
     val mood: BubbleMood,
+    /** A step (tool) is running right now. */
+    val toolRunning: Boolean = false,
+    /** The final answer is streaming (text, no tool running). */
+    val answering: Boolean = false,
 )
 
 /** [usedScreen]: the run worked on the background virtual display, so the card offers "Open screen". */
@@ -76,6 +80,34 @@ internal object RunOverlays {
         private set
     var steerText by mutableStateOf("")
     private var glowPaused by mutableStateOf(false)
+
+    /** Conversation the user asked to stop; the capsule reads "Stopping" until the run ends. */
+    var stoppingId by mutableStateOf<String?>(null)
+        private set
+
+    /** A short-lived status after a control was used ("Continuing", "Additional input received. Continuing"). */
+    var notice by mutableStateOf<CapsuleNotice?>(null)
+        private set
+    private var noticeJob: Job? = null
+
+    private fun flash(next: CapsuleNotice) {
+        notice = next
+        noticeJob?.cancel()
+        noticeJob = OverlayRuntime.scope.launch {
+            delay(CapsuleStatuses.NOTICE_MS)
+            notice = null
+        }
+    }
+
+    /** The capsule's status for [v]. */
+    fun statusOf(v: CapsuleView): CapsuleStatus = CapsuleStatuses.of(
+        phase = v.phase,
+        pending = v.pending != null,
+        toolRunning = v.toolRunning,
+        answering = v.answering,
+        stopping = stoppingId == v.conversationId,
+        notice = notice,
+    )
 
     private val prefs get() = OverlayRuntime.prefs
 
@@ -125,10 +157,14 @@ internal object RunOverlays {
     // ------------------------------------------------------------------ Controls
 
     fun pause() = view?.let { OverlayRuntime.host()?.pause(it.conversationId) }
-    fun resume() = view?.let { OverlayRuntime.host()?.resume(it.conversationId) }
+    fun resume() = view?.let {
+        OverlayRuntime.host()?.resume(it.conversationId)
+        flash(CapsuleNotice.Continuing)
+    }
 
     fun stop() {
         val v = view ?: return
+        stoppingId = v.conversationId
         OverlayRuntime.host()?.stop(v.conversationId)
         expanded = false
         endSteer()
@@ -140,6 +176,11 @@ internal object RunOverlays {
     }
 
     fun beginSteer() {
+        val v = view
+        CapsuleStatuses.steerBlocked(v?.answering == true, v?.toolRunning == true, OverlayRuntime.host() != null)?.let {
+            flash(it)
+            return
+        }
         steering = true
         steerText = ""
         setFocusable(true)
@@ -148,7 +189,15 @@ internal object RunOverlays {
     fun sendSteer() {
         val v = view
         val text = steerText.trim()
-        if (v != null && text.isNotEmpty()) OverlayRuntime.host()?.steer(v.conversationId, text)
+        if (v != null && text.isNotEmpty()) {
+            val host = OverlayRuntime.host()
+            if (host != null) {
+                host.steer(v.conversationId, text)
+                flash(CapsuleNotice.InputReceived)
+            } else {
+                flash(CapsuleNotice.InputUnsupported)
+            }
+        }
         endSteer()
     }
 
@@ -250,6 +299,7 @@ internal object RunOverlays {
             expanded = false
             endSteer()
         }
+        if (stoppingId != null && stoppingId != next?.conversationId) stoppingId = null
         // Glow first, so a capsule created in the same pass sits above it.
         val glowing = next != null && prefs.edgeGlow.value &&
             (next.phase == RunPhase.Running || next.phase == RunPhase.Starting || next.phase == RunPhase.Paused)
@@ -270,6 +320,8 @@ internal object RunOverlays {
         queued = run.queued.size,
         viewfinder = Overlay.viewfinder?.shows(run) == true,
         mood = BubbleReducer.moodOf(run),
+        toolRunning = run.steps.any { it.state == StepState.Running },
+        answering = run.text.isNotBlank() && run.steps.none { it.state == StepState.Running },
     )
 
     /** The run behind the capsule, for the viewfinder slot. */

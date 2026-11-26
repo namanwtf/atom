@@ -27,7 +27,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Do Not Disturb access, so silent, vibrate and ring can be switched without root. [core]
 - [x] Post notifications, used for running-task controls, background command results and scheduled task results. [core]
 - [ ] Promoted (Live Update) notifications: during a run the task shows as a status-bar capsule ("Working" / "Answering") and on the lock screen. The user can turn it off. [core] — **missing**
-- [ ] Microphone, for voice input. If it is denied, keyboard input stays available and the app links to its own permission settings. [core] — **partial**
+- [x] Microphone, for voice input. If it is denied, keyboard input stays available and the app links to its own permission settings. [core]
 - [x] Local network access (Android 17 "Nearby devices"), for LAN models, MCP servers, the built-in browser and terminals. Internet access works without it. [core]
 - [x] All files access is optional and only used for shared/public directories. The private workspace and import/export work without it. [core]
 - [x] Exact alarms, so scheduled tasks fire on time. [core]
@@ -77,7 +77,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] Visible reasoning shows as a collapsible block: "Reasoning…" with the last few lines while streaming, then "Reasoning completed · N seconds", auto-collapsed. [core]
 - [x] The work timeline collapses to one line ("Thought N times · M tool calls · K failed") and expands into a step timeline with an icon per tool and a status (running / completed / failed / result unknown). Repeated calls to the same tool merge. A terminal step shows its last output line. Steps longer than 3 s show a live timer. [core]
 - [x] Tool details expand to the exact command (Copy command) and the result. Browser steps show a live page preview. [core]
-- [ ] Citations from provider-hosted web search become clickable links. Gemini Google-search suggestions show under the answer and open in the external browser. [core] — **partial**
+- [x] Citations from provider-hosted web search become clickable links. Gemini Google-search suggestions show under the answer and open in the external browser. [core]
 - [x] Generated images appear as inline cards (see §13). [core]
 - [ ] Older history loads automatically on scroll-up, with a retry if loading fails. The reading position is restored when the conversation is reopened. [core] — **partial**
 
@@ -94,7 +94,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 - [x] A context-usage indicator shows how much of the model's window is used, measured after each response. [core]
 - [x] Manual "Compact context" action. Automatic compaction runs at about 85% of the configured window (toggle in settings), and compaction status is reported. If the window is unknown, automatic compaction is off and the app says so. [core]
 - [x] The agent can search its own full conversation history, even past a compaction. [core]
-- [ ] A session stats popover shows turns, steps, model time, tool time, average time-to-first-token, output tokens/s, token usage, cache hit/miss/read/write, compaction cost and payback, and subagent usage. [core] — **partial**
+- [x] A session stats popover shows turns, steps, model time, tool time, average time-to-first-token, output tokens/s, token usage, cache hit/miss/read/write, compaction cost and payback, and subagent usage. [core]
 - [x] If a conversation's saved model is gone, a notice says which model is being used instead. [core]
 
 ## 3. Models & providers
@@ -121,7 +121,7 @@ Platform baseline: Android 14+, ARM64 only, one APK, English UI only (the langua
 
 ### Provider management
 - [ ] The Model providers page has a search box, an "Add new provider" group and a "Configured providers (N)" list. Each row shows logo, name, base URL, protocol, model count, a "built-in" badge, and a radio button / check for the current provider. [core] — **partial**
-- [ ] Add from the models.dev community catalog. It works from a bundled snapshot, refreshes online and caches, and never sends the user's keys. The user picks a provider and models, and they are imported as a custom provider that is disabled and has no key until the user adds one. [core] — **partial**
+- [x] Add from the models.dev community catalog. It works from a bundled snapshot, refreshes online and caches, and never sends the user's keys. The user picks a provider and models, and they are imported as a custom provider that is disabled and has no key until the user adds one. [core]
 - [x] Add an OpenAI-compatible provider (for ChatGPT, DeepSeek, Kimi, GLM, Qwen and others), with an endpoint mode of Chat Completions or Responses API. [core]
 - [x] Add an Anthropic provider (official or compatible API). [core]
 - [x] Add Gemini: choose AI Studio (API key, native Interactions API) or Vertex AI (API key plus Project ID or number and a location of global / us / eu / a single region; Gemini 4 only; custom HTTPS proxy allowed). [core]
@@ -507,14 +507,14 @@ All data is read on demand, in bounded slices, only when the agent calls the too
 These come from the old app's screens, string resources and manifest. Each is tagged with the section it belongs to. None are ticked yet: they still need checking against the new app.
 
 ### From §1 Onboarding & permissions
-- [ ] Startup: there is no custom splash. The system launch splash is held until the appearance settings have loaded, so the first frame already uses the right theme and UI style. [core]
-- [ ] The sidebar's "Permissions need attention" hint only fires for 4 core items: background running, floating window, accessibility, notifications. [core]
-- [ ] The Permissions page contains exactly the 12 rows listed in Appendix A, in that order. Microphone, exact alarm and all-files access are not on it. They are requested where they are used: the voice mic, the scheduled-task health banners, the workspace and shared folders. [core]
+- [x] Startup: there is no custom splash. The system launch splash is held until the appearance settings have loaded, so the first frame already uses the right theme and UI style. [core]
+- [x] The sidebar's "Permissions need attention" hint only fires for 4 core items: background running, floating window, accessibility, notifications. [core]
+- [x] The Permissions page contains exactly the 12 rows listed in Appendix A, in that order. Microphone, exact alarm and all-files access are not on it. They are requested where they are used: the voice mic, the scheduled-task health banners, the workspace and shared folders. [core]
 - [ ] Settings root has a "Permissions" group: Floating window permissions (Authorized / Not authorized in red), Accessibility enhancement tools (Enabled / Disabled), and Enforce accessibility (LSPosed only). [core]
-- [ ] When local-network access is denied, explain it ("You can allow Nearby devices…") and fall back to app settings if the system page cannot be opened. [core]
+- [x] When local-network access is denied, explain it ("You can allow Nearby devices…") and fall back to app settings if the system page cannot be opened. [core]
 
 ### From §2 Chat & conversation UX
-- [ ] The sidebar dock has **5** entries in this order: Models (trailing value = active model, or "Not set"), Characters, Tools, Skills, Scheduled Tasks. [core]
+- [x] The sidebar dock has **5** entries in this order: Models (trailing value = active model, or "Not set"), Characters, Tools, Skills, Scheduled Tasks. [core]
 - [ ] The sidebar header reads "Atom" and has a new-conversation button. The empty list shows "No conversations yet" / "Tap the new chat button above to start". A search with no hits shows "No matching conversations". [core]
 - [ ] Conversation row anatomy:
   - The title, or the preview when there is no title.
@@ -524,11 +524,11 @@ These come from the old app's screens, string resources and manifest. Each is ta
   - A small character avatar on the left for character chats.
   - The selected row shows a "…" button.
   - Long-press opens the action menu, with haptics. [core]
-- [ ] Rename dialog: title "Rename conversation", field hint "Conversation name", Save. [core]
-- [ ] The home overflow menu holds New conversation, Open terminal, Open browser, and an "Enable auto read-aloud" / "Disable auto read-aloud" toggle with speaker / mute icons. The toggle only shows when TTS is configured. [core]
-- [ ] The composer placeholder changes with context: "Ask Atom to do something" normally, "Atom is working…" while running, "Say something to <name>…" in a character chat. [core]
+- [x] Rename dialog: title "Rename conversation", field hint "Conversation name", Save. [core]
+- [x] The home overflow menu holds New conversation, Open terminal, Open browser, and an "Enable auto read-aloud" / "Disable auto read-aloud" toggle with speaker / mute icons. The toggle only shows when TTS is configured. [core]
+- [x] The composer placeholder changes with context: "Ask Atom to do something" normally, "Atom is working…" while running, "Say something to <name>…" in a character chat. [core]
 - [ ] Edit mode: a banner says "Sending will replace this message and everything after it" or "Sending will replace this message". The send button becomes "Save message" in character chats ("Saving updates this message in place…"). A "Cancel edit" action is available. [core]
-- [ ] A user message shows an "Edited" label once edited. Long-pressing a user bubble opens a menu with copy / edit / delete. [core]
+- [x] A user message shows an "Edited" label once edited. Long-pressing a user bubble opens a menu with copy / edit / delete. [core]
 - [ ] The action row under an answer fades in only after the reveal finishes. Icon buttons in this order:
   1. Copy (turns into a check, "Copied")
   2. Read aloud
@@ -537,39 +537,39 @@ These come from the old app's screens, string resources and manifest. Each is ta
   5. Delete
   6. Branch
   7. A per-turn stats pill, e.g. "TTFT · N tok/s" or the model time. Tapping it opens the Session stats popover. [core]
-- [ ] The queue strip shows text-less queued items as "[N images]" or "[N files]". "Interrupting" shows while a steer is being applied. [core]
-- [ ] Attachment menu entries: Image, File, Folder, Enter path. The Enter path dialog has the hint "input file path", the help text "Supports files and folders at any local absolute path", and an Add button. Possible outcomes: "The selected path has been added", "Conversation switched, selected path not added", "Added N items; M items could not be referenced". [core]
-- [ ] Full-screen image viewer for chat images: Save (to Pictures/Atom), Share, "Continue editing". [core]
-- [ ] Work header while running: "Analyzing task" or "Working · step N". When finished: "Analysis complete" or "Completed N steps". A step group shows "N calls". Each step's result reads Done / Completed / Failed. [core]
-- [ ] Browser tool steps show a progress line "Loading · N%" and an "Open current browser" button. [core]
-- [ ] A long-history guard asks the user to scroll up to the start of the turn before continuing ("Scroll up to the user message that started this turn before continuing"). After compaction, a notice says the earlier context was compressed. [core]
-- [ ] System notices that appear inline in the chat: "Stopped", "The run completed without a text response.", "Runtime failed", "Couldn't save the conversation. Please try again.", "Regeneration was interrupted. The original reply has been kept.", and the context-compaction statuses (completed, stopped, failed, interrupted). [core]
-- [ ] Labels for provider-hosted tools that appear in the timeline: Web search, File search, Code execution, Computer use, Image generation, MCP tool. They show as "Running <x>". [core]
+- [x] The queue strip shows text-less queued items as "[N images]" or "[N files]". "Interrupting" shows while a steer is being applied. [core]
+- [x] Attachment menu entries: Image, File, Folder, Enter path. The Enter path dialog has the hint "input file path", the help text "Supports files and folders at any local absolute path", and an Add button. Possible outcomes: "The selected path has been added", "Conversation switched, selected path not added", "Added N items; M items could not be referenced". [core]
+- [x] Full-screen image viewer for chat images: Save (to Pictures/Atom), Share, "Continue editing". [core]
+- [x] Work header while running: "Analyzing task" or "Working · step N". When finished: "Analysis complete" or "Completed N steps". A step group shows "N calls". Each step's result reads Done / Completed / Failed. [core]
+- [x] Browser tool steps show a progress line "Loading · N%" and an "Open current browser" button. [core]
+- [ ] A long-history guard asks the user to scroll up to the start of the turn before continuing ("Scroll up to the user message that started this turn before continuing"). After compaction, a notice says the earlier context was compressed. [core] — **partial**
+- [x] System notices that appear inline in the chat: "Stopped", "The run completed without a text response.", "Runtime failed", "Couldn't save the conversation. Please try again.", "Regeneration was interrupted. The original reply has been kept.", and the context-compaction statuses (completed, stopped, failed, interrupted). [core]
+- [x] Labels for provider-hosted tools that appear in the timeline: Web search, File search, Code execution, Computer use, Image generation, MCP tool. They show as "Running <x>". [core]
 - [ ] The empty state in a character chat shows a 68 dp round avatar, the character name and "The story begins here". There are no suggestion cards there. [core]
 
 ### From §3 Models & providers
 - [ ] Provider detail is split into two tabs, "Configuration" and "Model". [core]
 - [ ] Anthropic providers have an editable "anthropic-version" field. [core]
-- [ ] Gemini providers label the hosted-search toggle "Google Search". [core]
+- [x] Gemini providers label the hosted-search toggle "Google Search". [core]
 - [ ] In the model list, tapping a model sets it as current. Long-press enters multi-select with Select all / Select none. A pencil button opens "Edit model parameters". There is no separate "Set as default model" button; that string is an orphan. [core]
-- [ ] The model parameter sheet includes "Restore automatic" for the detected capabilities and "Covered model automatic capabilities". It also explains how Gemini and Vertex reasoning levels work. [core]
+- [x] The model parameter sheet includes "Restore automatic" for the detected capabilities and "Covered model automatic capabilities". It also explains how Gemini and Vertex reasoning levels work. [core]
 - [ ] Save outcomes for a provider: "Created and selected as the current model provider", "Saved and selected as the current model provider", "Saved, provider not enabled". A successful test reports "Connected (verified model: X)" for Vertex, or the fetched-model count. [core]
-- [ ] The models.dev catalog page:
+- [x] The models.dev catalog page:
   - A "Catalog status" card whose source line reads Built-in catalog snapshot / Local cached catalog / Online catalog, plus "Updated <time>".
   - "Importable providers (N)" and a Refresh button.
   - Typed errors for HTTP, timeout, DNS, SSL, size and format.
   - The model picker has "Import (N)". [core]
-- [ ] Only the Codex account card has "Manage usage", which opens the ChatGPT Codex usage page. [core]
-- [ ] After OAuth sign-in, the browser shows a callback page with the text "Authorization received. Return to Atom to finish signing in." or "Authorization incomplete. Return to Atom and retry." [core]
+- [x] Only the Codex account card has "Manage usage", which opens the ChatGPT Codex usage page. [core]
+- [x] After OAuth sign-in, the browser shows a callback page with the text "Authorization received. Return to Atom to finish signing in." or "Authorization incomplete. Return to Atom and retry." [core]
 
 ### From §4 Voice
-- [ ] The dictation bar has Cancel and Done. Labels: "Voice input", "Finish dictation". During hold-to-talk the hint switches to "Release to cancel" once the finger slides off. After release it reads "Transcribing and sending…". [core]
-- [ ] Progress copy: "Waiting for file transcription, tap to cancel anytime". The overlay input placeholder is "Message Atom…", and the mic hint is "Tap to speak". [core]
-- [ ] Default preview text for "Preview voice": a short self-introduction followed by a mock meeting reminder (the "Hi, I'm Atom…" string). [core]
-- [ ] Voices are grouped as "Female" / "Male". MiMo also has language-specific defaults (Chinese and English, female and male). [core]
+- [x] The dictation bar has Cancel and Done. Labels: "Voice input", "Finish dictation". During hold-to-talk the hint switches to "Release to cancel" once the finger slides off. After release it reads "Transcribing and sending…". [core]
+- [x] Progress copy: "Waiting for file transcription, tap to cancel anytime". The overlay input placeholder is "Message Atom…", and the mic hint is "Tap to speak". [core]
+- [x] Default preview text for "Preview voice": a short self-introduction followed by a mock meeting reminder (the "Hi, I'm Atom…" string). [core]
+- [ ] Voices are grouped as "Female" / "Male". MiMo also has language-specific defaults (Chinese and English, female and male). [core] — **partial**
 
 ### From §5 Screen control & automation
-- [ ] Run capsule copy:
+- [x] Run capsule copy:
   - The capsule is labelled "<status>. Tap to show controls".
   - The input field hint reads "Add instructions; Atom continues the current task".
   - Status texts: Reasoning, Generating answer, Stopping, Paused, Continuing, "Finishing up. Add input after the result appears", "Additional input not supported here", "Additional input received. Continuing", Result ready, Request failed. [core]
@@ -606,15 +606,15 @@ These come from the old app's screens, string resources and manifest. Each is ta
 - [ ] Editor note: "Third-party scripts and extension UIs in character cards are not executed, and their data is preserved when exporting." [core]
 
 ### From §10 Floating bubble & overlay
-- [ ] Mini-chat model chip shows "No model" when nothing is configured. [core]
+- [x] Mini-chat model chip shows "No model" when nothing is configured. [core]
 - [ ] The mini-chat empty state uses the Atom/octopus emblem image. [core]
 - [ ] The bubble's status line reads "<status> · hold the bubble for actions". [core]
 
 ### From §11 System integration
-- [ ] Execution notification: title "Atom is running", text "N task(s) are running. Return to Atom to check progress.", actions Open and Stop. Low importance. [core]
+- [x] Execution notification: title "Atom is running", text "N task(s) are running. Return to Atom to check progress.", actions Open and Stop. Low importance. [core]
 - [ ] Background-command notification: title by outcome (completed, timed out, stopped, interrupted, failed), "Exit code N", and the hint "View status and logs under background tasks in Terminal". [core]
 - [ ] Scheduled notification titles: "Task failed: X", "Task paused: X", "Ready to run: X". Fallback bodies: "Scheduled task completed. Tap to view full conversation." and "Execution failed. Tap to inspect details." [core]
-- [ ] Assistant voice notification body: "Active only while the assistant overlay is visible". If the system blocks audio, the error is "The system does not allow the overlay to use audio…". [core]
+- [ ] Assistant voice notification body: "Active only while the assistant overlay is visible". If the system blocks audio, the error is "The system does not allow the overlay to use audio…". [core] — **partial**
 - [ ] LSPosed module scope declared by the app: system, SystemUI, Google app, ColorOS ColorDirectService, ColorOS AI memory (com.oplus.aimemory), Xiaomi voice assistant, and the Xiaomi home launchers (CN and global). [lsposed]
 - [ ] The ASSIST bridge activity runs translucent, is excluded from recents, has no history, can show over the lock screen and runs in its own `:voice` process. Recognition runs in its own `:recognition` process. [core]
 - [ ] Cleartext HTTP is allowed app-wide (needed for LAN models and MCP). Only English is declared as a locale. [core]

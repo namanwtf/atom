@@ -83,7 +83,9 @@ import atom.app.engine.SubscriptionAuth
 import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.AuthMethod
 import atom.llm.cloud.CapabilitySource
+import atom.llm.cloud.CatalogError
 import atom.llm.cloud.CatalogProvider
+import atom.llm.cloud.CatalogSource
 import atom.llm.cloud.HeaderEntry
 import atom.llm.cloud.ModelConfig
 import atom.llm.cloud.PresetCatalog
@@ -553,11 +555,14 @@ private fun AccountGroup(vm: ModelsViewModel, config: ProviderConfig) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 CompactButton(stringResource(R.string.mdl_sync_models), onClick = { vm.syncAccountModels(config.id) }, primary = false)
                                 CompactButton(stringResource(R.string.mdl_reauthorize), onClick = { vm.signIn(config.id, method, reauthorize = true) }, primary = false)
-                                CompactButton(
-                                    stringResource(R.string.mdl_manage_usage),
-                                    onClick = { vm.openUrl(if (method == AuthMethod.ChatGpt) SubscriptionAuth.CHATGPT_USAGE_URL else SubscriptionAuth.GROK_USAGE_URL) },
-                                    primary = false,
-                                )
+                                // Only the Codex account has a usage page to manage.
+                                if (method == AuthMethod.ChatGpt) {
+                                    CompactButton(
+                                        stringResource(R.string.mdl_manage_usage),
+                                        onClick = { vm.openUrl(SubscriptionAuth.CHATGPT_USAGE_URL) },
+                                        primary = false,
+                                    )
+                                }
                                 CompactButton(stringResource(R.string.mdl_sign_out), onClick = { vm.signOut(config.id) }, primary = false, contentColor = c.error)
                             }
                         }
@@ -1162,6 +1167,25 @@ internal fun ModelEditScreen(vm: ModelsViewModel, nav: ModelsNav, providerId: St
             }
         }
 
+        if (config.wire.protocol == Protocol.Gemini) {
+            item(key = "gemini-levels") { Note(stringResource(R.string.mdl_gemini_levels_note)) }
+        }
+
+        item(key = "g-restore") {
+            val overridden = model.contextWindow != null || model.reasoningMode != ReasoningMode.Auto || model.reasoningLevels != null
+            Group(Modifier.padding(top = 18.dp)) {
+                GroupRow(
+                    title = stringResource(R.string.mdl_restore_automatic),
+                    subtitle = stringResource(if (overridden) R.string.mdl_restore_automatic_sub else R.string.mdl_restore_automatic_none),
+                    enabled = overridden,
+                    onClick = {
+                        context = ""
+                        vm.updateModel(providerId, modelId) { it.copy(contextWindow = null, reasoningMode = ReasoningMode.Auto, reasoningLevels = null) }
+                    },
+                )
+            }
+        }
+
         item(key = "g-delete") {
             Group(Modifier.padding(top = 26.dp)) {
                 GroupRow(
@@ -1309,45 +1333,98 @@ internal fun CatalogScreen(vm: ModelsViewModel, nav: ModelsNav, onBack: () -> Un
     val state by vm.catalogState.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(Unit) { if (state !is CatalogState.Ready) vm.loadCatalog() }
+    val busy = state is CatalogState.Loading || (state as? CatalogState.Ready)?.refreshing == true
 
     LargeTitleScreen(
         title = stringResource(R.string.mdl_catalog_title),
         onBack = onBack,
         actions = {
-            CircleIconButton(Icons.Filled.Refresh, stringResource(R.string.mdl_refresh), { vm.loadCatalog(force = true) }, modifier = Modifier.padding(end = 8.dp))
+            CircleIconButton(Icons.Filled.Refresh, stringResource(R.string.mdl_refresh), { if (!busy) vm.loadCatalog(force = true) }, modifier = Modifier.padding(end = 8.dp))
         },
     ) {
         item(key = "intro") { Note(stringResource(R.string.mdl_catalog_intro), Modifier.padding(top = 4.dp)) }
-        when (val s = state) {
-            CatalogState.Idle, CatalogState.Loading -> item(key = "loading") {
-                Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(12.dp))
-                    Text(stringResource(R.string.mdl_catalog_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            is CatalogState.Failed -> item(key = "failed") {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.mdl_catalog_failed, s.message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    CompactButton(stringResource(R.string.mdl_try_again), onClick = { vm.loadCatalog(force = true) })
-                }
-            }
-            is CatalogState.Ready -> {
-                item(key = "search") { SearchField(query, { query = it }, stringResource(R.string.mdl_search_providers), Modifier.padding(top = 14.dp)) }
-                val q = query.trim().lowercase()
-                val shown = s.providers.filter { q.isEmpty() || it.name.lowercase().contains(q) || it.id.contains(q) }
-                item(key = "h") { SectionLabel(pluralStringResource(R.plurals.mdl_catalog_count, shown.size, shown.size)) }
-                item(key = "g") {
-                    Group {
-                        shown.take(400).forEachIndexed { i, p ->
-                            if (i > 0) GroupDivider(inset = 70.dp)
-                            CatalogProviderRow(p) { nav.open(ModelsPage.CatalogModels(p.id)) }
-                        }
+        item(key = "h-status") { SectionLabel(stringResource(R.string.mdl_catalog_status)) }
+        item(key = "g-status") { CatalogStatusCard(state, busy, onRefresh = { vm.loadCatalog(force = true) }) }
+        val ready = state as? CatalogState.Ready
+        if (ready != null) {
+            item(key = "search") { SearchField(query, { query = it }, stringResource(R.string.mdl_search_providers), Modifier.padding(top = 14.dp)) }
+            val q = query.trim().lowercase()
+            val shown = ready.providers.filter { q.isEmpty() || it.name.lowercase().contains(q) || it.id.contains(q) }
+            item(key = "h") { SectionLabel(stringResource(R.string.mdl_catalog_importable, shown.size)) }
+            item(key = "g") {
+                Group {
+                    shown.take(400).forEachIndexed { i, p ->
+                        if (i > 0) GroupDivider(inset = 70.dp)
+                        CatalogProviderRow(p) { nav.open(ModelsPage.CatalogModels(p.id)) }
                     }
                 }
             }
         }
     }
+}
+
+/** Where the list came from (snapshot, cache, online), when it was updated, and why a refresh failed. */
+@Composable
+private fun CatalogStatusCard(state: CatalogState, busy: Boolean, onRefresh: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Group {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            when (state) {
+                CatalogState.Idle, CatalogState.Loading -> Text(stringResource(R.string.mdl_catalog_loading), style = MaterialTheme.typography.bodyLarge)
+                is CatalogState.Failed -> Text(
+                    stringResource(R.string.mdl_catalog_unavailable, catalogErrorText(state.error)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.error,
+                )
+                is CatalogState.Ready -> {
+                    Text(
+                        stringResource(
+                            when (state.source) {
+                                CatalogSource.Bundled -> R.string.mdl_catalog_source_bundled
+                                CatalogSource.Cached -> R.string.mdl_catalog_source_cached
+                                CatalogSource.Online -> R.string.mdl_catalog_source_online
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    state.updatedAt?.let { at ->
+                        val time = remember(at) {
+                            android.text.format.DateUtils.formatDateTime(
+                                context,
+                                at,
+                                android.text.format.DateUtils.FORMAT_SHOW_DATE or android.text.format.DateUtils.FORMAT_SHOW_TIME or android.text.format.DateUtils.FORMAT_ABBREV_MONTH,
+                            )
+                        }
+                        Text(stringResource(R.string.mdl_catalog_updated, time), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+                    }
+                    state.error?.let {
+                        Text(stringResource(R.string.mdl_catalog_refresh_failed, catalogErrorText(it)), style = MaterialTheme.typography.bodyMedium, color = c.error)
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.onSurfaceVariant)
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.mdl_catalog_refreshing), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+                } else {
+                    CompactButton(stringResource(R.string.mdl_refresh), onClick = onRefresh, primary = false)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun catalogErrorText(error: CatalogError): String = when (error) {
+    is CatalogError.Http -> stringResource(R.string.mdl_catalog_err_http, error.code)
+    CatalogError.Timeout -> stringResource(R.string.mdl_catalog_err_timeout)
+    CatalogError.Dns -> stringResource(R.string.mdl_catalog_err_dns)
+    CatalogError.Ssl -> stringResource(R.string.mdl_catalog_err_ssl)
+    CatalogError.TooLarge -> stringResource(R.string.mdl_catalog_err_size)
+    CatalogError.Format -> stringResource(R.string.mdl_catalog_err_format)
+    is CatalogError.Network -> stringResource(R.string.mdl_catalog_err_network)
 }
 
 @Composable
@@ -1386,7 +1463,7 @@ internal fun CatalogModelsScreen(vm: ModelsViewModel, nav: ModelsNav, catalogId:
         bottomBar = {
             BottomActionBar {
                 PrimaryButton(
-                    pluralStringResource(R.plurals.mdl_import_n, chosen.size, chosen.size),
+                    stringResource(R.string.mdl_catalog_import, chosen.size),
                     enabled = chosen.isNotEmpty(),
                     onClick = {
                         vm.importFromCatalog(provider, chosen) { id ->

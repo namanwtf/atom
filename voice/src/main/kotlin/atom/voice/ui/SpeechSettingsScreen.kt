@@ -64,6 +64,7 @@ import atom.voice.speech.SpeechConfig
 import atom.voice.speech.SpeechSecret
 import atom.voice.speech.TtsServiceId
 import atom.voice.speech.VoiceCatalog
+import atom.voice.speech.VoiceGender
 import atom.voice.speech.WakePrefs
 import atom.voice.tts.ReadAloud
 import atom.voice.tts.ReadAloudSource
@@ -635,9 +636,20 @@ private fun LazyListScope.voicePage(draft: SpeechConfig, set: (SpeechConfig) -> 
         val match = VoiceCatalog.match(service, voice)
         SectionLabel(stringResource(R.string.speech_f_voice))
         Group {
-            VoiceCatalog.presets(service).forEachIndexed { i, preset ->
-                if (i > 0) GroupDivider(inset = 18.dp)
-                ChoiceRow(title = preset.name, subtitle = preset.note, selected = match?.id == preset.id, onClick = { set(draft.withVoice(service, preset.id)) })
+            VoiceCatalog.grouped(service).forEachIndexed { g, (gender, presets) ->
+                if (g > 0) GroupDivider(inset = 0.dp)
+                if (gender != null) {
+                    Text(
+                        stringResource(if (gender == VoiceGender.Female) R.string.speech_voice_female else R.string.speech_voice_male),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 2.dp),
+                    )
+                }
+                presets.forEachIndexed { i, preset ->
+                    if (i > 0) GroupDivider(inset = 18.dp)
+                    ChoiceRow(title = preset.name, subtitle = preset.note, selected = match?.id == preset.id, onClick = { set(draft.withVoice(service, preset.id)) })
+                }
             }
             GroupDivider(inset = 0.dp)
             FieldRow(

@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -73,6 +74,7 @@ import atom.app.data.Attachment
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ReasoningMode
 import atom.core.runtime.QueuedMessage
+import atom.core.runtime.interrupting
 import atom.ui.components.AtomMenu
 import atom.ui.components.AtomMenuItem
 import atom.ui.theme.extras
@@ -218,12 +220,17 @@ private fun QueuePanel(queued: List<QueuedMessage>, running: Boolean, callbacks:
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Dot(colors.primary)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.queue_label, queued.size), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                val header = when {
+                    queued.interrupting(running) -> stringResource(R.string.queue_interrupting)
+                    queued.size == 1 -> stringResource(R.string.queue_title)
+                    else -> stringResource(R.string.queue_label, queued.size)
+                }
+                Text(header, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
             queued.forEach { q ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        q.text.ifBlank { stringResource(R.string.queue_attachments_only) },
+                        queuedText(q),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurface,
                         maxLines = 1,
@@ -243,6 +250,17 @@ private fun QueuePanel(queued: List<QueuedMessage>, running: Boolean, callbacks:
                 }
             }
         }
+    }
+}
+
+/** The text of a queued message, or "[N images]" / "[N files]" when it has only attachments. */
+@Composable
+private fun queuedText(q: QueuedMessage): String {
+    val p = q.placeholder ?: return q.text.ifBlank { stringResource(R.string.queue_attachments_only) }
+    return if (p.images > 0) {
+        pluralStringResource(R.plurals.queue_images, p.images, p.images)
+    } else {
+        pluralStringResource(R.plurals.queue_files, p.files, p.files)
     }
 }
 

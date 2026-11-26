@@ -72,8 +72,20 @@ internal fun StatsDialog(state: ChatUiState, onCompact: () -> Unit, onDismiss: (
             if (s.cacheReadTokens > 0 || s.cacheWriteTokens > 0) {
                 val hit = s.cacheHitRate?.let { (it * 100).toInt() } ?: 0
                 StatRow(stringResource(R.string.stats_cache), stringResource(R.string.stats_cache_value, formatTokens(s.cacheReadTokens.toInt()), formatTokens(s.cacheWriteTokens.toInt()), hit))
+                StatRow(stringResource(R.string.stats_cache_misses), stringResource(R.string.stats_cache_misses_value, s.cacheMisses, s.modelCalls))
             } else {
                 StatRow(stringResource(R.string.stats_cache), stringResource(R.string.stats_cache_none))
+            }
+            if (s.subagentRuns > 0) {
+                StatRow(
+                    stringResource(R.string.stats_subagents),
+                    stringResource(
+                        R.string.stats_subagents_value,
+                        s.subagentRuns,
+                        s.subagentToolCalls,
+                        stringResource(R.string.usage_tokens, formatTokens(s.subagentInputTokens.toInt()), formatTokens(s.subagentOutputTokens.toInt())),
+                    ),
+                )
             }
             if (s.compactions > 0) {
                 StatRow(stringResource(R.string.stats_compactions), stringResource(R.string.stats_compactions_value, s.compactions, formatTokens(s.compactionTokens.toInt())))

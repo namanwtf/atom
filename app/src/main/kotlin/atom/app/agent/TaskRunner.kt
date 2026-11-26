@@ -112,6 +112,8 @@ data class LiveRun(
     val retry: RetryNotice? = null,
     val pending: PendingApproval? = null,
     val currentTool: String? = null,
+    /** A tool the provider runs on its side right now ("Running Web search"). */
+    val hostedTool: atom.core.llm.HostedToolKind? = null,
     val compacting: Boolean = false,
     val outcome: RunOutcome? = null,
     val error: String? = null,
@@ -218,7 +220,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         val id = conversation?.id ?: Conversation.newId()
         val busy = synchronized(lock) { executions.containsKey(id) }
         if (busy) {
-            val queued = queue(id).add(text.trim(), attachments.map { it.path }, hasImages = attachments.any { it.kind == AttachmentKind.Image })
+            val images = attachments.count { it.kind == AttachmentKind.Image }
+            val queued = queue(id).add(text.trim(), attachments.map { it.path }, hasImages = images > 0, imageCount = images)
             queuedAttachments["$id#${queued.id}"] = attachments
             return id
         }
@@ -900,11 +903,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         updateRun(id) { copy(stream = StreamState()) }
                     }
                     val notice = RetryNotice(event.attempt, event.maxAttempts, System.currentTimeMillis() + event.delayMs, event.reason)
-                    updateRun(id) { copy(retry = notice) }
+                    updateRun(id) { copy(retry = notice, hostedTool = null) }
                 }
                 is AgentEvent.ModelCall -> {
                     stats = stats.withModelCall(event.stats)
-                    updateRun(id) { copy(retry = null) }
+                    updateRun(id) { copy(retry = null, hostedTool = null) }
                     graph.runPower.progress()
                 }
                 is AgentEvent.Usage -> updateRun(id) { copy(inputTokens = event.inputTokens, outputTokens = event.outputTokens) }
@@ -929,6 +932,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     publish()
                 }
                 AgentEvent.Compacting -> updateRun(id) { copy(compacting = true) }
+                is AgentEvent.HostedTool -> updateRun(id) { copy(hostedTool = if (event.running) event.kind else null) }
                 is AgentEvent.Compacted -> {
                     val at = view.getOrElse(event.summarizedCount) { stored.size }
                     val entry = StoredMessage.summary(event.summary)
@@ -1101,7 +1105,22 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 stored += StoredMessage(ChatMessage.assistant(partial), reasoning = partialReasoning.ifEmpty { null }, createdAt = System.currentTimeMillis())
             }
             stored += ModelHistory.closeOpenCalls(stored, if (outcome == RunOutcome.Cancelled) STOPPED_RESULT else INTERRUPTED_RESULT)
+            if (live?.compacting == true && outcome == RunOutcome.Cancelled) {
+                stored += StoredMessage.notice(app.getString(atom.app.R.string.run_compaction_stopped))
+            }
+            val subagents = SubagentRuns.forTask(runId)
+            if (subagents.isNotEmpty()) {
+                stats = stats.withSubagents(
+                    subagents.size,
+                    subagents.sumOf { it.toolCalls },
+                    subagents.sumOf { it.inputTokens.toLong() },
+                    subagents.sumOf { it.outputTokens.toLong() },
+                )
+            }
             when (outcome) {
+                RunOutcome.Completed -> if (request.regenerate == null && finalText.isNullOrBlank() && !answeredThisTurn()) {
+                    stored += StoredMessage.notice(app.getString(atom.app.R.string.run_no_text))
+                }
                 RunOutcome.Cancelled -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_stopped))
                 RunOutcome.Failed -> stored += StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true)
                 RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_step_limit))
@@ -1119,9 +1138,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 RunOutcome.Cancelled -> RunPhase.Cancelled
                 else -> RunPhase.Done
             }
+            // A failed save keeps the turn on screen with a notice; nothing pretends it was stored.
+            val shown = if (saved) final else final.copy(messages = final.messages + StoredMessage.notice(app.getString(atom.app.R.string.run_save_failed)).copy(isError = true))
             updateRun(id) {
                 copy(
-                    conversation = final,
+                    conversation = shown,
                     stream = StreamState(),
                     phase = phase,
                     outcome = outcome,
@@ -1129,6 +1150,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     finalText = finalText,
                     pending = null,
                     currentTool = null,
+                    hostedTool = null,
                     retry = null,
                     compacting = false,
                 )
@@ -1150,7 +1172,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             if (outcome == RunOutcome.Failed) {
                 return original.copy(messages = original.messages + StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true))
             }
-            if (outcome != RunOutcome.Completed || reply.isNullOrEmpty()) return original
+            if (outcome != RunOutcome.Completed) {
+                return original.copy(messages = original.messages + StoredMessage.notice(app.getString(atom.app.R.string.run_regenerate_interrupted)))
+            }
+            if (reply.isNullOrEmpty()) return original
             val set = runCatching { CharacterSession.addCandidate(id, target.createdAt.toString(), target.message.text, reply) }.getOrNull()
             val text = set?.current ?: reply
             return original.copy(
@@ -1161,6 +1186,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
 
         private fun turnStartOfRegenerate(r: Regenerate): Int = r.answerIndex.coerceAtMost(stored.size)
+
+        /** Whether this turn stored any visible assistant text (an answer, or text before a tool call). */
+        private fun answeredThisTurn(): Boolean =
+            stored.drop(turnStart).any { it.message.role == Role.Assistant && it.message.text.isNotBlank() }
 
         private suspend fun generateTitle(final: Conversation) {
             if (final.titleSource != TitleSource.Placeholder) return
