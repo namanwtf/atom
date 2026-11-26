@@ -10,6 +10,7 @@ import atom.core.llm.LlmEngine
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmException
 import atom.core.llm.LlmRequest
+import atom.core.llm.ReasoningEffort
 import atom.core.llm.Releasable
 import atom.core.llm.Role
 import com.google.ai.edge.litertlm.Backend
@@ -25,6 +26,7 @@ import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.Modality
 import com.google.ai.edge.litertlm.ModelInfo
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ThinkingConfig
 import com.google.ai.edge.litertlm.BackendType
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -81,12 +83,35 @@ class LiteRtEngine(
 
     override val id: String = "litert:" + File(modelPath).name
 
+    /**
+     * What the model file says about itself. Its context: LiteRT-LM models have a fixed KV cache (Qwen3 0.6B: 4096
+     * tokens), asking for more is capped by the runtime ("Passed in max_num_tokens (8192) is larger than what the
+     * static model supports (4096)"), and a prompt planned for the larger window is refused or runs out of room
+     * (null when the file does not say or its context is dynamic). And whether it is a thinking model.
+     */
+    private val facts: ModelFacts by lazy {
+        runCatching {
+            ModelInfo.from(modelPath).use { info ->
+                ModelFacts(
+                    context = runCatching { info.maxContextTokens().takeIf { it > 0 && !info.isDynamicContext() } }.getOrNull(),
+                    thinks = runCatching { (info as? ModelInfo.Llm)?.supportsThinking() }.getOrNull() == true,
+                )
+            }
+        }.getOrDefault(ModelFacts(context = null, thinks = false))
+    }
+
+    private class ModelFacts(val context: Int?, val thinks: Boolean)
+
+    /** The window this engine really has: the configured one, never more than the model's own. */
+    private val effectiveContext: Int
+        get() = facts.context?.let { minOf(it, contextWindow) } ?: contextWindow
+
     /** `vision` becomes true once a vision-capable model has been loaded with its vision encoder. */
     override val capabilities: EngineCapabilities
         get() = EngineCapabilities(
             nativeToolCalls = false,
             vision = visionLoaded,
-            contextWindow = contextWindow,
+            contextWindow = effectiveContext,
             onDevice = true,
         )
 
@@ -95,6 +120,9 @@ class LiteRtEngine(
             val eng = withContext(worker) { ensureLoaded() }
             val plan = toConversationPlan(request.messages, visionLoaded)
             val maxOut = request.maxOutputTokens.coerceAtLeast(1)
+            // Only a thinking model (Qwen3) is told whether to think; others keep their defaults untouched.
+            val thinks = facts.thinks
+            val thinking = !thinks || thinkingFor(request.reasoning, effectiveContext)
 
             val conversation = withContext(worker) {
                 try {
@@ -102,9 +130,11 @@ class LiteRtEngine(
                         ConversationConfig(
                             systemInstruction = plan.system,
                             initialMessages = plan.history,
-                            samplerConfig = samplerFor(request.temperature),
+                            samplerConfig = samplerFor(request.temperature, thinking),
                             automaticToolCalling = false,
                             maxOutputToken = maxOut,
+                            // Null keeps the model's own default (Qwen3 thinks unless told not to).
+                            thinkingConfig = if (thinking) null else ThinkingConfig(enableThinking = false),
                         ),
                     )
                 } catch (t: Throwable) {
@@ -114,6 +144,7 @@ class LiteRtEngine(
 
             val chunks = AtomicInteger(0)
             val cancelRequested = AtomicBoolean(false)
+            val contextFull = AtomicBoolean(false)
             val done = CompletableDeferred<Unit>()
             val cancelNative = {
                 if (cancelRequested.compareAndSet(false, true)) {
@@ -128,12 +159,15 @@ class LiteRtEngine(
                         plan.last,
                         object : MessageCallback {
                             override fun onMessage(message: Message) {
+                                // Thinking models (Qwen3) stream their reasoning in the "thought" channel.
+                                val thought = message.channels[THOUGHT_CHANNEL].orEmpty()
                                 val text = message.contents.contents
                                     .filterIsInstance<Content.Text>()
                                     .joinToString("") { it.text }
-                                if (text.isEmpty()) return
+                                if (text.isEmpty() && thought.isEmpty()) return
                                 val n = chunks.incrementAndGet()
-                                if (trySend(LlmEvent.TextDelta(text)).isFailure) cancelNative()
+                                if (thought.isNotEmpty() && trySend(LlmEvent.ReasoningDelta(thought)).isFailure) cancelNative()
+                                if (text.isNotEmpty() && trySend(LlmEvent.TextDelta(text)).isFailure) cancelNative()
                                 if (n >= maxOut) cancelNative()
                             }
 
@@ -142,7 +176,15 @@ class LiteRtEngine(
                             }
 
                             override fun onError(throwable: Throwable) {
-                                if (cancelRequested.get()) done.complete(Unit) else done.completeExceptionally(throwable)
+                                when {
+                                    cancelRequested.get() -> done.complete(Unit)
+                                    // The KV cache is full: the answer ends here, like reaching the output limit.
+                                    isContextFull(throwable) -> {
+                                        contextFull.set(true)
+                                        done.complete(Unit)
+                                    }
+                                    else -> done.completeExceptionally(throwable)
+                                }
                             }
                         },
                     )
@@ -154,6 +196,14 @@ class LiteRtEngine(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (t: Throwable) {
+                    // A prompt longer than the model's context fails the same way on every retry.
+                    if (isPromptTooLong(t)) {
+                        throw LlmException(
+                            "The prompt does not fit this model's context window of $effectiveContext tokens: ${t.message}",
+                            retryable = false,
+                            cause = t,
+                        )
+                    }
                     throw LlmException("LiteRT-LM generation failed: ${t.message}", retryable = true, cause = t)
                 }
 
@@ -161,7 +211,7 @@ class LiteRtEngine(
                 // LiteRT-LM streams one chunk per decode step, so chunks approximate generated tokens.
                 val total = withContext(worker) { runCatching { conversation.getTokenCount() }.getOrDefault(0) }
                 send(LlmEvent.Usage(inputTokens = (total - generated).coerceAtLeast(0), outputTokens = generated))
-                send(LlmEvent.Finished(if (generated >= maxOut) FinishReason.Length else FinishReason.Stop))
+                send(LlmEvent.Finished(if (generated >= maxOut || contextFull.get()) FinishReason.Length else FinishReason.Stop))
             } finally {
                 withContext(NonCancellable) {
                     if (!done.isCompleted) {
@@ -285,7 +335,7 @@ class LiteRtEngine(
             backend = main,
             visionBackend = vision,
             audioBackend = null,
-            maxNumTokens = contextWindow,
+            maxNumTokens = effectiveContext,
             cacheDir = File(appContext.cacheDir, "litertlm").apply { mkdirs() }.path,
         )
     }
@@ -331,11 +381,42 @@ class LiteRtEngine(
             runCatching { Engine.setNativeMinLogSeverity(LogSeverity.ERROR) }
         }
 
-        fun samplerFor(temperature: Double?): SamplerConfig? = when {
-            temperature == null -> null // the model's own defaults
+        const val THOUGHT_CHANNEL = "thought"
+
+        /** Windows this small leave no room for a thinking model to think and still answer. */
+        const val THINKING_MIN_CONTEXT = 8_192
+
+        /**
+         * Whether a thinking model (Qwen3) may think. Asked for explicitly: as asked. By default only with a window
+         * of [THINKING_MIN_CONTEXT] or more: in Qwen3 0.6B's 4096 tokens, a prompt near the limit was thought away
+         * entirely on the runner (no answer at all), and a first agent step took 75 s instead of 27 s.
+         */
+        fun thinkingFor(reasoning: ReasoningEffort?, context: Int): Boolean = when (reasoning) {
+            null -> context >= THINKING_MIN_CONTEXT
+            ReasoningEffort.Off -> false
+            else -> true
+        }
+
+        /**
+         * No temperature: the model's own defaults (for Qwen3 its thinking-mode settings: top-k 20, top-p 0.95,
+         * temperature 0.6), or with thinking off Qwen's non-thinking settings (top-k 20, top-p 0.8, temperature 0.7).
+         */
+        fun samplerFor(temperature: Double?, thinking: Boolean): SamplerConfig? = when {
+            temperature == null && thinking -> null
+            temperature == null -> SamplerConfig(topK = 20, topP = 0.8, temperature = 0.7, seed = Random.nextInt(1, Int.MAX_VALUE))
             temperature <= 0.0 -> SamplerConfig(topK = 1, topP = 1.0, temperature = 1.0, seed = 0) // greedy
             else -> SamplerConfig(topK = 40, topP = 0.9, temperature = temperature, seed = Random.nextInt(1, Int.MAX_VALUE))
         }
+
+        private fun messages(t: Throwable) = generateSequence(t) { it.cause }.take(4).mapNotNull { it.message }.joinToString(" ")
+
+        /** LiteRT-LM: "Input token ids are too long. Exceeding the maximum number of tokens allowed: 4568 >= 4096". */
+        fun isPromptTooLong(t: Throwable) = messages(t).let {
+            it.contains("token ids are too long", ignoreCase = true) || it.contains("exceeding the maximum number of tokens", ignoreCase = true)
+        }
+
+        /** LiteRT-LM: "Max number of tokens reached" while decoding. */
+        fun isContextFull(t: Throwable) = messages(t).contains("max number of tokens reached", ignoreCase = true)
     }
 }
 

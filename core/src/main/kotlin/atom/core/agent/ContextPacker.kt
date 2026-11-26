@@ -19,8 +19,20 @@ data class ContextPolicy(
     val compactedToolResultChars: Int = 280,
     /** Screenshots are the most expensive input; only the newest few survive. */
     val keepImages: Int = 1,
+    /**
+     * On-device engines without native tool calling: the whole window that the messages, the tool descriptions
+     * (written into the prompt) and the answer share. Each request's message budget is then what is left after the
+     * tools that request offers ([AgentConfig.packingFor]), never more than [budgetTokens]. Null: no sharing.
+     */
+    val sharedWindow: Int? = null,
 ) {
     companion object {
+        /** Room kept free in a [sharedWindow] for template tokens, the tool-format header and estimation error. */
+        const val SHARED_MARGIN = 384
+
+        /** The messages always get at least this much of a [sharedWindow], even if the prompt then overflows. */
+        const val SHARED_MIN_BUDGET = 600
+
         /** Prompt budget when the model's window is unknown: generous enough for any current model, never tiny. */
         const val UNKNOWN_WINDOW_BUDGET = 64_000
 

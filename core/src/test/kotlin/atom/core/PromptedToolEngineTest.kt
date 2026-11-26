@@ -53,6 +53,27 @@ class PromptedToolEngineTest {
     }
 
     @Test
+    fun stopsWhenTheModelInventsTheToolResult() = runTest {
+        // What Qwen3 0.6B wrote on the runner: a call, then a made-up result for it.
+        val inner = chunked(
+            "\n\n", "<tool_call>{\"name\": \"tap\", \"arguments\": {\"id\": \"3\"}}</tool_call>", "\n", "<tool_result", ">",
+            "\n1. Quantum chip", " announced", "\n</tool_result>",
+        )
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")), tools)).toList()
+        val text = events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text }
+        assertTrue("tool_result" !in text && "Quantum" !in text, text)
+        assertEquals("tap", events.filterIsInstance<LlmEvent.ToolCallReady>().single().call.name)
+        assertEquals(FinishReason.ToolCalls, (events.last() as LlmEvent.Finished).reason)
+    }
+
+    @Test
+    fun aToolResultTagBeforeAnyCallIsKept() = runTest {
+        val inner = chunked("Atom sends results in <tool_result> blocks.")
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")), tools)).toList()
+        assertEquals("Atom sends results in <tool_result> blocks.", events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text })
+    }
+
+    @Test
     fun rewritesHistoryIntoPlainMessages() = runTest {
         val inner = chunked("ok")
         val call = ToolCall("c1", "tap", """{"id":"1"}""")

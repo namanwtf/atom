@@ -9,6 +9,7 @@ Atom is built and tested only on GitHub's disposable runners, never on a persona
 | **Screenshots** (`screenshots.yml`) | Walks the debug build's screens on an emulator and prints each screenshot into the log | Pull requests that touch UI modules |
 | **E2E** (`e2e.yml`) | Real agent tasks on an emulator, end to end | On demand, weekly, and on labelled or release pull requests |
 | **Compare** (`compare.yml`) | The previous Atom (latest 3.4.x) and the new one, side by side on one emulator and model | On demand, and on the release pull request |
+| **On-device model** (`ondevice-model.yml`) | The catalog's Qwen3 0.6B (`.litertlm`) on the runner's CPU with the app's LiteRT-LM version | On demand, and on pull requests that touch the LiteRT-LM engine or the probe |
 
 ## End-to-end tasks
 
@@ -114,6 +115,24 @@ adb shell content read --uri content://io.github.namanwtf.atom.debug.e2e/state  
 Other methods: `clear` (forget finished runs), `stop` (the same broadcast the notification's Stop button sends),
 `approve` / `deny` (a pending confirmation) and `linux_install`. Runner: `tools/e2e/run.py` (scenario keys can be passed
 as arguments, e.g. `run.py c d`).
+
+## On-device model (LiteRT-LM)
+
+`ondevice-model.yml` installs the LiteRT-LM Python runtime at the version the app ships (`litertlm` in
+`gradle/libs.versions.toml`, the `litert-lm` wheel on PyPI) and downloads the catalog's Qwen3 0.6B from the same URL,
+checked against the same SHA-256, as the app's model downloader (`models/ModelCatalog.kt`). `tools/ondevice/litert_probe.py`
+then prints:
+
+- the model file's own metadata: its context size (`max_num_tokens`, 4096 for Qwen3 0.6B), default sampler, stop
+  tokens, thinking channel and the Jinja chat template the runtime applies;
+- how the chat tokens tokenize (`<|im_start|>`, `<|im_end|>`, `<think>` must each be one special token);
+- the prompt the runtime renders from Atom's messages (the compact system prompt plus `PromptedToolEngine`'s tool
+  block) and the streamed answer, with the model's default sampler and thinking, and with thinking off and Qwen's
+  non-thinking sampler; for a chat question, the first step of a browser task, and prompts sized just under and over
+  the model's window.
+
+It also lists the Kotlin API of the app's LiteRT-LM AAR (`javap`), so a runtime upgrade shows what changed. The
+runner has no GPU, so the phone's GPU and NPU paths and their speed are not covered.
 
 ## Old vs new (Compare)
 

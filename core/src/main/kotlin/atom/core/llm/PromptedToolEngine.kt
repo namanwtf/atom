@@ -2,9 +2,12 @@ package atom.core.llm
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -21,13 +24,16 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         return flow {
             val scanner = ToolCallScanner()
             var finish = FinishReason.Stop
-            inner.stream(rewritten).collect { event ->
+            // Small models often go on to write the tool's result themselves after a call; generation stops there,
+            // so the invented result is neither shown nor kept.
+            inner.stream(rewritten).transformWhile { event ->
                 when (event) {
                     is LlmEvent.TextDelta -> scanner.feed(event.text).forEach { emit(it) }
                     is LlmEvent.Finished -> finish = event.reason
                     else -> emit(event)
                 }
-            }
+                !scanner.inventingResult
+            }.collect { emit(it) }
             scanner.finish().forEach { emit(it) }
             emit(LlmEvent.Finished(if (scanner.callCount > 0) FinishReason.ToolCalls else finish))
         }
@@ -63,7 +69,23 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         return JsonObject(mapOf("name" to JsonPrimitive(call.name), "arguments" to args)).toString()
     }
 
-    private fun toolInstructions(tools: List<ToolSpec>): String = buildString {
+    private fun toolInstructions(tools: List<ToolSpec>): String =
+        PromptedTools.instructions(tools, PromptedTools.compact(inner.capabilities.contextWindow))
+}
+
+/** How [PromptedToolEngine] writes the tools into the prompt; the agent measures the same text for its budget. */
+object PromptedTools {
+    /** Windows up to this size get the compact tool list. */
+    const val COMPACT_WINDOW = 4_096
+
+    /**
+     * A model with a small window (Qwen3 0.6B: 4096 tokens) gets each tool's arguments as one short line instead of
+     * the full JSON schema with every argument's description: the core tools plus the browser group otherwise take
+     * about 3000 of its 4096 tokens before the task, the history or a page are in the prompt.
+     */
+    fun compact(contextWindow: Int): Boolean = contextWindow in 1..COMPACT_WINDOW
+
+    fun instructions(tools: List<ToolSpec>, compact: Boolean): String = buildString {
         appendLine("# Tools")
         appendLine("To use a tool, reply with one or more blocks exactly like:")
         appendLine("<tool_call>{\"name\": \"tool_name\", \"arguments\": {\"arg\": \"value\"}}</tool_call>")
@@ -73,8 +95,25 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         for (tool in tools) {
             appendLine("## ${tool.name}")
             appendLine(tool.description)
-            appendLine("Arguments schema: ${tool.parameters}")
+            if (compact) appendLine("Arguments: ${compactArguments(tool.parameters)}") else appendLine("Arguments schema: ${tool.parameters}")
             appendLine()
+        }
+    }
+
+    /** `query (string, required), count (integer), mode (one of: a, b)`; "none" for a tool without arguments. */
+    fun compactArguments(schema: JsonObject): String {
+        val props = schema["properties"] as? JsonObject ?: return "none"
+        if (props.isEmpty()) return "none"
+        val required = (schema["required"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty().toSet()
+        return props.entries.joinToString(", ") { (name, value) ->
+            val prop = value as? JsonObject
+            val type = (prop?.get("type") as? JsonPrimitive)?.contentOrNull ?: "any"
+            val choices = (prop?.get("enum") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            val notes = listOfNotNull(
+                choices?.takeIf { it.isNotEmpty() }?.let { "one of: " + it.joinToString(", ") } ?: type,
+                "required".takeIf { name in required },
+            )
+            "$name (${notes.joinToString(", ")})"
         }
     }
 }
@@ -87,12 +126,24 @@ internal class ToolCallScanner {
     var callCount = 0
         private set
 
+    /** True once the model, after a call, started writing a `<tool_result>` itself; everything from there is dropped. */
+    var inventingResult = false
+        private set
+
     fun feed(chunk: String): List<LlmEvent> {
+        if (inventingResult) return emptyList()
         buffer.append(chunk)
         val out = mutableListOf<LlmEvent>()
         while (true) {
             if (!inCall) {
+                val invented = if (callCount > 0) buffer.indexOf(RESULT) else -1
                 val start = buffer.indexOf(OPEN)
+                if (invented >= 0 && (start < 0 || invented < start)) {
+                    if (invented > 0) out += LlmEvent.TextDelta(buffer.substring(0, invented))
+                    buffer.clear()
+                    inventingResult = true
+                    return out
+                }
                 if (start >= 0) {
                     if (start > 0) out += LlmEvent.TextDelta(buffer.substring(0, start))
                     buffer.delete(0, start + OPEN.length)
@@ -126,8 +177,10 @@ internal class ToolCallScanner {
     }
 
     private fun partialTagSuffix(): Int {
-        for (len in minOf(OPEN.length - 1, buffer.length) downTo 1) {
-            if (OPEN.startsWith(buffer.substring(buffer.length - len))) return len
+        val tags = if (callCount > 0) listOf(OPEN, RESULT) else listOf(OPEN)
+        for (len in minOf(maxOf(OPEN.length, RESULT.length) - 1, buffer.length) downTo 1) {
+            val tail = buffer.substring(buffer.length - len)
+            if (tags.any { it.length > len && it.startsWith(tail) }) return len
         }
         return 0
     }
@@ -143,5 +196,6 @@ internal class ToolCallScanner {
     private companion object {
         const val OPEN = "<tool_call>"
         const val CLOSE = "</tool_call>"
+        const val RESULT = "<tool_result"
     }
 }

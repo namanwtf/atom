@@ -7,8 +7,9 @@ import atom.app.data.KeyVault
 import atom.app.data.LocalBackend
 import atom.app.data.SettingsRepository
 import atom.core.agent.AgentConfig
-import atom.core.agent.ContextPacker
 import atom.core.agent.ContextPolicy
+import atom.core.agent.SmallModel
+import atom.core.llm.DegenerateOutputGuard
 import atom.core.llm.LlmEngine
 import atom.core.llm.PromptedToolEngine
 import atom.core.llm.Releasable
@@ -70,6 +71,8 @@ class RoutedEngine internal constructor(
     val reasoning: ReasoningInfo = ReasoningInfo.None,
     /** Context window in tokens when known; null means unknown (automatic compaction stays off). */
     val contextWindow: Int? = null,
+    /** An on-device model under about 3B parameters ([SmallModel]): fine for chat, weak at multi-step tasks. */
+    val smallModel: Boolean = false,
 ) {
     fun snapReasoning(effort: ReasoningEffort?): ReasoningEffort? = Reasoning.snap(effort, reasoning)
 
@@ -90,30 +93,47 @@ class RoutedEngine internal constructor(
         }
         // On-device every prompt token is prefill on the phone's own silicon: keep it small. Tool
         // descriptions are injected into the prompt by PromptedToolEngine, so they count against the window.
-        val maxOut = 768
-        val toolTokens = tools.sumOf { ContextPacker.estimate(it.name + it.description + it.parameters) + 24 }
         val window = engine.capabilities.contextWindow.takeIf { it > 0 } ?: LOCAL_CONTEXT_WINDOW
-        val budget = (window - maxOut - toolTokens - 256).coerceIn(2_500, LOCAL_PROMPT_BUDGET)
+        val plan = localPlan(window)
         return AgentConfig(
             model = model,
             systemPrompt = systemPrompt,
             maxSteps = 15,
-            maxOutputTokens = maxOut,
+            maxOutputTokens = plan.maxOutputTokens,
             toolTimeoutMs = toolTimeout,
             maxRetries = 1,
             context = ContextPolicy(
-                budgetTokens = budget,
+                budgetTokens = plan.promptBudget,
                 keepFullToolResults = 2,
-                maxToolResultChars = 3_000,
+                maxToolResultChars = plan.maxToolResultChars,
                 compactedToolResultChars = 160,
                 keepImages = if (vision) 1 else 0,
+                // Tool descriptions go into the on-device prompt, and the offered set grows as groups load: each
+                // request's message budget is what its tools and the answer leave of the window.
+                sharedWindow = window,
             ),
         )
     }
 
+    /** How an on-device run splits its window between the messages, the tool descriptions and the answer. */
+    data class LocalPlan(val promptBudget: Int, val maxOutputTokens: Int, val maxToolResultChars: Int)
+
     companion object {
         const val LOCAL_CONTEXT_WINDOW = 8_192
         const val LOCAL_PROMPT_BUDGET = 6_000
+
+        /**
+         * Messages + tool descriptions + answer must fit in [window], or the runtime refuses the prompt (LiteRT-LM:
+         * "Input token ids are too long") or runs out of room mid-answer. Small windows (4096, as Qwen3 0.6B has)
+         * get a shorter answer and shorter tool results instead of a budget planned for 8192. The tools' share is
+         * taken per request ([atom.core.agent.AgentConfig.packingFor]), as the offered set grows when groups load.
+         */
+        fun localPlan(window: Int): LocalPlan {
+            val small = window <= 4_096
+            val maxOut = if (small) 512 else 768
+            val budget = (window - maxOut - ContextPolicy.SHARED_MARGIN).coerceIn(ContextPolicy.SHARED_MIN_BUDGET, LOCAL_PROMPT_BUDGET)
+            return LocalPlan(promptBudget = budget, maxOutputTokens = maxOut, maxToolResultChars = if (small) 1_500 else 3_000)
+        }
 
         /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
         const val CLOUD_MAX_OUTPUT = 2048
@@ -310,14 +330,18 @@ class EngineRouter(
         } else {
             releaseLocalLocked()
             val raw = try {
-                withContext(Dispatchers.IO) { createLocal(installed, selection.backend) }
+                // Reading capabilities once here, off the main thread, lets the engine read its model file's header.
+                withContext(Dispatchers.IO) { createLocal(installed, selection.backend).also { it.capabilities } }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 throw RouteException(context.getString(R.string.route_engine_failed, e.message ?: e::class.simpleName))
             }
-            // Most small models have no native function calling; the prompted adapter supplies it.
-            val wrapped = if (raw.capabilities.nativeToolCalls) raw else PromptedToolEngine(raw)
+            // A generation that turns into a loop of symbols is stopped with a clear message instead of streaming
+            // garbage to the output limit. Most small models have no native function calling; the prompted adapter
+            // supplies it.
+            val guarded = DegenerateOutputGuard(raw)
+            val wrapped = if (raw.capabilities.nativeToolCalls) guarded else PromptedToolEngine(guarded)
             cached = CachedLocal(key, raw, wrapped, installed)
             wrapped
         }
@@ -328,7 +352,9 @@ class EngineRouter(
             onDevice = true,
             notice = null,
             selection = selection,
-            contextWindow = RoutedEngine.LOCAL_CONTEXT_WINDOW,
+            // The model's own window (LiteRT-LM files carry it), not the size the engine was asked for.
+            contextWindow = engine.capabilities.contextWindow.takeIf { it > 0 } ?: RoutedEngine.LOCAL_CONTEXT_WINDOW,
+            smallModel = SmallModel.isSmall(installed.name, installed.sizeBytes),
         )
     }
 
