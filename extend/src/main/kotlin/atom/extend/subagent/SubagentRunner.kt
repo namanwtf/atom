@@ -86,7 +86,9 @@ class SubagentRunner(private val env: SubagentEnvironment) {
             maxOutputTokens = if (engine.onDevice) 768 else 2048,
             reasoning = settings.reasoning,
             contextWindow = window,
-            context = ContextPolicy(budgetTokens = window?.let { (it * 0.7).toInt().coerceIn(2_500, 24_000) } ?: 24_000),
+            // Cloud: the model's own window (compaction near 85% of it). On-device every prompt token is prefill on the
+            // phone, so a deliberate cap stays.
+            context = ContextPolicy(budgetTokens = if (engine.onDevice) window?.let { (it * 0.7).toInt().coerceIn(2_500, 24_000) } ?: 2_500 else null),
         )
         val runId = SubagentRuns.start(parent.taskId, def.name, task.task)
         SubagentRuns.update(runId) { copy(model = engine.model) }

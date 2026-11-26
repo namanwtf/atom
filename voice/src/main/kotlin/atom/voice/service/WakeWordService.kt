@@ -192,7 +192,8 @@ class WakeWordService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(getString(R.string.atom_voice_title))
             .setContentText(text)
             .setOngoing(true)

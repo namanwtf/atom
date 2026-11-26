@@ -20,6 +20,14 @@ object RunPowerPolicy {
     fun wantsWakeLock(executing: Int, interactive: Boolean): Boolean = executing > 0 && !interactive
 
     fun keepsScreenOn(setting: Boolean, executing: Int, timedOut: Boolean): Boolean = setting && executing > 0 && !timedOut
+
+    /**
+     * Whether an Atom window carries FLAG_KEEP_SCREEN_ON: only while [keepScreenOn] holds (a run is executing, the
+     * setting is on, the safety timeout has not passed) AND the window is in front. The flag is cleared the moment
+     * either stops (the run ends, fails or is stopped; the app goes to the background or the screen goes off), and
+     * comes back only when the UI is in front again with a run still going.
+     */
+    fun windowKeepsScreenOn(keepScreenOn: Boolean, windowInFront: Boolean): Boolean = keepScreenOn && windowInFront
 }
 
 /**

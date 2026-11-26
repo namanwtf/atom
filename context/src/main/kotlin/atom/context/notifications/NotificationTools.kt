@@ -10,7 +10,9 @@ import android.view.KeyEvent
 import atom.context.search.Slice
 import atom.context.search.one
 import atom.context.sources.CtxTool
+import atom.context.sources.JitAsks
 import atom.context.sources.Missing
+import atom.ui.permission.PermissionAsks
 import atom.context.sources.When
 import atom.context.sources.guarded
 import atom.core.tool.Risk
@@ -36,7 +38,7 @@ internal class NotificationTools(context: Context) {
 
     private fun requireAccess() {
         if (!Notifications.accessGranted(app)) {
-            throw Missing("Notification access is off. Ask the user to switch on \"Atom notification history\" on the Permissions page; history records from then on.")
+            throw Missing(PermissionAsks.toolMessage(app, JitAsks.notificationAccess(app), "Reading notifications") + " History records from the moment it is on.")
         }
     }
 

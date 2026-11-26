@@ -9,6 +9,9 @@ import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Process
 import android.os.SystemClock
+import atom.core.ondevice.WakeModels
+import atom.core.ondevice.WakeModelsLoad
+import atom.voice.Wake
 import atom.voice.audio.ShortRingBuffer
 import atom.voice.audio.SpeechGate
 import atom.voice.audio.TriggerDebouncer
@@ -72,14 +75,14 @@ internal class WakeListener(
     private fun loop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
         var outcome: () -> Unit = {}
-        var models: TfliteWakeModels? = null
+        var models: WakeModels? = null
         try {
-            when (val result = TfliteWakeModels.load(context)) {
-                is TfliteWakeModels.LoadResult.Failed -> {
+            when (val result = Wake.loadModels()) {
+                is WakeModelsLoad.Failed -> {
                     outcome = { listener.onFatal(result.reason) }
                     return
                 }
-                is TfliteWakeModels.LoadResult.Ok -> models = result.models
+                is WakeModelsLoad.Ok -> models = result.models
             }
             val rec = openMic() ?: run {
                 outcome = { listener.onMicUnavailable("Microphone unavailable") }

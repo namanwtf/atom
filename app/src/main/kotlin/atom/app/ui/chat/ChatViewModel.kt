@@ -23,6 +23,8 @@ import atom.app.data.ConversationSummary
 import atom.app.data.EngineSelection
 import atom.app.data.ReadingPosition
 import atom.app.data.TitleSource
+import atom.core.agent.ContextMeter
+import atom.core.agent.ContextPolicy
 import atom.core.agent.SessionStats
 import atom.core.llm.ChatMessage
 import atom.core.llm.ReasoningEffort
@@ -87,13 +89,20 @@ enum class NotReady {
 
     /** The stored key could not be decrypted (for example after a restore to another phone). */
     KeyUnreadable,
+
+    /** An on-device model is selected but the optional on-device AI pack is not installed (or must be updated). */
+    NeedsPack,
 }
 
 /** The reasoning chip and effort picker for the current conversation's model. */
 data class ReasoningUi(val support: ReasoningSupport, val enabled: Boolean, val effort: ReasoningEffort?)
 
-data class ContextInfo(val usedTokens: Int, val windowTokens: Int?) {
-    val fraction: Float? get() = windowTokens?.takeIf { it > 0 }?.let { (usedTokens.toFloat() / it).coerceIn(0f, 1f) }
+/**
+ * The context meter: tokens the last request used over the model's usable window, and where automatic compaction
+ * starts ([compactMark], a share of the window; null when it is off or the window unknown).
+ */
+data class ContextInfo(val usedTokens: Int, val windowTokens: Int?, val compactMark: Float? = null) {
+    val fraction: Float? get() = ContextMeter.fraction(usedTokens, windowTokens)
 }
 
 /** Editing a past user message: sending replaces it and everything after it. */
@@ -283,7 +292,16 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             engine = engineInfo(selection, live, ready),
             reasoning = ReasoningUi(support, enabled, effort),
             queued = queued,
-            context = (conversation.contextTokens)?.let { ContextInfo(it, conversation.contextWindow) },
+            context = conversation.contextTokens?.let { used ->
+                // Saved before the window fix, a conversation stored the old 24k cap as its window.
+                val model = if (conversation.contextWindow == ContextMeter.LEGACY_CLOUD_CAP && selection is EngineSelection.Cloud) {
+                    runCatching { info.contextWindow(selection) }.getOrNull()?.let { ContextPolicy.promptBudget(it, atom.app.engine.RoutedEngine.CLOUD_MAX_OUTPUT) }
+                } else {
+                    null
+                }
+                val window = ContextMeter.displayWindow(conversation.contextWindow, model)
+                ContextInfo(used, window, ContextMeter.compactMark(window, settings.autoCompaction))
+            },
             stats = conversation.stats,
             pinned = conversation.pinned,
             canEdit = !running,
@@ -294,7 +312,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             candidates = if (id != null) candidatesOf(conversation, b[id]) else emptyMap(),
             character = id?.let { b[it]?.snapshot },
             loadFailed = id != null && failed == id && stored?.id != id && live == null,
-            hasProviders = ready == null || ready.providers.any { it.enabled } || ready.installed.isNotEmpty(),
+            hasProviders = ready == null || ready.providers.any { it.enabled } || (ready.packReady && ready.installed.isNotEmpty()),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -384,7 +402,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
                 StoredMessage.notice(opening.marker, now),
                 StoredMessage(ChatMessage.assistant(opening.text), createdAt = now + 1),
             ),
-            titleSource = TitleSource.User,
+            // Named after the character until the first exchange, then titled like any chat (when auto titles are on).
+            titleSource = TitleSource.Placeholder,
         )
         graph.conversations.save(c)
         return c

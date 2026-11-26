@@ -38,6 +38,23 @@ object BrowserCards {
     fun takeOverRoute(conversationId: String) = "web/browser/session/$conversationId"
 }
 
+/** Names of the built-in agent browser's tools, in the order [BrowserTools.create] returns them. */
+object BrowserToolNames {
+    const val OPEN = "browser_open"
+    const val EXTRACT = "browser_extract"
+    const val FIND = "browser_find"
+    const val CLICK = "browser_click"
+    const val TYPE = "browser_type"
+    const val SUBMIT = "browser_submit"
+    const val SCROLL = "browser_scroll"
+    const val SCREENSHOT = "browser_screenshot"
+    const val NAVIGATE = "browser_navigate"
+    const val WAIT = "browser_wait"
+    const val CLOSE = "browser_close"
+
+    val ALL: List<String> = listOf(OPEN, EXTRACT, FIND, CLICK, TYPE, SUBMIT, SCROLL, SCREENSHOT, NAVIGATE, WAIT, CLOSE)
+}
+
 internal object BrowserTools {
     fun create(context: Context, gate: () -> String?): List<Tool> {
         val c = context.applicationContext
@@ -105,9 +122,12 @@ internal object BrowserTools {
     private fun obj(json: String?): JsonObject? = json?.let { runCatching { JsonPath.parse(it) as? JsonObject }.getOrNull() }
 
     private class Open(c: Context, g: () -> String?) : Step(
-        c, "browser_open",
-        "Open a URL in this conversation's own off-screen browser (shares logins with the user's browser). Use for pages that need " +
-            "JavaScript, login, clicking or forms. Returns a text summary; then browser_find / browser_click / browser_type.",
+        c, BrowserToolNames.OPEN,
+        "Open a URL or search in Atom's built-in agent browser (also called the Atom browser): Atom's own browser for reading " +
+            "and acting on web pages, with a live preview in the chat that the user can watch and take over. Use it whenever the " +
+            "user asks for the agent browser or to browse, open or look at a website, and for pages that need JavaScript, sign-in, " +
+            "clicking or forms. Shares logins with the user's browser. Returns a text summary; then browser_extract / browser_find / " +
+            "browser_click / browser_type.",
         schema { string("url", "http(s) URL, or search terms (searched on Google)", required = true) },
         Risk.Read, g, creates = true,
     ) {
@@ -127,7 +147,7 @@ internal object BrowserTools {
     }
 
     private class Extract(c: Context, g: () -> String?) : Step(
-        c, "browser_extract",
+        c, BrowserToolNames.EXTRACT,
         "Get the current page's content: article (main readable text, default), text (all visible text) or links. Paged.",
         schema {
             string("mode", "article, text or links", enum = listOf("article", "text", "links"))
@@ -158,7 +178,7 @@ internal object BrowserTools {
     }
 
     private class Find(c: Context, g: () -> String?) : Step(
-        c, "browser_find",
+        c, BrowserToolNames.FIND,
         "List visible interactive elements (links, buttons, inputs) with ids for click/type. Filter by text or CSS selector.",
         schema {
             string("query", "Text to match in labels, names, placeholders or links")
@@ -197,7 +217,7 @@ internal object BrowserTools {
     }
 
     private class Click(c: Context, g: () -> String?) : Step(
-        c, "browser_click",
+        c, BrowserToolNames.CLICK,
         "Click an element (by id from browser_find, CSS selector, or visible label). Waits for any page load it causes.",
         schema { target() },
         Risk.Act, g,
@@ -211,7 +231,7 @@ internal object BrowserTools {
     }
 
     private class Type(c: Context, g: () -> String?) : Step(
-        c, "browser_type",
+        c, BrowserToolNames.TYPE,
         "Type into a field (input, textarea, contenteditable), choose a <select> option, or set a checkbox (value true/false).",
         schema {
             target()
@@ -238,7 +258,7 @@ internal object BrowserTools {
     }
 
     private class Submit(c: Context, g: () -> String?) : Step(
-        c, "browser_submit",
+        c, BrowserToolNames.SUBMIT,
         "Submit the form containing an element (or the focused field). Waits for the result page.",
         schema { target() },
         Risk.Act, g,
@@ -252,7 +272,7 @@ internal object BrowserTools {
     }
 
     private class Scroll(c: Context, g: () -> String?) : Step(
-        c, "browser_scroll",
+        c, BrowserToolNames.SCROLL,
         "Scroll the page (down/up by screens, top, bottom) or scroll an element into view.",
         schema {
             string("direction", "down (default), up, top or bottom", enum = listOf("down", "up", "top", "bottom"))
@@ -278,7 +298,7 @@ internal object BrowserTools {
     }
 
     private class Screenshot(c: Context, g: () -> String?) : Step(
-        c, "browser_screenshot",
+        c, BrowserToolNames.SCREENSHOT,
         "Take a screenshot of the browser's visible area, to look at layout, images or charts.",
         schema(),
         Risk.Read, g,
@@ -291,7 +311,7 @@ internal object BrowserTools {
     }
 
     private class Navigate(c: Context, g: () -> String?) : Step(
-        c, "browser_navigate",
+        c, BrowserToolNames.NAVIGATE,
         "Go back, forward, reload or stop loading.",
         schema { string("action", "back, forward, reload or stop", required = true, enum = listOf("back", "forward", "reload", "stop")) },
         Risk.Read, g,
@@ -311,7 +331,7 @@ internal object BrowserTools {
     }
 
     private class Wait(c: Context, g: () -> String?) : Step(
-        c, "browser_wait",
+        c, BrowserToolNames.WAIT,
         "Wait until an element (CSS selector) or text appears, up to timeout_seconds (max 30).",
         schema {
             string("selector", "CSS selector to wait for")
@@ -337,7 +357,7 @@ internal object BrowserTools {
     }
 
     private class Close(c: Context, g: () -> String?) : Step(
-        c, "browser_close",
+        c, BrowserToolNames.CLOSE,
         "Close this conversation's browser when you are done with it (saves battery).",
         schema(),
         Risk.Read, g,

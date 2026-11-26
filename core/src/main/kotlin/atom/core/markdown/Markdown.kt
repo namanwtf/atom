@@ -129,7 +129,7 @@ private class BlockParser(private val lines: List<String>, private val depth: In
         val (open, close) = when {
             first.startsWith("$$") -> "$$" to "$$"
             first.startsWith("\\[") -> "\\[" to "\\]"
-            else -> "" to (Regex("\\\\begin\\{([a-z*]+)}").find(first)?.groupValues?.get(1)?.let { "\\end{$it}" } ?: "\\end")
+            else -> "" to (Regex("\\\\begin\\{([a-z*]+)\\}").find(first)?.groupValues?.get(1)?.let { "\\end{$it}" } ?: "\\end")
         }
         val rest = first.removePrefix(open)
         if (rest.length >= close.length && rest.trimEnd().endsWith(close) && (open.isEmpty() || rest.trim().length > close.length - 1)) {

@@ -1,0 +1,176 @@
+# End-to-end task tests: real agent runs on an emulator, against a model that runs on this runner (llama.cpp on the
+# CPU). No API key or secret is used anywhere; see docs/TESTING.md. Like every Atom build, this runs only on GitHub's
+# disposable runners.
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * 1" # Mondays
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # llama.cpp server, prebuilt for Linux x64 (CPU). Pinned tag and archive checksum.
+  LLAMA_TAG: b12500
+  LLAMA_ASSET: llama-b12500-bin-ubuntu-x64.tar.gz
+  LLAMA_SHA256: "decd26836af2cb9e0925e3bd5c79f7aa3740df9f2dbe88bbc57b1b4249cfd7ea"
+  # The model: Qwen2.5 3B Instruct, Q4_K_M (about 2 GB). Small enough for 4 vCPUs / 16 GB, fast enough on the CPU, and
+  # its chat template has native tool calling (llama-server --jinja parses it). Pinned repo, revision, file, checksum.
+  MODEL_REPO: Qwen/Qwen2.5-3B-Instruct-GGUF
+  MODEL_REVISION: 7dabda4d13d513e3e842b20f0d435c732f172cbe
+  MODEL_FILE: qwen2.5-3b-instruct-q4_k_m.gguf
+  MODEL_SHA256: "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
+  MODEL_ALIAS: qwen2.5-3b-instruct
+  # Room for Atom's first request (system prompt plus every tool's schema) and a few steps of history.
+  CTX_SIZE: "32768"
+
+jobs:
+  e2e:
+    # Normal pull requests stay fast: only those labelled "e2e", aimed at a release branch, or the release PR itself
+    # (release/next into main) run this.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'e2e') || startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/'))) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # First, so a wrong pin fails in seconds instead of after the build.
+      - name: Download llama.cpp server
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/llama" && cd "$RUNNER_TEMP/llama"
+          curl -fsSL --retry 3 -o "$LLAMA_ASSET" "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/$LLAMA_ASSET" || true
+          actual=$(sha256sum "$LLAMA_ASSET" 2>/dev/null | cut -d' ' -f1)
+          if [ "$actual" != "$LLAMA_SHA256" ]; then
+            # Prints what a new pin needs: the release date and each Linux asset's digest.
+            echo "::error::$LLAMA_ASSET sha256 is '$actual', expected $LLAMA_SHA256"
+            gh api "repos/ggml-org/llama.cpp/releases/tags/$LLAMA_TAG" --jq '.published_at, (.assets[] | select(.name | test("ubuntu|linux")) | "\(.name) \(.digest)")' || true
+            echo "PIN_PROBLEM=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          case "$LLAMA_ASSET" in *.zip) unzip -q "$LLAMA_ASSET" ;; *) tar xzf "$LLAMA_ASSET" ;; esac
+          server=$(find "$PWD" -type f -name llama-server | head -n1)
+          chmod +x "$server"
+          echo "LLAMA_SERVER=$server" >> "$GITHUB_ENV"
+          echo "LLAMA_LIB=$(dirname "$server")" >> "$GITHUB_ENV"
+          LD_LIBRARY_PATH="$(dirname "$server")" "$server" --version
+
+      - name: Cache the model
+        id: model-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/e2e-model
+          key: e2e-gguf-${{ env.MODEL_SHA256 }}
+
+      - name: Download the model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/e2e-model
+          curl -fsSL --retry 3 -o ~/e2e-model/model.gguf "https://huggingface.co/$MODEL_REPO/resolve/$MODEL_REVISION/$MODEL_FILE" || true
+
+      - name: Verify the model
+        run: |
+          actual=$(sha256sum ~/e2e-model/model.gguf 2>/dev/null | cut -d' ' -f1)
+          if [ "$actual" != "$MODEL_SHA256" ]; then
+            # Prints what a new pin needs: the latest revision and the file's checksum there.
+            echo "::error::$MODEL_FILE sha256 is '$actual', expected $MODEL_SHA256"
+            rev=$(curl -fsSL "https://huggingface.co/api/models/$MODEL_REPO/revision/main" | jq -r .sha) || true
+            echo "latest revision: $rev"
+            curl -fsSL "https://huggingface.co/api/models/$MODEL_REPO/tree/$rev" | jq -r '.[] | select(.lfs) | "\(.path) \(.lfs.oid) \(.size)"' || true
+            rm -f ~/e2e-model/model.gguf
+            echo "PIN_PROBLEM=1" >> "$GITHUB_ENV"
+          fi
+          ls -l ~/e2e-model
+
+      - name: Check the pins
+        if: env.PIN_PROBLEM == '1'
+        run: |
+          echo "::error::A pinned download did not match; see the steps above for the values to pin."
+          exit 1
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install NDK and CMake
+        run: sdkmanager --install "ndk;30.0.16248370" "cmake;4.1.2"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Start the model server
+        run: |
+          nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
+            -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
+            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 \
+            --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/v1/models
+          echo
+          curl -fsS http://127.0.0.1:8080/props | jq '{n_ctx: .default_generation_settings.n_ctx, build: .build_info}'
+          # A tool-calling smoke test straight against the server, so a model or template problem is visible here.
+          time curl -fsS http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' -d '{
+            "model": "'"$MODEL_ALIAS"'",
+            "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city",
+              "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
+          }' | jq -c '.choices[0].message, .timings'
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Pillow
+        run: pip install --quiet pillow
+
+      - name: Run the tasks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/e2e/run.py
+
+      - name: Model server log
+        if: always()
+        run: tail -n 400 "$RUNNER_TEMP/llama-server.log" || true
+
+      - name: Upload screenshots and server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e
+          path: |
+            e2e-shots/
+            ${{ runner.temp }}/llama-server.log
+          retention-days: 14

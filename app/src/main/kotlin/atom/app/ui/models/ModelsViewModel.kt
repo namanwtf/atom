@@ -1,5 +1,6 @@
 package atom.app.ui.models
 
+import atom.ui.permission.PermissionAsks
 import android.app.ActivityManager
 import android.content.Context
 import android.os.SystemClock
@@ -146,6 +147,8 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
     fun progress(modelId: String): Flow<DownloadState> = store.progress(modelId)
 
     fun download(model: CatalogModel) {
+        // Downloads run in the background with a progress notification; ask for it now, the first time.
+        PermissionAsks.notifications(app, "Atom shows download progress in a notification while the model downloads in the background.")
         viewModelScope.launch {
             val s = graph.settings.current()
             store.download(model, hfToken = graph.vault.hfToken(), wifiOnly = s.wifiOnlyDownloads)

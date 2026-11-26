@@ -461,7 +461,8 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
             cancel,
         ).build()
         val builder = Notification.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(if (stageCount > 1) "${distro.displayName}: $stageTitle (${stageIndex + 1}/$stageCount)" else "${distro.displayName}: $stageTitle")
             .setContentText(if (detail != null) "$step · $detail" else step)
             .setProgress(100, (progress * 100).toInt().coerceIn(0, 100), false)
@@ -485,7 +486,8 @@ class LinuxInstallWorker(context: Context, params: WorkerParameters) : Coroutine
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         ensureChannel()
         val n = Notification.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(if (steps.first() == InstallStep.Base) "${distro.displayName} is ready" else "${steps.last().title} finished")
             .setContentText("Open the terminal in Atom to use it.")
             .setAutoCancel(true)

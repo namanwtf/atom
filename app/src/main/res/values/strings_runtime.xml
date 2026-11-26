@@ -98,7 +98,7 @@
     <string name="chat_suggest_message">Open WhatsApp</string>
     <string name="chat_suggest_message_prompt">Open WhatsApp</string>
     <string name="chat_suggest_web">Browse the web</string>
-    <string name="chat_suggest_web_prompt">Open Agent Browser, then search for and summarize today’s top technology news</string>
+    <string name="chat_suggest_web_prompt">In Atom’s built-in agent browser (not an external browser app), search for today’s top technology news and summarize it</string>
     <string name="chat_suggest_memory">Check memory pressure</string>
     <string name="chat_suggest_memory_prompt">Read /proc/meminfo and /proc/pressure/, focus on PSI (Pressure Stall Information), and summarize current memory pressure and system status</string>
     <string name="chat_configure_model">Please configure the model provider and model first</string>

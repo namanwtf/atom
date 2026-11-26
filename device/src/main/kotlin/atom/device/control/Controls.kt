@@ -410,7 +410,8 @@ object LocationToggle : ShellToggle("location", "Location") {
 }
 
 object Nfc : ShellToggle("nfc", "NFC") {
-    override suspend fun read(env: DeviceEnv): Boolean? = NfcAdapter.getDefaultAdapter(env.app)?.isEnabled
+    // Reading the state needs no NFC permission (Atom declares none); toggling goes through Shizuku/root or the panel.
+    override suspend fun read(env: DeviceEnv): Boolean? = runCatching { NfcAdapter.getDefaultAdapter(env.app)?.isEnabled }.getOrNull()
 
     override suspend fun write(env: DeviceEnv, value: Boolean): Written {
         if (NfcAdapter.getDefaultAdapter(env.app) == null) throw ControlError("This phone has no NFC.")

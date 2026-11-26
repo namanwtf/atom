@@ -170,7 +170,7 @@
     <string name="setup_open_accessibility">Open Accessibility settings</string>
     <string name="setup_notifications_title">Notifications</string>
     <string name="setup_notifications_text">Shows progress with a Stop button, and asks for approval while Atom works in other apps.</string>
-    <string name="setup_allow_notifications">Allow notifications</string>
+    <string name="setup_notifications_later">Nothing to do now: Atom asks once, the first time a task keeps running in the background.</string>
     <string name="setup_shell_title">Shell access</string>
     <string name="setup_battery_title">Battery</string>
     <string name="setup_battery_1">Atom does nothing in the background. It runs only while a task you started is in progress, and the notification disappears when it ends.</string>
@@ -191,14 +191,14 @@
     <string name="voice_assistant_set">Set as assistant</string>
     <string name="voice_hey_atom">\"Hey Atom\"</string>
     <string name="voice_hey_atom_text">Listens only while the screen is on or charging. Pauses on battery saver, heat, low battery and calls.</string>
-    <string name="voice_model_missing">Wake-word model not installed in this build yet.</string>
+    <string name="voice_model_missing">Needs the on-device AI pack. Tap to get it.</string>
     <string name="voice_state_listening">Listening for \"Hey Atom\"</string>
     <string name="voice_state_paused">Paused: %1$s</string>
     <string name="voice_screen_off">Also with the screen off</string>
     <string name="voice_screen_off_text">Keeps the microphone open on battery. Costs noticeably more.</string>
     <string name="status_off">Off</string>
     <string name="status_allowed">Allowed</string>
-    <string name="status_not_allowed">Not allowed</string>
+    <string name="status_when_needed">When needed</string>
     <string name="shell_detecting">Checking…</string>
     <string name="shell_root">Root available</string>
     <string name="shell_shizuku">Shizuku connected</string>
@@ -274,4 +274,28 @@
     <string name="settings_keep_screen_on">Keep screen on while running</string>
     <string name="settings_keep_screen_on_sub">Only while Atom is open and working, with a safety timeout</string>
     <string name="settings_permissions_setup">Permissions &amp; setup</string>
+    <!-- Optional on-device AI pack (app/src/main/kotlin/atom/app/ondevice/OnDevicePack.kt) -->
+    <string name="route_needs_pack">On-device models need the on-device AI pack. Get it in Settings &gt; LLM providers &gt; On-device models.</string>
+    <string name="pack_section">On-device AI pack</string>
+    <string name="pack_missing_title_size">On-device AI (optional, about %1$s)</string>
+    <string name="pack_missing_title">On-device AI (optional)</string>
+    <string name="pack_missing_text">Run models offline and use the “Hey Atom” wake word.</string>
+    <string name="pack_download">Download</string>
+    <string name="pack_downloading">Downloading… %1$d%%</string>
+    <string name="pack_verifying">Checking the pack…</string>
+    <string name="pack_checking">Checking…</string>
+    <string name="pack_ready">Ready</string>
+    <string name="pack_ready_text">%1$s · %2$s</string>
+    <string name="pack_loading_engines">Installed · %1$s</string>
+    <string name="pack_remove">Remove pack</string>
+    <string name="pack_remove_title">Remove the on-device AI pack?</string>
+    <string name="pack_remove_text">Frees %1$s. On-device models and “Hey Atom” stop working until you download the pack again. Downloaded models stay on the phone.</string>
+    <string name="pack_outdated">Update the on-device AI pack</string>
+    <string name="pack_outdated_text">Atom was updated, and the pack has to match this version. It is not used until it is updated.</string>
+    <string name="pack_update">Update pack</string>
+    <string name="pack_failed">Could not set up the pack: %1$s</string>
+    <string name="pack_retry">Try again</string>
+    <string name="pack_not_published">This version of Atom has no on-device AI pack to download yet.</string>
+    <string name="pack_needed_for_models">On-device models run with the on-device AI pack above. Download it first.</string>
+    <string name="pack_source_note">Downloaded only from Atom\'s own GitHub release for this version, checked against its published SHA-256 and this app\'s signing key.</string>
 </resources>

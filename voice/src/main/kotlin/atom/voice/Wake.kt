@@ -8,7 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
-import atom.voice.engine.TfliteWakeModels
+import atom.core.ondevice.WakeModelsLoad
 import atom.voice.service.WakeWordService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -49,15 +49,34 @@ data class WakePolicy(
 /** A spoken command. [fromWakeWord] is true when it was captured after "Hey Atom". */
 data class VoiceCommand(val text: String, val fromWakeWord: Boolean)
 
-object Wake {
-    /** Wake-word assets expected in `voice/src/main/assets/wakeword/`. */
-    internal const val ASSET_DIR = "wakeword"
-    internal const val MELSPEC_MODEL = "melspectrogram.tflite"
-    internal const val EMBEDDING_MODEL = "embedding_model.tflite"
-    internal const val CLASSIFIER_MODEL = "hey_atom.tflite"
+/**
+ * Where the wake-word models come from: the optional on-device AI pack, which the app wires in. The voice module
+ * carries no model and no runtime of its own.
+ */
+interface WakeModelSource {
+    /** True while the pack is installed and usable; the switches follow it. */
+    val available: StateFlow<Boolean>
 
+    /** Loads the models (on the listener's background thread). */
+    fun load(): WakeModelsLoad
+}
+
+object Wake {
     internal const val REASON_NO_PERMISSION = "Microphone permission not granted"
-    internal const val REASON_NO_MODEL = "Wake-word model not installed"
+    internal const val REASON_NO_MODEL = "Needs the on-device AI pack (Settings > LLM providers > On-device models)"
+
+    private val noSource = MutableStateFlow(false).asStateFlow()
+
+    /** Set by the app before any screen shows. Null: no pack support, "Hey Atom" stays unavailable. */
+    @Volatile
+    var modelSource: WakeModelSource? = null
+
+    /** Opens the screen where the pack is downloaded; set by the app. */
+    @Volatile
+    var openPackSettings: (() -> Unit)? = null
+
+    /** Whether the wake-word models can load, kept current (the pack can be downloaded or removed at any time). */
+    val modelAvailable: StateFlow<Boolean> get() = modelSource?.available ?: noSource
     internal const val REASON_BACKGROUND_START =
         "Turn on \"Hey Atom\" while Atom is open: Android does not allow microphone listening to start from the background"
 
@@ -107,8 +126,11 @@ object Wake {
         assistComponent = component
     }
 
-    /** True when all three wake-word models are bundled. Cheap: lists one asset directory. */
-    fun isModelAvailable(context: Context): Boolean = TfliteWakeModels.isBundled(context)
+    /** True while the on-device AI pack (which carries the wake-word models) is installed. Cheap: no I/O. */
+    @Suppress("UNUSED_PARAMETER")
+    fun isModelAvailable(context: Context): Boolean = modelAvailable.value
+
+    internal fun loadModels(): WakeModelsLoad = modelSource?.load() ?: WakeModelsLoad.Failed(REASON_NO_MODEL)
 
     private fun applyEnabled(app: Context, enabled: Boolean) {
         val running = service
@@ -124,7 +146,7 @@ object Wake {
         }
         if (!isModelAvailable(app)) {
             running?.shutdown()
-            publish(WakeState.Unavailable("$REASON_NO_MODEL (assets/$ASSET_DIR/$CLASSIFIER_MODEL)"))
+            publish(WakeState.Unavailable(REASON_NO_MODEL))
             return
         }
         if (running != null) {

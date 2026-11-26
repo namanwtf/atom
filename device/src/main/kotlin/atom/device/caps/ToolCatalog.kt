@@ -17,7 +17,7 @@ enum class Needs(val label: String) {
 
     fun met(context: Context): Boolean = when (this) {
         Nothing, Permission -> true
-        Accessibility -> atom.device.Accessibility.connected.value || Shells.tier.value.let { it == ShellTier.Root || it == ShellTier.Shizuku }
+        Accessibility -> atom.device.Accessibility.connected.value || Shells.currentTier() != ShellTier.App
         ShizukuOrRoot -> RootAccess.granted || Shells.tier.value == ShellTier.Shizuku
         Root -> RootAccess.granted
     }

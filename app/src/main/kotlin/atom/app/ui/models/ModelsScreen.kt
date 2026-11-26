@@ -1,5 +1,6 @@
 package atom.app.ui.models
 
+import atom.app.ondevice.OnDevicePack
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -399,18 +400,32 @@ private fun OnDeviceScreen(vm: ModelsViewModel, onBack: () -> Unit) {
     val providers by vm.providers.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     val s = settings ?: AppSettings()
+    val packReady by OnDevicePack.ready.collectAsStateWithLifecycle()
 
     LargeTitleScreen(title = stringResource(R.string.set_on_device), onBack = onBack) {
-        localItems(
-            vm = vm,
-            settings = s,
-            installed = installed,
-            hasHfToken = hasHfToken,
-            linkModels = linkModels,
-            linkError = linkError,
-            onDelete = { confirmDelete = it },
-        )
-        fallbackItems(vm, s, providers)
+        // The engines live in the optional on-device AI pack; models are offered once it is installed.
+        packItems()
+        if (packReady) {
+            localItems(
+                vm = vm,
+                settings = s,
+                installed = installed,
+                hasHfToken = hasHfToken,
+                linkModels = linkModels,
+                linkError = linkError,
+                onDelete = { confirmDelete = it },
+            )
+            fallbackItems(vm, s, providers)
+        } else {
+            item(key = "pack-needed") {
+                Text(
+                    stringResource(R.string.pack_needed_for_models),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp),
+                )
+            }
+        }
     }
 
     confirmDelete?.let { id ->

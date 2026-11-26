@@ -265,7 +265,7 @@ class TaskNotifications(private val context: Context) {
             ?.message?.text?.trim()?.take(300).orEmpty()
 
     private fun base(channel: String) = NotificationCompat.Builder(context, channel)
-        .setSmallIcon(R.drawable.ic_stat_atom)
+        .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
         .setColor(ACCENT)
 
     private fun canPost(): Boolean =
@@ -336,7 +336,7 @@ class TaskNotifications(private val context: Context) {
         private const val REQ_RESUME = 16
         private const val REQ_OPEN_CONVERSATION = 17
 
-        /** White on graphite, the app's only accent. */
-        private const val ACCENT = 0xFFF4F4F6.toInt()
+        /** Black, so phones draw the emblem on a black disc like the launcher icon. */
+        private const val ACCENT = 0xFF000000.toInt()
     }
 }

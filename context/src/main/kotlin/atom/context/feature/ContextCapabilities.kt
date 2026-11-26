@@ -24,7 +24,7 @@ import atom.device.switches.ToolSwitch
 /** Location is two steps on Android 11+: "while using" first, then "all the time" in settings. */
 private object LocationCap : Capability(
     "location", "Location", "Time-and-place answers and location-aware tasks. Background tasks need \"Allow all the time\".",
-    "Permission: fine/approximate location, plus background location", CapGroup.Personal,
+    "Permission: fine/approximate location, plus background location", CapGroup.Personal, optional = true,
 ) {
     private fun has(c: Context, p: String) = c.checkSelfPermission(p) == 0
 
@@ -57,7 +57,7 @@ internal object ContextCapabilities {
         atom.device.caps.Capabilities.register(
             SpecialCap(
                 "notification_listener", "Notification access", "Current notifications, searchable 7-day history (recorded from the moment you grant it), media controls.",
-                "Special access: notification access → Atom notification history", CapGroup.Personal,
+                "Special access: notification access → Atom notification history", CapGroup.Personal, optional = true,
                 check = { c -> CapState(if (Notifications.accessGranted(c)) CapStatus.Available else CapStatus.NotEnabled) },
                 open = { c ->
                     Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
@@ -65,25 +65,20 @@ internal object ContextCapabilities {
                 },
             ),
             SpecialCap(
-                "usage_access", "Usage access", "Recent apps, screen time per app and per-app storage.", "Special access: usage access", CapGroup.Personal,
+                "usage_access", "Usage access", "Recent apps, screen time per app and per-app storage.", "Special access: usage access", CapGroup.Personal, optional = true,
                 check = { c -> CapState(if (Usage.granted(c)) CapStatus.Available else CapStatus.NotEnabled) },
                 open = { c -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${c.packageName}")) },
             ),
             LocationCap,
             RuntimeCap(
                 "calendar", "Calendar", "Find, create, change and delete events.", CapGroup.Personal,
-                listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR),
+                listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR), optional = true,
             ),
-            RuntimeCap("contacts", "Contacts", "Find people by name.", CapGroup.Personal, listOf(Manifest.permission.READ_CONTACTS)),
-            RuntimeCap("sms", "SMS", "Verification codes and message search.", CapGroup.Personal, listOf(Manifest.permission.READ_SMS)),
-            RuntimeCap("call_log", "Call history", "Search calls by number or contact.", CapGroup.Personal, listOf(Manifest.permission.READ_CALL_LOG)),
-            RuntimeCap(
-                "media", "Photos, videos and audio", "Search the gallery, screenshots, music and recordings.", CapGroup.Personal,
-                listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_EXTERNAL_STORAGE),
-                partial = listOf(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED),
-            ),
+            RuntimeCap("contacts", "Contacts", "Find people by name.", CapGroup.Personal, listOf(Manifest.permission.READ_CONTACTS), optional = true),
+            RuntimeCap("sms", "SMS", "Verification codes and message search.", CapGroup.Personal, listOf(Manifest.permission.READ_SMS), optional = true),
+            RuntimeCap("call_log", "Call history", "Search calls by number or contact.", CapGroup.Personal, listOf(Manifest.permission.READ_CALL_LOG), optional = true),
             object : RuntimeCap(
-                "health", "Health Connect", "Optional: steps, sleep, exercise and body measurements, read only when you ask.", CapGroup.Personal,
+                "health", "Health Connect", "Activity, sleep, heart rate and weight, read only when you ask about them.", CapGroup.Personal,
                 HealthPerms.all, minSdk = 34, optional = true,
             ) {
                 override fun applicable(context: Context) = HealthPerms.available(context)

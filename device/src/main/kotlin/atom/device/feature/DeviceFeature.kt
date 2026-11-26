@@ -15,6 +15,7 @@ import atom.device.control.ControlTools
 import atom.device.control.Controls
 import atom.device.godmode.GodModeTools
 import atom.device.root.RootAccess
+import atom.device.root.RootMonitor
 import atom.device.switches.ToolSwitch
 import atom.device.switches.ToolSwitches
 import atom.device.switches.gated
@@ -45,6 +46,7 @@ object DeviceFeature : AtomFeature {
 
     override fun onAppCreate(context: Context) {
         RootAccess.load(context)
+        (context.applicationContext as? android.app.Application)?.let(RootMonitor::install)
         ToolSwitches.init(context)
         Controls.registerAll()
         ControlRunner.installRestorer(context)
@@ -54,7 +56,8 @@ object DeviceFeature : AtomFeature {
 
     override fun tools(context: Context): List<Tool> {
         ToolSwitches.init(context)
-        val tier = Shells.tier.value ?: if (RootAccess.granted) ShellTier.Root else ShellTier.App
+        // Read at call time: root granted after the last shell detection counts at once.
+        val tier = Shells.currentTier()
         val privileged = tier != ShellTier.App
         val sys = SystemControlTools(context)
         val god = GodModeTools(context)

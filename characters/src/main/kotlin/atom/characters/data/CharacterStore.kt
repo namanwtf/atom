@@ -297,6 +297,15 @@ class CharacterStore(
         val (next, result) = change(_characters.value)
         withContext(io) { writeLibrary(next) }
         _characters.value = sorted(next)
+        // Open chats and the conversation list show the edited name, avatar and profile at once, not at the next run.
+        val bindings = withLiveSnapshots(_bindings.value, next)
+        if (bindings !== _bindings.value) {
+            withContext(io) {
+                root.mkdirs()
+                writeAtomic(chatsFile, json.encodeToString(ListSerializer(ChatBinding.serializer()), bindings.values.toList()).toByteArray())
+            }
+            _bindings.value = bindings
+        }
         result
     }
 
@@ -346,6 +355,31 @@ class CharacterStore(
         const val MAX_CARD_BYTES = 24 * 1024 * 1024
         const val MAX_CANDIDATES = 10
         private const val BACKUP_VERSION = 1
+
+        /**
+         * [bindings] with each chat's snapshot replaced by the stored character when that one differs. A deleted
+         * character keeps its snapshot (the chat goes on working). Returns [bindings] itself when nothing changed.
+         */
+        fun withLiveSnapshots(bindings: Map<String, ChatBinding>, characters: List<Character>): Map<String, ChatBinding> {
+            val byId = characters.associateBy { it.id }
+            var changed = false
+            val next = bindings.mapValues { (_, b) ->
+                val live = byId[b.characterId]
+                if (live != null && live != b.snapshot) {
+                    changed = true
+                    b.copy(snapshot = live)
+                } else {
+                    b
+                }
+            }
+            return if (changed) next else bindings
+        }
+
+        /** Characters whose shown name changed between [before] and [after]: id to (old name, new name). */
+        fun renamed(before: List<Character>, after: List<Character>): Map<String, Pair<String, String>> {
+            val old = before.associate { it.id to it.displayName }
+            return after.mapNotNull { c -> old[c.id]?.takeIf { it != c.displayName }?.let { c.id to (it to c.displayName) } }.toMap()
+        }
 
         fun isSafeId(id: String): Boolean = id.isNotEmpty() && id.length <= 80 && id.all { it.isLetterOrDigit() || it == '-' || it == '_' }
 

@@ -53,11 +53,14 @@ APK never touches a phone's release install. `tools/screenshots/capture.py` driv
      commit that is already released, a re-run of an older push, or a tip that moved during the build skips with
      a notice, so older code can never become the latest release;
    - computes the tag and `versionCode`, runs the unit tests (`test testDebugUnitTest`), builds
-     `:app:assembleRelease`, zipaligns and signs with `apksigner` (the decoded keystore is removed on exit);
-   - checks with `apksigner verify --print-certs` that there is exactly one signer and its SHA-256 is Atom 4's
-     certificate, and with `aapt2` that the id, `versionCode` and `versionName` are the stamped ones;
+     `:app:assembleRelease` and `:ondevice-pack:assembleRelease` (the optional on-device AI pack, below),
+     zipaligns (`-P 16`) and signs both with `apksigner` (the decoded keystore is removed on exit);
+   - checks for both APKs with `apksigner verify --print-certs` that there is exactly one signer and its SHA-256 is
+     Atom 4's certificate, and with `aapt2` that the package name (`io.github.namanwtf.atom`, and
+     `io.github.namanwtf.atom.ondevice` for the pack), `versionCode` and `versionName` are the stamped ones;
      any mismatch fails the run before publishing;
-   - attaches `atom-<version>.apk` and `atom-<version>.apk.sha256` (`sha256sum` format);
+   - attaches `atom-<version>.apk`, `atom-<version>.apk.sha256`, `atom-ondevice-<version>.apk` and
+     `atom-ondevice-<version>.apk.sha256` (`sha256sum` format);
    - writes the release notes: a changelog of the commit subjects since the previous tag, the APK's SHA-256 and
      the `versionCode` line (there is no CHANGELOG file in the repository; the notes are the changelog);
    - publishes with `gh release create` as a normal release marked latest, then checks it is not a draft or
@@ -67,6 +70,37 @@ APK never touches a phone's release install. `tools/screenshots/capture.py` driv
    Releases and tags created with that token do not start other workflow runs, so publishing never loops, and
    nothing is committed back to `main`. Pull requests build the unsigned release variant in `ci.yml`, so R8
    problems show before merge.
+
+## The optional on-device AI pack
+
+The app APK carries no on-device AI: no LiteRT-LM, no llama.cpp, no TFLite runtime and no wake-word models. They are
+in a separate APK, `atom-ondevice-<version>.apk` (module `:ondevice-pack`, package
+`io.github.namanwtf.atom.ondevice`), published in the same release as the app. It is never installed; it is a signed
+container of code, native libraries and models that the app loads into its own process.
+
+- **Asset names.** The updater never treats `atom-ondevice-*` as an app update; the pack is fetched only by its exact
+  name for the running version, from `GET /repos/namanwtf/atom/releases/tags/v<versionName>`.
+- **Download.** Settings > LLM providers > On-device models shows "On-device AI (optional, about N MB)" with
+  **Download** (the size comes from that release). The "Hey Atom" switches point there while the pack is missing.
+  The pack is downloaded with the updater's code (`ReleaseFiles`) into `cache/atom4_ondevice_download/`, only from
+  `https://github.com/namanwtf/atom/releases/download/`, and must match its published `.sha256`.
+- **Checks before use.** `PackageManager.getPackageArchiveInfo(…, GET_SIGNING_CERTIFICATES)` must show the pack's
+  package name, exactly the running app's `versionCode`, and exactly the app's signing certificate set (no key
+  rotation for code that runs inside the app). The file then moves to `files/atom4_ondevice/pack-<time>.apk` and is
+  made read-only (Android 14 refuses writable dynamic code).
+- **Loading.** A `DexClassLoader` with the app's class loader as parent and the native library path
+  `<pack.apk>!/lib/arm64-v8a`: the pack's libraries are stored uncompressed and 16 KB page-aligned, so the linker maps
+  them from the APK, and the AARs' own `System.loadLibrary` calls resolve into the pack. Atom's core interfaces,
+  Kotlin and kotlinx come from the app (kept unrenamed by `app/proguard-rules.pro`); the pack's other classes are
+  looked up in the pack first. The entry class `atom.ondevice.pack.PackEntry` implements
+  `atom.core.ondevice.OnDeviceEngines`, and every call goes through that interface.
+- **Versions.** After an app update the installed pack has an older `versionCode`: it is not loaded, and the screen
+  shows "Update the on-device AI pack" with **Update pack**. **Remove pack** deletes it and frees the space; downloaded
+  models stay.
+- **Without the pack** on-device choices are hidden from the model picker, a saved on-device selection reads
+  "Not selected" with a note, and "Hey Atom" explains that it needs the pack.
+- **Debug builds** can install a locally built pack through a debug-only receiver (`DebugPackReceiver`, used by the
+  Screenshots workflow through `tools/screenshots/install_pack.py`); it skips only the SHA-256 step.
 
 ## The in-app updater (About > Check for updates)
 
@@ -143,7 +177,7 @@ Storage > Clear storage, which also clears Atom 4's own data).
 | SQLite (`databases/`) | `atom4_notification_history.db` |
 | SharedPreferences (`shared_prefs/<name>.xml`) | `atom4_overlay`, `atom4_web`, `atom4_speech`, `atom4_litert_backend`, `atom4_root`, `atom4_charge_limit`, `atom4_tool_switches`, `atom4_system`, `atom4_clock`, `atom4_automation_places`, `atom4_extend_secrets` |
 | Android Keystore aliases | `atom4.vault`, `atom4_extend_secrets` |
-| Folders and files in `files/` | `atom4_conversations/`, `atom4_run-journal/`, `atom4_models/`, `atom4_characters/`, `atom4_linux/`, `atom4_workspace/`, `atom4_extend/`, `atom4_attachments/`, `atom4_shared/`, `atom4_generated_images/`, `atom4_automation/state.json`, `atom4_undo_journal.json`, `atom4_firewall_rules.json`, `atom4_legacy_import.json` |
+| Folders and files in `files/` | `atom4_ondevice/`, `atom4_conversations/`, `atom4_run-journal/`, `atom4_models/`, `atom4_characters/`, `atom4_linux/`, `atom4_workspace/`, `atom4_extend/`, `atom4_attachments/`, `atom4_shared/`, `atom4_generated_images/`, `atom4_automation/state.json`, `atom4_undo_journal.json`, `atom4_firewall_rules.json`, `atom4_legacy_import.json` |
 
 These distinct names are also why old files cannot crash Atom 4 at startup: a file of another format with the same
 name would otherwise be read (a DataStore or SharedPreferences type mismatch throws, an SQLite database with a
@@ -160,7 +194,7 @@ What the promise does not cover:
   (`app_webview/`), and androidx ProfileInstaller writes its `files/profileinstaller_*` markers.
 - **`cache/`.** Android may clear it at any time, and Atom 4 and its libraries keep temporary files there (the
   built-in browser also clears the WebView cache). Atom 4's own cache files still use the prefix
-  (`atom4_updates/`, `atom4_models_dev_catalog.json`, `atom4_import/`), so a cached file the earlier app left is
+  (`atom4_updates/`, `atom4_ondevice_download/`, `atom4_models_dev_catalog.json`, `atom4_import/`), so a cached file the earlier app left is
   never read.
 - **Commands the user runs.** The Android shell tool starts in `files/` with `HOME` set to it, so a command the user
   or the agent runs there can read or change any file, including the earlier app's.

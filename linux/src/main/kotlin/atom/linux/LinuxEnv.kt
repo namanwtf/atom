@@ -1,5 +1,6 @@
 package atom.linux
 
+import atom.ui.permission.PermissionAsks
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.StatFs
@@ -53,6 +54,10 @@ class LinuxEnv private constructor(context: Context) {
         fun get(context: Context): LinuxEnv =
             instance ?: synchronized(this) { instance ?: LinuxEnv(context.applicationContext).also { instance = it } }
 
+        /** The app's shared root status; set once at app start, before [get] is first called. */
+        @Volatile
+        var rootLink: RootLink? = null
+
         /** Upper bound on captured stdout/stderr per stream for [run]. */
         const val OUTPUT_CAP = 64_000
 
@@ -79,12 +84,34 @@ class LinuxEnv private constructor(context: Context) {
     private val _health = MutableStateFlow<HealthReport?>(null)
     val health: StateFlow<HealthReport?> = _health.asStateFlow()
 
+    private val _rootAvailable = MutableStateFlow<Boolean?>(null)
+
+    /** Whether root works, live from the shared root status; null until known. */
+    val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+
     init {
         scope.launch {
             workManager.getWorkInfosForUniqueWorkFlow(LinuxInstallWorker.UNIQUE_NAME).collect { infos ->
                 lastWork = infos.firstOrNull()
                 _config.value = store.get()
                 _state.value = computeState()
+            }
+        }
+        // Root granted or lost anywhere in the app: Root mode and the root terminal follow at once.
+        rootLink?.let { link ->
+            scope.launch {
+                link.granted.collect { granted ->
+                    if (granted) {
+                        // Learn whether a private mount namespace works (su is silent once granted).
+                        if (probe?.root != true) runCatching { probeRoot(force = true) }
+                    } else if (probe != null || _rootAvailable.value != null) {
+                        probeMutex.withLock {
+                            probe = RootSupport.Probe(root = false, privateMounts = false)
+                            _rootAvailable.value = false
+                            _state.value = computeState()
+                        }
+                    }
+                }
             }
         }
     }
@@ -152,6 +179,7 @@ class LinuxEnv private constructor(context: Context) {
             .addTag(TAG_PREFIX + distro.name)
             .build()
         workManager.enqueueUniqueWork(LinuxInstallWorker.UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+        PermissionAsks.notifications(app, "Atom shows install progress in a notification while Linux installs in the background.")
         _state.value = LinuxState.Installing(distro, LinuxInstallWorker.STEP_RESOLVE, 0f, steps.first().title, 0, steps.size)
     }
 
@@ -223,7 +251,7 @@ class LinuxEnv private constructor(context: Context) {
     /** Switches between Standard (proot) and Root (chroot). Returns an error message, or null when done. */
     suspend fun setMode(mode: RunMode): String? {
         if (mode == RunMode.Chroot) {
-            val p = probeRoot(force = true)
+            val p = probeRoot(force = true, ask = true)
             if (!p.root) return "Root access is not available (su did not grant root)."
             if (!p.privateMounts) return "This root setup cannot create a private mount namespace (unshare -m), which Root mode needs."
         }
@@ -423,11 +451,22 @@ class LinuxEnv private constructor(context: Context) {
         Properties().apply { FileInputStream(paths.marker(d)).use { load(it) } }
     }.getOrNull()
 
-    /** Checks su and private-mount support once (or again with [force]). May show the root manager's prompt. */
-    suspend fun probeRoot(force: Boolean = false): RootSupport.Probe = probeMutex.withLock {
-        probe?.takeIf { !force }?.let { return it }
-        val p = runCatching { RootSupport.probe(hostEnv()) }.getOrDefault(RootSupport.Probe(false, false))
+    /**
+     * Checks su and private-mount support once (or again with [force]). Whether root is granted comes from the
+     * app's shared status ([rootLink]): su is only run here once root is granted, so Linux never shows a superuser
+     * prompt of its own. [ask] is the user's own request (choosing Root mode) and may ask again.
+     */
+    suspend fun probeRoot(force: Boolean = false, ask: Boolean = false): RootSupport.Probe = probeMutex.withLock {
+        val link = rootLink
+        val granted = link?.let { runCatching { if (ask) it.authorize() else it.ensure() }.getOrDefault(false) }
+        probe?.takeIf { !force && (granted == null || it.root == granted) }?.let { return it }
+        val p = if (granted == false) {
+            RootSupport.Probe(root = false, privateMounts = false)
+        } else {
+            runCatching { RootSupport.probe(hostEnv()) }.getOrDefault(RootSupport.Probe(false, false))
+        }
         probe = p
+        _rootAvailable.value = p.root
         _state.value = computeState()
         p
     }

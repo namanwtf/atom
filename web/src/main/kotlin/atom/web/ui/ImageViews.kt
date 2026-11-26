@@ -177,6 +177,10 @@ private const val ATTACHED_TO_INPUT = "Attached to input. Describe the changes y
 internal const val DELETE_WARNING =
     "Once deleted, this local original image can no longer be loaded in chat history. Copies saved to Pictures stay."
 
+/** The warning before deleting several selected images. */
+internal const val DELETE_MANY_WARNING =
+    "Once deleted, these local original images can no longer be loaded in chat history. Copies saved to Pictures stay."
+
 private fun fromText(text: String): ImageJob {
     val paths = Regex("^- (/\\S+) \\(", RegexOption.MULTILINE).findAll(text).map { it.groupValues[1] }.toList()
     val items = paths.map { p -> ImageGallery.find(p) ?: GalleryItem(p, "", "", "", 0) }
@@ -237,12 +241,10 @@ internal fun ImageViewer(item: GalleryItem, onClose: () -> Unit, allowDelete: Bo
             }
         }
     }
-    if (confirmDelete) {
-        ConfirmDialog("Delete image?", DELETE_WARNING, "Delete", onConfirm = {
-            onDelete()
-            onClose()
-        }, onDismiss = { confirmDelete = false })
-    }
+    ConfirmDialog("Delete image?", DELETE_WARNING, "Delete", onConfirm = {
+        onDelete()
+        onClose()
+    }, onDismiss = { confirmDelete = false }, show = confirmDelete)
 }
 
 /** Small preview of an agent browser step for the chat card; tap to take over. */

@@ -66,10 +66,12 @@ import atom.ui.components.PrimaryButton
 import atom.ui.components.StatusDot
 import atom.ui.components.CompactButton
 import atom.ui.theme.AtomIcons
-import atom.ui.theme.AtomMark
+import atom.ui.theme.AtomEmblem
 import atom.ui.theme.extras
 import atom.device.Accessibility
 import atom.device.ShellTier
+import atom.device.root.RootAccess
+import atom.device.root.RootStatus
 import atom.voice.AssistantRole
 import atom.voice.Wake
 import atom.voice.WakePolicy
@@ -89,6 +91,7 @@ fun SetupScreen(
     val scope = rememberCoroutineScope()
     val connected by Accessibility.connected.collectAsStateWithLifecycle()
     val tier by graph.shellTier.collectAsStateWithLifecycle()
+    val rootStatus by RootAccess.status.collectAsStateWithLifecycle()
     var accessibilityEnabled by remember { mutableStateOf(Accessibility.isEnabled(context)) }
     var notificationsGranted by remember { mutableStateOf(notificationsGranted(context)) }
     var checkingShell by remember { mutableStateOf(false) }
@@ -106,10 +109,6 @@ fun SetupScreen(
             checkingShell = false
         }
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationsGranted = granted
-    }
-
     val colors = MaterialTheme.colorScheme
     val ok = MaterialTheme.extras.success
     val warn = MaterialTheme.extras.warning
@@ -174,32 +173,17 @@ fun SetupScreen(
             CapabilityGroup(
                 icon = Icons.Filled.Notifications,
                 title = stringResource(R.string.setup_notifications_title),
-                dot = if (notificationsGranted) ok else warn,
-                status = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_not_allowed),
+                // Not asked here: Atom asks the first time a task keeps running in the background.
+                dot = if (notificationsGranted) ok else colors.outline,
+                status = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_when_needed),
             ) {
                 Body(stringResource(R.string.setup_notifications_text))
-                if (!notificationsGranted) {
-                    Actions {
-                        CompactButton(stringResource(R.string.setup_allow_notifications), onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }
-                            }
-                        })
-                    }
-                }
+                if (!notificationsGranted) Hint(stringResource(R.string.setup_notifications_later))
             }
         }
 
         item(key = "shell") {
-            val detecting = checkingShell || tier == null
+            val detecting = checkingShell || tier == null || rootStatus == RootStatus.Checking
             CapabilityGroup(
                 icon = AtomIcons.Terminal,
                 title = stringResource(R.string.setup_shell_title),
@@ -266,7 +250,7 @@ private fun Welcome() {
         Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) { AtomMark(Modifier.size(96.dp)) }
+        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) { AtomEmblem(96.dp) }
         Spacer(Modifier.height(22.dp))
         Text(
             stringResource(R.string.setup_welcome_title),
@@ -293,8 +277,8 @@ private fun VoiceGroup() {
     val settings by graph.settings.settings.collectAsStateWithLifecycle(initialValue = null)
     val wake by Wake.state.collectAsStateWithLifecycle()
     var assistant by remember { mutableStateOf(AssistantRole.isHeld(context)) }
-    val modelReady = remember { Wake.isModelAvailable(context) }
-    val heyAtom = settings?.heyAtom == true
+    val modelReady by Wake.modelAvailable.collectAsStateWithLifecycle()
+    val heyAtom = settings?.heyAtom == true && modelReady
     val screenOff = settings?.heyAtomScreenOff == true
 
     LifecycleResumeEffect(Unit) {
@@ -354,8 +338,8 @@ private fun VoiceGroup() {
                     WakeState.Off -> stringResource(R.string.voice_hey_atom_text)
                 }
             },
-            enabled = modelReady,
-            onClick = { toggleHeyAtom(!heyAtom) },
+            // Without the on-device AI pack the row opens the screen that downloads it.
+            onClick = { if (modelReady) toggleHeyAtom(!heyAtom) else Wake.openPackSettings?.invoke() },
             trailing = { AtomSwitch(checked = heyAtom, onCheckedChange = ::toggleHeyAtom, enabled = modelReady) },
         )
         AnimatedVisibility(

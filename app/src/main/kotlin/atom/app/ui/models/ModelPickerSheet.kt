@@ -1,5 +1,6 @@
 package atom.app.ui.models
 
+import atom.app.ondevice.OnDevicePack
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -118,6 +119,8 @@ fun ModelPickerSheet(
     val saved by vault.savedProviders.collectAsState(initial = emptySet())
     val signedIn by vault.signedInProviders.collectAsState(initial = emptySet())
     val installed by localStore.installed.collectAsState()
+    // On-device choices only while the optional on-device AI pack is installed.
+    val packReady by OnDevicePack.ready.collectAsState()
 
     var filter by rememberSaveable { mutableStateOf(ALL) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -148,7 +151,7 @@ fun ModelPickerSheet(
                 )
             }
         }
-        if (!cloudOnly) {
+        if (!cloudOnly && packReady) {
             for (m in installed) {
                 val current = (selected as? EngineSelection.Local)?.takeIf { it.installedModelId == m.id }
                 add(

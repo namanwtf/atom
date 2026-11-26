@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only (src/debug is not part of the release variant). CI checks that the release APK contains neither.
+  - DebugPackReceiver lets CI install a locally built on-device AI pack.
+  - E2eProvider is the hook the end-to-end task tests drive over adb. See docs/TESTING.md and tools/e2e/run.py.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <receiver
+            android:name="atom.app.ondevice.DebugPackReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="atom.app.debug.INSTALL_PACK" />
+            </intent-filter>
+        </receiver>
+        <!-- Exported so `adb shell content ...` reaches it; the provider itself answers only the shell and root uids. -->
+        <provider
+            android:name="atom.app.e2e.E2eProvider"
+            android:authorities="${applicationId}.e2e"
+            android:exported="true" />
+    </application>
+</manifest>

@@ -77,12 +77,14 @@ open class RuntimeCap(
     optional: Boolean = false,
     private val partial: List<String> = emptyList(),
 ) : Capability(id, title, purpose, "Permission: " + permissions.joinToString { it.substringAfterLast('.') }, group, optional) {
-    override fun applicable(context: Context) = Build.VERSION.SDK_INT >= minSdk
+    /** On this phone: new enough, and at least one of the permissions exists on this Android release. */
+    override fun applicable(context: Context) = Build.VERSION.SDK_INT >= minSdk && permissions.any { Perms.exists(context, it) }
 
     fun wanted(context: Context): List<String> = permissions.filter { Perms.declared(context, it) && Perms.exists(context, it) }
 
     override fun state(context: Context): CapState {
-        if (!applicable(context)) return CapState(CapStatus.Unsupported, "Needs Android API $minSdk+")
+        if (Build.VERSION.SDK_INT < minSdk) return CapState(CapStatus.Unsupported, "Needs Android API $minSdk+")
+        if (!applicable(context)) return CapState(CapStatus.Unsupported, "Not on this Android version")
         val want = wanted(context)
         if (want.isEmpty()) return CapState(CapStatus.Unsupported, "Not declared by this build")
         val missing = want.filterNot { Perms.granted(context, it) }
@@ -146,9 +148,12 @@ object Capabilities {
 
     val all: List<Capability> get() = synchronized(rows) { rows.values.toList() }
 
-    /** "N items need attention": required rows on this device that are not available (root/Shizuku excluded). */
+    /**
+     * "N items need attention": only the core rows (accessibility, overlay). Everything else is asked when a
+     * feature first needs it, so a missing optional permission is not something to fix.
+     */
     fun attentionCount(context: Context): Int = all.count { c ->
-        !c.optional && c.applicable(context) && c.state(context).status.let { it != CapStatus.Available && it != CapStatus.Unsupported }
+        PermissionRows.isCore(c.id) && c.applicable(context) && c.state(context).status.let { it != CapStatus.Available && it != CapStatus.Unsupported }
     }
 
     fun isAvailable(context: Context, id: String): Boolean = rows[id]?.state(context)?.status == CapStatus.Available
@@ -175,57 +180,52 @@ object Capabilities {
             open = { c -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${c.packageName}")) },
         ),
         RuntimeCap(
-            "notifications_post", "Notifications", "Running-task controls, background results and scheduled task results.",
-            CapGroup.Background, listOf("android.permission.POST_NOTIFICATIONS"), minSdk = 33,
+            "notifications_post", "Notifications", "Running-task controls and background results. Asked the first time a task keeps running in the background.",
+            CapGroup.Background, listOf("android.permission.POST_NOTIFICATIONS"), minSdk = 33, optional = true,
         ),
         RuntimeCap(
-            "microphone", "Microphone", "Voice input. Without it the keyboard still works.",
-            CapGroup.Screen, listOf("android.permission.RECORD_AUDIO"),
+            "microphone", "Microphone", "Voice input. Asked the first time you use the mic; the keyboard always works.",
+            CapGroup.Screen, listOf("android.permission.RECORD_AUDIO"), optional = true,
         ),
         RuntimeCap(
-            "nearby", "Nearby devices and local network", "LAN models, MCP servers, the browser and terminals on your network. Internet works without it.",
-            CapGroup.System, listOf("android.permission.NEARBY_WIFI_DEVICES", "android.permission.ACCESS_LOCAL_NETWORK", "android.permission.BLUETOOTH_CONNECT"), minSdk = 33,
+            "nearby", "Local network", "LAN models, MCP servers, the browser and terminals on your network. Internet works without it.",
+            CapGroup.System, listOf("android.permission.ACCESS_LOCAL_NETWORK"), optional = true,
         ),
         SpecialCap(
             "dnd_access", "Do Not Disturb access", "Switch silent, vibrate, ring and Do Not Disturb modes without root.",
-            "Special access: Do Not Disturb", CapGroup.System,
+            "Special access: Do Not Disturb", CapGroup.System, optional = true,
             check = { c -> yes(c.getSystemService(NotificationManager::class.java)?.isNotificationPolicyAccessGranted == true) },
             open = { Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS) },
         ),
         SpecialCap(
             "write_settings", "Modify system settings", "Brightness, screen timeout and auto-rotate without root.",
-            "Special access: modify system settings", CapGroup.System,
+            "Special access: modify system settings", CapGroup.System, optional = true,
             check = { c -> yes(Settings.System.canWrite(c)) },
             open = { c -> Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${c.packageName}")) },
         ),
         SpecialCap(
-            "all_files", "All files access", "Optional: reach shared and public folders. Atom's own workspace and import/export work without it.",
+            "all_files", "All files access", "Search your photos, videos, music and documents, and reach shared folders. Atom's own workspace, pickers and import/export work without it.",
             "Special access: all files", CapGroup.System, optional = true,
             check = { yes(Environment.isExternalStorageManager()) },
             open = { c -> Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${c.packageName}")) },
         ),
         SpecialCap(
-            "app_list", "Full installed-app list", "Lets Atom find any app by name.", "Install-time permission", CapGroup.System,
+            "app_list", "Full installed-app list", "Lets Atom find any app by name.", "Install-time permission", CapGroup.System, optional = true,
             check = { c -> yes(Perms.declared(c, "android.permission.QUERY_ALL_PACKAGES"), CapStatus.Missing) },
             open = { c -> Perms.appDetails(c) },
         ),
         SpecialCap(
             "exact_alarms", "Exact alarms", "Scheduled tasks fire on time.", "Special access: alarms and reminders", CapGroup.Background,
-            minSdk = 31,
+            optional = true, minSdk = 31,
             check = { c -> yes(c.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true) },
             open = { c -> Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${c.packageName}")) },
         ),
+        // The one-tap "Allow" dialog is only offered from Scheduled tasks' health banner; this row opens the list.
         SpecialCap(
             "battery", "Unrestricted battery", "Scheduled and background tasks are not cut off by Doze.", "Battery: unrestricted",
-            CapGroup.Background,
+            CapGroup.Background, optional = true,
             check = { c -> yes(c.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(c.packageName) == true) },
-            open = { c ->
-                if (Perms.declared(c, "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")) {
-                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${c.packageName}"))
-                } else {
-                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                }
-            },
+            open = { Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) },
         ),
         SpecialCap(
             "mock_location", "Mock location app", "Optional: GPS spoofing, only while you switch it on.",
