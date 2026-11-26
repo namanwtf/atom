@@ -288,9 +288,9 @@ class E2eProvider : ContentProvider() {
 
     /** The newest entries of the searchable notification history (what notification_history reads). */
     private fun notificationHistory(): JSONArray = JSONArray().apply {
-        val (records, _) = runCatching {
-            atom.context.notifications.AtomNotificationListener.history(context!!).search(null, null, null, 0, 10)
-        }.getOrDefault(emptyList<atom.context.notifications.NotificationRecord>() to 0)
+        val records: List<atom.context.notifications.NotificationRecord> = runCatching {
+            atom.context.notifications.Notifications.history(context!!).search(null, null, null, 0, 10).first
+        }.getOrDefault(emptyList())
         records.forEach { r ->
             put(JSONObject().put("package", r.packageName).put("title", r.title).put("text", r.text.take(200)).put("postedAt", r.postedAt))
         }
