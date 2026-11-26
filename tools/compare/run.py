@@ -200,6 +200,26 @@ def type_text(text):
     time.sleep(0.8)
 
 
+def hide_keyboard():
+    if "mInputShown=true" in sh("dumpsys input_method | grep -E 'mInputShown'"):
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(0.8)
+
+
+ANRS = {"count": 0}
+
+
+def handle_anr():
+    """An "isn't responding" dialog: counted, then Wait (the user's usual choice)."""
+    n = find(r"isn.t responding")
+    if not n:
+        return False
+    ANRS["count"] += 1
+    log(f"  ANR dialog #{ANRS['count']}: {n.text!r}; tapping Wait")
+    tap(r"^Wait$", 3)
+    return True
+
+
 def clear_focused():
     sh("input keyevent KEYCODE_MOVE_END")
     sh("input keyevent " + " ".join(["KEYCODE_DEL"] * 60))
@@ -215,8 +235,7 @@ def fill(field_pattern, value):
             tap_node(hit, 0.8)
             clear_focused()
             type_text(value)
-            sh("input keyevent KEYCODE_ESCAPE")
-            time.sleep(0.5)
+            hide_keyboard()
             log(f"  filled /{field_pattern}/ ({hit.label or hit.hint or hit.text!r}) with {value!r}")
             return True
         swipe_up()
@@ -240,6 +259,8 @@ DISMISS = r"^(Skip|Not now|Later|Continue|Get started|Start|Done|Finish|OK|Got i
 
 def dismiss_dialogs(rounds=6):
     for _ in range(rounds):
+        if handle_anr():
+            continue
         n = find(DISMISS)
         if not n:
             return
@@ -303,6 +324,10 @@ def open_settings():
 def configure_provider(label):
     """Adds the local server as an OpenAI-compatible provider, adds its model and makes it current."""
     launch_app()
+    for _ in range(6):  # a slow first start can show "isn't responding" more than once
+        if not handle_anr():
+            break
+        time.sleep(5)
     dismiss_dialogs()
     shot(f"{label}_00_first_screen")
     screen_report(f"{label}-first")
@@ -320,6 +345,7 @@ def configure_provider(label):
     fill(r"Base URL|Endpoint|https://", APP_BASE_URL)
     fill(r"API key|Key", "sk-local-test")
     shot(f"{label}_01_provider_form")
+    hide_keyboard()
     saved = tap(r"^(Save configuration|Save|Create|create|Add provider|Done|Add)$", 3, scroll=6)
     screen_report(f"{label}-after-save")
     if not saved:
@@ -608,8 +634,8 @@ def idle_battery(label):
     An emulator has no real battery or radio, so this measures what the app asks the system to do while idle, not
     milliamp-hours.
     """
-    uid = re.search(r"userId=(\d+)", sh(f"dumpsys package {PKG}"))
-    uid = uid.group(1) if uid else "?"
+    m = re.search(r"\b(?:appId|userId)=(\d+)", sh(f"dumpsys package {PKG}"))
+    uid = m.group(1) if m else "?"
     sh("input keyevent KEYCODE_HOME")
     sh("svc power stayon false")
     sh("dumpsys battery unplug")
@@ -690,6 +716,7 @@ def main():
             tasks.append({"task": "stop", "passed": False, "why": f"harness error: {e}"})
         save()
     result["crash_buffer_total"] = len(crash_lines())
+    result["anr_dialogs"] = ANRS["count"]
     try:
         result["idle"] = idle_battery(label)
     except Exception as e:
