@@ -6,21 +6,23 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,14 +30,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,13 +50,19 @@ import atom.app.data.EngineSelection
 import atom.app.data.ModelRole
 import atom.app.data.RoleReasoning
 import atom.app.data.RoleSetting
+import atom.app.ui.common.ProviderMark
 import atom.core.llm.ReasoningEffort
-import atom.llm.cloud.AuthMethod
 import atom.llm.cloud.ProviderConfig
 import atom.llm.cloud.Wire
+import atom.ui.components.ArrowRow
+import atom.ui.components.AtomCheckbox
+import atom.ui.components.AtomDialog
 import atom.ui.components.AtomMenu
 import atom.ui.components.AtomMenuItem
+import atom.ui.components.AtomSearchBar
 import atom.ui.components.AtomSwitch
+import atom.ui.components.DialogButtons
+import atom.ui.components.DropdownRow
 import atom.ui.components.Group
 import atom.ui.components.GroupDivider
 import atom.ui.components.GroupRow
@@ -60,8 +71,11 @@ import atom.ui.components.RowChevron
 import atom.ui.components.RowValue
 import atom.ui.components.ScreenIcons
 import atom.ui.components.SectionLabel
-import atom.ui.components.SegmentedControl
+import atom.ui.components.SwitchRow
 import atom.ui.theme.AtomIcons
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** Pages inside the Models flow. Encoded as strings so the back stack survives configuration changes. */
 internal sealed interface ModelsPage {
@@ -72,6 +86,8 @@ internal sealed interface ModelsPage {
     data object Catalog : ModelsPage
     data class CatalogModels(val catalogId: String) : ModelsPage
     data class Role(val role: ModelRole) : ModelsPage
+    data object OnDevice : ModelsPage
+    data object Titles : ModelsPage
 
     fun encode(): String = when (this) {
         Root -> "root"
@@ -81,6 +97,8 @@ internal sealed interface ModelsPage {
         Catalog -> "catalog"
         is CatalogModels -> "catalogModels$SEP$catalogId"
         is Role -> "role$SEP${role.name}"
+        OnDevice -> "onDevice"
+        Titles -> "titles"
     }
 
     companion object {
@@ -95,6 +113,8 @@ internal sealed interface ModelsPage {
                 "catalog" -> Catalog
                 "catalogModels" -> CatalogModels(parts[1])
                 "role" -> Role(ModelRole.valueOf(parts[1]))
+                "onDevice" -> OnDevice
+                "titles" -> Titles
                 else -> Root
             }
         }
@@ -107,9 +127,17 @@ internal class ModelsNav(private val push: (ModelsPage) -> Unit, private val pop
     fun replaceWith(page: ModelsPage) = replace(page)
 }
 
+/** Which page the Models flow opens on (Settings links straight to on-device models and to Auto-generate titles). */
+enum class ModelsStart { Providers, OnDevice, Titles }
+
 @Composable
-fun ModelsScreen(vm: ModelsViewModel, onBack: () -> Unit) {
-    var stack by rememberSaveable { mutableStateOf(listOf(ModelsPage.Root.encode())) }
+fun ModelsScreen(vm: ModelsViewModel, onBack: () -> Unit, start: ModelsStart = ModelsStart.Providers) {
+    val first = when (start) {
+        ModelsStart.Providers -> ModelsPage.Root
+        ModelsStart.OnDevice -> ModelsPage.OnDevice
+        ModelsStart.Titles -> ModelsPage.Titles
+    }
+    var stack by rememberSaveable { mutableStateOf(listOf(first.encode())) }
     val nav = remember {
         ModelsNav(
             push = { page -> stack = stack + page.encode() },
@@ -135,77 +163,254 @@ fun ModelsScreen(vm: ModelsViewModel, onBack: () -> Unit) {
             ModelsPage.Catalog -> CatalogScreen(vm, nav, pageBack)
             is ModelsPage.CatalogModels -> CatalogModelsScreen(vm, nav, page.catalogId, pageBack)
             is ModelsPage.Role -> RoleScreen(vm, page.role, pageBack)
+            ModelsPage.OnDevice -> OnDeviceScreen(vm, pageBack)
+            ModelsPage.Titles -> TitlesScreen(vm, pageBack)
         }
     }
 }
 
-// ================================================================ Root
+// ================================================================ Root: Model providers
 
 @Composable
 private fun ModelsRoot(vm: ModelsViewModel, nav: ModelsNav, onBack: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val providers by vm.providers.collectAsStateWithLifecycle()
+    val roles by vm.roleSettings.collectAsStateWithLifecycle()
+    var query by rememberSaveable { mutableStateOf("") }
+    var confirmRemove by remember { mutableStateOf<ProviderConfig?>(null) }
+    val selection = settings?.selection as? EngineSelection.Cloud
+
+    LargeTitleScreen(title = stringResource(R.string.settings_model_providers), onBack = onBack) {
+        item(key = "search") {
+            AtomSearchBar(
+                query = query,
+                onQueryChange = { query = it },
+                label = stringResource(R.string.set_search_provider),
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+        }
+        item(key = "h-add") { SectionLabel(stringResource(R.string.set_add_new_provider)) }
+        item(key = "g-add") {
+            Group {
+                AddRow(
+                    title = stringResource(R.string.mdl_add_catalog),
+                    summary = stringResource(R.string.mdl_add_catalog_sub),
+                    start = {
+                        Icon(
+                            Icons.Rounded.TravelExplore,
+                            null,
+                            Modifier.padding(end = 8.dp).size(24.dp).padding(1.dp),
+                            tint = MiuixTheme.colorScheme.primary,
+                        )
+                    },
+                    onClick = { nav.open(ModelsPage.Catalog) },
+                )
+                AddRow(
+                    title = stringResource(R.string.mdl_add_openai),
+                    summary = stringResource(R.string.mdl_add_openai_sub),
+                    start = { ProviderMark("openai", "OpenAI", 24.dp, Modifier.padding(end = 8.dp)) },
+                    onClick = { nav.open(ModelsPage.Add(NewProviderKind.OpenAiCompatible)) },
+                )
+                AddRow(
+                    title = stringResource(R.string.mdl_add_anthropic),
+                    summary = stringResource(R.string.mdl_add_anthropic_sub),
+                    start = { ProviderMark("anthropic", "Anthropic", 24.dp, Modifier.padding(end = 8.dp)) },
+                    onClick = { nav.open(ModelsPage.Add(NewProviderKind.Anthropic)) },
+                )
+                AddRow(
+                    title = stringResource(R.string.mdl_add_gemini),
+                    summary = stringResource(R.string.mdl_add_gemini_sub),
+                    start = { ProviderMark("gemini", "Gemini", 24.dp, Modifier.padding(end = 8.dp)) },
+                    onClick = { nav.open(ModelsPage.Add(NewProviderKind.Gemini)) },
+                )
+            }
+        }
+
+        val shown = ProviderSearch.filter(providers, query)
+        item(key = "h-configured") { SectionLabel(stringResource(R.string.set_configured_providers, providers.size)) }
+        item(key = "g-configured") {
+            Group {
+                if (shown.isEmpty()) {
+                    GroupRow(
+                        title = stringResource(if (providers.isEmpty()) R.string.set_no_providers else R.string.set_no_matching_providers),
+                        enabled = false,
+                    )
+                }
+                shown.forEach { p ->
+                    ProviderRow(
+                        config = p,
+                        current = selection?.providerId == p.id,
+                        onOpen = { nav.open(ModelsPage.Provider(p.id)) },
+                        onSelect = { vm.setDefault(EngineSelection.Cloud(p.id, p.primaryModel)) },
+                        onLongPress = if (p.builtIn) null else ({ confirmRemove = p }),
+                    )
+                }
+            }
+        }
+
+        item(key = "h-more") { SectionLabel(stringResource(R.string.set_more_models)) }
+        item(key = "g-more") {
+            Group {
+                ArrowRow(
+                    title = stringResource(R.string.set_on_device),
+                    summary = (settings?.selection as? EngineSelection.Local)?.let(vm.info::label) ?: stringResource(R.string.set_on_device_sub),
+                    icon = Icons.Rounded.Memory,
+                    onClick = { nav.open(ModelsPage.OnDevice) },
+                )
+            }
+        }
+        item(key = "h-roles") { SectionLabel(stringResource(R.string.mdl_section_roles)) }
+        item(key = "g-roles") {
+            Group {
+                ModelRole.entries.forEach { role ->
+                    val setting = roles[role] ?: RoleSetting()
+                    val value = when {
+                        role == ModelRole.Image -> stringResource(R.string.mdl_role_image_value)
+                        setting.followsPrimary -> stringResource(if (role == ModelRole.Title) R.string.mdl_follow_conversation else R.string.mdl_follow_primary)
+                        else -> setting.selection?.let(vm.info::modelName).orEmpty()
+                    }
+                    ArrowRow(
+                        title = stringResource(roleTitle(role)),
+                        summary = value,
+                        onClick = { nav.open(if (role == ModelRole.Title) ModelsPage.Titles else ModelsPage.Role(role)) },
+                    )
+                }
+            }
+        }
+    }
+
+    val removing = confirmRemove
+    AtomDialog(
+        show = removing != null,
+        onDismiss = { confirmRemove = null },
+        title = stringResource(R.string.set_remove_provider_title),
+        summary = removing?.let { stringResource(R.string.set_remove_provider_text, it.displayName) },
+    ) {
+        DialogButtons(
+            confirmText = stringResource(R.string.set_delete),
+            onConfirm = {
+                removing?.let { vm.removeProvider(it.id) }
+                confirmRemove = null
+            },
+            dismissText = stringResource(R.string.action_cancel),
+            onDismiss = { confirmRemove = null },
+        )
+    }
+}
+
+/** An "Add new provider" row: logo or icon, title, summary and the arrow. */
+@Composable
+private fun AddRow(title: String, summary: String, start: @Composable () -> Unit, onClick: () -> Unit) {
+    ArrowPreference(title = title, summary = summary, startAction = start, onClick = onClick)
+}
+
+/**
+ * A configured provider: logo, name ("current" tag when selected), base URL, "type · N models · built-in" line,
+ * and the round check that makes it the current provider. Tap opens it; long-press offers removal (not built-ins).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ProviderRow(config: ProviderConfig, current: Boolean, onOpen: () -> Unit, onSelect: () -> Unit, onLongPress: (() -> Unit)?) {
+    val c = MiuixTheme.colorScheme
+    val line = listOfNotNull(
+        stringResource(providerTypeLabel(config.wire)),
+        pluralStringResource(R.plurals.mdl_model_count, config.models.size, config.models.size),
+        if (config.builtIn) stringResource(R.string.set_tag_builtin) else null,
+        if (!config.enabled) stringResource(R.string.set_tag_disabled) else null,
+    ).joinToString(" · ")
+    BasicComponent(
+        modifier = Modifier
+            .alpha(if (config.enabled) 1f else 0.6f)
+            .combinedClickable(onClick = onOpen, onLongClick = onLongPress),
+        startAction = {
+            ProviderMark(config.presetId, config.displayName, 24.dp, Modifier.padding(end = 8.dp))
+        },
+        endActions = {
+            AtomCheckbox(checked = current, onCheckedChange = { if (it) onSelect() }, modifier = Modifier.align(Alignment.CenterVertically))
+        },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                config.displayName,
+                style = MiuixTheme.textStyles.headline1,
+                fontWeight = FontWeight.Medium,
+                color = if (current) c.primary else c.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (current) {
+                Spacer(Modifier.width(6.dp))
+                CurrentTag()
+            }
+        }
+        Text(
+            config.baseUrl.ifEmpty { stringResource(R.string.mdl_no_base_url) },
+            style = MiuixTheme.textStyles.body2,
+            color = c.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            line,
+            style = MiuixTheme.textStyles.footnote1,
+            color = c.onSurfaceVariantSummary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** The small "current" chip next to the selected provider or model. */
+@Composable
+internal fun CurrentTag() {
+    val c = MiuixTheme.colorScheme
+    Text(
+        stringResource(R.string.set_tag_current),
+        style = MiuixTheme.textStyles.footnote2,
+        fontWeight = FontWeight.Medium,
+        color = c.onTertiaryContainer,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(c.tertiaryContainer)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+internal fun providerTypeLabel(wire: Wire): Int = when (wire) {
+    Wire.OpenAiChat -> R.string.set_type_openai
+    Wire.OpenAiResponses -> R.string.set_type_responses
+    Wire.Anthropic -> R.string.set_type_anthropic
+    Wire.Gemini -> R.string.set_type_gemini
+    Wire.Vertex -> R.string.set_type_vertex
+}
+
+// ================================================================ On-device models
+
+@Composable
+private fun OnDeviceScreen(vm: ModelsViewModel, onBack: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val installed by vm.installed.collectAsStateWithLifecycle()
     val hasHfToken by vm.hasHfToken.collectAsStateWithLifecycle()
     val linkModels by vm.linkModels.collectAsStateWithLifecycle()
     val linkError by vm.linkError.collectAsStateWithLifecycle()
     val providers by vm.providers.collectAsStateWithLifecycle()
-    val savedKeys by vm.savedKeys.collectAsStateWithLifecycle()
-    val signedIn by vm.signedIn.collectAsStateWithLifecycle()
-    val roles by vm.roleSettings.collectAsStateWithLifecycle()
-
-    val s = settings ?: AppSettings()
-    var tab by rememberSaveable { mutableIntStateOf(if (s.selection is EngineSelection.Local) 1 else 0) }
-    var query by rememberSaveable { mutableStateOf("") }
-    var picker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
+    val s = settings ?: AppSettings()
 
-    LargeTitleScreen(title = stringResource(R.string.screen_models), onBack = onBack) {
-        defaultItems(vm, s, onPick = { picker = true })
-        rolesItems(vm, roles, onOpen = { nav.open(ModelsPage.Role(it)) })
-
-        item(key = "tabs") {
-            SegmentedControl(
-                listOf(stringResource(R.string.mdl_tab_providers) to AtomIcons.Cloud, stringResource(R.string.tab_on_device) to AtomIcons.Chip),
-                tab,
-                onSelect = { tab = it },
-                modifier = Modifier.padding(top = 26.dp),
-            )
-        }
-        if (tab == 0) {
-            providerItems(
-                providers = providers,
-                query = query,
-                onQuery = { query = it },
-                selection = s.selection,
-                ready = { it.id in savedKeys || it.id in signedIn || it.keyOptional },
-                onOpen = { nav.open(ModelsPage.Provider(it)) },
-                onAdd = { nav.open(ModelsPage.Add(it)) },
-                onCatalog = { nav.open(ModelsPage.Catalog) },
-            )
-        } else {
-            localItems(
-                vm = vm,
-                settings = s,
-                installed = installed,
-                hasHfToken = hasHfToken,
-                linkModels = linkModels,
-                linkError = linkError,
-                onDelete = { confirmDelete = it },
-            )
-            fallbackItems(vm, s, providers)
-        }
-    }
-
-    if (picker) {
-        ModelPickerSheet(
-            selected = s.selection,
-            onSelect = {
-                vm.setDefault(it)
-                picker = false
-            },
-            onDismiss = { picker = false },
-            onManage = { picker = false },
+    LargeTitleScreen(title = stringResource(R.string.set_on_device), onBack = onBack) {
+        localItems(
+            vm = vm,
+            settings = s,
+            installed = installed,
+            hasHfToken = hasHfToken,
+            linkModels = linkModels,
+            linkError = linkError,
+            onDelete = { confirmDelete = it },
         )
+        fallbackItems(vm, s, providers)
     }
 
     confirmDelete?.let { id ->
@@ -220,58 +425,92 @@ private fun ModelsRoot(vm: ModelsViewModel, nav: ModelsNav, onBack: () -> Unit) 
     }
 }
 
-private fun LazyListScope.defaultItems(vm: ModelsViewModel, s: AppSettings, onPick: () -> Unit) {
-    item(key = "h-default") { SectionLabel(stringResource(R.string.mdl_section_default)) }
-    item(key = "g-default") {
-        val selection = s.selection
-        Group {
-            GroupRow(
-                title = selection?.let(vm.info::label) ?: stringResource(R.string.engine_none),
-                subtitle = stringResource(R.string.mdl_default_model_sub),
-                icon = if (selection is EngineSelection.Local) AtomIcons.Chip else AtomIcons.Cloud,
-                onClick = onPick,
-                trailing = { RowChevron() },
-            )
-            GroupDivider()
-            GroupRow(
-                title = stringResource(R.string.mdl_reasoning_default),
-                subtitle = stringResource(R.string.mdl_reasoning_default_sub),
-                icon = AtomIcons.Bolt,
-                onClick = { vm.setReasoningByDefault(!s.reasoningByDefault) },
-                trailing = { AtomSwitch(checked = s.reasoningByDefault, onCheckedChange = vm::setReasoningByDefault) },
-            )
-            GroupDivider()
-            EffortMenuRow(
-                title = stringResource(R.string.mdl_reasoning_effort_default),
-                icon = ScreenIcons.Tune,
-                current = s.defaultReasoning,
-                levels = ReasoningEffort.entries.filter { it != ReasoningEffort.Off },
-                nullLabel = stringResource(R.string.mdl_effort_model_default),
-                onSelect = vm::setDefaultReasoning,
-            )
+// ================================================================ Auto-generate titles
+
+@Composable
+private fun TitlesScreen(vm: ModelsViewModel, onBack: () -> Unit) {
+    val roles by vm.roleSettings.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val setting = roles[ModelRole.Title] ?: RoleSetting(reasoning = RoleReasoning.Auto)
+    val on = settings?.autoTitles ?: true
+    var picker by remember { mutableStateOf(false) }
+    val primaryName = settings?.selection?.let(vm.info::modelName) ?: stringResource(R.string.set_not_configured)
+    val followLabel = stringResource(R.string.set_titles_follow, primaryName)
+
+    LargeTitleScreen(title = stringResource(R.string.settings_auto_titles), onBack = onBack) {
+        item(key = "h") { SectionLabel(stringResource(R.string.set_titles_group)) }
+        item(key = "g") {
+            Group {
+                SwitchRow(
+                    title = stringResource(R.string.set_titles_enable),
+                    checked = on,
+                    onCheckedChange = vm::setAutoTitles,
+                )
+                ArrowRow(
+                    title = stringResource(R.string.set_titles_model),
+                    summary = setting.selection?.let(vm.info::label) ?: followLabel,
+                    onClick = { picker = true },
+                    enabled = on,
+                )
+                val levels = (setting.selection ?: settings?.selection)?.let(vm.info::reasoningLevels).orEmpty().filter { it != ReasoningEffort.Off }
+                val options = buildList {
+                    add(RoleReasoning.Auto to null)
+                    add(RoleReasoning.ModelDefault to null)
+                    levels.forEach { add(RoleReasoning.Level to it) }
+                    add(RoleReasoning.Follow to null)
+                }
+                val labels = options.map { (mode, effort) ->
+                    when (mode) {
+                        RoleReasoning.Auto -> stringResource(R.string.set_titles_auto)
+                        RoleReasoning.ModelDefault -> stringResource(R.string.mdl_effort_model_default)
+                        RoleReasoning.Level -> effortLabel(effort!!)
+                        RoleReasoning.Follow -> stringResource(R.string.mdl_reasoning_follow)
+                    }
+                }
+                val index = options.indexOfFirst { (mode, effort) -> mode == setting.reasoning && (mode != RoleReasoning.Level || effort == setting.effort) }
+                DropdownRow(
+                    title = stringResource(R.string.set_titles_reasoning),
+                    items = labels,
+                    selectedIndex = index.coerceAtLeast(0),
+                    onSelect = { i ->
+                        val (mode, effort) = options[i]
+                        vm.setRole(ModelRole.Title, setting.copy(reasoning = mode, effort = effort))
+                    },
+                    enabled = on,
+                )
+            }
         }
+        item(key = "n") { Note(stringResource(R.string.set_titles_note)) }
+    }
+
+    if (picker) {
+        ModelPickerSheet(
+            selected = setting.selection,
+            onSelect = {
+                vm.setRole(ModelRole.Title, setting.copy(selection = it))
+                picker = false
+            },
+            onDismiss = { picker = false },
+            onManage = { picker = false },
+            compact = false,
+            followLabel = followLabel,
+            followHint = stringResource(R.string.set_titles_follow_hint),
+            onFollow = {
+                vm.setRole(ModelRole.Title, setting.copy(selection = null))
+                picker = false
+            },
+        )
     }
 }
 
-private fun LazyListScope.rolesItems(vm: ModelsViewModel, roles: Map<ModelRole, RoleSetting>, onOpen: (ModelRole) -> Unit) {
-    item(key = "h-roles") { SectionLabel(stringResource(R.string.mdl_section_roles)) }
-    item(key = "g-roles") {
-        Group {
-            ModelRole.entries.forEachIndexed { i, role ->
-                if (i > 0) GroupDivider()
-                val setting = roles[role] ?: RoleSetting()
-                val value = when {
-                    role == ModelRole.Image -> stringResource(R.string.mdl_role_image_value)
-                    setting.followsPrimary -> stringResource(if (role == ModelRole.Title) R.string.mdl_follow_conversation else R.string.mdl_follow_primary)
-                    else -> setting.selection?.let(vm.info::modelName).orEmpty()
-                }
-                GroupRow(
-                    title = stringResource(roleTitle(role)),
-                    subtitle = value,
-                    onClick = { onOpen(role) },
-                    trailing = { RowChevron() },
-                )
-            }
+/** Provider search: name, base URL and protocol, case-insensitive. */
+internal object ProviderSearch {
+    fun filter(providers: List<ProviderConfig>, query: String): List<ProviderConfig> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return providers
+        return providers.filter { p ->
+            p.displayName.lowercase().contains(q) || p.baseUrl.lowercase().contains(q) || p.wire.name.lowercase().contains(q) ||
+                p.id.lowercase().contains(q)
         }
     }
 }
@@ -282,125 +521,6 @@ internal fun roleTitle(role: ModelRole): Int = when (role) {
     ModelRole.Title -> R.string.mdl_role_title
     ModelRole.Scheduled -> R.string.mdl_role_scheduled
     ModelRole.Image -> R.string.mdl_role_image
-}
-
-private fun LazyListScope.providerItems(
-    providers: List<ProviderConfig>,
-    query: String,
-    onQuery: (String) -> Unit,
-    selection: EngineSelection?,
-    ready: (ProviderConfig) -> Boolean,
-    onOpen: (String) -> Unit,
-    onAdd: (NewProviderKind) -> Unit,
-    onCatalog: () -> Unit,
-) {
-    val q = query.trim().lowercase()
-    val shown = if (q.isEmpty()) providers else providers.filter { p ->
-        p.displayName.lowercase().contains(q) || p.baseUrl.lowercase().contains(q) || p.models.any { it.id.lowercase().contains(q) || it.displayName.lowercase().contains(q) }
-    }
-    item(key = "search") {
-        SearchField(query, onQuery, stringResource(R.string.mdl_search_providers), Modifier.padding(top = 14.dp))
-    }
-    item(key = "h-add") { SectionLabel(stringResource(R.string.mdl_add_provider)) }
-    item(key = "g-add") {
-        Group {
-            GroupRow(
-                title = stringResource(R.string.mdl_add_openai),
-                subtitle = stringResource(R.string.mdl_add_openai_sub),
-                icon = Icons.Filled.Add,
-                onClick = { onAdd(NewProviderKind.OpenAiCompatible) },
-                trailing = { RowChevron() },
-            )
-            GroupDivider()
-            GroupRow(
-                title = stringResource(R.string.mdl_add_anthropic),
-                subtitle = stringResource(R.string.mdl_add_anthropic_sub),
-                icon = Icons.Filled.Add,
-                onClick = { onAdd(NewProviderKind.Anthropic) },
-                trailing = { RowChevron() },
-            )
-            GroupDivider()
-            GroupRow(
-                title = stringResource(R.string.mdl_add_gemini),
-                subtitle = stringResource(R.string.mdl_add_gemini_sub),
-                icon = Icons.Filled.Add,
-                onClick = { onAdd(NewProviderKind.Gemini) },
-                trailing = { RowChevron() },
-            )
-            GroupDivider()
-            GroupRow(
-                title = stringResource(R.string.mdl_add_catalog),
-                subtitle = stringResource(R.string.mdl_add_catalog_sub),
-                icon = ScreenIcons.Storage,
-                onClick = onCatalog,
-                trailing = { RowChevron() },
-            )
-        }
-    }
-    item(key = "h-configured") { SectionLabel(stringResource(R.string.mdl_configured, providers.size)) }
-    item(key = "g-configured") {
-        Group {
-            if (shown.isEmpty()) {
-                GroupRow(title = stringResource(R.string.mdl_no_match))
-            }
-            shown.forEachIndexed { i, p ->
-                if (i > 0) GroupDivider(inset = 70.dp)
-                ProviderRow(
-                    config = p,
-                    current = (selection as? EngineSelection.Cloud)?.providerId == p.id,
-                    ready = ready(p),
-                    onClick = { onOpen(p.id) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProviderRow(config: ProviderConfig, current: Boolean, ready: Boolean, onClick: () -> Unit) {
-    val c = MaterialTheme.colorScheme
-    val subtitle = buildList {
-        add(config.baseUrl.removePrefix("https://").removePrefix("http://").ifEmpty { stringResource(R.string.mdl_no_base_url) })
-        add(protocolLabel(config.wire))
-        add(androidx.compose.ui.res.pluralStringResource(R.plurals.mdl_model_count, config.models.size, config.models.size))
-    }.joinToString(" · ")
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ProviderMark(config.displayName)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    config.displayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (config.enabled) c.onSurface else c.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (config.builtIn) QuietPill(stringResource(R.string.mdl_badge_builtin))
-                if (config.auth != AuthMethod.ApiKey) QuietPill(stringResource(R.string.mdl_badge_account))
-            }
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val status = when {
-                !config.enabled -> stringResource(R.string.mdl_status_disabled)
-                !ready -> stringResource(if (config.auth == AuthMethod.ApiKey) R.string.mdl_status_no_key else R.string.mdl_status_signed_out)
-                else -> null
-            }
-            if (status != null) Text(status, style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant)
-        }
-        Spacer(Modifier.width(12.dp))
-        if (current) {
-            CheckMark(true, stringResource(R.string.mdl_badge_current))
-        } else {
-            RowChevron()
-        }
-    }
 }
 
 private fun LazyListScope.fallbackItems(vm: ModelsViewModel, s: AppSettings, providers: List<ProviderConfig>) {
@@ -429,6 +549,7 @@ private fun LazyListScope.fallbackItems(vm: ModelsViewModel, s: AppSettings, pro
                 },
                 onDismiss = { picker = false },
                 onManage = { picker = false },
+                compact = false,
                 cloudOnly = true,
             )
         }
@@ -518,6 +639,7 @@ private fun RoleScreen(vm: ModelsViewModel, role: ModelRole, onBack: () -> Unit)
             },
             onDismiss = { picker = false },
             onManage = { picker = false },
+            compact = false,
         )
     }
 }

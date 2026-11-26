@@ -143,6 +143,12 @@ object RuleJson {
         val actions = list(m["actions"] ?: m["then"] ?: m["do"] ?: m["steps"])
         m.remove("then"); m.remove("do"); m.remove("steps")
         m["actions"] = JsonArray(actions.map { repairAction(asTyped(it), issues) })
+        val stepCaps = m["step_capabilities"]
+        if (stepCaps is JsonArray) {
+            m["step_capabilities"] = JsonArray(stepCaps.mapNotNull { str(it)?.let(Capability::fromTag)?.tag?.let(::JsonPrimitive) })
+        } else {
+            m.remove("step_capabilities")
+        }
         return JsonObject(m)
     }
 

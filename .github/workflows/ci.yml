@@ -34,6 +34,15 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse references to other apps
+        # Atom is presented on its own. The only allowed hit is the Greek letter in the LaTeX table.
+        run: |
+          if git grep -nIiP '\b(eta|buddy)\b' -- ':!engine/llamacpp/third_party' ':!.github/**' \
+               | grep -vF '"eta" to "η"'; then
+            echo "::error::Remove references to other apps (see lines above)"
+            exit 1
+          fi
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -51,6 +60,11 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
+
+      # The minified (R8) release variant, unsigned: it has no signingConfig. Signing happens only in release.yml.
+      # Building it here shows shrinker and lint-vital problems on the pull request instead of on main.
+      - name: Build release APK (unsigned)
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v7

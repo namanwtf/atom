@@ -23,13 +23,14 @@ object BubbleReducer {
      * The bubble follows its own conversation first, then any other active run started from the bubble, then any
      * active run at all (so a chat task still shows as working once the user leaves the app).
      */
-    fun mood(runs: List<HostRun>, ownConversation: String?): BubbleMood {
+    fun mood(runs: List<HostRun>, ownConversation: String?): BubbleMood = pick(runs, ownConversation)?.let(::moodOf) ?: BubbleMood.Idle
+
+    /** The active run the bubble reports on, in the order described at [mood]; null when nothing runs. */
+    fun pick(runs: List<HostRun>, ownConversation: String?): HostRun? {
         val active = runs.filter { it.phase.active }
-        val run = active.firstOrNull { ownConversation != null && it.conversationId == ownConversation }
+        return active.firstOrNull { ownConversation != null && it.conversationId == ownConversation }
             ?: active.firstOrNull { it.source == RunSource.Bubble }
             ?: active.firstOrNull()
-            ?: return BubbleMood.Idle
-        return moodOf(run)
     }
 
     fun moodOf(run: HostRun): BubbleMood = when {

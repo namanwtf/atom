@@ -69,20 +69,40 @@ class McpClient(private val transport: McpTransport, private val url: String, pr
             return exchange(id, McpProtocol.request(id, method, params), headers(), sessionBound = sessionId != null).second
         }
 
-        /** The catalog, at most [maxTools] tools, and whether the server had more. */
-        suspend fun listTools(maxTools: Int = MAX_TOOLS, maxPages: Int = 20): Pair<List<McpToolInfo>, Boolean> {
+        /**
+         * The catalog and why it was cut short, if it was: more than [maxTools] tools, more than [maxPages] pages,
+         * more than [maxBytes] of tool definitions, or a server that sent the same cursor twice.
+         */
+        suspend fun listTools(
+            maxTools: Int = MAX_TOOLS,
+            maxPages: Int = MAX_PAGES,
+            maxBytes: Long = MAX_CATALOG_BYTES,
+        ): Pair<List<McpToolInfo>, McpTruncation?> {
             val all = mutableListOf<McpToolInfo>()
+            val seenCursors = HashSet<String>()
             var cursor: String? = null
             var pages = 0
-            do {
+            var bytes = 0L
+            var reason: McpTruncation? = null
+            while (true) {
                 val params = cursor?.let { c -> buildJsonObject { put("cursor", c) } }
                 val (tools, next) = McpProtocol.parseTools(McpProtocol.result(send("tools/list", params)))
-                all += tools
-                cursor = next
                 pages++
-            } while (cursor != null && all.size < maxTools && pages < maxPages)
-            val truncated = all.size > maxTools || cursor != null
-            return all.distinctBy { it.name }.take(maxTools) to truncated
+                for (t in tools) {
+                    bytes += McpCatalog.sizeOf(t)
+                    if (bytes > maxBytes) {
+                        reason = McpTruncation.SizeBudget
+                        break
+                    }
+                    all += t
+                }
+                reason = reason ?: McpCatalog.stopReason(all.size, maxTools, pages, maxPages, next, seenCursors)
+                if (reason != null || next == null) break
+                seenCursors += next
+                cursor = next
+            }
+            if (all.distinctBy { it.name }.size > maxTools) reason = McpTruncation.ToolLimit
+            return all.distinctBy { it.name }.take(maxTools) to reason
         }
 
         suspend fun callTool(name: String, arguments: JsonObject): McpContent {
@@ -128,12 +148,37 @@ class McpClient(private val transport: McpTransport, private val url: String, pr
         }
 
     companion object {
-        const val MAX_TOOLS = 128
+        const val MAX_TOOLS = 2048
+        const val MAX_PAGES = 64
+
+        /** Budget for the cached tool definitions (names, descriptions and schemas). */
+        const val MAX_CATALOG_BYTES = 4L * 1024 * 1024
 
         /** Null when [url] is a usable http(s) address (LAN hosts and plain http included). */
         fun validateUrl(url: String): String? {
             val u = url.trim().toHttpUrlOrNull() ?: return "Enter a full http:// or https:// address."
             return if (u.host.isBlank()) "Enter a full http:// or https:// address." else null
         }
+    }
+}
+
+/** Why a tool catalog was cut short. */
+@kotlinx.serialization.Serializable
+enum class McpTruncation { ToolLimit, PageLimit, SizeBudget, DuplicateCursor }
+
+/** Pure paging rules for tools/list (unit-tested). */
+object McpCatalog {
+    /** Rough size of one tool definition, as cached. */
+    fun sizeOf(t: McpToolInfo): Long =
+        (t.name.length + (t.title?.length ?: 0) + t.description.length + t.inputSchema.toString().length).toLong()
+
+    /** Null to keep paging (or stop because there is no next page); otherwise why listing stops early. */
+    fun stopReason(count: Int, maxTools: Int, pages: Int, maxPages: Int, next: String?, seen: Set<String>): McpTruncation? = when {
+        count > maxTools -> McpTruncation.ToolLimit
+        next == null -> null
+        count >= maxTools -> McpTruncation.ToolLimit
+        next in seen -> McpTruncation.DuplicateCursor
+        pages >= maxPages -> McpTruncation.PageLimit
+        else -> null
     }
 }

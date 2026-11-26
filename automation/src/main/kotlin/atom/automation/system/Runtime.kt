@@ -18,6 +18,7 @@ import atom.automation.rule.Trigger
 import atom.automation.rule.WaitFor
 import atom.automation.task.ScheduledTask
 import atom.automation.task.TaskEngine
+import atom.automation.task.TaskNotices
 import atom.automation.task.TaskPorts
 import atom.automation.task.TaskRun
 import atom.ui.feature.Atom
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class AutomationRuntime private constructor(context: Context) {
     val context: Context = context.applicationContext
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val file = File(this.context.filesDir, "automation/state.json")
+    private val file = File(this.context.filesDir, "atom4_automation/state.json")
     private val writes = Channel<Snapshot>(Channel.CONFLATED)
     val state: AutomationState = AutomationState(load()) { writes.trySend(it) }
     val notifier = Notifier(this.context)
@@ -140,9 +141,11 @@ internal class AutomationRuntime private constructor(context: Context) {
             runCatching { Atom.host.stop(conversationId) }
         }
         override fun notifyResult(task: ScheduledTask, run: TaskRun, text: String) =
-            notifier.result("task:${task.id}", task.name, text, run.conversationId)
+            notifier.result("task:${task.id}", task.name, TaskNotices.resultBody(text), run.conversationId)
         override fun notifyAlert(task: ScheduledTask, message: String) =
-            notifier.alert("task:${task.id}", task.name, message)
+            notifier.alert("task:${task.id}", TaskNotices.failedTitle(task.name), TaskNotices.failedBody(message))
+        override fun notifyPaused(task: ScheduledTask, message: String) =
+            notifier.alert("task:${task.id}", TaskNotices.pausedTitle(task.name), message)
         override fun notifyReadyToRun(task: ScheduledTask) = notifier.readyToRun(task.id, task.name)
         override fun wakeupsChanged() = rearm()
     }

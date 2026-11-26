@@ -58,6 +58,9 @@ private val DOCS = listOf(
     LegalDoc(R.string.legal_mit, R.string.legal_mit_desc, "legal/LICENSE-MIT-llama.cpp"),
     LegalDoc(R.string.legal_gpl2, R.string.legal_gpl2_desc, "legal/LICENSE-GPL-2.0"),
     LegalDoc(R.string.legal_lgpl3, R.string.legal_lgpl3_desc, "legal/LICENSE-LGPL-3.0"),
+    LegalDoc(R.string.set_legal_ofl, R.string.set_legal_ofl_desc, "legal/LICENSE-OFL-1.1"),
+    LegalDoc(R.string.set_legal_lobe, R.string.set_legal_lobe_desc, "legal/LICENSE-MIT-LobeIcons"),
+    LegalDoc(R.string.set_legal_models_dev, R.string.set_legal_models_dev_desc, "legal/LICENSE-MIT-models.dev"),
 )
 
 @Composable

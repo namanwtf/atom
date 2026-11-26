@@ -98,10 +98,13 @@ class TaskEngineTest {
     @Test fun autoPausesAfterRepeatedFailures() = runTest {
         val (state, engine, ports) = setup(this)
         engine.save(task())
-        repeat(3) { i ->
+        repeat(ScheduledTask.AUTO_PAUSE_AFTER - 1) { i ->
             engine.runNow("t")
             finish(engine, ports, "c$i", RunPhase.Failed, error = "boom")
         }
+        assertTrue(state.task("t")!!.enabled)
+        engine.runNow("t")
+        finish(engine, ports, "c${ScheduledTask.AUTO_PAUSE_AFTER - 1}", RunPhase.Failed, error = "boom")
         val t = state.task("t")!!
         assertFalse(t.enabled)
         assertNotNull(t.pausedReason)

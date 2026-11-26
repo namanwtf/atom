@@ -1,8 +1,10 @@
 package atom.app.service
 
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import atom.app.graph
 
 /** Handles the notification buttons. Not exported: only our PendingIntents reach it. */
@@ -16,6 +18,12 @@ class TaskActionReceiver : BroadcastReceiver() {
             ACTION_PAUSE -> conversationId?.let(graph.tasks::pause)
             ACTION_RESUME -> conversationId?.let(graph.tasks::resume)
             ACTION_APPROVE, ACTION_DENY -> {
+                // Allow asks for the device credential on Android 12+ (the system unlocks first, so no check here:
+                // the keyguard state can lag just after unlocking). On older versions an Allow tapped on the lock
+                // screen is ignored and the notification stays, so it can be answered after unlocking.
+                if (intent.action == ACTION_APPROVE && Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+                    context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true
+                ) return
                 val id = intent.getLongExtra(EXTRA_APPROVAL_ID, -1)
                 if (id >= 0) graph.tasks.answer(id, approved = intent.action == ACTION_APPROVE)
                 graph.notifications.cancelApproval()

@@ -42,7 +42,7 @@ object ImageGallery {
 
     val items: StateFlow<List<GalleryItem>> = state.asStateFlow()
 
-    fun dir(context: Context) = File(context.applicationContext.filesDir, "generated_images").apply { mkdirs() }
+    fun dir(context: Context) = File(context.applicationContext.filesDir, "atom4_generated_images").apply { mkdirs() }
 
     private fun index(context: Context) = File(dir(context), "index.json")
 

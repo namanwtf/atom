@@ -23,7 +23,7 @@ data class ScheduledTask(
     val progressNotification: Boolean = false,
     val modelId: String? = null,
     val reasoning: String? = null,
-    val capabilities: Set<Capability> = Capability.DEFAULT,
+    val capabilities: Set<Capability> = Capability.TASK_DEFAULT,
     val destination: Destination = Destination.Archive,
     val conversationId: String? = null,
     val missedPolicy: MissedRunPolicy = MissedRunPolicy.CatchUp,
@@ -40,14 +40,15 @@ data class ScheduledTask(
 
     companion object {
         val MAX_MINUTES_OPTIONS = listOf(2, 5, 10, 15)
-        const val AUTO_PAUSE_AFTER = 3
+        /** Consecutive failed runs before the task pauses itself. */
+        const val AUTO_PAUSE_AFTER = 5
     }
 }
 
 @Serializable
 enum class RunStatus(val label: String) {
     Running("Running"),
-    Succeeded("Done"),
+    Succeeded("Delivered"),
     Unchanged("No change"),
     Failed("Failed"),
     TimedOut("Timed out"),
@@ -71,4 +72,75 @@ data class TaskRun(
     val conversationId: String? = null,
     val summary: String = "",
     val manual: Boolean = false,
-)
+    /** A scheduled run that started late, after the phone was off or asleep at its time. */
+    val catchUp: Boolean = false,
+) {
+    val trigger: RunTrigger get() = when {
+        manual -> RunTrigger.Manual
+        catchUp -> RunTrigger.CatchUp
+        else -> RunTrigger.Scheduled
+    }
+
+    /** How long it ran, once it has ended. */
+    fun durationMs(): Long? = endedAt?.let { (it - startedAt).coerceAtLeast(0) }
+}
+
+/** What started a run, as the run timeline labels it. */
+enum class RunTrigger(val label: String) { Scheduled("Scheduled"), Manual("Manual run"), CatchUp("Catch-up") }
+
+/** Copy for the run timeline (pure, unit-tested). */
+object RunTimeline {
+    /** "Manual run · Delivered · 1 min 5 s", or without the duration while running. */
+    fun line(run: TaskRun): String = buildString {
+        append(run.trigger.label).append(" · ").append(run.status.label)
+        run.durationMs()?.takeIf { run.status != RunStatus.Skipped && run.status != RunStatus.WaitingUnlock }?.let { append(" · ").append(duration(it)) }
+    }
+
+    fun tapHint(run: TaskRun): String? = when {
+        run.conversationId == null -> null
+        run.status == RunStatus.Running -> "Tap to watch live progress"
+        else -> "Tap to view full conversation and follow up"
+    }
+
+    fun duration(ms: Long): String {
+        val s = ms / 1000
+        return when {
+            s < 60 -> "$s s"
+            s < 3600 -> if (s % 60 == 0L) "${s / 60} min" else "${s / 60} min ${s % 60} s"
+            else -> "${s / 3600} h ${(s % 3600) / 60} min"
+        }
+    }
+}
+
+/** Titles and fallback bodies of scheduled-task notifications (pure, unit-tested). */
+object TaskNotices {
+    const val COMPLETED_FALLBACK = "Scheduled task completed. Tap to view full conversation."
+    const val FAILED_FALLBACK = "Execution failed. Tap to inspect details."
+
+    fun failedTitle(name: String) = "Task failed: $name"
+    fun pausedTitle(name: String) = "Task paused: $name"
+    fun readyTitle(name: String) = "Ready to run: $name"
+
+    fun resultBody(text: String) = text.ifBlank { COMPLETED_FALLBACK }
+    fun failedBody(summary: String) = summary.ifBlank { FAILED_FALLBACK }
+}
+
+/** Copy for the Scheduled Tasks list and the task detail (pure, unit-tested). */
+object TaskListLabels {
+    fun status(task: ScheduledTask, last: TaskRun?): String = when {
+        last?.status == RunStatus.Running -> "Running in background…"
+        !task.enabled -> "Paused"
+        last == null -> "Waiting for first run"
+        else -> "Last: ${last.status.label}"
+    }
+
+    /** "Next in 3 h · Waiting for first run"; [relative] formats an epoch-millis time. */
+    fun summary(task: ScheduledTask, last: TaskRun?, relative: (Long) -> String): String {
+        val next = task.nextRunAt?.takeIf { task.enabled }?.let { "Next " + relative(it) }
+        return listOfNotNull(next, status(task, last)).joinToString(" · ")
+    }
+
+    /** The "Notifications & session" badges. */
+    fun badges(task: ScheduledTask): List<String> =
+        listOfNotNull(task.notify.label, task.destination.label, "Progress notification".takeIf { task.progressNotification })
+}

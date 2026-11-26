@@ -177,7 +177,7 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
             AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
             if (url.isBlank()) {
                 Column(Modifier.fillMaxSize().background(c.background).padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Search or type a web address", style = MaterialTheme.typography.titleMedium, color = c.onSurfaceVariant)
+                    Text("Search or enter address", style = MaterialTheme.typography.titleMedium, color = c.onSurfaceVariant)
                     Text("Sign-ins here are shared with the agent's browser.", style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             }
@@ -197,7 +197,7 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
                 contentAlignment = Alignment.CenterStart,
             ) {
                 LaunchedEffect(url, editing) { if (!editing) address.setTextAndPlaceCursorAtEnd(displayHost(url)) }
-                if (address.text.isEmpty()) Text("Search or address", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+                if (address.text.isEmpty()) Text("Search or enter address", style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
                 BasicTextField(
                     state = address,
                     lineLimits = TextFieldLineLimits.SingleLine,
@@ -211,15 +211,15 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
                     },
                 )
             }
-            CircleIconButton(if (loading) Icons.Filled.Close else Icons.Filled.Refresh, if (loading) "Stop" else "Refresh", {
+            CircleIconButton(if (loading) Icons.Filled.Close else Icons.Filled.Refresh, if (loading) "Stop loading" else "Refresh", {
                 if (loading) web.stopLoading() else if (url.isNotBlank()) web.reload()
             }, size = 40.dp)
             Box {
-                CircleIconButton(Icons.Filled.MoreVert, "Menu", { menu = true }, size = 40.dp)
+                CircleIconButton(Icons.Filled.MoreVert, "More options", { menu = true }, size = 40.dp)
                 AtomMenu(expanded = menu, onDismiss = { menu = false }) {
                     DropdownMenuItem(text = { Text("Open in another app") }, enabled = url.isNotBlank(), onClick = {
                         menu = false
-                        if (!openExternally(context, url)) Toast.makeText(context, "No app can open this page", Toast.LENGTH_SHORT).show()
+                        if (!openExternally(context, url)) Toast.makeText(context, "No app can open this webpage", Toast.LENGTH_SHORT).show()
                     })
                     DropdownMenuItem(text = { Text("Close page") }, onClick = {
                         menu = false

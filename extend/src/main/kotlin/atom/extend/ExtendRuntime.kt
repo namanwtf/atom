@@ -25,7 +25,7 @@ internal object ExtendRuntime {
 
     private val app: Context get() = checkNotNull(appContext) { "ExtendFeature used before onAppCreate" }
 
-    val root: File by lazy { File(app.filesDir, "extend") }
+    val root: File by lazy { File(app.filesDir, "atom4_extend") }
 
     val memory: MemoryStore by lazy { MemoryStore(root) }
 

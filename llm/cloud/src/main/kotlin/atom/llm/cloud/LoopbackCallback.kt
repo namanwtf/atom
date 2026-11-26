@@ -87,8 +87,8 @@ class LoopbackCallback(private val port: Int, private val path: String = "/auth/
         val ok = result?.code != null && result.error == null
         val body = when {
             status != 200 -> "Not found"
-            ok -> PAGE.format("Signed in", "You can close this tab and return to Atom.")
-            else -> PAGE.format("Sign-in did not finish", "Return to Atom and try again.")
+            ok -> PAGE.format("Atom", RECEIVED)
+            else -> PAGE.format("Atom", INCOMPLETE)
         }
         val bytes = body.toByteArray(Charsets.UTF_8)
         val reason = if (status == 200) "OK" else if (status == 404) "Not Found" else "Bad Request"
@@ -104,9 +104,13 @@ class LoopbackCallback(private val port: Int, private val path: String = "/auth/
     }
 
     internal companion object {
+        /** What the browser tab says once the provider redirected back. */
+        const val RECEIVED = "Authorization received. Return to Atom to finish signing in."
+        const val INCOMPLETE = "Authorization incomplete. Return to Atom and retry."
+
         private const val PAGE = "<!doctype html><html><head><meta name=viewport content='width=device-width'>" +
             "<title>Atom</title></head><body style='background:#000;color:#fff;font-family:sans-serif;padding:48px 24px'>" +
-            "<h2>%s</h2><p style='color:#aaa'>%s</p></body></html>"
+            "<h2>%s</h2><p style='color:#ddd;font-size:18px'>%s</p></body></html>"
 
         fun parseQuery(query: String): Map<String, String> =
             query.split('&').filter { it.isNotEmpty() }.associate { pair ->

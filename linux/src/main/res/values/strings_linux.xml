@@ -56,7 +56,26 @@
     <string name="terminal_running">Running…</string>
     <string name="terminal_exit_code">exit %1$d</string>
     <string name="terminal_copied">Copied</string>
-    <string name="terminal_simple_empty">Commands and their output appear here as blocks.</string>
+    <string name="terminal_simple_empty">This is a persistent shell: the working directory, variables and anything you start carry over from one command to the next. Each command and its output appear here as a block.</string>
+    <string name="terminal_switched">Switched to %1$s</string>
+    <string name="terminal_cd_sessions">Sessions</string>
+    <string name="terminal_cd_jobs">Background tasks</string>
+    <string name="terminal_cd_simple">Switch to Simple mode</string>
+    <string name="terminal_cd_console">Switch to Console mode</string>
+    <string name="terminal_not_installed">Linux environment is not installed yet</string>
+    <string name="terminal_install_now">Install now</string>
+    <string name="terminal_installing">Installing the Linux environment…</string>
+    <string name="terminal_root_lost">Root access is gone, so the Root mode Linux environment cannot start.</string>
+    <string name="terminal_open_linux">Open Linux environment</string>
+    <string name="terminal_reconnect">Reconnect</string>
+    <string name="terminal_reconnected">Session ended; reconnected</string>
+    <string name="terminal_new_root_session">New root session</string>
+    <string name="terminal_status_current">Current</string>
+    <string name="terminal_status_running">Running</string>
+    <string name="terminal_status_idle">Idle</string>
+    <string name="terminal_status_exited">Exited</string>
+    <string name="terminal_no_sessions">No sessions in this mode.</string>
+    <string name="terminal_done">Done</string>
 
     <!-- Linux home -->
     <string name="linux_title">Linux</string>
@@ -118,6 +137,28 @@
     <string name="linux_error">Could not finish: %1$s</string>
     <string name="linux_space_warning">Needs about %1$s; %2$s free.</string>
 
+    <string name="linux_page_title">Linux environment</string>
+    <string name="linux_install_base">Install base</string>
+    <string name="linux_install_tools">Install base tools</string>
+    <string name="linux_installing">Installing</string>
+    <string name="linux_root_enhancements">Root and system enhancements</string>
+    <string name="linux_env_config">Environment configuration</string>
+    <string name="linux_distribution_row">Linux distribution</string>
+    <string name="linux_alpine_summary">Lightweight musl environment</string>
+    <string name="linux_debian_summary">glibc environment with broader software compatibility</string>
+    <string name="linux_distro_locked">Uninstall the current system to switch distributions</string>
+    <string name="linux_mode_standard_option">Standard mode · PRoot</string>
+    <string name="linux_mode_root_option">Root mode · chroot</string>
+    <string name="linux_files_dirs">Files and directories</string>
+    <string name="linux_files_row">File browser</string>
+    <string name="linux_optional_tools">Optional tools</string>
+    <string name="linux_profile_python_title">Python / uv environment</string>
+    <string name="linux_profile_node_title">Node.js environment</string>
+    <string name="linux_profile_ssh_title">SSH remote access</string>
+    <string name="linux_profile_apk_title">APK analysis</string>
+    <string name="linux_status_base_ready">Base environment is ready. Install the base tools next.</string>
+    <string name="linux_status_ready">Ready · %1$s on disk</string>
+
     <!-- Health -->
     <string name="health_title">Health check</string>
     <string name="health_run">Run check</string>
@@ -135,7 +176,18 @@
     <string name="folders_path">Android path</string>
     <string name="folders_remove">Remove</string>
     <string name="folders_unreadable">Atom cannot read this folder; allow file access on the Workspace page.</string>
-    <string name="folders_empty">No shared folders.</string>
+    <string name="folders_empty">No shared folders</string>
+    <string name="folders_empty_body">Add an Android folder to use it inside Linux.</string>
+    <string name="folders_list">Mounted folders · %1$d</string>
+    <string name="folders_add_title">Add shared folder</string>
+    <string name="folders_add_confirm">Add</string>
+    <string name="folders_no_subfolders">No subfolders here</string>
+    <string name="folders_cannot_open">Cannot open this directory</string>
+    <string name="folders_system_picker">Choose with the system picker</string>
+    <string name="folders_mount_name">Mount name</string>
+    <string name="folders_mount_line">Mount: %1$s → %2$s</string>
+    <string name="folders_remove_title">Remove %1$s?</string>
+    <string name="folders_remove_body">The folder is no longer mounted in Linux from the next session. Files in the source directory are not deleted.</string>
 
     <!-- File browser -->
     <string name="files_title">Linux files</string>
@@ -147,10 +199,10 @@
 
     <!-- Workspace -->
     <string name="workspace_title">Workspace and files</string>
-    <string name="workspace_private">Private: /workspace</string>
-    <string name="workspace_private_body">Atom\'s own folder, always available to Linux. %1$s used.</string>
-    <string name="workspace_public">Public: /sdcard</string>
-    <string name="workspace_public_granted">Shared storage is readable and writable from Linux.</string>
+    <string name="workspace_private">Private workspace</string>
+    <string name="workspace_private_body">/workspace, Atom\'s own folder, always available to Linux. %1$s used.</string>
+    <string name="workspace_public">Public directory access</string>
+    <string name="workspace_public_granted">Authorized; the terminal can access public directories</string>
     <string name="workspace_public_denied">Not allowed yet. Linux sees an empty /sdcard until you allow all-files access.</string>
     <string name="workspace_allow">Allow access</string>
     <string name="workspace_import">Import files</string>
@@ -158,8 +210,8 @@
     <string name="workspace_imported">Imported %1$d file(s).</string>
     <string name="workspace_too_big">%1$s is larger than 32 MiB and was skipped.</string>
     <string name="workspace_export">Export</string>
-    <string name="workspace_files">Files in /workspace</string>
-    <string name="workspace_none">No files yet.</string>
+    <string name="workspace_files">Workspace files</string>
+    <string name="workspace_none">No files · Import files or generate them through terminal tasks</string>
     <string name="workspace_exported">Exported.</string>
 
     <!-- Jobs -->

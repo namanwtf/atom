@@ -58,6 +58,14 @@ object SharedFolderRules {
         return "/" + parts.joinToString("/")
     }
 
+    /** The folder above [path] for the folder picker, or null when [path] is already [root] (or outside it). */
+    fun parentWithin(path: String, root: String): String? {
+        val p = normalize(path) ?: return null
+        val r = normalize(root) ?: return null
+        if (p == r || !p.startsWith("$r/")) return null
+        return p.substringBeforeLast('/').ifEmpty { "/" }
+    }
+
     /** A default mount name from a directory path ("/storage/emulated/0/Download" -> "Download"). */
     fun suggestName(path: String): String =
         path.trimEnd('/').substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").trimStart('.', '_', '-').take(32).ifEmpty { "folder" }

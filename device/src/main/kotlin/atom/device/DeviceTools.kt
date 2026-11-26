@@ -23,6 +23,24 @@ object DeviceTools {
         val system = SystemTools(context, shell).all()
         val shellTool = system.filter { it.spec.name == "shell" }.map { it.gated(ToolSwitch.TerminalFiles) }
         val rest = system.filter { it.spec.name != "shell" }
-        return (UiTools(context).all() + ScreenExtraTools(context).all() + rest).map { it.gated(ToolSwitch.DeviceDirect) } + shellTool
+        return gate(UiTools(context).all() + ScreenExtraTools(context).all() + rest) + shellTool
+    }
+
+    private fun gate(tools: List<Tool>): List<Tool> = tools.map { it.gated(ToolSwitch.DeviceDirect) }
+
+    /**
+     * The same tools as [create], for listing only (names and gates, e.g. for the Tool list): no shell is set up
+     * or probed, and running one fails.
+     */
+    fun listing(context: Context): List<Tool> {
+        val system = SystemTools(context, InertShell).all()
+        val shellTool = system.filter { it.spec.name == "shell" }.map { it.gated(ToolSwitch.TerminalFiles) }
+        val rest = system.filter { it.spec.name != "shell" }
+        return gate(UiTools(context).all() + ScreenExtraTools(context).all() + rest) + shellTool
+    }
+
+    private object InertShell : ShellExecutor {
+        override val tier: ShellTier = ShellTier.App
+        override suspend fun run(command: String, timeoutMs: Long): ShellResult = ShellResult(1, "", "Listing only")
     }
 }

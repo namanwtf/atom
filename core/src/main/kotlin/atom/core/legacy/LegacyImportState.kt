@@ -1,0 +1,168 @@
+package atom.core.legacy
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * What the importer already brought over from the previous app (`files/atom4_legacy_import.json`). Every old item
+ * is imported at most once: a re-run skips what is recorded here, so it never duplicates anything, and something the
+ * user deleted in Atom 4 after the import does not come back.
+ */
+@Serializable
+data class LegacyImportState(
+    val version: Int = 1,
+    /**
+     * Set when a run finished without an error or a failed item; until then the import runs again at the next start,
+     * at most [LegacyImportPlan.MAX_AUTO_ATTEMPTS] times.
+     */
+    val completedAt: Long? = null,
+    /** Automatic runs started so far. */
+    val attempts: Int = 0,
+    /** Old provider id to Atom 4 provider id. */
+    val providers: Map<String, String> = emptyMap(),
+    /** Old provider ids whose API key was handled (imported, or Atom 4 already had one). */
+    val keys: Set<String> = emptySet(),
+    /** Old provider ids whose sign-in was imported (or Atom 4 was already signed in). */
+    val signIns: Set<String> = emptySet(),
+    /** Old conversation id to Atom 4 conversation id. */
+    val conversations: Map<String, String> = emptyMap(),
+    val selectionApplied: Boolean = false,
+    /**
+     * The old long-term memory was brought over (or there was none). Its file is removed only after that. Until then
+     * it is tried again at each start, also after the database is gone; it never holds up [completedAt].
+     */
+    val memoryImported: Boolean = false,
+    /** The "previous memory is too large to merge" notice was shown once. */
+    val memoryNoticeShown: Boolean = false,
+    /** Old provider id to the runs whose sign-in file could not be read (see [LegacyImportPlan.signInFailureIsFinal]). */
+    val signInFailures: Map<String, Int> = emptyMap(),
+    val report: LegacyImportReport? = null,
+    /** False while the result of the last run still waits to be shown once. */
+    val noticeShown: Boolean = true,
+    /** When the previous app's files and Keystore keys were removed ([LegacyCleanup]); null while they may remain. */
+    val legacyCleanedAt: Long? = null,
+) {
+    fun encode(): String = json.encodeToString(serializer(), this)
+
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+
+        /** Null for a missing or unreadable marker (which counts as "never imported"). */
+        fun decode(text: String?): LegacyImportState? =
+            text?.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString(serializer(), it) }.getOrNull() }
+    }
+}
+
+/** The outcome of one run, shown once as a notice and again after a manual run. */
+@Serializable
+data class LegacyImportReport(
+    val at: Long = 0,
+    val conversations: Int = 0,
+    val providers: Int = 0,
+    val keys: Int = 0,
+    val signIns: Int = 0,
+    /** Character chats, imported as normal chats. */
+    val characterChats: Int = 0,
+    /** Display names of providers whose sign-in could not be carried over. */
+    val signInAgain: List<String> = emptyList(),
+    val failedProviders: Int = 0,
+    val failedConversations: Int = 0,
+    /** Sign-ins whose file is there but could not be read this time (a Keystore or storage error): retried. */
+    val failedSignIns: Int = 0,
+    /** The old long-term memory was copied into Atom 4's memory in this run. */
+    val memory: Boolean = false,
+    /** The old long-term memory could not be brought over this time; it is tried again at the next start. */
+    val failedMemory: Boolean = false,
+    /** ...because together with Atom 4's memory it is over the size limit: the user shortens Atom 4's memory. */
+    val memoryTooLarge: Boolean = false,
+    val damagedMessages: Int = 0,
+    /** Messages cut to the size limit, with a note. */
+    val truncatedMessages: Int = 0,
+    /** Conversations whose tool steps kept only their short previews (no full arguments and results). */
+    val withoutToolDetails: Int = 0,
+    val skippedImages: Int = 0,
+    val selectionImported: Boolean = false,
+    /** The old database was missing, empty or too old. */
+    val nothingFound: Boolean = false,
+    /** Set when the run stopped early; what was imported before stays imported. */
+    val error: String? = null,
+)
+
+/** The importer's decisions, kept free of Android so they can be tested. */
+object LegacyImportPlan {
+    /** Automatic runs before the import is left to the manual button. */
+    const val MAX_AUTO_ATTEMPTS = 3
+
+    /**
+     * Runs automatically while the old database exists and no run has finished cleanly, for at most
+     * [MAX_AUTO_ATTEMPTS] starts (so a persistent problem does not run the import on every start).
+     */
+    fun shouldAutoRun(databaseExists: Boolean, state: LegacyImportState?): Boolean =
+        databaseExists && state?.completedAt == null && (state?.attempts ?: 0) < MAX_AUTO_ATTEMPTS
+
+    /**
+     * Whether a run with this report counts as finished: no error and nothing left to retry. Memory is not part of
+     * it: its files are kept until it is imported ([LegacyImportState.memoryImported]) and it is retried on its own,
+     * so it never holds up the removal of the old database and keys.
+     */
+    fun isComplete(report: LegacyImportReport): Boolean =
+        report.error == null && report.failedConversations == 0 && report.failedProviders == 0 && report.failedSignIns == 0
+
+    /**
+     * Whether to try the old memory again by itself at start: while it is not imported and its file exists, unless a
+     * full import is about to run anyway ([autoRunPending]). Independent of the database and of [LegacyImportState.completedAt].
+     */
+    fun shouldRetryMemory(state: LegacyImportState?, oldMemoryExists: Boolean, autoRunPending: Boolean): Boolean =
+        oldMemoryExists && state?.memoryImported != true && !autoRunPending
+
+    /**
+     * Whether a sign-in file that could not be read ([previousFailures] earlier runs failed the same way) is given up
+     * on in this run and reported as "sign in again", so a lasting Keystore error cannot hold up completion forever.
+     */
+    fun signInFailureIsFinal(previousFailures: Int): Boolean = previousFailures + 1 >= MAX_AUTO_ATTEMPTS
+
+    /** The heading old memory goes under when Atom 4 already has memory of its own. */
+    const val MEMORY_HEADING = "Imported from the previous Atom"
+
+    enum class ConversationAction { Import, AlreadyImported, ExistsInAtom4 }
+
+    /**
+     * Whether to import old conversation [oldId] and under which Atom 4 id. The old id is kept when Atom 4 accepts
+     * it ([validId]), so a run interrupted before its marker was written still finds what it saved.
+     */
+    fun conversation(
+        state: LegacyImportState,
+        oldId: String,
+        validId: (String) -> Boolean,
+        exists: (String) -> Boolean,
+        newId: () -> String,
+    ): Pair<ConversationAction, String> {
+        state.conversations[oldId]?.let { return ConversationAction.AlreadyImported to it }
+        val target = if (validId(oldId)) oldId else newId()
+        return if (exists(target)) ConversationAction.ExistsInAtom4 to target else ConversationAction.Import to target
+    }
+
+    /** An old key is added only when Atom 4 has none for that provider (never overwritten) and it was not handled. */
+    fun shouldImportKey(state: LegacyImportState, oldProviderId: String, oldKey: String?, atom4HasKey: Boolean): Boolean =
+        !oldKey.isNullOrBlank() && oldProviderId !in state.keys && !atom4HasKey
+
+    fun shouldImportSignIn(state: LegacyImportState, row: LegacyProviderRow, atom4SignedIn: Boolean): Boolean =
+        row.isOAuth && row.id !in state.signIns && !atom4SignedIn
+
+    /** The old default model is applied once, and only while the user has not picked one in Atom 4. */
+    fun shouldApplySelection(state: LegacyImportState, chosenInAtom4: Boolean): Boolean =
+        !state.selectionApplied && !chosenInAtom4
+
+    /**
+     * The system prompt the old app seeded into its built-in providers, guessed as the prompt most built-in rows
+     * share (at least two). Rows still holding it get Atom 4's own default instead; edited prompts are kept.
+     */
+    fun seededPrompt(rows: List<LegacyProviderRow>): String? =
+        rows.filter { it.builtIn }
+            .mapNotNull { it.systemPrompt?.trim()?.takeIf { p -> p.isNotEmpty() } }
+            .groupingBy { it }
+            .eachCount()
+            .filter { it.value >= 2 }
+            .maxByOrNull { it.value }
+            ?.key
+}

@@ -40,6 +40,25 @@ data class CatalogProvider(
     val models: List<CatalogModelEntry>,
 )
 
+/** Where the catalog on screen came from. */
+enum class CatalogSource { Bundled, Cached, Online }
+
+/** Why an online refresh of the catalog failed, so the page can say it in plain words. */
+sealed interface CatalogError {
+    data class Http(val code: Int) : CatalogError
+    data object Timeout : CatalogError
+    data object Dns : CatalogError
+    data object Ssl : CatalogError
+    data object TooLarge : CatalogError
+    data object Format : CatalogError
+    data class Network(val detail: String?) : CatalogError
+}
+
+class CatalogException(val error: CatalogError) : IOException(error.toString())
+
+/** The catalog snapshot that ships with the app, and when it was taken. */
+data class CatalogSnapshot(val providers: List<CatalogProvider>, val fetchedAtMillis: Long?)
+
 /**
  * The models.dev community catalog. Fetched only when the user opens the import screen; the request carries
  * no credentials or identifying headers, and the reduced result is cached by the caller.
@@ -100,6 +119,53 @@ object ModelsDev {
 
     suspend fun fetch(): List<CatalogProvider> = fetch(CloudHttp.client, URL)
 
+    /** Largest response accepted from the catalog host. */
+    const val MAX_BYTES = 48L * 1024 * 1024
+
+    private const val SNAPSHOT = "/atom/llm/cloud/models_dev_snapshot.json"
+    private const val SNAPSHOT_META = "/atom/llm/cloud/models_dev_snapshot.meta"
+
+    /** The bundled snapshot (built by tools/models_dev/snapshot.py); null only if the resource is missing. */
+    fun bundled(): CatalogSnapshot? {
+        val stream = ModelsDev::class.java.getResourceAsStream(SNAPSHOT) ?: return null
+        val providers = runCatching { stream.use(::parse) }.getOrNull() ?: return null
+        val meta = ModelsDev::class.java.getResourceAsStream(SNAPSHOT_META)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        return CatalogSnapshot(providers, meta?.let(::snapshotTime))
+    }
+
+    /** The `fetched=` time of a snapshot's meta file, in epoch milliseconds. */
+    internal fun snapshotTime(meta: String): Long? {
+        val value = meta.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("fetched=") }?.removePrefix("fetched=") ?: return null
+        return runCatching { java.time.OffsetDateTime.parse(value).toInstant().toEpochMilli() }.getOrNull()
+    }
+
+    /** Maps a refresh failure to a [CatalogError]. */
+    fun classify(t: Throwable): CatalogError = when (t) {
+        is CatalogException -> t.error
+        is java.net.UnknownHostException -> CatalogError.Dns
+        is java.net.SocketTimeoutException, is java.io.InterruptedIOException -> CatalogError.Timeout
+        is javax.net.ssl.SSLException -> CatalogError.Ssl
+        is kotlinx.serialization.SerializationException, is IllegalArgumentException, is IllegalStateException -> CatalogError.Format
+        else -> t.cause?.takeIf { it !== t }?.let { cause -> classify(cause).takeIf { it !is CatalogError.Network } }
+            ?: CatalogError.Network(t.message)
+    }
+
+    /** Wraps [input] so reading more than [limit] bytes fails with [CatalogError.TooLarge]. */
+    internal fun limited(input: InputStream, limit: Long): InputStream = object : java.io.FilterInputStream(input) {
+        private var count = 0L
+
+        private fun add(n: Long) {
+            if (n > 0) count += n
+            if (count > limit) throw CatalogException(CatalogError.TooLarge)
+        }
+
+        override fun read(): Int = super.read().also { if (it >= 0) add(1) }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { add(it.toLong()) }
+
+        override fun skip(n: Long): Long = super.skip(n).also { add(it) }
+    }
+
     internal suspend fun fetch(http: OkHttpClient, url: String): List<CatalogProvider> {
         val request = Request.Builder().url(url).header("Accept", "application/json").build()
         val call = http.newCall(request)
@@ -111,8 +177,17 @@ object ModelsDev {
                 override fun onResponse(call: Call, response: Response) {
                     val result = runCatching {
                         response.use {
-                            if (!it.isSuccessful) throw IOException("models.dev returned HTTP ${it.code}")
-                            it.body.byteStream().use(::parse)
+                            if (!it.isSuccessful) throw CatalogException(CatalogError.Http(it.code))
+                            if (it.body.contentLength() > MAX_BYTES) throw CatalogException(CatalogError.TooLarge)
+                            try {
+                                limited(it.body.byteStream(), MAX_BYTES).use(::parse)
+                            } catch (e: CatalogException) {
+                                throw e
+                            } catch (e: IOException) {
+                                throw e
+                            } catch (e: Exception) {
+                                throw CatalogException(CatalogError.Format)
+                            }
                         }
                     }
                     result.fold(cont::resume, cont::resumeWithException)

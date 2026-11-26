@@ -6,6 +6,7 @@ import atom.core.tool.Tool
 import atom.extend.mcp.McpServerScreen
 import atom.extend.mcp.McpServersScreen
 import atom.extend.mcp.McpTools
+import atom.extend.memory.MemoryEdit
 import atom.extend.memory.MemoryScreen
 import atom.extend.memory.MemoryText
 import atom.extend.memory.MemoryTools
@@ -16,6 +17,7 @@ import atom.extend.subagent.SubagentRoutes
 import atom.extend.subagent.SubagentRunScreen
 import atom.extend.subagent.SubagentStore
 import atom.extend.subagent.SubagentTools
+import atom.extend.subagent.SubagentViewScreen
 import atom.extend.subagent.SubagentsScreen
 import atom.ui.feature.AtomFeature
 import atom.ui.feature.FeatureEntry
@@ -41,6 +43,36 @@ object ExtendFeature : AtomFeature {
     fun memoryFile(context: Context): File {
         ExtendRuntime.init(context)
         return ExtendRuntime.memory.file
+    }
+
+    enum class MemoryImport {
+        Saved,
+
+        /** Together with the current memory it would be over [MemoryText.MAX_BYTES]; nothing was written. */
+        TooLarge,
+
+        /** The memory kept changing underneath; nothing was written. */
+        Busy,
+    }
+
+    /**
+     * Brings memory over from another app (the previous Atom) through the memory store: [text] becomes the whole
+     * memory while it is still empty, otherwise it is added at the end under [heading] (see [MemoryText.merge]).
+     */
+    suspend fun importMemory(context: Context, text: String, heading: String): MemoryImport {
+        ExtendRuntime.init(context)
+        val store = ExtendRuntime.memory
+        // A write from the agent or the editor in between only means trying again on the new content.
+        repeat(3) {
+            val current = store.current()
+            when (store.save(MemoryText.merge(current.text, text, heading), current.hash)) {
+                is MemoryEdit.Saved -> return MemoryImport.Saved
+                // The store rejects a save for one reason only: the size limit.
+                is MemoryEdit.Rejected -> return MemoryImport.TooLarge
+                is MemoryEdit.Conflict -> Unit
+            }
+        }
+        return MemoryImport.Busy
     }
 
     override val entries: List<FeatureEntry>
@@ -129,6 +161,7 @@ object ExtendFeature : AtomFeature {
             route == SubagentRoutes.NEW -> SubagentEditScreen(ExtendRuntime.subagents, null, nav)
             route.startsWith(SubagentRoutes.EDIT) -> SubagentEditScreen(ExtendRuntime.subagents, route.removePrefix(SubagentRoutes.EDIT), nav)
             route.startsWith(SubagentRoutes.RUN) -> SubagentRunScreen(route.removePrefix(SubagentRoutes.RUN), nav)
+            route.startsWith(SubagentRoutes.VIEW) -> SubagentViewScreen(route.removePrefix(SubagentRoutes.VIEW), nav)
         }
     }
 }

@@ -1,0 +1,84 @@
+# Screenshots of the debug build on an emulator, on GitHub's disposable runners only.
+# Each screenshot is printed into the job log as base64 (see tools/screenshots/capture.py) and also
+# uploaded as an artifact. Compare against docs/Screenshots of the old app.
+name: Screenshots
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "ui/**"
+      - "overlay/**"
+      - "general/**"
+      - "extend/**"
+      - "device/**"
+      - "voice/**"
+      - "web/**"
+      - "linux/**"
+      - "characters/**"
+      - "automation/**"
+      - "tools/screenshots/**"
+      - ".github/workflows/screenshots.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install NDK and CMake
+        run: sdkmanager --install "ndk;30.0.16248370" "cmake;4.1.2"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Pillow
+        run: pip install --quiet pillow
+
+      - name: Capture
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/screenshots/capture.py dark
+            python3 tools/screenshots/capture.py light
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: shots/
+          retention-days: 14

@@ -141,4 +141,24 @@ class MemoryTest {
         store.clear(null)
         assertEquals(MemoryText.TEMPLATE, store.current().text)
     }
+
+    @Test
+    fun importedMemoryFillsAnEmptyOneOrGoesUnderItsHeading() {
+        val old = "# Facts\n\n- Likes tea\n"
+        val heading = "Imported from the previous Atom"
+        assertEquals(old, MemoryText.merge(MemoryText.TEMPLATE, old, heading), "the empty template is replaced")
+        assertEquals(old, MemoryText.merge("", "\n$old\n\n", heading))
+        val merged = MemoryText.merge(doc, old, heading)
+        assertTrue(merged.startsWith(doc.trimEnd()), "Atom 4's own memory is kept as it was")
+        assertTrue(merged.endsWith("\n\n# $heading\n\n## Facts\n\n- Likes tea\n"), merged)
+        // Its sections stay inside the imported one; Atom 4's own core memory is still the one found first.
+        assertEquals(listOf("Core memory", "Notes", heading, "Facts"), MemoryText.sections(merged).map { it.title })
+        assertEquals(2, MemoryText.sections(merged).last().level)
+        assertEquals("## A\n```\n# not a heading\n```\n###### deep", MemoryText.demoteHeadings("# A\n```\n# not a heading\n```\n###### deep"))
+        // Imported once: a repeat finds it already there.
+        assertEquals(merged, MemoryText.merge(merged, old, heading))
+        assertEquals(doc, MemoryText.merge(doc, "  \n", heading), "nothing to bring over")
+        assertTrue(MemoryText.isEmpty(MemoryText.TEMPLATE))
+        assertFalse(MemoryText.isEmpty(doc))
+    }
 }

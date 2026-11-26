@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -59,6 +60,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.ui.components.CompactButton
+import atom.voice.speech.AsrServiceId
 import atom.ui.theme.AtomIcons
 import atom.voice.R
 import atom.voice.asr.AsrPhase
@@ -146,7 +148,7 @@ fun DictationButton(
     val container by animateColorAsState(if (recording) c.primary else c.surfaceContainerHigh, tween(180), label = "micBg")
     val tint by animateColorAsState(if (recording) c.onPrimary else c.onSurface, tween(180), label = "micTint")
     val ring by animateFloatAsState(if (active != null && active.phase == AsrPhase.Listening) 1f + 0.18f * active.level else 1f, tween(120), label = "micLevel")
-    val description = stringResource(R.string.speech_dictation_cd)
+    val description = stringResource(if (recording && mode == DictationMode.Tap) R.string.speech_dictation_finish else R.string.speech_dictation_cd)
 
     Box(modifier) {
         Box(
@@ -226,12 +228,22 @@ fun DictationButton(
                 ) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         when {
-                            permissionDenied -> Text(stringResource(R.string.speech_dictation_mic_denied), style = MaterialTheme.typography.bodyMedium)
+                            permissionDenied -> {
+                                Text(stringResource(R.string.speech_dictation_mic_denied), style = MaterialTheme.typography.bodyMedium)
+                                CompactButton(stringResource(R.string.speech_dictation_open_settings), onClick = {
+                                    permissionDenied = false
+                                    openAppSettings(context)
+                                }, primary = false)
+                            }
                             failed != null -> VoiceErrorRow(failed.error, onOpenSettings?.let { open -> { voice.clearError(); open() } })
                             active != null -> {
+                                val waitingForFile = active.service == AsrServiceId.QwenFile &&
+                                    (active.phase == AsrPhase.Uploading || active.phase == AsrPhase.Recognizing)
                                 val text = active.partial.takeIf { it.isNotBlank() && active.phase == AsrPhase.Listening } ?: when {
                                     mode == DictationMode.Hold && active.phase == AsrPhase.Listening ->
                                         stringResource(if (cancelArmed) R.string.speech_dictation_release_cancel else R.string.speech_dictation_hold_hint)
+                                    waitingForFile -> stringResource(R.string.speech_dictation_file_wait)
+                                    mode == DictationMode.Hold && active.phase != AsrPhase.Connecting -> stringResource(R.string.speech_dictation_sending)
                                     else -> asrPhaseText(active.phase)
                                 }
                                 Text(
@@ -239,8 +251,17 @@ fun DictationButton(
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = if (cancelArmed) c.error else c.onSurface,
                                     maxLines = 4,
+                                    // File transcription can take a while; a tap on the progress cancels it.
+                                    modifier = if (waitingForFile) {
+                                        Modifier.clickable {
+                                            voice.cancel()
+                                            mode = DictationMode.Idle
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
                                 )
-                                if (mode == DictationMode.Hold && active.partial.isNotBlank()) {
+                                if (mode == DictationMode.Hold && active.partial.isNotBlank() && active.phase == AsrPhase.Listening) {
                                     Text(
                                         stringResource(if (cancelArmed) R.string.speech_dictation_release_cancel else R.string.speech_dictation_hold_hint),
                                         style = MaterialTheme.typography.labelMedium,
@@ -268,6 +289,13 @@ fun DictationButton(
             }
         }
     }
+}
+
+/** Atom's own app-info page, where the microphone permission can be allowed after a denial. */
+private fun openAppSettings(context: android.content.Context) {
+    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 /** Places a popup just above its anchor, horizontally centred and kept inside the window. */

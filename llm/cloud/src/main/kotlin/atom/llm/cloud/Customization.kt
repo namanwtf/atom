@@ -21,6 +21,8 @@ data class EngineOptions(
     val reasoning: ReasoningInfo? = null,
     val contextWindow: Int? = null,
     val vision: Boolean? = null,
+    /** Anthropic only: overrides the "anthropic-version" header when not blank. */
+    val anthropicVersion: String? = null,
 )
 
 object RequestCustomizer {

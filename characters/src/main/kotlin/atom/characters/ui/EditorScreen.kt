@@ -261,6 +261,14 @@ internal fun EditorScreen(routeId: String, nav: FeatureNav) {
             item { LabeledField(stringResource(R.string.characters_version), d.version, { v -> update { copy(version = v) } }, singleLine = true) }
             item { LabeledField(stringResource(R.string.characters_credits), d.credits, { v -> update { copy(credits = v) } }, minLines = 2) }
         }
+        item {
+            Text(
+                stringResource(R.string.characters_editor_scripts_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 16.dp),
+            )
+        }
     }
 
     if (confirmDiscard) {

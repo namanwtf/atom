@@ -58,19 +58,10 @@ internal object TerminalColors {
     }
 }
 
-/**
- * JetBrains Mono when its files are bundled in assets/fonts (OFL-1.1), otherwise the system monospace font.
- * Loaded once; failure is silent.
- */
+/** The terminal's font: the bundled JetBrains Mono (Regular and Bold, OFL-1.1); see [MonoFont]. */
 internal object TerminalFont {
-    @Volatile private var family: FontFamily? = null
-
-    fun get(context: android.content.Context): FontFamily = family ?: synchronized(this) {
-        family ?: run {
-            val regular = runCatching { android.graphics.Typeface.createFromAsset(context.assets, "fonts/JetBrainsMono-Regular.ttf") }.getOrNull()
-            if (regular != null) androidx.compose.ui.text.font.FontFamily(regular) else FontFamily.Monospace
-        }.also { family = it }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun get(context: android.content.Context): FontFamily = MonoFont.JetBrainsMono
 }
 
 internal fun terminalTextStyle(fontSizeSp: Float, family: FontFamily = FontFamily.Monospace) = TextStyle(

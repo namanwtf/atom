@@ -71,7 +71,11 @@ internal fun rememberCopier(): (String) -> Unit {
 /** Motion budget for the chat: short, and nothing runs while idle. */
 internal const val QUICK = 180
 
-/** Graphite rounded dialog with a graphite secondary and a white primary button. */
+/**
+ * The chat's confirm dialogs, drawn with the foundation's Miuix dialog ([atom.ui.components.AtomDialog]) and its
+ * button pair. [icon] and [destructive] are kept for call sites; the Miuix dialog has no header icon.
+ */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 internal fun AtomDialog(
     onDismissRequest: () -> Unit,
@@ -85,22 +89,19 @@ internal fun AtomDialog(
     destructive: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Dialog(onDismissRequest = onDismissRequest) {
-        Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(start = 22.dp, end = 22.dp, top = 24.dp, bottom = 18.dp)) {
-                if (icon != null) {
-                    Box(Modifier.size(40.dp).background(colors.surfaceContainerHighest, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(icon, null, Modifier.size(20.dp), tint = if (destructive) colors.error else colors.onSurface)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                }
-                Text(title, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
-                Spacer(Modifier.height(10.dp))
-                content()
-                Spacer(Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (dismissLabel != null) DialogButton(dismissLabel, primary = false, onClick = onDismiss, modifier = Modifier.weight(1f))
+    atom.ui.components.AtomDialog(show = true, onDismiss = onDismissRequest, title = title) {
+        Column {
+            content()
+            if (dismissLabel != null) {
+                atom.ui.components.DialogButtons(
+                    confirmText = confirmLabel,
+                    onConfirm = onConfirm,
+                    dismissText = dismissLabel,
+                    onDismiss = onDismiss,
+                    confirmEnabled = confirmEnabled,
+                )
+            } else {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     DialogButton(confirmLabel, primary = true, onClick = onConfirm, modifier = Modifier.weight(1f), enabled = confirmEnabled)
                 }
             }

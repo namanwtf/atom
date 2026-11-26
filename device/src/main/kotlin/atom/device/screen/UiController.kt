@@ -230,6 +230,30 @@ internal object UiController {
 
     private class TapPlan(val done: String, val fallback: Pair<Int, Int>? = null)
 
+    /**
+     * Tap by area: the best element of the latest read_screen inside [region] (see [TapArea.best]); without one,
+     * the centre of the region.
+     */
+    suspend fun tapArea(svc: AtomAccessibilityService, region: Box, long: Boolean): String {
+        val verb = if (long) "Long-pressed" else "Tapped"
+        val screen = screenBox(svc)
+        val candidates = withContext(ui) {
+            registry.mapNotNull { (id, ref) ->
+                val n = ref.node
+                if (!n.refresh() || !n.isVisibleToUser || n.fingerprint() != ref.fingerprint) {
+                    null
+                } else {
+                    TapArea.Candidate(id, n.box(), clickable = if (long) n.isLongClickable else n.isClickable)
+                }
+            }
+        }
+        TapArea.best(region, candidates)?.let { return tap(svc, it.id, null, null, long) + " (best element in the area)" }
+        val (x, y) = TapArea.centre(region, screen)
+            ?: throw UiError("The area is outside the screen (${screen.width}x${screen.height}).")
+        if (!tapAt(svc, x, y, long)) throw UiError("The system rejected the gesture at ($x,$y).")
+        return "$verb the centre of the area at ($x,$y)"
+    }
+
     private fun requirePoint(svc: AccessibilityService, x: Int?, y: Int?): Pair<Int, Int> {
         if (x == null || y == null) throw UiError("Give either an element id from read_screen, or both x and y.")
         val s = screenBox(svc)

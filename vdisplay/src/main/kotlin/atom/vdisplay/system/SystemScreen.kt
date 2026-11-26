@@ -7,9 +7,6 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.provider.Settings
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,24 +27,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.device.Shells
 import atom.device.root.RootAccess
 import atom.device.root.RootStatus
-import atom.ui.components.AtomMenu
-import atom.ui.components.AtomMenuItem
-import atom.ui.components.AtomSwitch
 import atom.ui.components.CompactButton
 import atom.ui.components.Group
 import atom.ui.components.GroupDivider
 import atom.ui.components.GroupRow
 import atom.ui.components.LargeTitleScreen
 import atom.ui.components.RowChevron
-import atom.ui.components.RowValue
 import atom.ui.components.SectionLabel
 import atom.ui.feature.FeatureNav
 import atom.vdisplay.R
-import atom.vdisplay.route.DisplayRouter
-import atom.vdisplay.route.LeaseState
 import atom.xposed.HookConfig
 import atom.xposed.ModuleStatus
-import atom.xposed.PowerKeyTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,12 +47,8 @@ import kotlinx.coroutines.withContext
 internal fun SystemScreen(nav: FeatureNav) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { SystemPrefs.get(context) }
-    val hooks by prefs.hooks.collectAsStateWithLifecycle()
-    val bg by prefs.backgroundDisplay.collectAsStateWithLifecycle()
     val root by RootAccess.status.collectAsStateWithLifecycle()
     val framework by ModuleStatus.state.collectAsStateWithLifecycle()
-    val lease by DisplayRouter.state.collectAsStateWithLifecycle()
     var helpOpen by remember { mutableStateOf(false) }
     // Re-read system state (assistant holder, Google app) each time the screen comes back from system settings.
     var resumes by remember { mutableIntStateOf(0) }
@@ -73,7 +59,6 @@ internal fun SystemScreen(nav: FeatureNav) {
     }
     LaunchedEffect(Unit) { RootAccess.load(context) }
     val connected = framework as? ModuleStatus.Connection.Connected
-    val needsModule = if (connected == null) stringResource(R.string.vd_lsposed_needed) else null
 
     LargeTitleScreen(stringResource(R.string.vd_system_title), onBack = nav::back) {
         item { SectionLabel(stringResource(R.string.vd_section_status)) }
@@ -118,61 +103,29 @@ internal fun SystemScreen(nav: FeatureNav) {
             }
         }
 
-        item { SectionLabel(stringResource(R.string.vd_section_assistant)) }
+        item { SectionLabel(stringResource(R.string.vd_section_root_caps)) }
         item {
             Group {
-                val holder = remember(resumes) { assistantHolder(context) }
-                GroupRow(
-                    stringResource(R.string.vd_digital_assistant),
-                    onClick = { openAssistantPicker(context) },
-                    trailing = { RowValue(holder); RowChevron() },
-                )
-                GroupDivider(18.dp)
-                PowerTargetRow(hooks.powerKeyTarget, needsModule ?: stringResource(R.string.vd_power_sub)) { prefs.setPowerKeyTarget(it) }
-                GroupDivider(18.dp)
-                ToggleRow(R.string.vd_auto_assistant, needsModule ?: stringResource(R.string.vd_auto_assistant_sub), hooks.autoDefaultAssistant) { on ->
-                    prefs.updateHooks { it.copy(autoDefaultAssistant = on) }
-                    if (on && connected == null) scope.launch { setAssistantWithRoot(context, prefs.hooks.value) }
-                }
+                GroupRow(stringResource(R.string.vd_cap_apps), subtitle = stringResource(R.string.vd_cap_apps_sub))
+                GroupRow(stringResource(R.string.vd_cap_data), subtitle = stringResource(R.string.vd_cap_data_sub))
+                GroupRow(stringResource(R.string.vd_cap_linux), subtitle = stringResource(R.string.vd_cap_linux_sub))
             }
         }
 
-        item { SectionLabel(stringResource(R.string.vd_section_cts)) }
+        item { SectionLabel(stringResource(R.string.vd_section_assist_caps)) }
         item {
             Group {
-                ToggleRow(R.string.vd_cts_bar, needsModule ?: stringResource(R.string.vd_cts_bar_sub), hooks.gestureBarCircleToSearch) { on ->
-                    prefs.updateHooks { it.copy(gestureBarCircleToSearch = on) }
-                }
-                GroupDivider(18.dp)
-                ToggleRow(R.string.vd_cts_two_finger, needsModule ?: stringResource(R.string.vd_cts_two_finger_sub), hooks.twoFingerCircleToSearch) { on ->
-                    prefs.updateHooks { it.copy(twoFingerCircleToSearch = on) }
-                }
-                GroupDivider(18.dp)
+                GroupRow(stringResource(R.string.vd_cap_cts), subtitle = stringResource(R.string.vd_cap_cts_sub))
+                GroupRow(stringResource(R.string.vd_cap_a11y), subtitle = stringResource(R.string.vd_cap_a11y_sub))
                 val google = remember(resumes) { googleAppStatus(context) }
                 GroupRow(stringResource(R.string.vd_google_app), subtitle = stringResource(google) + "\n" + stringResource(R.string.vd_google_eligibility))
             }
-        }
-
-        item { SectionLabel(stringResource(R.string.vd_section_protection)) }
-        item {
-            Group {
-                ToggleRow(R.string.vd_enforce_a11y, (needsModule?.let { "$it. " } ?: "") + stringResource(R.string.vd_enforce_a11y_sub), hooks.enforceAccessibility) { on ->
-                    prefs.updateHooks { it.copy(enforceAccessibility = on) }
-                }
-            }
-        }
-
-        item { SectionLabel(stringResource(R.string.vd_section_background)) }
-        item {
-            Group {
-                val active = (lease as? LeaseState.Active)?.lease?.takeIf { !it.main }
-                val sub = stringResource(R.string.vd_bg_display_sub) +
-                    (active?.let { "\n" + stringResource(R.string.vd_bg_active, it.width, it.height) } ?: "")
-                ToggleRow(R.string.vd_bg_display, sub, bg) { on ->
-                    prefs.setBackgroundDisplay(on)
-                    if (!on) DisplayRouter.release()
-                }
-            }
+            if (rememberFrameworkSeen()) Text(
+                stringResource(R.string.vd_settings_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            )
         }
     }
 }
@@ -184,47 +137,6 @@ private fun launchers(context: Context): List<String> =
         .map { it.activityInfo.packageName }
         .filter { it != context.packageName && it != "com.android.settings" }
         .distinct()
-
-@Composable
-private fun ToggleRow(title: Int, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    GroupRow(
-        stringResource(title),
-        subtitle = subtitle,
-        onClick = { onChange(!checked) },
-        trailing = { AtomSwitch(checked, onCheckedChange = onChange) },
-    )
-}
-
-@Composable
-private fun PowerTargetRow(current: PowerKeyTarget, subtitle: String, onPick: (PowerKeyTarget) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val labels = mapOf(
-        PowerKeyTarget.SystemDefault to stringResource(R.string.vd_power_system),
-        PowerKeyTarget.Gemini to stringResource(R.string.vd_power_gemini),
-        PowerKeyTarget.Atom to stringResource(R.string.vd_power_atom),
-    )
-    Box {
-        GroupRow(
-            stringResource(R.string.vd_power_target),
-            subtitle = subtitle,
-            onClick = { open = true },
-            trailing = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    RowValue(labels.getValue(current))
-                    RowChevron()
-                }
-            },
-        )
-        AtomMenu(open, onDismiss = { open = false }) {
-            PowerKeyTarget.entries.forEach { t ->
-                AtomMenuItem(labels.getValue(t), checked = t == current) {
-                    open = false
-                    onPick(t)
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun rootLabel(s: RootStatus): String = stringResource(
@@ -250,7 +162,7 @@ private fun frameworkLabel(c: ModuleStatus.Connection.Connected?): String {
     return lines.joinToString("\n")
 }
 
-private fun assistantHolder(context: Context): String {
+internal fun assistantHolderOf(context: Context): String {
     val roles = context.getSystemService(RoleManager::class.java)
     if (roles != null && runCatching { roles.isRoleHeld(RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)) {
         return context.getString(R.string.vd_assistant_atom)
@@ -264,7 +176,8 @@ private fun assistantHolder(context: Context): String {
     return context.getString(R.string.vd_assistant_other, label)
 }
 
-private fun openAssistantPicker(context: Context) {
+/** Opens the system default-assistant picker; false when no settings page could be opened. */
+internal fun openAssistantPickerOf(context: Context): Boolean {
     val intents = listOf(
         Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
         Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
@@ -272,11 +185,12 @@ private fun openAssistantPicker(context: Context) {
     for (i in intents) {
         try {
             context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
+            return true
         } catch (e: ActivityNotFoundException) {
         } catch (e: SecurityException) {
         }
     }
+    return false
 }
 
 private fun googleAppStatus(context: Context): Int {
@@ -294,7 +208,7 @@ private fun googleAppStatus(context: Context): Int {
 }
 
 /** Without the module, "automatically set" can still set the role once, through root, when the switch turns on. */
-private suspend fun setAssistantWithRoot(context: Context, hooks: HookConfig) {
+internal suspend fun setAssistantRoleWithRoot(context: Context, hooks: HookConfig) {
     if (!RootAccess.granted) return
     val pkg = hooks.assistantPackage(context.packageName)
     withContext(Dispatchers.IO) {

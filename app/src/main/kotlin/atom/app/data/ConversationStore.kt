@@ -2,6 +2,7 @@ package atom.app.data
 
 import atom.core.agent.Compactor
 import atom.core.agent.SessionStats
+import atom.core.llm.SearchSuggestions
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.ReasoningEffort
@@ -58,6 +59,13 @@ data class StoredMessage(
     /** A user message delivered to a task while it was running. */
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    /** Changed by the user after it was first sent; the bubble shows "Edited". */
+    val edited: Boolean = false,
+    /**
+     * Search suggestions the provider attached to this answer (Gemini grounding). The chat shows them under the
+     * answer: [SearchSuggestions.renderedContent] as given, or one chip per query opening [SearchSuggestions.searchUrl].
+     */
+    val searchSuggestions: SearchSuggestions? = null,
 ) {
     val isVisibleUser: Boolean get() = kind == EntryKind.Message && message.role == Role.User && !hidden
 
@@ -117,13 +125,28 @@ data class ConversationSummary(
 data class ConversationMatch(val id: String, val snippet: String)
 
 /**
- * One JSON file per conversation under filesDir/conversations plus a small index so the drawer never has to
+ * One JSON file per conversation under filesDir/atom4_conversations plus a small index so the drawer never has to
  * parse every transcript. Image payloads are dropped on save: screenshots are large and only useful live.
  */
 class ConversationStore(private val dir: File) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
     private val mutex = Mutex()
     private val index = MutableStateFlow<List<ConversationSummary>?>(null)
+
+    /** Writes in progress (save, update, delete); reads do not count. */
+    private val writes = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** True while a conversation is being written (a backup import waits for it). Reads never set it. */
+    val isSaving: Boolean get() = writes.get() > 0
+
+    private inline fun <T> writing(block: () -> T): T {
+        writes.incrementAndGet()
+        try {
+            return block()
+        } finally {
+            writes.decrementAndGet()
+        }
+    }
 
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
@@ -145,12 +168,14 @@ class ConversationStore(private val dir: File) {
 
     suspend fun save(conversation: Conversation) = withContext(Dispatchers.IO) {
         val file = fileFor(conversation.id) ?: return@withContext
-        mutex.withLock {
-            loadIndexLocked()
-            dir.mkdirs()
-            writeAtomic(file, json.encodeToString(ConversationDto.serializer(), conversation.toDto()))
-            searchText[conversation.id] = conversation.updatedAt to plainText(conversation)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == conversation.id } + conversation.summary())
+        writing {
+            mutex.withLock {
+                loadIndexLocked()
+                dir.mkdirs()
+                writeAtomic(file, json.encodeToString(ConversationDto.serializer(), conversation.toDto()))
+                searchText[conversation.id] = conversation.updatedAt to plainText(conversation)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == conversation.id } + conversation.summary())
+            }
         }
         _changes.tryEmit(conversation.id)
     }
@@ -158,25 +183,29 @@ class ConversationStore(private val dir: File) {
     /** Load, change and save in one step; returns the saved conversation or null if it does not exist. */
     suspend fun update(id: String, change: (Conversation) -> Conversation): Conversation? = withContext(Dispatchers.IO) {
         val file = fileFor(id) ?: return@withContext null
-        val saved = mutex.withLock {
-            loadIndexLocked()
-            val current = readConversation(file) ?: return@withLock null
-            val next = change(current)
-            writeAtomic(file, json.encodeToString(ConversationDto.serializer(), next.toDto()))
-            searchText[id] = next.updatedAt to plainText(next)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == id } + next.summary())
-            next
+        val saved = writing {
+            mutex.withLock {
+                loadIndexLocked()
+                val current = readConversation(file) ?: return@withLock null
+                val next = change(current)
+                writeAtomic(file, json.encodeToString(ConversationDto.serializer(), next.toDto()))
+                searchText[id] = next.updatedAt to plainText(next)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == id } + next.summary())
+                next
+            }
         }
         if (saved != null) _changes.tryEmit(id)
         saved
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            loadIndexLocked()
-            fileFor(id)?.delete()
-            searchText.remove(id)
-            publishIndexLocked(index.value.orEmpty().filterNot { it.id == id })
+        writing {
+            mutex.withLock {
+                loadIndexLocked()
+                fileFor(id)?.delete()
+                searchText.remove(id)
+                publishIndexLocked(index.value.orEmpty().filterNot { it.id == id })
+            }
         }
         _changes.tryEmit(id)
     }
@@ -332,6 +361,8 @@ internal data class MessageDto(
     val attachments: List<Attachment> = emptyList(),
     val steering: Boolean = false,
     val createdAt: Long = 0,
+    val edited: Boolean = false,
+    val searchSuggestions: SearchSuggestions? = null,
 )
 
 @Serializable
@@ -370,6 +401,8 @@ internal fun StoredMessage.toDto() = MessageDto(
     attachments = attachments,
     steering = steering,
     createdAt = createdAt,
+    edited = edited,
+    searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
 )
 
 internal fun ConversationDto.toModel() = Conversation(
@@ -412,5 +445,7 @@ internal fun MessageDto.toModel(): StoredMessage? {
         attachments = attachments,
         steering = steering,
         createdAt = createdAt,
+        edited = edited,
+        searchSuggestions = searchSuggestions?.takeIf { !it.isEmpty },
     )
 }

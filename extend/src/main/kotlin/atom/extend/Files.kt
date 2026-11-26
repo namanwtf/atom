@@ -1,6 +1,8 @@
 package atom.extend
 
 import java.io.File
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
 internal object Files {
@@ -18,6 +20,13 @@ internal object Files {
             file.delete()
             check(tmp.renameTo(file)) { "Could not replace ${file.name}" }
         }
+        syncDir(file.parentFile)
+    }
+
+    /** Makes a rename in [dir] durable (fsync of the directory); best effort, as not every filesystem allows it. */
+    fun syncDir(dir: File?) {
+        if (dir == null) return
+        runCatching { FileChannel.open(dir.toPath(), StandardOpenOption.READ).use { it.force(true) } }
     }
 
     fun readOrNull(file: File): String? = if (file.isFile) file.readText(Charsets.UTF_8) else null

@@ -58,7 +58,7 @@ internal class AnthropicEngine(
         Request.Builder()
             .url(messagesUrl)
             .header("x-api-key", apiKey)
-            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("anthropic-version", versionHeader(options))
             .header("Accept", "text/event-stream")
             .apply { RequestCustomizer.applyHeaders(this, options) }
             .post(RequestCustomizer.mergeBody(buildBody(request), options.extraBody).toRequestBody())
@@ -170,6 +170,10 @@ internal class AnthropicEngine(
 
     internal companion object {
         const val ANTHROPIC_VERSION = "2023-06-01"
+
+        /** The user's "anthropic-version" when set and well-formed, else the default. */
+        fun versionHeader(options: EngineOptions): String =
+            options.anthropicVersion?.trim()?.takeIf { v -> v.isNotEmpty() && v.all { it.code in 0x21..0x7E } } ?: ANTHROPIC_VERSION
 
         /** Accepts base URLs with or without the version segment ("https://api.anthropic.com" or ".../v1"). */
         fun versionedRoot(root: String): String = if (VERSIONED.containsMatchIn(root)) root else "$root/v1"

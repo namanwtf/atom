@@ -64,6 +64,7 @@ sealed interface ChatItem {
         val text: String,
         val attachments: List<Attachment>,
         val steering: Boolean,
+        val edited: Boolean = false,
     ) : ChatItem
 
     data class Turn(
@@ -79,6 +80,8 @@ sealed interface ChatItem {
         val streaming: Boolean,
         /** The turn ended (with an answer, or stopped); message actions apply. */
         val finished: Boolean,
+        /** Search suggestions the provider attached to the answer (Gemini grounding), shown under it. */
+        val answerSuggestions: atom.core.llm.SearchSuggestions? = null,
     ) : ChatItem {
         val summary: WorkSummary
             get() {
@@ -102,6 +105,8 @@ data class StreamState(
     val runningCallId: String? = null,
     val runningSince: Long? = null,
     val awaitingApproval: Boolean = false,
+    /** The conversation of the running call, so a live image card only shows that conversation's job. */
+    val conversationId: String? = null,
 ) {
     val isEmpty: Boolean get() = text.isEmpty() && reasoning.isEmpty()
 }
@@ -131,7 +136,7 @@ object Transcript {
                 }
                 s.isVisibleUser -> {
                     close()
-                    out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering)
+                    out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering, s.edited)
                     turn = TurnBuilder("t$i", i)
                 }
                 msg.role == Role.User -> Unit
@@ -154,6 +159,7 @@ object Transcript {
         var answer: String? = null
         var answerIndex: Int? = null
         var answerReasoning: WorkEntry.Thought? = null
+        var answerSuggestions: atom.core.llm.SearchSuggestions? = null
         val calls = LinkedHashMap<String, StepCall>()
 
         fun assistant(i: Int, s: StoredMessage) {
@@ -167,6 +173,7 @@ object Transcript {
                 if (text.isNotEmpty()) {
                     answer = text
                     answerIndex = i
+                    answerSuggestions = s.searchSuggestions?.takeIf { !it.isEmpty }
                 }
                 return
             }
@@ -199,7 +206,8 @@ object Transcript {
                 result = preview(text),
                 risk = s.risk,
                 lastLine = if (isTerminal(entry.value.name)) text.lineSequence().lastOrNull { it.isNotBlank() }?.trim()?.take(160) else null,
-                card = if (s.isError) null else cardFor(text),
+                // A failed image job keeps its card ("Generation failed" with the reason).
+                card = if (s.isError && IMAGE_MARKER !in text) null else cardFor(text),
             )
             calls[entry.key] = updated
             replaceStep(updated)
@@ -216,6 +224,7 @@ object Transcript {
             answer = null
             answerIndex = null
             answerReasoning = null
+            answerSuggestions = null
         }
 
         private fun addStep(step: StepCall) {
@@ -246,10 +255,14 @@ object Transcript {
                         calls = entry.calls.map { c ->
                             if (c.state != StepState.Unknown) return@map c
                             val running = stream?.runningCallId == c.callId
+                            val since = if (running) stream.runningSince else null
+                            val conversation = if (running) stream.conversationId else null
                             c.copy(
                                 state = StepState.Running,
-                                startedAt = if (running) stream.runningSince else null,
+                                startedAt = since,
                                 awaitingApproval = running && stream.awaitingApproval,
+                                // Image calls get their card while they run ("Generating N images", live timer).
+                                card = c.card ?: atom.web.image.ImageJobs.liveCardText(c.name, c.argsFull, since, conversation)?.let { StepCard.Image(it) },
                             )
                         },
                     )
@@ -278,6 +291,7 @@ object Transcript {
                 live = live,
                 streaming = streaming,
                 finished = !live,
+                answerSuggestions = answerSuggestions.takeIf { !streaming },
             )
         }
     }

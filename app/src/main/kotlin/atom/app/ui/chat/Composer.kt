@@ -2,15 +2,22 @@
 
 package atom.app.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +26,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +42,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,23 +53,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import atom.app.R
 import atom.app.data.Attachment
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ReasoningMode
 import atom.core.runtime.QueuedMessage
+import atom.core.runtime.interrupting
 import atom.ui.components.AtomMenu
 import atom.ui.components.AtomMenuItem
-import atom.ui.components.ScreenIcons
+import atom.ui.theme.extras
 
 internal class ComposerCallbacks(
     val onSend: () -> Unit,
@@ -78,95 +92,145 @@ internal class ComposerCallbacks(
     val onEffort: (ReasoningEffort?) -> Unit,
     val onRemoveQueued: (Long) -> Unit,
     val onSendNow: (Long) -> Unit,
+    /** The context ring opens the session stats (with "Compact context"). */
+    val onStats: () -> Unit = {},
 )
 
+/**
+ * The floating composer: a 24dp container with the text area on top and one action row under it
+ * (+, Deep Think, context ring, mic, send / stop).
+ */
 @Composable
 internal fun Composer(
     input: TextFieldState,
     state: ChatUiState,
     attachments: List<Attachment>,
     editing: EditState?,
+    editReplacesLater: Boolean,
     callbacks: ComposerCallbacks,
     micSlot: @Composable () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val ink = homeInk()
+    val shape = RoundedCornerShape(24.dp)
+    val fill = when {
+        ink.dark -> ink.solidInk(0.095f, 0.05f)
+        colors.surfaceContainer == colors.surface -> androidx.compose.ui.graphics.Color(0xFFF5F6F8)
+        else -> colors.surfaceContainer
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AnimatedVisibility(
             visible = state.queued.isNotEmpty(),
-            enter = fadeIn(tween(QUICK)) + expandVertically(tween(200)),
-            exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
+            enter = fadeIn(tween(170)) + expandVertically(expandFrom = Alignment.Bottom),
+            exit = fadeOut(tween(150)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
         ) {
             QueuePanel(state.queued, state.running, callbacks)
         }
         if (editing != null) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(ChatGlyphs.Edit, null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.composer_editing), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+            // The caption with its cancel action; the + button stays so an edited message can take attachments.
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    stringResource(R.string.action_cancel),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.onSurface,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = callbacks.onCancelEdit).padding(horizontal = 10.dp, vertical = 4.dp),
+                    stringResource(if (editReplacesLater) R.string.composer_edit_replace_later else R.string.composer_edit_replace),
+                    fontSize = 13.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = callbacks.onCancelEdit) {
+                    Icon(Icons.Filled.Close, stringResource(R.string.composer_cancel_edit), Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                }
             }
         }
-        Surface(color = colors.surfaceContainerHigh, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-            Column {
-                if (attachments.isNotEmpty()) {
-                    FlowRow(
-                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        attachments.forEach { a -> AttachmentChip(a, onRemove = { callbacks.onRemoveAttachment(a) }) }
-                    }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(fill)
+                .border(0.5.dp, if (editing != null) colors.primary.copy(alpha = 0.38f) else ink.ink(0.08f, 0.06f), shape)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            if (attachments.isNotEmpty()) {
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    attachments.forEach { a -> AttachmentChip(a, onRemove = { callbacks.onRemoveAttachment(a) }) }
                 }
-                Box(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp)) {
-                    if (input.text.isEmpty()) {
-                        Text(
-                            stringResource(if (state.running) R.string.composer_hint_running else R.string.composer_hint),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    BasicTextField(
-                        state = input,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
-                        cursorBrush = SolidColor(colors.primary),
-                        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
-                        modifier = Modifier.fillMaxWidth(),
+            }
+            val textStyle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp)
+            Box(Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(horizontal = 6.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) {
+                if (input.text.isEmpty()) {
+                    Text(
+                        placeholder(state),
+                        style = textStyle,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 6.dp, end = 10.dp, bottom = 8.dp, top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                BasicTextField(
+                    state = input,
+                    textStyle = textStyle.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.primary),
+                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                AttachButton(callbacks)
+                Spacer(Modifier.width(2.dp))
+                ReasoningChip(state.reasoning, enabled = !state.running, callbacks)
+                Spacer(Modifier.weight(1f))
+                val ctx = state.context
+                if (ctx?.fraction != null && state.items.isNotEmpty()) ContextRing(ctx, callbacks.onStats)
+                micSlot()
+                Spacer(Modifier.width(2.dp))
+                val hasContent = input.text.isNotBlank() || attachments.isNotEmpty()
+                AnimatedVisibility(
+                    visible = state.running && hasContent,
+                    enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.78f) + expandHorizontally(),
+                    exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.78f) + shrinkHorizontally(),
                 ) {
-                    AttachButton(callbacks)
-                    ReasoningControl(state.reasoning, callbacks)
-                    Spacer(Modifier.weight(1f))
-                    micSlot()
-                    Spacer(Modifier.width(6.dp))
-                    val hasContent = input.text.isNotBlank() || attachments.isNotEmpty()
-                    SendButton(running = state.running, canSend = hasContent, onSend = callbacks.onSend, onStop = callbacks.onStop)
+                    ExtraStop(callbacks.onStop)
                 }
+                SendButton(running = state.running, canSend = hasContent, onSend = callbacks.onSend, onStop = callbacks.onStop)
             }
         }
     }
 }
 
 @Composable
+private fun placeholder(state: ChatUiState): String {
+    val name = state.character?.displayName?.takeIf { state.characterChat }
+    return when {
+        name != null && state.running -> state.replyingLabel ?: stringResource(R.string.composer_hint_running)
+        name != null -> stringResource(R.string.composer_hint_character, name)
+        state.running -> stringResource(R.string.composer_hint_running)
+        else -> stringResource(R.string.composer_hint)
+    }
+}
+
+@Composable
 private fun QueuePanel(queued: List<QueuedMessage>, running: Boolean, callbacks: ComposerCallbacks) {
     val colors = MaterialTheme.colorScheme
-    Surface(color = colors.surfaceContainer.copy(alpha = 0.94f), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+    val ink = homeInk()
+    val shape = RoundedCornerShape(16.dp)
+    Surface(color = ink.solidInk(0.08f, 0.04f), shape = shape, modifier = Modifier.fillMaxWidth().border(0.5.dp, ink.cardBorder, shape)) {
         Column(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 6.dp)) {
-            Text(stringResource(R.string.queue_label, queued.size), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Dot(colors.primary)
+                Spacer(Modifier.width(8.dp))
+                val header = when {
+                    queued.interrupting(running) -> stringResource(R.string.queue_interrupting)
+                    queued.size == 1 -> stringResource(R.string.queue_title)
+                    else -> stringResource(R.string.queue_label, queued.size)
+                }
+                Text(header, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            }
             queued.forEach { q ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        q.text.ifBlank { stringResource(R.string.queue_attachments_only) },
+                        queuedText(q),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurface,
                         maxLines = 1,
@@ -176,8 +240,8 @@ private fun QueuePanel(queued: List<QueuedMessage>, running: Boolean, callbacks:
                     when {
                         q.steer -> Text(stringResource(R.string.queue_next_step), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
                         !q.canSteer && running -> Text(stringResource(R.string.queue_after_task), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
-                        else -> Surface(onClick = { callbacks.onSendNow(q.id) }, shape = RoundedCornerShape(50), color = colors.surfaceContainerHighest) {
-                            Text(stringResource(R.string.queue_send_now), style = MaterialTheme.typography.labelMedium, color = colors.onSurface, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                        else -> Surface(onClick = { callbacks.onSendNow(q.id) }, shape = RoundedCornerShape(50), color = ink.accent(0.16f, 0.10f)) {
+                            Text(stringResource(R.string.queue_send_now), style = MaterialTheme.typography.labelMedium, color = colors.primary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                         }
                     }
                     IconButton(onClick = { callbacks.onRemoveQueued(q.id) }, modifier = Modifier.size(34.dp)) {
@@ -186,6 +250,17 @@ private fun QueuePanel(queued: List<QueuedMessage>, running: Boolean, callbacks:
                 }
             }
         }
+    }
+}
+
+/** The text of a queued message, or "[N images]" / "[N files]" when it has only attachments. */
+@Composable
+private fun queuedText(q: QueuedMessage): String {
+    val p = q.placeholder ?: return q.text.ifBlank { stringResource(R.string.queue_attachments_only) }
+    return if (p.images > 0) {
+        pluralStringResource(R.plurals.queue_images, p.images, p.images)
+    } else {
+        pluralStringResource(R.plurals.queue_files, p.files, p.files)
     }
 }
 
@@ -198,8 +273,8 @@ private fun AttachButton(callbacks: ComposerCallbacks) {
         IconButton(onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             open = true
-        }, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Filled.Add, stringResource(R.string.composer_attach), Modifier.size(22.dp), tint = colors.onSurface)
+        }, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Filled.Add, stringResource(R.string.composer_attach), Modifier.size(23.dp), tint = colors.onSurface.copy(alpha = 0.72f))
         }
         AtomMenu(expanded = open, onDismiss = { open = false }) {
             MenuAction(stringResource(R.string.attach_image), ChatGlyphs.Image) {
@@ -214,7 +289,7 @@ private fun AttachButton(callbacks: ComposerCallbacks) {
                 open = false
                 callbacks.onPickFolder()
             }
-            MenuAction(stringResource(R.string.attach_path), ChatGlyphs.Path) {
+            MenuAction(stringResource(R.string.attach_path), ChatGlyphs.Edit) {
                 open = false
                 callbacks.onEnterPath()
             }
@@ -222,49 +297,51 @@ private fun AttachButton(callbacks: ComposerCallbacks) {
     }
 }
 
-/** "Think" / "Deep Think" chip plus the per-conversation effort picker, limited to what the model accepts. */
+/**
+ * The "Deep Think" chip: accent-tinted while reasoning is on, plain when off. A model with only on/off toggles on
+ * tap; a model with effort levels opens the Off / Default / Low … Max picker.
+ */
 @Composable
-private fun ReasoningControl(ui: ReasoningUi, callbacks: ComposerCallbacks) {
+private fun ReasoningChip(ui: ReasoningUi, enabled: Boolean, callbacks: ComposerCallbacks) {
     val support = ui.support
     if (support.mode == ReasoningMode.Unsupported) return
     val colors = MaterialTheme.colorScheme
+    val ink = homeInk()
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     val on = support.mode == ReasoningMode.Always || ui.enabled
     val fixed = support.mode == ReasoningMode.Always && support.levels.isEmpty()
-    val container by animateColorAsState(if (on && !fixed) colors.primary else colors.surfaceContainerHighest, tween(QUICK), label = "thinkBg")
-    val content by animateColorAsState(if (on && !fixed) colors.onPrimary else colors.onSurface, tween(QUICK), label = "thinkFg")
+    val toggleOnly = support.mode == ReasoningMode.Optional && support.levels.isEmpty()
+    val fill by animateColorAsState(if (on) ink.accent(0.18f, 0.10f) else ink.ink(0.06f, 0.038f), tween(160), label = "thinkFill")
+    val border by animateColorAsState(if (on) ink.accent(0.30f, 0.22f) else ink.ink(0.10f, 0.065f), tween(160), label = "thinkBorder")
+    val content by animateColorAsState(if (on) colors.primary else ink.ink(0.58f, 0.54f), tween(160), label = "thinkText")
     val label = when {
+        // Forced reasoning with no levels to pick: a fixed "Default".
         fixed -> stringResource(R.string.reasoning_fixed_default)
         !on -> stringResource(R.string.reasoning_think)
-        ui.effort != null -> stringResource(R.string.reasoning_deep_with, effortLabel(ui.effort))
+        ui.effort != null -> effortLabel(ui.effort)
         else -> stringResource(R.string.reasoning_deep)
     }
+    val shape = RoundedCornerShape(50)
+    val description = stringResource(R.string.reasoning_effort)
     Box {
-        Surface(
-            onClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                when {
-                    fixed -> Unit
-                    support.mode == ReasoningMode.Always -> menu = true
-                    else -> callbacks.onReasoningToggle(!ui.enabled)
+        Row(
+            Modifier
+                .heightIn(min = 30.dp)
+                .clip(shape)
+                .background(fill)
+                .border(0.5.dp, border, shape)
+                .clickable(enabled = enabled && !fixed) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (toggleOnly) callbacks.onReasoningToggle(!ui.enabled) else menu = true
                 }
-            },
-            shape = RoundedCornerShape(50),
-            color = container,
-            contentColor = content,
-            modifier = Modifier.height(34.dp),
+                .semantics { contentDescription = description }
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.padding(start = 12.dp, end = if (fixed) 12.dp else 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(ChatGlyphs.Brain, null, Modifier.size(15.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, maxLines = 1)
-                if (!fixed) {
-                    IconButton(onClick = { menu = true }, modifier = Modifier.size(28.dp)) {
-                        Icon(ScreenIcons.ChevronDown, stringResource(R.string.reasoning_effort), Modifier.size(16.dp))
-                    }
-                }
-            }
+            Icon(HomeGlyphs.Orbit, null, Modifier.size(14.5.dp), tint = content)
+            Spacer(Modifier.width(5.dp))
+            Text(label, fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
         }
         AtomMenu(expanded = menu, onDismiss = { menu = false }) {
             if (support.canDisable) {
@@ -299,32 +376,109 @@ internal fun effortLabel(e: ReasoningEffort): String = stringResource(
     },
 )
 
-/** White disc with a black arrow when there is something to send; a stop square while running with nothing typed. */
+/** Context usage as a 16dp ring: neutral, amber from 75%, red from 92%. Tapping opens the session stats. */
+@Composable
+private fun ContextRing(ctx: ContextInfo, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val ink = homeInk()
+    val fraction = ctx.fraction ?: 0f
+    val arc = when {
+        fraction >= 0.92f -> colors.error
+        fraction >= 0.75f -> MaterialTheme.extras.warning
+        else -> ink.ink(0.48f, 0.42f)
+    }
+    val track = ink.ink(0.12f, 0.08f)
+    val description = stringResource(R.string.context_ring_cd, (fraction * 100).toInt())
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(16.dp)) {
+            val stroke = 1.8.dp.toPx()
+            val inset = stroke / 2
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+            drawArc(arc, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+        }
+    }
+}
+
+/** While a task runs and something is typed: stop sits left of send (which then queues). */
+@Composable
+private fun ExtraStop(onStop: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val description = stringResource(R.string.composer_stop_run)
+    Box(
+        Modifier
+            .minimumInteractiveComponentSize()
+            .clip(CircleShape)
+            .clickable(onClick = onStop)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(32.dp).background(colors.surfaceContainerHigh, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(10.dp).background(colors.onSurface, RoundedCornerShape(2.dp)))
+        }
+    }
+}
+
+/**
+ * A 32dp round send button in a 36dp target: faint when empty, accent with something to send, and an inverted
+ * stop disc while a task runs with nothing typed.
+ */
 @Composable
 private fun SendButton(running: Boolean, canSend: Boolean, onSend: () -> Unit, onStop: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val ink = homeInk()
     val haptics = LocalHapticFeedback.current
     val stopMode = running && !canSend
-    val active = canSend || stopMode
-    val container by animateColorAsState(if (active) colors.primary else colors.surfaceContainerHighest, tween(QUICK), label = "sendBg")
-    val glyph by animateColorAsState(if (active) colors.onPrimary else colors.onSurfaceVariant.copy(alpha = 0.6f), tween(QUICK), label = "sendFg")
-    val description = stringResource(if (stopMode) R.string.action_stop else if (running) R.string.composer_queue else R.string.action_send)
-    Surface(
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            if (stopMode) onStop() else onSend()
+    val circle by animateColorAsState(
+        when {
+            stopMode -> colors.onSurface
+            canSend -> colors.primary
+            else -> ink.ink(0.08f, 0.06f)
         },
-        enabled = active,
-        shape = CircleShape,
-        color = container,
-        modifier = Modifier.size(40.dp).semantics { contentDescription = description },
+        tween(160),
+        label = "sendBg",
+    )
+    val glyph by animateColorAsState(
+        when {
+            stopMode -> colors.surface
+            canSend -> colors.onPrimary
+            else -> ink.ink(0.28f, 0.24f)
+        },
+        tween(160),
+        label = "sendFg",
+    )
+    val description = stringResource(if (stopMode) R.string.action_stop else if (running) R.string.composer_queue else R.string.action_send)
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(enabled = canSend || stopMode) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                if (stopMode) onStop() else onSend()
+            }
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
     ) {
-        Crossfade(targetState = stopMode, animationSpec = tween(160), label = "sendGlyph") { stop ->
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(32.dp).background(circle, CircleShape), contentAlignment = Alignment.Center) {
+            AnimatedContent(
+                targetState = stopMode,
+                transitionSpec = {
+                    (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f)) togetherWith
+                        (fadeOut(tween(90)) + scaleOut(tween(110), targetScale = 0.72f))
+                },
+                label = "sendGlyph",
+            ) { stop ->
                 if (stop) {
-                    Box(Modifier.size(12.dp).background(glyph, RoundedCornerShape(3.dp)))
+                    Box(Modifier.size(12.dp).background(glyph, RoundedCornerShape(2.5.dp)))
                 } else {
-                    Icon(ChatGlyphs.ArrowUp, null, Modifier.size(20.dp), tint = glyph)
+                    Icon(ChatGlyphs.ArrowUp, null, Modifier.size(17.dp), tint = glyph)
                 }
             }
         }

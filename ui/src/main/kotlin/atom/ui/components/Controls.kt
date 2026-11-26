@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package atom.ui.components
 
 import androidx.compose.animation.animateColorAsState
@@ -11,26 +9,19 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -39,22 +30,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.Check
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** Graphite popup menu with rounded corners, matching the grouped lists. */
+/** Popup menu in the Miuix dropdown style: card colour, 16dp corners, accent text and a check on the chosen item. */
 @Composable
 fun AtomMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         offset = DpOffset(16.dp, 0.dp),
-        shape = RoundedCornerShape(18.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MiuixTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
         shadowElevation = 12.dp,
     ) { content() }
@@ -62,19 +61,31 @@ fun AtomMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -
 
 @Composable
 fun AtomMenuItem(text: String, checked: Boolean, onClick: () -> Unit) {
+    val c = MiuixTheme.colorScheme
     DropdownMenuItem(
-        text = { Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Text(
+                text = text,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                color = if (checked) c.primary else c.onSurfaceContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         trailingIcon = if (checked) {
-            { Icon(Icons.Filled.Check, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface) }
+            { Icon(MiuixIcons.Basic.Check, null, Modifier.size(20.dp), tint = c.primary) }
         } else {
             null
         },
         onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
     )
 }
 
 /**
- * Graphite track with a white pill that slides to the selected segment. Used for the Models tabs.
+ * Track with a pill that slides to the selected segment (Miuix colours: grey track, card-coloured pill with
+ * the main text colour). Used for tab-like choices such as the Models tabs.
  */
 @Composable
 fun SegmentedControl(
@@ -83,14 +94,18 @@ fun SegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = MaterialTheme.colorScheme
+    val c = MiuixTheme.colorScheme
+    val dark = c.surface.luminance() < 0.5f
+    // The selected pill is always lighter than the track (dark: #505050 on #2D2D2D; light: white on #F0F0F0).
+    val track = if (dark) c.surfaceContainerHighest else c.secondaryContainer
+    val pill = if (dark) c.secondary else c.surfaceContainer
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .clip(RoundedCornerShape(50))
-            .background(c.surfaceContainerHigh)
-            .padding(4.dp),
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(track)
+            .padding(3.dp),
     ) {
         val segment = maxWidth / options.size
         val offset by animateDpAsState(segment * selected, tween(220), label = "segment")
@@ -99,18 +114,18 @@ fun SegmentedControl(
                 .offset(x = offset)
                 .width(segment)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(50))
-                .background(c.primary),
+                .clip(RoundedCornerShape(10.dp))
+                .background(pill),
         )
         Row(Modifier.fillMaxWidth().fillMaxHeight()) {
             options.forEachIndexed { i, (label, icon) ->
                 val active = i == selected
-                val tint by animateColorAsState(if (active) c.onPrimary else c.onSurfaceVariant, tween(200), label = "segmentText")
+                val tint by animateColorAsState(if (active) c.onSurface else c.onSurfaceVariantSummary, tween(200), label = "segmentText")
                 Row(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(50))
+                        .clip(RoundedCornerShape(10.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -122,14 +137,14 @@ fun SegmentedControl(
                         Icon(icon, null, Modifier.size(16.dp), tint = tint)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = tint)
+                    Text(text = label, style = MiuixTheme.textStyles.body2, fontWeight = FontWeight.Medium, color = tint)
                 }
             }
         }
     }
 }
 
-/** Compact pill button for actions inside a group or card: white when [primary], graphite otherwise. */
+/** Compact Miuix button for actions inside a group or card: accent fill when [primary], grey otherwise. */
 @Composable
 fun CompactButton(
     text: String,
@@ -140,37 +155,28 @@ fun CompactButton(
     icon: ImageVector? = null,
     contentColor: Color? = null,
 ) {
-    val c = MaterialTheme.colorScheme
-    val container = when {
-        !enabled -> c.surfaceContainerHigh
-        primary -> c.primary
-        else -> c.surfaceContainerHighest
-    }
+    val colors = if (primary) ButtonDefaults.buttonColorsPrimary() else ButtonDefaults.buttonColors()
+    val c = MiuixTheme.colorScheme
     val content = when {
-        !enabled -> c.onSurfaceVariant
+        !enabled -> if (primary) c.disabledOnPrimaryButton else c.disabledOnSecondaryVariant
         contentColor != null -> contentColor
         primary -> c.onPrimary
-        else -> c.onSurface
+        else -> c.onSecondaryVariant
     }
-    Surface(
+    Button(
         onClick = onClick,
+        modifier = modifier,
         enabled = enabled,
-        shape = RoundedCornerShape(50),
-        color = container,
-        contentColor = content,
-        modifier = modifier.heightIn(min = 40.dp),
+        colors = colors,
+        cornerRadius = 14.dp,
+        minHeight = 38.dp,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 9.dp),
     ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (icon != null) {
-                Icon(icon, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (icon != null) {
+            Icon(icon, null, Modifier.size(17.dp), tint = content)
+            Spacer(Modifier.width(8.dp))
         }
+        Text(text = text, style = MiuixTheme.textStyles.body2, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
     }
 }
 

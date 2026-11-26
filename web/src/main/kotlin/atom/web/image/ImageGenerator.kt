@@ -27,7 +27,7 @@ class ImageGenerator(
             else -> Region.International
         }
         val preset = cfg.preset(b)
-        if (preset?.retired == true) throw ImageApiException("${preset.label} has been retired by its provider. Pick another model in Settings > AI image generation.")
+        if (preset?.retired == true) throw ImageApiException(ImageErrors.retired(preset))
         var model = cfg.model(b)
         if (b == ImageBackend.Seedream && region == Region.International) preset?.intlId?.let { model = it }
         val default = ImageEndpoints.defaultBase(b, region, vertex)
@@ -84,13 +84,17 @@ class ImageGenerator(
         return try {
             val t = target(cfg)
             val maxRefs = cfg.preset()?.maxRefs
-            if (req.edit && maxRefs == 0) throw ImageApiException("${cfg.preset()?.label} cannot edit images. Pick an editing model, e.g. Qwen-Image-Edit.")
-            val r = if (maxRefs != null && req.refs.size > maxRefs) req.copy(refs = req.refs.take(maxRefs)) else req
+            val label = cfg.preset()?.label ?: t.model
+            if (req.edit && maxRefs == 0) throw ImageApiException(ImageErrors.noEditing(label))
+            if (maxRefs != null && req.refs.size > maxRefs) throw ImageApiException(ImageErrors.tooManyReferences(label, maxRefs, req.refs.size))
+            val r = req
             val outs = coroutineScope {
                 ImageRequests.build(r, t).map { spec ->
                     async {
                         val res = Http.execute(spec, Http.slowClient, maxBytes = 64 * 1024 * 1024)
-                        if (!res.ok) throw ImageApiException("${t.backend.label}: HTTP ${res.code}${ImageResponses.error(res.text)?.let { " – ${it.take(300)}" } ?: ""}")
+                        // Redirects are not followed: the key must never go to another address.
+                        if (res.code in 300..399) throw ImageApiException(ImageErrors.REDIRECT_BLOCKED)
+                        if (!res.ok) throw ImageApiException(ImageErrors.http(t.backend.label, res.code, ImageResponses.error(res.text)))
                         ImageResponses.parse(t.backend, res.text)
                     }
                 }.awaitAll().flatten()

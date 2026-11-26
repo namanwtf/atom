@@ -46,7 +46,7 @@ internal class Notifier(private val context: Context) {
             Intent(context, ActionReceiver::class.java).setAction(ActionReceiver.ACTION_RUN_TASK).putExtra(ActionReceiver.EXTRA_ID, taskId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val n = base(CH_ALERTS, "$name is ready to run", "It needs the screen. Unlock, then tap Run now.", null)
+        val n = base(CH_ALERTS, atom.automation.task.TaskNotices.readyTitle(name), "It needs the screen. Unlock, then tap Run now.", null)
             .addAction(0, "Run now", run)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .build()
