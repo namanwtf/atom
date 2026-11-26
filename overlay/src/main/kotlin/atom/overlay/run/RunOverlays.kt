@@ -268,7 +268,7 @@ internal object RunOverlays {
     private fun keyguardLocked(): Boolean =
         OverlayRuntime.app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
 
-    private fun setLocked(value: Boolean) {
+    private fun updateLocked(value: Boolean) {
         if (locked == value) return
         locked = value
         if (value) {
@@ -282,9 +282,9 @@ internal object RunOverlays {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 when (intent.action) {
-                    Intent.ACTION_SCREEN_OFF -> setLocked(true)
-                    Intent.ACTION_USER_PRESENT -> setLocked(false)
-                    else -> setLocked(keyguardLocked())
+                    Intent.ACTION_SCREEN_OFF -> updateLocked(true)
+                    Intent.ACTION_USER_PRESENT -> updateLocked(false)
+                    else -> updateLocked(keyguardLocked())
                 }
             }
         }
@@ -296,7 +296,7 @@ internal object RunOverlays {
         runCatching {
             ContextCompat.registerReceiver(OverlayRuntime.app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }.onSuccess { lockReceiver = receiver }
-        setLocked(keyguardLocked())
+        updateLocked(keyguardLocked())
     }
 
     private fun unwatchLock() {
