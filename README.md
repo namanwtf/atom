@@ -7,6 +7,8 @@
   <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0-2b2b2b?style=for-the-badge"></a>
   <img alt="Android 14+" src="https://img.shields.io/badge/Android-14%2B-2b2b2b?style=for-the-badge&logo=android&logoColor=white">
   <img alt="No telemetry" src="https://img.shields.io/badge/Telemetry-none-2b2b2b?style=for-the-badge">
+  <a href="https://github.com/namanwtf/atom/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/namanwtf/atom?style=for-the-badge&color=2b2b2b&logo=github"></a>
+  <a href="https://github.com/namanwtf/atom/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/namanwtf/atom/total?style=for-the-badge&color=2b2b2b"></a>
 </p>
 
 <p align="center"><b>Chat apps can tell you how to do something. Atom does it.</b><br>
@@ -61,6 +63,18 @@ Atom is that agent. Not a chat window with an API key, but a full agent runtime 
 </tr>
 </table>
 
+## Where Atom fits
+
+| You want to… | Typical chat app | Atom |
+|---|---|---|
+| Get an answer | ✅ | ✅ |
+| Have it *done* on your phone (send, book, toggle, fill in) | ❌ you do the taps | ✅ it taps for you and checks the result |
+| Use what's already on your phone (messages, codes, calendar, files) | ❌ copy and paste | ✅ reads it when you ask, with your permission |
+| Run code and tools | ❌ or only in a remote sandbox | ✅ a real terminal and Linux on the phone |
+| Work while you're away | ❌ | ✅ schedules and phone-event automations |
+| Pick your model, or none online | rarely | ✅ any provider, subscriptions or on-device |
+| Keep your data private | depends on their servers | ✅ no telemetry, no Atom server |
+
 ## Bring any model
 
 <p align="center">
@@ -106,6 +120,21 @@ Giving an AI real control of a phone only works if you can trust it, so Atom is 
 - **Honest results.** Atom reports what it confirmed, not what it hoped happened.
 - **Open source.** Every line is here to read, under the GPL.
 
+## Permissions and devices
+
+Atom asks for each permission only when a feature first needs it, and works without the optional ones.
+
+| Feature | What it needs |
+|---|---|
+| Chat, memory, skills, MCP, subagents, schedules, terminal, Linux, web | Nothing beyond the app |
+| Operating apps, reading the screen | Accessibility service |
+| Floating bubble and run capsule | Display over other apps |
+| Personal context (messages, calendar, photos, location…) | Each source's own Android permission, asked on first use |
+| Deeper device control (freeze apps, system settings, logs) | Root (Magisk, KernelSU, APatch) or Shizuku |
+| Hidden-screen tasks, system assistant extras | Root or the LSPosed module |
+
+Works on Android 14+ (ARM64). Tested on emulators in CI on every change.
+
 ## Get started
 
 1. Download `atom-<version>.apk` from **[Releases](https://github.com/namanwtf/atom/releases/latest)** and install it (Android may ask you to allow installs from your browser).
@@ -135,6 +164,20 @@ Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, file
 ## Building
 
 Atom is built and tested only on GitHub's runners: every pull request runs the unit tests, builds the app and takes screenshots on an Android emulator (see [`.github/workflows`](.github/workflows)). Please don't run the build or tests on a personal machine; use CI.
+
+## Documentation
+
+- [docs/IMPORT.md](docs/IMPORT.md): what Atom brings over from an earlier install
+- [docs/UPDATES.md](docs/UPDATES.md): releases, versions and in-app updates
+- [docs/PARITY_SPEC.md](docs/PARITY_SPEC.md): the full feature checklist
+
+## Contributing
+
+Issues and pull requests are welcome. Every pull request is built, unit-tested and screenshotted on an Android emulator by CI, so you can see your change running without a phone.
+
+## Star history
+
+<p align="center"><a href="https://star-history.com/#namanwtf/atom&Date"><img src="https://api.star-history.com/svg?repos=namanwtf/atom&type=Date" alt="Star history" width="720"></a></p>
 
 ## License and credits
 
