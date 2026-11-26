@@ -235,6 +235,27 @@ class Result:
         return ok
 
 
+A11Y = f"{PKG}/atom.device.AtomAccessibilityService"
+
+
+def ensure_accessibility(wait_s=30):
+    """Atom's accessibility service, as a user enables it in Settings. It does not always connect on the first
+    try on a fresh emulator, so it is switched off and on again until the app reports it connected."""
+    for attempt in range(3):
+        end = time.time() + wait_s
+        while time.time() < end:
+            if state().get("accessibility"):
+                return True
+            time.sleep(3)
+        log(f"accessibility service not connected; enabling it again (attempt {attempt + 1})")
+        sh("settings put secure enabled_accessibility_services ''")
+        time.sleep(2)
+        sh(f"settings put secure enabled_accessibility_services {A11Y}")
+        sh("settings put secure accessibility_enabled 1")
+    log("accessibility service still not connected; screen tools will fail")
+    return False
+
+
 def freeze_clock():
     """Sets the device clock to the same minute before every run. Atom's system prompt carries the time to the minute
     ahead of the tool list, so an identical minute lets llama-server reuse the cached prompt across scenarios instead
@@ -374,11 +395,13 @@ def tap_notification_stop():
     time.sleep(2.5)
     ok = tap("^Stop$|^STOP$", wait=1.5)
     if not ok:
-        # A collapsed notification hides its buttons: drag it open, then look again.
-        note = find("Atom")
-        if note:
-            x, y = (note[0] + note[2]) // 2, (note[1] + note[3]) // 2
-            sh(f"input swipe {x} {y} {x} {y + 400} 300")
+        # A collapsed notification hides its buttons: tap its Expand (the one nearest the task's text), look again.
+        nodes = capture.dump()
+        task = next((b for t, d, b in nodes if b and re.match(r"Check the device status", t or "")), None)
+        expands = [b for t, d, b in nodes if b and (t == "Expand" or d == "Expand")]
+        if task and expands:
+            cy = (task[1] + task[3]) // 2
+            tap_bounds(min(expands, key=lambda b: abs((b[1] + b[3]) // 2 - cy)))
             time.sleep(1.5)
             ok = tap("^Stop$|^STOP$", wait=1.5)
         if not ok:
@@ -562,6 +585,7 @@ def setup():
     launch(wait=4)
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
+    ensure_accessibility()
     st = state()
     log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')}")
     if not st.get("onboarded") or "local-test-model" not in str(st.get("selection")):
@@ -584,6 +608,8 @@ def main():
         sh("wm dismiss-keyguard")
         sh("cmd statusbar collapse")
         sh("input keyevent KEYCODE_HOME")
+        if not ensure_accessibility(wait_s=10):
+            res.notes.append("accessibility service not connected")
         clear_crashes()
         m0 = server_metrics()
         t0 = time.time()
