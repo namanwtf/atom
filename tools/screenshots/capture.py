@@ -179,7 +179,12 @@ def drawer_motion(p, label):
     """The drawer opening and closing, slowed 10x (animator duration scale), five frames each way."""
     sh("settings put global animator_duration_scale 10")
     try:
+        time.sleep(2)  # a drawer closed just before may still be sliding out
         b = find("^Conversations$")
+        if b is None:
+            back()
+            time.sleep(2)
+            b = find("^Conversations$")
         if b is None:
             print("[capture] no drawer button for the motion frames")
             return

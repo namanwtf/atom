@@ -164,7 +164,8 @@ jobs:
           profile: pixel_6
           cores: 2
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # ANGLE over SwiftShader Vulkan: the GL SwiftShader path crashed on blur effects on these GPU-less runners.
+          emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
             python3 tools/screenshots/install_pack.py ondevice-pack/build/outputs/apk/debug/ondevice-pack-debug.apk
