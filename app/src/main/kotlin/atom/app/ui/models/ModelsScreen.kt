@@ -132,8 +132,9 @@ internal class ModelsNav(private val push: (ModelsPage) -> Unit, private val pop
 enum class ModelsStart { Providers, OnDevice, Titles }
 
 @Composable
-fun ModelsScreen(vm: ModelsViewModel, onBack: () -> Unit, start: ModelsStart = ModelsStart.Providers) {
-    val first = when (start) {
+fun ModelsScreen(vm: ModelsViewModel, onBack: () -> Unit, start: ModelsStart = ModelsStart.Providers, provider: String? = null) {
+    // [provider] opens straight on that provider's page (the home capsule's "· add key"); back returns to the chat.
+    val first = provider?.let { ModelsPage.Provider(it) } ?: when (start) {
         ModelsStart.Providers -> ModelsPage.Root
         ModelsStart.OnDevice -> ModelsPage.OnDevice
         ModelsStart.Titles -> ModelsPage.Titles

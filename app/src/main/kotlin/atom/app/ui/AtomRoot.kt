@@ -72,6 +72,9 @@ object Routes {
 
     /** The Auto-generate titles page (part of the Models flow). */
     const val TITLES = "settings-titles"
+
+    /** One provider's page in the Models flow, where its key goes ("models-provider/<id>"). */
+    const val PROVIDER = "models-provider/"
 }
 
 /** A tiny back stack of route strings; no navigation library needed. */
@@ -186,6 +189,7 @@ fun AtomRoot(settings: AppSettings) {
                     onOpenPermissions = { push(DeviceFeature.ROUTE_PERMISSIONS) },
                     permissionsNeedAttention = permissionsNeedAttention,
                     onOpenRoute = ::push,
+                    onOpenProviderKey = { id -> push(Routes.PROVIDER + id) },
                 )
                 Routes.MODELS, Routes.ON_DEVICE, Routes.TITLES -> ModelsScreen(
                     vm = graphViewModel { ModelsViewModel(context.applicationContext, it) },
@@ -222,7 +226,13 @@ fun AtomRoot(settings: AppSettings) {
                     },
                 )
                 Routes.LICENSES -> LicensesScreen(onBack = ::pop)
-                else -> if (ReportRoutes.matches(route)) {
+                else -> if (route.startsWith(Routes.PROVIDER)) {
+                    ModelsScreen(
+                        vm = graphViewModel { ModelsViewModel(context.applicationContext, it) },
+                        onBack = ::pop,
+                        provider = route.removePrefix(Routes.PROVIDER),
+                    )
+                } else if (ReportRoutes.matches(route)) {
                     ReportScreen(route, onBack = ::pop)
                 } else {
                     Features.forRoute(route)?.Screen(route, nav) ?: pop()

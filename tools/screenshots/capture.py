@@ -577,10 +577,16 @@ def main():
         shot(p + "04_overflow")
         back()
 
-    # Model picker sheet from the model capsule.
+    # Model picker sheet from the model capsule. On a fresh install the capsule says "DeepSeek Flash · add key", and
+    # one tap opens that provider's key screen instead; back returns to the chat.
     if tap("^Choose model$", wait=1.5):
         shot(p + "05_model_picker")
         back()
+    elif tap("^Add the API key for ", wait=3.0):
+        shot(p + "05_add_key")
+        back()
+        if not find("^Add the API key for "):
+            print("[capture] back from the key screen did not return to the chat")
 
     # A long sample conversation: the frosted top bar and composer band over scrolled text, then the glass drawer
     # over it. Afterwards the chat goes back to a new conversation and the sample is deleted, so later shots and the

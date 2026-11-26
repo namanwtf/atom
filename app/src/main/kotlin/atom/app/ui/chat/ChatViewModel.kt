@@ -77,9 +77,14 @@ data class EngineInfo(
     val reason: NotReady? = null,
     /** The provider's display name, for "sign in to …" and "enter the key for … again". */
     val providerName: String? = null,
+    /** The selected cloud provider's id, for opening its key screen. */
+    val providerId: String? = null,
 ) {
     /** What the capsule and the drawer say; Settings derives the same from [modelStatus]. */
     val status: ModelStatus get() = if (live && name != null) ModelStatus.Ready(name) else ModelStatus.of(name, if (ready) null else reason, providerName)
+
+    /** "· add key" or "· enter key again": a tap on the capsule opens the provider's key screen instead of the picker. */
+    val opensKey: Boolean get() = !live && providerId != null && (status is ModelStatus.NeedsKey || status is ModelStatus.KeyUnreadable)
 }
 
 /** Why a model selection cannot be used yet. */
@@ -809,6 +814,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             logo = logo,
             reason = reason,
             providerName = provider?.displayName,
+            providerId = cloud?.providerId,
         )
     }
 

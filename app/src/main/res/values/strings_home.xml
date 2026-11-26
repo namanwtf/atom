@@ -6,6 +6,7 @@
     <string name="home_model_key_unreadable">%1$s · enter key again</string>
     <string name="home_model_needs_pack">%1$s · needs on-device AI</string>
     <string name="home_choose_model">Choose model</string>
+    <string name="home_add_key_cd">Add the API key for %1$s</string>
     <string name="home_open_character">Open character</string>
     <string name="home_sign_in_capsule">Sign in to %1$s</string>
     <string name="home_sign_in_needed">Sign in to %1$s in Models to use this model</string>
