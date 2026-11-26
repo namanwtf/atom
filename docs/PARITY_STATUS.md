@@ -28,6 +28,7 @@ Each batch was built by one agent, reviewed adversarially by a different agent, 
 | #11 | Feature screens: terminal, Linux, skills, MCP, subagents, tasks, characters, web, backup | fail (image cards) → fixed | yes |
 | #12 | Chat, models and voice details | pass with fixes → fixes in the hardening batch | yes |
 | #13 | Hardening: lock-screen privacy, approvals, licences, hosted search | pass | yes |
+| #14 | Importer for the previous Atom: providers, keys, sign-ins, default model, conversations | pass with fixes → fixed (cross-checked against the old app's real schema and crypto) | yes |
 | — | Spec re-check against the combined app (412 / 440 done) | docs | yes |
 
 A final review of the combined branch found no blockers; its lock-screen, approval and licence findings were fixed in the hardening batch (#13), which passed review.
