@@ -54,8 +54,8 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 
 | | Scenario | Passes when |
 |---|---|---|
-| a | Vibe coding: "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output." | Terminal or shell tools are called and the answer contains 5 |
-| b | Agent browser: "Open the agent browser and summarize the top story on https://example.com." | `browser_open` is called (not `open_url`) and there is an answer |
+| a | Vibe coding: "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output." | Terminal or shell tools are called, one of their results shows the script printing 5, and the answer contains 5 |
+| b | Agent browser: "Open the agent browser and summarize the top story on https://example.com." | `browser_open` is called (not `open_url`) and loads the page without an error, and there is an answer |
 | c | Phone control: "Turn on Do Not Disturb." | A Do Not Disturb tool is called and `settings get global zen_mode` is no longer 0 |
 | d | Context: a notification "Dinner / Pizza at 8" is posted, then "What was my last notification about?" | A notification tool is called and the answer mentions Pizza or Dinner |
 | e | Scheduling: "Every day at 9am remind me to drink water." | `scheduled_task_create` is called and a new scheduled task exists |

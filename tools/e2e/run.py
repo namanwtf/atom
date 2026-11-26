@@ -171,10 +171,14 @@ class Watch:
         run = max(runs, key=lambda r: r["startedAt"])
         self.run = run
         calls = run.get("toolCalls", [])
-        for c in calls[self.seen_calls :]:
-            res = (c.get("result") or "").replace("\n", " ")[:160]
+        # Each call is logged once its result is in (or the run ended without one).
+        while self.seen_calls < len(calls):
+            c = calls[self.seen_calls]
+            if c.get("result") is None and run["active"]:
+                break
+            res = (c.get("result") or "(no result)").replace("\n", " ")[:200]
             log(f"  tool {c['name']} {c.get('args', '')[:160]} -> {'ERROR ' if c.get('isError') else ''}{res}")
-        self.seen_calls = len(calls)
+            self.seen_calls += 1
         pending = run.get("pending")
         if pending and self.approve:
             log(f"  approving: {pending['action'][:200]}")
@@ -282,12 +286,15 @@ def s_vibe(res):
         time.sleep(15)
         st = state()
     res.notes.append(f"linux: {st.get('linux', '')[:120]}")
-    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 600)
+    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 720)
     if run is None:
         return
     terminal = [n for n in names(run) if n.startswith("terminal_") or n in ("shell", "file_write")]
     res.check(bool(terminal), f"terminal/shell tools called: {terminal or 'none'}")
     res.check(re.search(r"\b5\b", answer(run)) is not None, "answer contains 5")
+    # The answer alone could be the model's arithmetic; the script must really have printed it.
+    ran = [c for c in run.get("toolCalls", []) if c["name"] in terminal and re.search(r"(?m)^\s*5\s*$", c.get("result") or "")]
+    res.check(bool(ran), "a terminal result shows the script printing 5")
 
 
 def s_browser(res):
@@ -300,6 +307,9 @@ def s_browser(res):
     if offered:
         res.notes.append(f"browser tools offered: {sorted(t for t in offered if t.startswith('browser_')) or 'none'}")
     res.check("browser_open" in n, "browser_open called")
+    opened = [c for c in run.get("toolCalls", []) if c["name"] == "browser_open"]
+    if opened:
+        res.check(any(not c.get("isError") for c in opened), "browser_open loaded the page (no error result)")
     res.check("open_url" not in n, "open_url not called")
     res.check(bool(answer(run)), "non-empty answer")
 
@@ -363,6 +373,16 @@ def tap_notification_stop():
     sh("cmd statusbar expand-notifications")
     time.sleep(2.5)
     ok = tap("^Stop$|^STOP$", wait=1.5)
+    if not ok:
+        # A collapsed notification hides its buttons: drag it open, then look again.
+        note = find("Atom")
+        if note:
+            x, y = (note[0] + note[2]) // 2, (note[1] + note[3]) // 2
+            sh(f"input swipe {x} {y} {x} {y + 400} 300")
+            time.sleep(1.5)
+            ok = tap("^Stop$|^STOP$", wait=1.5)
+        if not ok:
+            shot("f_shade")
     sh("cmd statusbar collapse")
     return ok
 
@@ -418,6 +438,10 @@ def s_character(res):
     tap_bounds(found)
     time.sleep(5)
     res.check(app_alive(), "app process alive after opening Lumen")
+    shot(f"{res.key}_lumen")
+    # Back to the chat, so the next tasks do not start on this screen.
+    capture.back()
+    capture.back()
 
 
 def s_bubble(res):
