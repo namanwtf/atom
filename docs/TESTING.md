@@ -38,8 +38,12 @@ involved:
   branch run it without the label. Ordinary pull requests skip it, so their checks stay fast.
 - It also runs every Monday on main.
 
-A run takes about an hour: roughly 15 minutes to build, then the scenarios. A first request carries Atom's whole system
-prompt and tool list, which a CPU needs minutes to read; later steps reuse the server's prompt cache.
+A run takes about an hour or a little more: a few minutes to build and boot, then the scenarios. Atom's first request
+carries its whole system prompt and every tool schema (about 17,000 tokens today), which the runner's CPU, shared with
+the emulator, reads at roughly 20-30 tokens a second. So the runner reads it once, in a warm-up task that is not
+scored, and every scenario after it reuses the server's cached prompt. For that cache to match, the emulator's clock is
+set to the same minute (09:00 today, through `adb root`) before each task starts: the system prompt states the time to
+the minute, ahead of the tool list. A leaner prompt makes all of this faster.
 
 ### Scenarios
 

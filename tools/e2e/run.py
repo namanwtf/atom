@@ -36,6 +36,8 @@ SERVER = os.environ.get("E2E_SERVER", "http://127.0.0.1:8080")
 # What the app uses: the emulator's alias for the runner's loopback.
 APP_BASE_URL = os.environ.get("E2E_APP_BASE_URL", "http://10.0.2.2:8080/v1")
 POLL_S = 3
+# Set by setup() when the device clock can be fixed (adb root); toybox `date` format MMDDhhmmCCYY.ss.
+FIXED_TIME = None
 
 
 def log(msg):
@@ -199,6 +201,16 @@ class Watch:
                 shot(f"{name}_mid")
             time.sleep(POLL_S)
         log(f"  timed out after {timeout}s")
+        if self.run and self.run["active"]:
+            # Free the single model slot for the next scenario: an abandoned run would keep the server busy.
+            log("  stopping the run: " + call("stop", self.run["conversationId"]))
+            end = time.time() + 60
+            while time.time() < end:
+                run = self.poll()
+                if run and not run["active"]:
+                    break
+                time.sleep(POLL_S)
+            self.run["timedOut"] = True
         return self.run
 
 
@@ -219,17 +231,30 @@ class Result:
         return ok
 
 
-def agent_task(res, prompt, timeout, source=None):
+def freeze_clock():
+    """Sets the device clock to the same minute before every run. Atom's system prompt carries the time to the minute
+    ahead of the tool list, so an identical minute lets llama-server reuse the cached prompt across scenarios instead
+    of reading every tool schema again on the CPU."""
+    if FIXED_TIME:
+        sh(f"date {FIXED_TIME} >/dev/null")
+
+
+def agent_task(res, prompt, timeout, source=None, background=False):
     known = run_ids()
     w = Watch(known, source=source)
+    freeze_clock()
     send_prompt(prompt)
+    if background:
+        # The chat keeps running in the task service; off screen the emulator stops drawing and leaves the CPU
+        # to the model server.
+        time.sleep(5)
+        sh("input keyevent KEYCODE_HOME")
     run = w.wait(timeout, res.key)
     if run is None:
         res.check(False, "no run started")
         return None
     res.tools = names(run)
-    ended = not run["active"]
-    res.check(ended, f"run ended ({run['phase']}, outcome {run.get('outcome')})")
+    res.check(not run.get("timedOut") and not run["active"], f"run finished within {timeout}s ({run['phase']}, outcome {run.get('outcome')})")
     if run.get("error"):
         res.notes.append(f"error: {run['error'][:300]}")
     if run.get("notice"):
@@ -240,16 +265,24 @@ def agent_task(res, prompt, timeout, source=None):
     return run
 
 
+def s_warm_up(res):
+    """Not a test: the first request carries Atom's whole system prompt and every tool schema, which takes the CPU
+    many minutes to read. Done once here; every scenario after it reuses the server's cached prompt."""
+    run = agent_task(res, "Reply with just the word OK.", 2100, background=True)
+    if run is not None:
+        res.check(bool(answer(run)), "an answer came back")
+
+
 def s_vibe(res):
     """a. Terminal: write and run a script, report its output."""
     st = state()
-    deadline = time.time() + 240
+    deadline = time.time() + 120
     while "Ready" not in st.get("linux", "") and "Failed" not in st.get("linux", "") and time.time() < deadline:
         log(f"  waiting for Linux: {st.get('linux', '')[:160]}")
         time.sleep(15)
         st = state()
     res.notes.append(f"linux: {st.get('linux', '')[:120]}")
-    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 900)
+    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 600)
     if run is None:
         return
     terminal = [n for n in names(run) if n.startswith("terminal_") or n in ("shell", "file_write")]
@@ -259,7 +292,7 @@ def s_vibe(res):
 
 def s_browser(res):
     """b. Built-in agent browser (browser_open), not the external browser (open_url)."""
-    run = agent_task(res, "Open the agent browser and summarize the top story on https://example.com.", 600)
+    run = agent_task(res, "Open the agent browser and summarize the top story on https://example.com.", 480)
     if run is None:
         return
     n = names(run)
@@ -280,7 +313,7 @@ def s_dnd(res):
     sh("cmd notification set_dnd off")
     time.sleep(1)
     res.notes.append(f"zen_mode before: {zen_mode()}")
-    run = agent_task(res, "Turn on Do Not Disturb.", 480)
+    run = agent_task(res, "Turn on Do Not Disturb.", 360)
     if run is None:
         return
     n = names(run)
@@ -292,9 +325,13 @@ def s_dnd(res):
 
 def s_notification(res):
     """d. Context: read the last notification."""
-    sh("cmd notification post -S bigtext -t 'Dinner' tag1 'Pizza at 8'")
+    # Posted as the shell user (adb may be root here, and a notification needs a package behind it).
+    post = "cmd notification post -S bigtext -t 'Dinner' tag1 'Pizza at 8'"
+    out = sh(f"su 2000 {post}" if FIXED_TIME else post)
+    if out.strip():
+        log(f"  notification post: {out.strip()[:200]}")
     time.sleep(3)
-    run = agent_task(res, "What was my last notification about?", 480)
+    run = agent_task(res, "What was my last notification about?", 360)
     if run is None:
         return
     n = names(run)
@@ -305,7 +342,7 @@ def s_notification(res):
 def s_schedule(res):
     """e. Scheduling: a daily reminder becomes a scheduled task."""
     before = state().get("scheduledTasks", [])
-    run = agent_task(res, "Every day at 9am remind me to drink water.", 480)
+    run = agent_task(res, "Every day at 9am remind me to drink water.", 360)
     if run is None:
         return
     res.check("scheduled_task_create" in names(run), "scheduled_task_create called")
@@ -334,11 +371,12 @@ def s_stop(res):
     """f. Stop mid-task: after the first tool call, stop; the partial run must be kept."""
     known = run_ids()
     w = Watch(known)
+    freeze_clock()
     send_prompt(
         "Check the device status, then list my installed apps, then read the screen, then check the time and location, "
         "and finally write a detailed report about everything you found."
     )
-    run = w.wait(480, res.key, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
+    run = w.wait(360, res.key, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
     if run is None:
         res.check(False, "no run started")
         return
@@ -402,15 +440,20 @@ def s_bubble(res):
     sh("input text 'What%sis%s2%splus%s2?'")
     time.sleep(2)
     shot(f"{res.key}_typed")
+    if "mInputShown=true" in sh("dumpsys input_method | grep mInputShown"):
+        # The on-screen keyboard can cover the send button; the first Back closes only the keyboard.
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(2)
     known = run_ids()
     w = Watch(known)
     send = find("^Send$")
     if not res.check(send is not None, "send button found"):
         return
+    freeze_clock()
     tap_bounds(send)
     time.sleep(2)
     shot(f"{res.key}_sent")
-    run = w.wait(480, res.key)
+    run = w.wait(360, res.key)
     if not res.check(run is not None, "bubble run started"):
         return
     res.check(run["source"] == "Bubble", f"run came from the bubble (source {run['source']})")
@@ -425,6 +468,7 @@ def s_bubble(res):
 SCENARIOS = [
     # Ordered so the Linux install (queued at setup) has time to finish before the terminal task.
     ("g", "Character: open Lumen", s_character),
+    ("0", "Warm-up: prompt cache (not core)", s_warm_up),
     ("c", "Phone control: Do Not Disturb", s_dnd),
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
@@ -457,6 +501,18 @@ def setup():
         log(f"$ {cmd}" + (f" -> {out[:200]}" if out else ""))
     sh("input keyevent KEYCODE_WAKEUP")
     sh("wm dismiss-keyguard")
+    # A fixed clock (see freeze_clock) needs root; google_apis emulator images allow adb root.
+    global FIXED_TIME
+    out = subprocess.run(["adb", "root"], capture_output=True, timeout=60).stdout.decode(errors="replace").strip()
+    subprocess.run(["adb", "wait-for-device"], timeout=120)
+    time.sleep(3)
+    if sh("id -u").strip() == "0":
+        sh("settings put global auto_time 0")
+        FIXED_TIME = time.strftime("%m%d0900%Y.00")
+        freeze_clock()
+        log(f"adb root: {out}; device clock fixed at 09:00 for every run: {sh('date').strip()}")
+    else:
+        log(f"adb root unavailable ({out}); the clock runs, so each scenario's first request reads the whole prompt")
     launch(wait=6)
     options = {
         "base_url": APP_BASE_URL,
@@ -486,9 +542,9 @@ def main():
     setup()
     results = []
     for key, title, fn in SCENARIOS:
-        if only and key not in only:
+        if only and key not in only and key != "0":
             continue
-        res = Result(key, title)
+        res = Result(key, title, core=key != "0")
         log(f"===== {key}. {title} =====")
         call("clear")
         clear_crashes()

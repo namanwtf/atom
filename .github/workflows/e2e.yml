@@ -40,7 +40,7 @@ jobs:
       (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'e2e') || startsWith(github.base_ref, 'release/'))) ||
       (github.event.action == 'labeled' && github.event.label.name == 'e2e')
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@v7
         with:
@@ -120,7 +120,7 @@ jobs:
         run: |
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
             -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
-            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 \
+            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 -b 512 \
             --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
@@ -154,7 +154,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           cores: 2
-          disable-animations: false
+          disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
