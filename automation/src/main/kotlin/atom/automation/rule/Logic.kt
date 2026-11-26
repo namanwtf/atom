@@ -187,7 +187,8 @@ object Conditions {
 }
 
 object Templates {
-    private val TOKEN = Regex("\\{\\{\\s*([a-z_.]+)\\s*}}")
+    // Braces escaped: Android's ICU regex rejects a bare "}".
+    private val TOKEN = Regex("\\{\\{\\s*([a-z_.]+)\\s*\\}\\}")
 
     fun vars(event: TriggerEvent, s: DeviceState): Map<String, String> = buildMap {
         put("event", event.summary)
