@@ -27,9 +27,12 @@ Each batch was built by one agent, reviewed adversarially by a different agent, 
 | #10 | Settings tree, model providers, permissions, tool list | pass with fixes → fixed | yes |
 | #11 | Feature screens: terminal, Linux, skills, MCP, subagents, tasks, characters, web, backup | fail (image cards) → fixed | yes |
 | #12 | Chat, models and voice details | pass with fixes → fixes in the hardening batch | yes |
+| #13 | Hardening: lock-screen privacy, approvals, licences, hosted search | pass | yes |
 | — | Spec re-check against the combined app (412 / 440 done) | docs | yes |
 
-A final review of the combined branch found no blockers; its lock-screen, approval and licence findings go into a hardening batch.
+A final review of the combined branch found no blockers; its lock-screen, approval and licence findings were fixed in the hardening batch (#13), which passed review.
+
+Known small follow-ups (reviewed, not blocking): the mini chat checks the assistant/global model and ignores a model chosen for the bubble conversation itself; automation rules don't yet narrow `step_capabilities` (direct steps can never reach the scheduled-task or automation tools); the automation approval preview cache has one slot; automatic in-run compaction keeps hosted search on; a very short final answer never shows "Generating answer" in the capsule. Not tested on a real device: the assistant overlay, the run capsule and result card, lock-screen behaviour, the release workflow's publish path.
 
 ## Decisions taken on the owner's behalf
 
