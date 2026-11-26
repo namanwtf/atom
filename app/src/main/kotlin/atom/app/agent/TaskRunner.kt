@@ -95,7 +95,17 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
-data class PendingApproval(val id: Long, val action: String, val expiresAtMillis: Long)
+/**
+ * An approval the run waits for. [reason] is one line on why it asks; [taskGrantable] offers "allow all commands for
+ * this task" (shell-type calls in a run the user started).
+ */
+data class PendingApproval(
+    val id: Long,
+    val action: String,
+    val expiresAtMillis: Long,
+    val reason: String? = null,
+    val taskGrantable: Boolean = false,
+)
 
 enum class RunOutcome { Completed, StepLimit, OutputLimit, Failed, Cancelled }
 
@@ -426,6 +436,12 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         approvals[approvalId]?.complete(approved)
     }
 
+    /** Approves [approvalId] and lets its run's shell commands run without asking until that run ends. */
+    override fun allowForTask(approvalId: Long) {
+        synchronized(lock) { executions.values.firstOrNull { it.owns(approvalId) } }?.grantShell()
+        approvals[approvalId]?.complete(true)
+    }
+
     /**
      * Changes a conversation's own settings (title, pin, model, reasoning). A running task keeps the change, so its
      * final save cannot undo it. Returns the saved conversation, or null if it was never saved yet.
@@ -688,7 +704,25 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
         private val toolContext = object : ToolContext {
             override val taskId: String = runId
-            override suspend fun confirm(action: String): Boolean = requestApproval(action)
+            override suspend fun confirm(action: String): Boolean = requestApproval(atom.core.tool.ApprovalRequest(action))
+            override suspend fun approve(request: atom.core.tool.ApprovalRequest): Boolean = requestApproval(request)
+        }
+
+        /**
+         * "Allow all commands for this task": shell, terminal_run, terminal_job_start and terminal_session sends run
+         * without asking until this run ends. Never saved, never offered to scheduled or automation runs, and
+         * commands that look plainly destructive still ask.
+         */
+        @Volatile
+        private var shellGrant = false
+
+        private val grantOffered: Boolean
+            get() = request.source != RunSource.Automation && request.source != RunSource.Schedule
+
+        fun owns(approvalId: Long): Boolean = approvalId in myApprovals
+
+        fun grantShell() {
+            if (grantOffered) shellGrant = true
         }
 
         val startedAt = System.currentTimeMillis()
@@ -1183,12 +1217,20 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
 
-        private suspend fun requestApproval(action: String): Boolean {
+        private suspend fun requestApproval(ask: atom.core.tool.ApprovalRequest): Boolean {
+            val grantable = ask.taskGrantable && grantOffered
+            if (grantable && shellGrant && !ask.alwaysAsk) return true
             val approvalId = approvalSeq.incrementAndGet()
             val deferred = CompletableDeferred<Boolean>()
             approvals[approvalId] = deferred
             myApprovals += approvalId
-            val pending = PendingApproval(approvalId, action, System.currentTimeMillis() + APPROVAL_TIMEOUT_MS)
+            val pending = PendingApproval(
+                approvalId,
+                ask.action,
+                System.currentTimeMillis() + APPROVAL_TIMEOUT_MS,
+                reason = ask.reason,
+                taskGrantable = grantable,
+            )
             updateRun(id) { copy(pending = pending, phase = RunPhase.WaitingForApproval, stream = stream.copy(awaitingApproval = true)) }
             val approved = try {
                 withTimeoutOrNull(APPROVAL_TIMEOUT_MS) { deferred.await() } ?: false

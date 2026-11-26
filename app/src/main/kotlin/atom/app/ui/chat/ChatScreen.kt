@@ -422,7 +422,7 @@ fun ChatScreen(
         }
     }
 
-    state.pending?.let { pending -> ApprovalDialog(pending, onAnswer = { vm.answer(pending.id, it) }) }
+    state.pending?.let { pending -> ApprovalDialog(pending, onAnswer = { vm.answer(pending.id, it) }, onAllowTask = { vm.allowForTask(pending.id) }) }
     if (showPicker) {
         ModelPickerSheet(
             selected = state.selection,
@@ -1256,7 +1256,7 @@ private fun AccessibilityNudge(onOpenSetup: () -> Unit) {
 // ---------------------------------------------------------------- Approval
 
 @Composable
-private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit) {
+private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit, onAllowTask: () -> Unit) {
     val remaining = rememberCountdown(pending.expiresAtMillis)
     val colors = MaterialTheme.colorScheme
     AtomDialog(
@@ -1274,6 +1274,17 @@ private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit
             Modifier.fillMaxWidth().heightIn(max = 220.dp).background(colors.surfaceContainer, RoundedCornerShape(16.dp)).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             Text(pending.action, style = MaterialTheme.extras.mono, color = colors.onSurface)
+        }
+        pending.reason?.let { why ->
+            Spacer(Modifier.height(10.dp))
+            Text(why, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        if (pending.taskGrantable) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onAllowTask, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.confirm_allow_task), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.primary)
+            }
+            Text(stringResource(R.string.confirm_allow_task_hint), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Text(stringResource(R.string.confirm_countdown, remaining), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)

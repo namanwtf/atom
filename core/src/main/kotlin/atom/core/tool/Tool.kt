@@ -40,7 +40,25 @@ interface ToolContext {
 
     /** Ask the user to approve [action]. Returns false if declined or nobody answers. */
     suspend fun confirm(action: String): Boolean
+
+    /** Ask the user to approve [request]; contexts that show more than a line of text override this. */
+    suspend fun approve(request: ApprovalRequest): Boolean = confirm(request.action)
 }
+
+/**
+ * What an approval prompt shows and how it may be answered.
+ *
+ * @property action the full action, e.g. the whole command line (shown scrollable, never cut).
+ * @property reason one line on why it asks, or null.
+ * @property taskGrantable a shell-type call: the user may allow all such calls for the rest of this task.
+ * @property alwaysAsk asks even when that grant is on (the call looks plainly destructive).
+ */
+data class ApprovalRequest(
+    val action: String,
+    val reason: String? = null,
+    val taskGrantable: Boolean = false,
+    val alwaysAsk: Boolean = false,
+)
 
 interface Tool {
     val spec: ToolSpec
@@ -66,6 +84,9 @@ interface Tool {
      * call, see [ShellRisk]. [risk] stays the worst case, for scoping and listings. Must not throw.
      */
     fun riskFor(args: JsonObject): Risk = risk
+
+    /** The approval prompt for a call with [args], or null for the default (the tool name and its arguments). Must not throw. */
+    fun approvalRequest(args: JsonObject): ApprovalRequest? = null
 
     /**
      * Plain-English text for the approval a [Risk.Sensitive] call asks for, e.g. what an automation compiles to.

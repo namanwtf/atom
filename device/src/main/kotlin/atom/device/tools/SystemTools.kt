@@ -13,6 +13,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.PowerManager
+import atom.core.tool.ApprovalRequest
 import atom.core.tool.PerCallRisk
 import atom.core.tool.Risk
 import atom.core.tool.ShellRisk
@@ -177,8 +178,8 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
         return object : SimpleTool(
             name = "shell",
             description = "Run a shell command on the phone. $where Each call is a fresh subshell (cd does not " +
-                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see. Only " +
-                "commands that could harm the system or the user's data ask the user first.",
+                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see. Read-only " +
+                "commands run at once; anything that changes files or the system asks the user first.",
             risk = Risk.Sensitive,
             parameters = schema {
                 string("command", "The sh command line.", required = true)
@@ -197,17 +198,19 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
                 ToolResult(body, isError = r.exitCode != 0)
             },
         ), PerCallRisk {
-            // Asks only for commands that could seriously harm the system or the user's data.
-            override fun riskFor(args: JsonObject): Risk = ShellRisk.classify(
-                args.optString("command").orEmpty(),
-                ShellScope.android(
-                    packageName = app.packageName,
-                    dataDir = app.applicationInfo.dataDir,
-                    cacheDir = app.cacheDir.path,
-                    workDirs = listOf(java.io.File(app.filesDir, "atom4_workspace").path),
-                    privileged = shell.tier != ShellTier.App,
-                ),
+            private fun scope() = ShellScope.android(
+                packageName = app.packageName,
+                dataDir = app.applicationInfo.dataDir,
+                cacheDir = app.cacheDir.path,
+                workDirs = listOf(java.io.File(app.filesDir, "atom4_workspace").path),
+                privileged = shell.tier != ShellTier.App,
             )
+
+            // Commands proven read-only run without asking; everything else asks (or runs under the task's grant).
+            override fun riskFor(args: JsonObject): Risk = ShellRisk.classify(args.optString("command").orEmpty(), scope())
+
+            override fun approvalRequest(args: JsonObject): ApprovalRequest =
+                ShellRisk.approval(args.optString("command").orEmpty(), scope(), if (shell.tier == ShellTier.Root) "a root shell" else "the phone's shell")
         }
     }
 

@@ -509,6 +509,12 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         graph.notifications.cancelApproval()
     }
 
+    /** "Allow all commands for this task". */
+    fun allowForTask(id: Long) {
+        runner.allowForTask(id)
+        graph.notifications.cancelApproval()
+    }
+
     fun removeQueued(id: Long) {
         selectedId.value?.let { runner.removeQueued(it, id) }
     }

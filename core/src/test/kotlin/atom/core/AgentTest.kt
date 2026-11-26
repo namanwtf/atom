@@ -219,6 +219,7 @@ class AgentTest {
         assertEquals(StopReason.StepLimit, done.reason)
         assertEquals("Stopped after 5 steps without finishing.", done.finalText)
         assertTrue(events.none { it is AgentEvent.Failed })
+        assertTrue(done.newMessages.none { it.text.endsWith(Agent.WRAP_UP) }, "a failed wrap-up leaves no prompt in the history")
         assertEquals(2, engine.wrapUps, "native history first, then once as plain text")
     }
 
@@ -366,5 +367,58 @@ class AgentTest {
         Agent(engine, ToolRegistry(listOf(shell)), config()).run(listOf(ChatMessage.user("go")), ctx).toList()
         assertEquals(1, ctx.asked, "only the dangerous command asked")
         assertEquals(1, shell.runs, "the declined one did not run")
+    }
+
+    @Test
+    fun waitingAndPollingAreNotStuck() {
+        val guard = atom.core.agent.LoopGuard()
+        val wait = listOf(ToolCall("w", "wait", """{"seconds":60}"""))
+        val same = listOf(ToolResult.ok("still loading"))
+        repeat(40) {
+            val v = guard.after(wait, same)
+            assertTrue(!v.stuck && v.nudge == null, "waiting step $it was treated as stuck")
+        }
+        val read = listOf(ToolCall("r", "read_screen", "{}"))
+        repeat(40) { assertTrue(!guard.after(read, same).stuck) }
+        // Waiting steps in between do not hide a real loop.
+        val tap = listOf(ToolCall("t", "tap", """{"id":"n1"}"""))
+        var stuck = false
+        repeat(12) {
+            guard.after(wait, same)
+            if (guard.after(tap, same).stuck) stuck = true
+        }
+        assertTrue(stuck)
+    }
+
+    @Test
+    fun sensitiveCallsAskWithTheToolsOwnApprovalRequest() = runTest {
+        class Shell : Tool {
+            override val risk = Risk.Sensitive
+            override val spec = ToolSpec("echo", "Run", schema { string("text", "command", required = true) })
+            override fun approvalRequest(args: JsonObject) =
+                atom.core.tool.ApprovalRequest("Run: " + args.string("text"), reason = "Asks because it deletes.", taskGrantable = true)
+            override suspend fun run(args: JsonObject, ctx: ToolContext) = ToolResult.ok("ran")
+        }
+        val asked = mutableListOf<atom.core.tool.ApprovalRequest>()
+        val ctx = object : ToolContext {
+            override val taskId = "t"
+            override suspend fun confirm(action: String) = error("approve() should be used")
+            override suspend fun approve(request: atom.core.tool.ApprovalRequest): Boolean {
+                asked += request
+                return true
+            }
+        }
+        val long = "rm -rf /sdcard/" + "x".repeat(1_000)
+        val engine = ScriptedEngine(
+            listOf(
+                listOf(call(long), LlmEvent.Finished(FinishReason.ToolCalls)),
+                listOf(LlmEvent.TextDelta("done"), LlmEvent.Finished(FinishReason.Stop)),
+            ),
+        )
+        Agent(engine, ToolRegistry(listOf(Shell())), config()).run(listOf(ChatMessage.user("go")), ctx).toList()
+        val request = asked.single()
+        assertEquals("Run: $long", request.action, "the whole command, never cut at 400 characters")
+        assertEquals("Asks because it deletes.", request.reason)
+        assertTrue(request.taskGrantable)
     }
 }

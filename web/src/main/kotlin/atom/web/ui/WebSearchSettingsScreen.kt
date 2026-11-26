@@ -194,7 +194,7 @@ internal fun WebSearchSettingsScreen(nav: FeatureNav) {
         }
         item {
             Text(
-                "The built-in search uses DuckDuckGo's public HTML page with Wikipedia as a fallback. It needs no key but can be rate-limited; " +
+                atom.web.search.KeylessSources.CONTACTED + " It needs no key but can be rate-limited; " +
                     "DeepSeek or a custom endpoint is more reliable. Keys are stored encrypted on this device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

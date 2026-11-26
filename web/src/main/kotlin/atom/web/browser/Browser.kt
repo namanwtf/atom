@@ -402,6 +402,30 @@ object BrowserSessions {
         main.post { sessions.keys.toList().forEach(::closeNow) }
     }
 
+    /**
+     * For a short-lived WebView (keyless search) that needs page timers running: resumes them if the agent browsers
+     * had paused them (timers are global to the process). Returns whether they were paused, for [returnTimers].
+     */
+    internal fun borrowTimers(view: WebView): Boolean {
+        visibleBrowsers++
+        val wasPaused = timersPaused
+        if (wasPaused) {
+            view.resumeTimers()
+            timersPaused = false
+        }
+        return wasPaused
+    }
+
+    /** Puts the timers back as [borrowTimers] found them, unless a browser started needing them meanwhile. */
+    internal fun returnTimers(view: WebView, wasPaused: Boolean) {
+        visibleBrowsers = (visibleBrowsers - 1).coerceAtLeast(0)
+        val recent = System.currentTimeMillis() - PAUSE_AFTER_MS
+        if (wasPaused && !timersPaused && visibleBrowsers == 0 && sessions.values.none { it.lastUsed > recent || it.attached }) {
+            view.pauseTimers()
+            timersPaused = true
+        }
+    }
+
     /** Called by the visible browsers so a paused agent session does not freeze their scripts. */
     internal fun onBrowserVisible(visible: Boolean, anyView: WebView) {
         visibleBrowsers = (visibleBrowsers + if (visible) 1 else -1).coerceAtLeast(0)

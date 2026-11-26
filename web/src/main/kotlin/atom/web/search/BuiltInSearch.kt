@@ -51,6 +51,13 @@ internal object KeylessSources {
         SearchParsers::mojeek,
     )
 
+    /** For Settings: every service the built-in search may contact, in the order it tries them. */
+    const val CONTACTED =
+        "The built-in search may contact, in turn: DuckDuckGo (html.duckduckgo.com, lite.duckduckgo.com), Bing " +
+            "(www.bing.com), Mojeek (www.mojeek.com) and Wikipedia. If none of them answers, it opens Bing's or " +
+            "DuckDuckGo's results page in a separate private browser profile that is wiped after each search and never " +
+            "shares the agent browser's logins."
+
     /** Tried in this order, one request each; the first with results wins. */
     val http: List<KeylessSource> = listOf(duckDuckGo, duckDuckGoLite, bing, mojeek)
 

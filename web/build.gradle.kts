@@ -33,6 +33,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    // Multi-profile WebView: keyless search never shares the agent browser's cookies.
+    implementation(libs.androidx.webkit)
 
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.kotlinx.coroutines.test)
