@@ -118,7 +118,7 @@ jobs:
         run: |
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
             -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
-            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 \
+            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 2 -tb 2 \
             --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
@@ -127,6 +127,13 @@ jobs:
           nohup python3 tools/compare/proxy.py 8081 http://127.0.0.1:8080 "$RUNNER_TEMP/proxy.jsonl" > "$RUNNER_TEMP/proxy.out" 2>&1 &
           sleep 2
           curl -fsS http://127.0.0.1:8081/v1/models
+
+      # The emulator needs the runner's memory more than the idle Gradle and Kotlin daemons do.
+      - name: Free memory for the emulator
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
 
       - name: Enable KVM
         run: |
@@ -149,7 +156,8 @@ jobs:
           profile: pixel_6
           cores: 2
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # ANGLE over SwiftShader Vulkan: the GL SwiftShader path crashed on blur effects on these GPU-less runners.
+          emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb uninstall io.github.namanwtf.atom || true
             adb install -r -g "$RUNNER_TEMP/old/old.apk"
@@ -158,6 +166,12 @@ jobs:
             adb install -r -g "$RUNNER_TEMP/new.apk"
             python3 tools/compare/run.py new "$RUNNER_TEMP/new.json" || true
             adb uninstall io.github.namanwtf.atom || true
+
+      - name: Host memory after the emulator
+        if: always()
+        run: |
+          free -m
+          sudo dmesg | grep -iE 'out of memory|oom-kill|killed process' | tail -n 20 || true
 
       - name: Report
         if: always()

@@ -48,6 +48,7 @@ object DeviceFeature : AtomFeature {
         RootAccess.load(context)
         (context.applicationContext as? android.app.Application)?.let(RootMonitor::install)
         ToolSwitches.init(context)
+        atom.device.screen.ScreenGate.install(context)
         Controls.registerAll()
         ControlRunner.installRestorer(context)
         SystemControlTools.installRestorers(context)

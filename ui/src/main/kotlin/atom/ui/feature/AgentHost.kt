@@ -32,7 +32,7 @@ data class HostStep(
     val durationMs: Long? = null,
 )
 
-data class HostApproval(val id: Long, val action: String, val expiresAtMillis: Long)
+data class HostApproval(val id: Long, val action: String, val expiresAtMillis: Long, val reason: String? = null)
 
 /** A live or just-finished agent run, as seen from outside the chat screen. */
 data class HostRun(
@@ -76,6 +76,9 @@ interface AgentHost {
     fun resume(conversationId: String)
     fun stop(conversationId: String)
     fun answer(approvalId: Long, approved: Boolean)
+
+    /** Approves and allows the run's shell commands for the rest of that run (where the run offers it). */
+    fun allowForTask(approvalId: Long) = answer(approvalId, true)
 }
 
 /** Set once by the app in Application.onCreate; feature modules read it. */

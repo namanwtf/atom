@@ -9,6 +9,7 @@ import atom.core.llm.LlmException
 import atom.core.llm.LlmRequest
 import atom.core.llm.Releasable
 import atom.core.llm.Role
+import atom.core.llm.ThinkTagSplitter
 import java.io.File
 import java.io.RandomAccessFile
 import kotlinx.coroutines.CancellationException
@@ -66,11 +67,14 @@ class LlamaCppEngine(
             val temperature = (request.temperature ?: DEFAULT_TEMPERATURE).toFloat()
             val maxTokens = request.maxOutputTokens.coerceAtLeast(1)
 
+            // Thinking models (Qwen3) write <think>…</think> as text: that part goes out as reasoning, and stray
+            // chat-format markers (<|im_end|>…) never reach the answer.
+            val splitter = ThinkTagSplitter()
             val generation = async(worker) {
                 val job = coroutineContext.job
                 nativeCall("generation failed", retryable = true) {
                     LlamaNative.nativeGenerate(h, prompt, maxTokens, temperature) { utf8 ->
-                        trySend(LlmEvent.TextDelta(String(utf8, Charsets.UTF_8))).isSuccess && job.isActive
+                        splitter.feed(String(utf8, Charsets.UTF_8)).all { trySend(it).isSuccess } && job.isActive
                     }
                 }
             }
@@ -88,6 +92,7 @@ class LlamaCppEngine(
                 FINISH_CANCELLED -> FinishReason.Cancelled
                 else -> FinishReason.Stop
             }
+            splitter.finish().forEach { send(it) }
             send(LlmEvent.Usage(inputTokens = result[0], outputTokens = result[1]))
             send(LlmEvent.Finished(reason))
         }

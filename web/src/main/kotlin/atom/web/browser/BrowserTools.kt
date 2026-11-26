@@ -110,11 +110,12 @@ internal object BrowserTools {
         }
     }
 
-    private fun header(s: BrowserSession): String {
+    private suspend fun header(s: BrowserSession): String {
         val p = s.page.value
+        val url = s.url()
         return buildString {
             if (p.title.isNotBlank()) append("Title: ").append(p.title).append('\n')
-            append("URL: ").append(s.webView.url ?: p.url)
+            append("URL: ").append(url ?: p.url)
             s.lastError?.let { append("\nLoad error: ").append(it) }
         }
     }
@@ -137,7 +138,9 @@ internal object BrowserTools {
             if (!WebViewSecurity.isWeb(url)) throw ToolArgumentException("Only http(s) pages can be opened.")
             s.load(url)
             val html = s.eval(BrowserScripts.HTML).orEmpty()
-            val doc = withContext(Dispatchers.Default) { Readable.extract(html, s.webView.url) }
+            // Read the URL here, on the main thread: inside the Default block it would touch the WebView off it.
+            val base = s.url()
+            val doc = withContext(Dispatchers.Default) { Readable.extract(html, base) }
             val summary = Paging.page(doc.text, 0, 1500)
             return ToolResult.ok(
                 header(s) + "\n\n" + summary.text.ifBlank { "(No readable text yet.)" } +
@@ -169,7 +172,8 @@ internal object BrowserTools {
                 "text" -> obj(s.eval(BrowserScripts.TEXT))?.let { JsonPath.string(it, "text") }.orEmpty()
                 else -> {
                     val html = s.eval(BrowserScripts.HTML).orEmpty()
-                    withContext(Dispatchers.Default) { Readable.extract(html, s.webView.url).text }
+                    val base = s.url()
+                    withContext(Dispatchers.Default) { Readable.extract(html, base).text }
                 }
             }
             val p = Paging.page(text, offset, limit)
@@ -304,7 +308,7 @@ internal object BrowserTools {
         Risk.Read, g,
     ) {
         override suspend fun step(s: BrowserSession, args: JsonObject): ToolResult {
-            val bmp = s.capture(ImageCodec.MAX_SIDE) ?: return ToolResult.error("Nothing to capture yet.")
+            val bmp = s.captureOnMain(ImageCodec.MAX_SIDE) ?: return ToolResult.error("Nothing to capture yet.")
             val enc = withContext(Dispatchers.Default) { try { ImageCodec.encode(bmp, 80) } finally { bmp.recycle() } }
             return ToolResult(header(s) + "\nScreenshot ${enc.width}×${enc.height}.", images = listOf(ContentPart.Image(enc.mime, enc.base64)), sensitive = true)
         }
@@ -317,14 +321,18 @@ internal object BrowserTools {
         Risk.Read, g,
     ) {
         override suspend fun step(s: BrowserSession, args: JsonObject): ToolResult {
-            val w = s.webView
-            when (args.string("action")) {
-                "back" -> if (w.canGoBack()) w.goBack() else return ToolResult.error("There is no previous page.")
-                "forward" -> if (w.canGoForward()) w.goForward() else return ToolResult.error("There is no next page.")
-                "reload" -> w.reload()
-                "stop" -> { w.stopLoading(); return ToolResult.ok("Stopped.\n" + header(s)) }
-                else -> throw ToolArgumentException("action must be back, forward, reload or stop")
+            val action = args.string("action")
+            if (action !in setOf("back", "forward", "reload", "stop")) throw ToolArgumentException("action must be back, forward, reload or stop")
+            val moved = s.onMain { w ->
+                when (action) {
+                    "back" -> w.canGoBack().also { if (it) w.goBack() }
+                    "forward" -> w.canGoForward().also { if (it) w.goForward() }
+                    "reload" -> true.also { w.reload() }
+                    else -> true.also { w.stopLoading() }
+                }
             }
+            if (!moved) return ToolResult.error(if (action == "back") "There is no previous page." else "There is no next page.")
+            if (action == "stop") return ToolResult.ok("Stopped.\n" + header(s))
             s.settleAfterAction()
             return ToolResult.ok(header(s))
         }

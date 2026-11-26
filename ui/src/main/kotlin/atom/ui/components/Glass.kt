@@ -63,11 +63,11 @@ fun Modifier.glassBar(state: HazeState, edge: GlassEdge): Modifier {
     val style = remember(base, blur) {
         HazeBlurStyle {
             blurEnabled(blur)
-            blurRadius(26.dp)
-            noiseFactor(0f)
+            blurRadius(AtomGlass.BlurRadius)
+            noiseFactor(AtomGlass.Noise)
             backgroundColor(base)
-            colorEffects(listOf(HazeColorEffect.tint(base.copy(alpha = 0.62f))))
-            fallbackColorEffect(HazeColorEffect.tint(base.copy(alpha = 0.9f)))
+            colorEffects(listOf(HazeColorEffect.tint(base.copy(alpha = AtomGlass.tintAlpha(base)))))
+            fallbackColorEffect(HazeColorEffect.tint(base.copy(alpha = AtomGlass.fallbackAlpha(base))))
         }
     }
     return this
@@ -134,8 +134,9 @@ fun Modifier.glassBand(state: HazeState, edge: GlassEdge, covered: Boolean, fade
         } else {
             HazeBlurStyle {
                 blurEnabled(true)
-                blurRadius(if (chrome.bandFirst) 20.dp else 28.dp)
-                noiseFactor(0f)
+                // Band-first keeps a stronger band over a lighter blur; Progressive lets the blur carry the look.
+                blurRadius(if (chrome.bandFirst) AtomGlass.BlurRadius * 0.85f else AtomGlass.BlurRadius * 1.15f)
+                noiseFactor(AtomGlass.Noise)
                 // Opaque under the blur, so the sharp text never shows through where the blur is.
                 backgroundColor(page)
                 fallbackColorEffect(HazeColorEffect.tint(page.copy(alpha = 0.94f)))
@@ -185,22 +186,24 @@ fun Modifier.glassBand(state: HazeState, edge: GlassEdge, covered: Boolean, fade
 }
 
 /**
- * A side pane of frosted glass over [state]'s sources: [color] at most of its strength over a blur of what is
- * behind. Without blur (Appearance, battery saver, older Android, low-RAM devices) it is plain solid [color].
- * Use only while the pane is on screen; the blur costs nothing once the pane leaves composition.
+ * A side pane of frosted glass over [state]'s sources: [color] tinted per [AtomGlass] over a blur of what is behind.
+ * The same modifier and style in every frame (sliding, open, closing): only the pane's position changes, so the
+ * blur never pops in or swaps. Keep the sources registered while the screen is visible, so the first frame of a
+ * slide is already blurred. Without blur (Appearance, battery saver, older Android, low-RAM devices) it is the same
+ * colour as a translucent tint.
  */
 @Composable
 fun Modifier.glassPane(state: HazeState, color: Color, glass: Boolean = rememberGlassChrome().blur): Modifier {
-    if (!glass) return background(color)
+    if (!glass) return background(color.copy(alpha = AtomGlass.fallbackAlpha(color)))
     val page = MaterialTheme.colorScheme.background
     val style = remember(page, color) {
         HazeBlurStyle {
             blurEnabled(true)
-            blurRadius(30.dp)
-            noiseFactor(0f)
+            blurRadius(AtomGlass.BlurRadius)
+            noiseFactor(AtomGlass.Noise)
             backgroundColor(page)
-            colorEffects(listOf(HazeColorEffect.tint(color.copy(alpha = 0.8f))))
-            fallbackColorEffect(HazeColorEffect.tint(color))
+            colorEffects(listOf(HazeColorEffect.tint(color.copy(alpha = AtomGlass.tintAlpha(color)))))
+            fallbackColorEffect(HazeColorEffect.tint(color.copy(alpha = AtomGlass.fallbackAlpha(color))))
         }
     }
     return hazeBlur(HazeInput.Sources(state), style)

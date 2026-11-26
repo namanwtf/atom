@@ -2,6 +2,7 @@ package atom.linux
 
 import android.content.Context
 import android.os.Process
+import atom.core.io.deleteTreeNoFollow
 import atom.linux.launch.LaunchCommands
 import atom.linux.launch.RootBusyBox
 import atom.linux.term.PtySession
@@ -36,5 +37,24 @@ object AndroidShell {
     fun rootArgv(context: Context, command: String): List<String> =
         listOf("su", "-c", RootBusyBox.wrap(command, appletDir(context.applicationContext), Process.myUid()))
 
-    private fun appletDir(app: Context): String = File(app.cacheDir, "root-busybox").path
+    /**
+     * Where the root shell's BusyBox applet links live: an app-private folder outside the cache and the agent's
+     * workspaces, which no tool writes to. In the cache, a redirect there would follow those links as root.
+     */
+    internal fun appletDir(app: Context): String {
+        retireCacheApplets(app)
+        return File(app.noBackupFilesDir, APPLET_DIR).path
+    }
+
+    const val APPLET_DIR = "root-busybox"
+
+    @Volatile
+    private var retired = false
+
+    /** 4.0.5 and earlier kept the links in the cache; remove that copy once. */
+    private fun retireCacheApplets(app: Context) {
+        if (retired) return
+        retired = true
+        runCatching { File(app.cacheDir, APPLET_DIR).deleteTreeNoFollow() }
+    }
 }

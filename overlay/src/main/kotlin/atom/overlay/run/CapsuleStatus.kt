@@ -11,6 +11,7 @@ internal enum class CapsuleStatus {
     Stopping,
     Paused,
     WaitingForControl,
+    WaitingForUnlock,
     NeedsApproval,
     Continuing,
     InputReceived,
@@ -35,11 +36,13 @@ internal object CapsuleStatuses {
         answering: Boolean,
         stopping: Boolean,
         notice: CapsuleNotice?,
+        waitingForUnlock: Boolean = false,
     ): CapsuleStatus = when {
         stopping -> CapsuleStatus.Stopping
         pending || phase == RunPhase.WaitingForApproval -> CapsuleStatus.NeedsApproval
         phase == RunPhase.Paused -> CapsuleStatus.Paused
         phase == RunPhase.WaitingForControl -> CapsuleStatus.WaitingForControl
+        waitingForUnlock && toolRunning -> CapsuleStatus.WaitingForUnlock
         notice != null -> when (notice) {
             CapsuleNotice.Continuing -> CapsuleStatus.Continuing
             CapsuleNotice.InputReceived -> CapsuleStatus.InputReceived

@@ -72,6 +72,26 @@ internal fun notReadyReason(selection: EngineSelection?, ready: Readiness?, info
     return when {
         provider != null && provider.enabled && provider.auth != AuthMethod.ApiKey && ready != null && provider.id !in ready.signedIn -> NotReady.SignIn
         provider != null && ready != null && provider.id in ready.unreadable -> NotReady.KeyUnreadable
+        provider != null && ready != null && ModelStatus.keyMissing(
+            providerEnabled = provider.enabled,
+            apiKeyAuth = provider.auth == AuthMethod.ApiKey,
+            keyOptional = provider.keyOptional,
+            hasKey = provider.id in ready.savedKeys,
+            modelExists = exists,
+        ) -> NotReady.NeedsKey
         else -> NotReady.Configure
     }
+}
+
+/** The [ModelStatus] of [selection]: its display name ([name], default the model's name) and why it is not usable. */
+internal fun modelStatus(
+    selection: EngineSelection?,
+    ready: Readiness?,
+    info: ModelInfo,
+    name: (EngineSelection) -> String? = { info.modelName(it) },
+): ModelStatus {
+    if (selection == null) return ModelStatus.NotSet
+    val reason = notReadyReason(selection, ready, info)
+    val provider = (selection as? EngineSelection.Cloud)?.let { runCatching { info.provider(it) }.getOrNull() }?.displayName
+    return ModelStatus.of(runCatching { name(selection) }.getOrNull(), reason, provider)
 }

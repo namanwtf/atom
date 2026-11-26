@@ -182,6 +182,7 @@ class TaskNotifications(private val context: Context) {
     private fun statusOf(run: LiveRun): String = when {
         run.pending != null -> context.getString(R.string.notif_waiting_text)
         run.phase == RunPhase.Paused -> context.getString(R.string.run_paused)
+        atom.ui.feature.ScreenWait.waiting(run.runId) -> context.getString(R.string.run_waiting_unlock)
         run.phase == RunPhase.WaitingForControl -> context.getString(R.string.run_waiting_control)
         run.retry != null -> context.getString(R.string.run_retrying_short)
         run.compacting -> context.getString(R.string.run_compacting)
@@ -210,9 +211,14 @@ class TaskNotifications(private val context: Context) {
         val allow = NotificationCompat.Action.Builder(0, context.getString(R.string.confirm_allow), approvalAction(pending.id, approve = true))
             .setAuthenticationRequired(true)
             .build()
+        // Allow from the shade only when the whole request fits in the few lines a notification shows. A long or
+        // multi-line command (an innocent first line, blank lines, then something else) or one that could grant the
+        // whole task is answered in the app's dialog, where all of it is visible: tapping opens it.
+        val answerInApp = ApprovalText.needsFullView(pending.action, pending.taskGrantable)
+        // Collapsed and heads-up, only the title and one line show: the command itself goes in the title.
         val notification = base(CH_APPROVAL)
-            .setContentTitle(context.getString(R.string.confirm_title))
-            .setContentText(pending.action)
+            .setContentTitle(ApprovalText.headline(pending.action))
+            .setContentText(context.getString(R.string.confirm_title))
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.action))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -220,7 +226,7 @@ class TaskNotifications(private val context: Context) {
             .setAutoCancel(true)
             .setContentIntent(openApp())
             .addAction(0, context.getString(R.string.confirm_deny), approvalAction(pending.id, approve = false))
-            .addAction(allow)
+            .apply { if (answerInApp) addAction(0, context.getString(R.string.notif_open_to_review), openApp()) else addAction(allow) }
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(publicVersion)
             .build()
@@ -339,4 +345,35 @@ class TaskNotifications(private val context: Context) {
         /** Black, so phones draw the emblem on a black disc like the launcher icon. */
         private const val ACCENT = 0xFF000000.toInt()
     }
+}
+
+/** When an approval must be read in full (in the app) instead of allowed from a notification. Pure, unit tested. */
+internal object ApprovalText {
+    const val MAX_LINES = 3
+    const val MAX_CHARS = 200
+
+    /** Line breaks as a notification renders them, the Unicode line and paragraph separators and NEL included. */
+    private val BREAKS = Regex("\r\n|[\n\r\u0085\u2028\u2029]")
+
+    fun needsFullView(action: String, taskGrantable: Boolean): Boolean =
+        taskGrantable || action.length > MAX_CHARS || lineCount(action) > MAX_LINES
+
+    fun lineCount(action: String): Int = action.split(BREAKS).size
+
+    /**
+     * The one line a collapsed or heads-up notification shows: the command itself first, then where it runs
+     * ("ls -la /data — Run in a root shell"), cut with an ellipsis past [max] characters.
+     */
+    fun headline(action: String, max: Int = HEADLINE_CHARS): String {
+        val lines = action.split(BREAKS).map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return ""
+        val text = if (lines.size > 1 && lines[0].endsWith(":")) {
+            lines.drop(1).joinToString(" ") + " — " + lines[0].removeSuffix(":")
+        } else {
+            lines.joinToString(" ")
+        }
+        return if (text.length > max) text.take(max - 1).trimEnd() + "…" else text
+    }
+
+    const val HEADLINE_CHARS = 120
 }

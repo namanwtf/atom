@@ -8,6 +8,8 @@ import atom.core.llm.LlmEngine
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
 import atom.core.llm.Role
+import atom.core.llm.ToolCallIds
+import atom.core.tool.ToolLoadout
 import atom.core.llm.ToolCall
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +18,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -100,7 +105,7 @@ internal class OpenAiChatEngine(
         if (temperature != null && !reasoningModel) put("temperature", temperature)
     }
 
-    private fun messages(history: List<ChatMessage>): JsonArray = buildJsonArray {
+    private fun messages(history: List<ChatMessage>): JsonArray = mergeNotes(buildJsonArray {
         val pendingImages = mutableListOf<ContentPart.Image>()
         val replay = ChatReasoning.interleaved(family)
         fun flushImages() {
@@ -117,8 +122,32 @@ internal class OpenAiChatEngine(
             }
             pendingImages.clear()
         }
+        // Mistral takes only nine-letter-and-digit ids; ids made by other providers (or old builds) are mapped to
+        // that form, deterministically so a call and its result still match.
+        val wireId: (String) -> String = if (family == Family.MISTRAL) ToolCallIds::strict else ToolCallIds::safe
+        // Thinking vendors that need each tool-call turn's reasoning back (DeepSeek, Kimi...) reject a call turn
+        // without it. The run's own tool preload has none: it goes as a plain note instead of a tool-call turn.
+        val asNote = if (!replay) emptySet() else history.flatMap { m ->
+            val loaderOnly = m.toolCalls.isNotEmpty() && m.toolCalls.all { it.name == ToolLoadout.LOADER }
+            if (loaderOnly && ReplayCaches.chatReasoning.get(m.toolCalls.first().id) == null) m.toolCalls.map { it.id } else emptyList()
+        }.toSet()
         for (message in history) {
             if (message.role != Role.Tool) flushImages()
+            if (message.role == Role.Assistant && message.toolCalls.isNotEmpty() && message.toolCalls.all { it.id in asNote }) {
+                if (message.text.isNotBlank()) addJsonObject {
+                    put("role", "assistant")
+                    put("content", message.text)
+                }
+                continue
+            }
+            if (message.role == Role.Tool && message.toolCallId in asNote) {
+                addJsonObject {
+                    put("role", "user")
+                    put("content", "[Tools loaded for this task]\n" + message.text)
+                    put(NOTE_MARK, true)
+                }
+                continue
+            }
             when (message.role) {
                 Role.System -> addJsonObject {
                     put("role", "system")
@@ -139,7 +168,7 @@ internal class OpenAiChatEngine(
                             }
                             putJsonArray("tool_calls") {
                                 for (call in message.toolCalls) addJsonObject {
-                                    put("id", call.id)
+                                    put("id", wireId(call.id))
                                     put("type", "function")
                                     putJsonObject("function") {
                                         put("name", call.name)
@@ -153,7 +182,7 @@ internal class OpenAiChatEngine(
                 Role.Tool -> {
                     addJsonObject {
                         put("role", "tool")
-                        put("tool_call_id", message.toolCallId.orEmpty())
+                        put("tool_call_id", wireId(message.toolCallId.orEmpty()))
                         put("content", message.text.ifEmpty { "(no output)" })
                     }
                     pendingImages += message.parts.filterIsInstance<ContentPart.Image>()
@@ -161,7 +190,7 @@ internal class OpenAiChatEngine(
             }
         }
         flushImages()
-    }
+    })
 
     private fun JsonObjectBuilder.putUserContent(parts: List<ContentPart>) {
         if (parts.all { it is ContentPart.Text }) {
@@ -301,3 +330,34 @@ internal fun visionLikely(provider: Provider, model: String): Boolean {
 }
 
 private val VISION_HINT = Regex("vl|vision|omni|4o|gpt-4\\.1|gpt-[5-9]|grok-4|pixtral|mistral-(medium|small)|llava|gemma-?3|kimi-k(2\\.[6-9]|3)|minimax-m3|qwen3\\.[5-9]|mimo|deepseek-(flash|v4\\.1)|step-[3-9]")
+
+/** Marks a preload note while the messages are built; [mergeNotes] removes it. */
+private const val NOTE_MARK = "_atom_note"
+
+/**
+ * Roles must alternate: a preload note that follows a user turn is appended to that turn's content instead of
+ * going out as a second user turn. Notes elsewhere stay their own user turn.
+ */
+internal fun mergeNotes(messages: JsonArray): JsonArray {
+    val out = ArrayList<JsonObject>(messages.size)
+    for (element in messages) {
+        val m = element.jsonObject
+        if (NOTE_MARK !in m) {
+            out += m
+            continue
+        }
+        val note = m["content"]!!.jsonPrimitive.content
+        val previous = out.lastOrNull()
+        if (previous == null || previous["role"]?.jsonPrimitive?.content != "user") {
+            out += JsonObject(m - NOTE_MARK)
+            continue
+        }
+        val merged = when (val content = previous["content"]) {
+            is JsonArray -> JsonArray(content + buildJsonObject { put("type", "text"); put("text", note) })
+            null, JsonNull -> JsonPrimitive(note)
+            else -> JsonPrimitive(content.jsonPrimitive.content + "\n\n" + note)
+        }
+        out[out.lastIndex] = JsonObject(previous + ("content" to merged))
+    }
+    return JsonArray(out)
+}

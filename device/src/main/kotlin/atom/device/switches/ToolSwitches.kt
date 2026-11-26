@@ -144,6 +144,7 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
     override val spec: ToolSpec get() = inner.spec
     override val risk: Risk get() = inner.risk
     override val usesPhoneUi: Boolean get() = inner.usesPhoneUi
+    override val needsUnlockedScreen: Boolean get() = inner.needsUnlockedScreen
     override val timeoutMs: Long? get() = inner.timeoutMs
 
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult {
@@ -154,6 +155,8 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
     }
 
     override suspend fun approvalText(args: JsonObject): String? = inner.approvalText(args)
+
+    override fun riskFor(args: JsonObject): Risk = inner.riskFor(args)
 }
 
 fun Tool.gated(vararg switches: ToolSwitch): Tool {
@@ -190,7 +193,15 @@ fun Tool.confirmsItself(): Boolean = this is atom.device.tools.ConfirmsItself ||
  * that does not already ask with its own preview. Looks through [GatedTool], so a gated self-confirming tool
  * (freeze, force stop, write setting...) is asked about once, not twice.
  */
-fun Tool.asksBeforeTaps(confirmAct: Boolean): Boolean = confirmAct && risk == Risk.Act && !confirmsItself()
+fun Tool.asksBeforeTaps(confirmAct: Boolean): Boolean =
+    confirmAct && (risk == Risk.Act || judgesEachCall()) && !confirmsItself()
+
+/**
+ * True for a tool whose worst case is [Risk.Sensitive] but which judges each call ([Tool.riskFor]), like the shell:
+ * calls it judges harmless run without asking, unless "Ask before taps and typing" asks for every step.
+ */
+fun Tool.judgesEachCall(): Boolean =
+    risk == Risk.Sensitive && (this is atom.core.tool.PerCallRisk || (this is GatedTool && inner.judgesEachCall()))
 
 /** Leaves out the tools switched off one by one on the Tool list (the model never sees them). */
 fun List<Tool>.withoutSwitchedOff(): List<Tool> = filter { ToolSwitches.isToolOn(it.spec.name) }

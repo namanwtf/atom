@@ -9,8 +9,12 @@ import atom.core.llm.LlmEvent
 import atom.core.llm.LlmException
 import atom.core.llm.LlmFailure
 import atom.core.llm.LlmRequest
+import atom.core.llm.PromptedToolEngine
+import atom.core.llm.PromptedTools
+import atom.core.llm.ToolSpec
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ToolCall
+import atom.core.tool.ApprovalRequest
 import atom.core.tool.Risk
 import atom.core.tool.ToolArgumentException
 import atom.core.tool.ToolContext
@@ -44,6 +48,15 @@ data class AgentConfig(
     val autoCompact: Boolean = true,
     /** Fraction of the usable window at which the conversation is compacted automatically. */
     val compactAt: Double = ContextMeter.DEFAULT_COMPACT_AT,
+    /**
+     * When the run stops before the model finished (the step budget ran out, or the loop guard found it stuck), this
+     * is sent as an internal user turn, after a sentence saying why, in one more model call with no tools, so the
+     * model reports what it did, what it found and what is left instead of the run ending without an answer. Null
+     * ends the run with a fixed notice.
+     */
+    val wrapUpPrompt: String? = Agent.WRAP_UP,
+    /** Whether the loop guard may end a run that keeps repeating itself without new information. */
+    val stopWhenStuck: Boolean = true,
 ) {
     /**
      * What one prompt may actually use: the model window minus room for the answer, or the policy's deliberate
@@ -51,17 +64,59 @@ data class AgentConfig(
      */
     val usableWindow: Int?
         get() = contextWindow?.takeIf { it > 0 }?.let { w ->
-            context.budgetTokens?.let { minOf(w, it) } ?: ContextPolicy.promptBudget(w, maxOutputTokens)
+            // A shared on-device window: the prompt (messages and tools) may use all of it but the answer. The
+            // messages' own cap ([ContextPolicy.budgetTokens]) is about packing, not about when to compact.
+            context.sharedWindow?.takeIf { it > 0 }?.let { s -> ContextPolicy.promptBudget(minOf(w, s), maxOutputTokens) }
+                ?: context.budgetTokens?.let { minOf(w, it) }
+                ?: ContextPolicy.promptBudget(w, maxOutputTokens)
         }
 
     /** The packing policy with its budget resolved: the deliberate cap, else the usable window, else a generous default. */
     val packing: ContextPolicy
         get() = if (context.budgetTokens != null) context else context.copy(budgetTokens = usableWindow ?: ContextPolicy.UNKNOWN_WINDOW_BUDGET)
 
+    /**
+     * The packing policy for one request that offers [tools]: with a [ContextPolicy.sharedWindow] the messages get
+     * what the tools (as [PromptedTools] writes them into the prompt) and the answer leave of it, otherwise [packing].
+     */
+    fun packingFor(tools: List<ToolSpec>): ContextPolicy {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return packing
+        val cap = maxOf(context.budgetTokens ?: shared, ContextPolicy.SHARED_MIN_BUDGET)
+        val left = messageRoom(tools)
+        if (left >= ContextPolicy.SHARED_MIN_BUDGET) return context.copy(budgetTokens = left.coerceAtMost(cap))
+        // Over-full (the agent already dropped what optional tools it could): the request must still fit, so the
+        // history shrinks instead: less budget, only the newest tool result in full, shorter results.
+        return context.copy(
+            budgetTokens = left.coerceAtLeast(ContextPolicy.SHARED_FLOOR),
+            keepFullToolResults = 1,
+            maxToolResultChars = minOf(context.maxToolResultChars, ContextPolicy.SHARED_FLOOR_RESULT_CHARS),
+            compactedToolResultChars = minOf(context.compactedToolResultChars, 80),
+        )
+    }
+
+    /** What a shared window leaves for the messages after the answer, [tools] and the margin; unbounded without one. */
+    fun messageRoom(tools: List<ToolSpec>): Int {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return Int.MAX_VALUE
+        return shared - maxOutputTokens - toolTokens(tools) - ContextPolicy.SHARED_MARGIN
+    }
+
+    /** What [tools] cost in the prompt: as [PromptedTools] writes them with a shared window, else as JSON schemas. */
+    fun toolTokens(tools: List<ToolSpec>): Int {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return ContextPacker.estimateTools(tools)
+        return if (tools.isEmpty()) 0 else ContextPacker.estimate(PromptedTools.instructions(tools, PromptedTools.compact(shared)))
+    }
+
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
 }
 
-enum class StopReason { Completed, StepLimit, OutputLimit }
+enum class StopReason {
+    Completed,
+    StepLimit,
+    OutputLimit,
+
+    /** The loop guard ended a run whose recent steps repeated earlier ones without bringing new information. */
+    Stuck,
+}
 
 /** Metadata the app stores next to a message the agent appended. */
 data class MessageInfo(
@@ -73,7 +128,7 @@ data class MessageInfo(
     val isError: Boolean = false,
     /** Only for the current turn; persist [Scrubber.scrub] of it instead. */
     val sensitive: Boolean = false,
-    /** A loop-guard nudge: sent to the model, never shown as the user's words. */
+    /** Agent-internal (a loop-guard nudge, the run's tool preload): sent to the model, never shown to the user. */
     val internal: Boolean = false,
     /** A queued user message delivered to the running task. */
     val steering: Boolean = false,
@@ -171,21 +226,46 @@ class Agent(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /** Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. */
-    fun run(history: List<ChatMessage>, ctx: ToolContext, control: RunControl = RunControl.None): Flow<AgentEvent> = flow {
+    /**
+     * Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. At the step
+     * limit the model gets one last call without tools to write its reply ([AgentConfig.wrapUpPrompt]).
+     */
+    fun run(
+        history: List<ChatMessage>,
+        ctx: ToolContext,
+        control: RunControl = RunControl.None,
+        /**
+         * A tool call already made for the model before its first step, with its result (the tool groups the run
+         * preloaded, [atom.core.tool.ToolLoadout.Preloaded.asExchange]). It is added to the conversation, marked
+         * [MessageInfo.internal], so it persists with it and the system prompt stays the same, but it is no step of
+         * the run: no tool events, hidden from the transcript.
+         */
+        preloaded: Pair<ToolCall, ToolResult>? = null,
+    ): Flow<AgentEvent> = flow {
         val state = RunState(history)
         val guard = LoopGuard()
+        var stuckAt: Int? = null
+
+        // Internal: kept for the model (and the prompt cache) but not a step the user sees, so no tool events.
+        preloaded?.let { (call, result) ->
+            append(state, ChatMessage.assistant("", listOf(call)), MessageInfo(internal = true))
+            append(state, ChatMessage.toolResult(call, result.toParts()), MessageInfo(durationMs = 0, internal = true))
+        }
 
         for (step in 1..config.maxSteps) {
             control.checkpoint()
             deliverSteering(state, control)
-            val specs = exposure.specs()
-            state.toolTokens = ContextPacker.estimateTools(specs)
+            exposure.onStep(step)
+            var specs = exposure.specs()
+            // A small shared window that the tools have overfilled (enable_tools, groups from history): the oldest
+            // optional groups go first, so the request still fits instead of being refused by the runtime.
+            while (config.messageRoom(specs) < ContextPolicy.SHARED_MIN_BUDGET && exposure.shrink()) specs = exposure.specs()
+            state.toolTokens = config.toolTokens(specs)
             maybeCompact(state)
 
             val request = LlmRequest(
                 model = config.model,
-                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packing),
+                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packingFor(specs)),
                 tools = specs,
                 maxOutputTokens = config.maxOutputTokens,
                 reasoning = config.reasoning,
@@ -217,6 +297,7 @@ class Agent(
                 return@flow
             }
 
+            val results = ArrayList<ToolResult>(turn.calls.size)
             for (call in turn.calls) {
                 control.checkpoint()
                 emit(AgentEvent.ToolStarted(call))
@@ -229,19 +310,79 @@ class Agent(
                     ChatMessage.toolResult(call, result.toParts()),
                     MessageInfo(durationMs = duration, isError = result.isError, sensitive = result.sensitive),
                 )
+                results += result
             }
 
-            guard.nudgeFor(turn.calls)?.let { append(state, ChatMessage.user(it), MessageInfo(internal = true)) }
+            val verdict = guard.after(turn.calls, results)
+            if (verdict.stuck && config.stopWhenStuck) {
+                stuckAt = step
+                break
+            }
+            // On the last step the wrap-up request below takes the place of a nudge.
+            if (verdict.nudge != null && step < config.maxSteps) append(state, ChatMessage.user(verdict.nudge), MessageInfo(internal = true))
         }
 
+        val stuck = stuckAt != null
+        val steps = stuckAt ?: config.maxSteps
+        val wrapped = config.wrapUpPrompt?.let { wrapUp(state, control, (if (stuck) STUCK_REASON else STEP_LIMIT_REASON) + " " + it) }
         emit(
             AgentEvent.Done(
-                finalText = "Stopped after ${config.maxSteps} steps without finishing.",
-                reason = StopReason.StepLimit,
-                steps = config.maxSteps,
+                finalText = wrapped ?: if (stuck) {
+                    "Stopped after $steps steps: the last steps repeated earlier ones without new information."
+                } else {
+                    "Stopped after ${config.maxSteps} steps without finishing."
+                },
+                reason = if (stuck) StopReason.Stuck else StopReason.StepLimit,
+                steps = steps,
                 newMessages = state.appended.toList(),
             ),
         )
+    }
+
+    /**
+     * The run is ending before the model finished (step budget spent, or stuck): one last request without tools, so
+     * the model tells the user where things stand.
+     * Returns its text, or null when the call failed or came back empty (the caller keeps its fixed notice). Any
+     * tool call the model makes anyway is dropped: nothing runs after the limit.
+     */
+    private suspend fun FlowCollector<AgentEvent>.wrapUp(state: RunState, control: RunControl, prompt: String): String? {
+        control.checkpoint()
+        state.toolTokens = 0
+        maybeCompact(state)
+        // The nudge joins the history only with the reply it produced; a failed wrap-up leaves no trace.
+        val nudge = ChatMessage.user(prompt)
+        val messages = ContextPacker.pack(config.systemPrompt, state.convo + nudge, config.packing)
+        val request = LlmRequest(
+            model = config.model,
+            messages = messages,
+            tools = emptyList(),
+            maxOutputTokens = config.maxOutputTokens,
+            reasoning = config.reasoning,
+        )
+        val turn = try {
+            streamWithRetry(request)
+        } catch (e: LlmException) {
+            // Some providers refuse tool calls in the history of a request that declares no tools; the same
+            // conversation as plain text carries everything the model needs for its reply.
+            if (e.retryable) return null
+            try {
+                streamWithRetry(request.copy(messages = PromptedToolEngine.asPlainText(messages)))
+            } catch (e: LlmException) {
+                return null
+            }
+        }
+        state.inTokens += turn.stats.inputTokens
+        state.outTokens += turn.stats.outputTokens
+        emit(AgentEvent.ModelCall(turn.stats))
+        emit(AgentEvent.Usage(state.inTokens, state.outTokens))
+        if (turn.text.isBlank()) return null
+        append(state, nudge, MessageInfo(internal = true))
+        val answer = ChatMessage.assistant(turn.text)
+        append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
+        state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
+        state.sinceReport = 0
+        emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
+        return turn.text
     }
 
     private inner class RunState(history: List<ChatMessage>) {
@@ -432,8 +573,20 @@ class Agent(
 
         if (tool.usesPhoneUi) control.acquirePhone()
 
-        if (tool.risk == Risk.Sensitive && !ctx.confirm(tool.approvalText(args) ?: describe(call))) {
-            return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
+        val risk = runCatching { tool.riskFor(args) }.getOrDefault(Risk.Sensitive)
+        if (risk == Risk.Sensitive) {
+            val request = runCatching { tool.approvalRequest(args) }.getOrNull()
+                ?: ApprovalRequest(tool.approvalText(args) ?: describe(call))
+            if (!ctx.approve(request)) {
+                return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
+            }
+        }
+
+        // The screen went off or locked mid-task: wait for it here, not inside the tool's timeout, so the model never
+        // sees a misleading "timed out" for an action that simply waited for the user to unlock.
+        if (tool.needsUnlockedScreen) {
+            val gate = atom.core.tool.PhoneScreen.gate
+            if (gate != null && !gate.awaitUsable(ctx.taskId)) return ToolResult.error(atom.core.tool.PhoneScreen.LOCKED_TOO_LONG)
         }
 
         val limit = tool.timeoutMs?.takeIf { it > 0 } ?: config.toolTimeoutMs
@@ -450,34 +603,126 @@ class Agent(
         }
     }
 
+    /** The default approval text: the tool and its arguments, long enough to show what it will do. */
     private fun describe(call: ToolCall): String {
-        val args = call.argumentsJson.take(400)
+        val args = call.argumentsJson.let { if (it.length > MAX_APPROVAL_ARGS) it.take(MAX_APPROVAL_ARGS) + "…" else it }
         return "${call.name}($args)"
     }
 
-    private companion object {
-        const val KEEP_RECENT_SHARE = 0.3
+    companion object {
+        /** What the final internal user turn asks for when a run ends before the model finished. */
+        const val WRAP_UP =
+            "Reply to the user now: what you did, what you found, what's left, and how they can continue " +
+                "(for example by asking you to carry on)."
+
+        /** Says why the run ends; put before [AgentConfig.wrapUpPrompt]. */
+        const val STEP_LIMIT_REASON = "You've reached this run's step limit, so no more tools will run."
+        const val STUCK_REASON =
+            "This run is stopping because its last steps repeated earlier actions without bringing new information, " +
+                "so no more tools will run."
+
+        private const val KEEP_RECENT_SHARE = 0.3
+
+        /** The approval sheet scrolls; this only bounds pathological arguments. */
+        private const val MAX_APPROVAL_ARGS = 8_000
 
         /** Growth (share of the window) needed after one automatic compaction before the next. */
-        const val MIN_GROWTH_SHARE = 0.1
+        private const val MIN_GROWTH_SHARE = 0.1
     }
 }
 
 /**
- * Stops the most common phone-agent failure: re-issuing the same action because the model assumes it
- * did not land. Every repeat is a wasted model call, which is wasted battery.
+ * Stops the most common phone-agent failure: re-issuing the same action because the model assumes it did not land,
+ * or circling through the same few actions (scroll down, scroll up, read the screen...) without learning anything.
+ * Every repeat is a wasted model call, which is wasted battery.
+ *
+ * Two signals, per step:
+ * - the identical set of calls [threshold] times in a row gets a nudge;
+ * - a step is stale when every call in it was made before (within the last [window] steps) and returned the same
+ *   result as then: it brought no new information. [staleNudgeAt] stale steps in a row get a nudge; [staleStopAt]
+ *   in a row mean the run is stuck and should end (with the model's wrap-up reply).
+ * A step with any new call or any changed result resets the stale streak, so long runs that keep making progress are
+ * never stopped by it.
  */
-internal class LoopGuard(private val threshold: Int = 3) {
+internal class LoopGuard(
+    private val threshold: Int = 3,
+    private val staleNudgeAt: Int = 4,
+    private val staleStopAt: Int = 8,
+    private val window: Int = 24,
+    /** Waiting steps in a row that bring nothing new before the run counts as stuck... */
+    private val waitStopAt: Int = 30,
+    /** ...or how long such waiting may last, whichever comes first. */
+    private val waitStopMs: Long = 30 * 60_000L,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    data class Verdict(val nudge: String? = null, val stuck: Boolean = false)
+
     private var lastSignature: String? = null
     private var repeats = 0
+    private var staleStreak = 0
+    private val seen = ArrayDeque<Set<String>>()
+    private var waitStreak = 0
+    private var waitSince = 0L
+
+    fun after(calls: List<ToolCall>, results: List<ToolResult>): Verdict {
+        val keys = calls.mapIndexed { i, c -> callKey(c) + "=>" + digest(results.getOrNull(i)) }.toSet()
+        val stale = keys.isNotEmpty() && keys.all { k -> seen.any { k in it } }
+        seen.addLast(keys)
+        while (seen.size > window) seen.removeFirst()
+        if (calls.isNotEmpty() && calls.all(::isWaiting)) {
+            // Waiting (wait, or a terminal read that blocks until output arrives) is how long tasks pass time: it does
+            // not count towards the stale streak, but it has its own, much longer bound.
+            if (stale) {
+                if (waitStreak == 0) waitSince = clock()
+                waitStreak++
+                if (waitStreak >= waitStopAt || clock() - waitSince >= waitStopMs) return Verdict(stuck = true)
+            } else {
+                waitStreak = 0
+            }
+            // Repeating the same wait is the point of waiting: no "stop repeating it" nudge. The bound above still applies.
+            return Verdict()
+        }
+        waitStreak = 0
+        staleStreak = if (stale) staleStreak + 1 else 0
+        if (staleStreak >= staleStopAt) return Verdict(stuck = true)
+        nudgeFor(calls)?.let { return Verdict(nudge = it) }
+        if (staleStreak == staleNudgeAt) {
+            return Verdict(
+                nudge = "Your last $staleNudgeAt steps repeated earlier actions and returned nothing new. Stop circling. " +
+                    "Try a clearly different approach, or, if you are blocked or already have the answer, stop and reply to the user.",
+            )
+        }
+        return Verdict()
+    }
+
+    /**
+     * A call that waits for something to change rather than looking: wait and browser_wait, and terminal reads that
+     * block for a while (wait_s above 0). Reading the screen or polling job info again and again is not waiting.
+     */
+    private fun isWaiting(c: ToolCall): Boolean = when (c.name) {
+        "wait", "browser_wait" -> true
+        "terminal_session_read" -> Regex(""""wait_s"\s*:\s*([0-9]+)""").find(c.argumentsJson)?.groupValues?.get(1)?.toLongOrNull()?.let { it > 0 } == true
+        else -> false
+    }
 
     fun nudgeFor(calls: List<ToolCall>): String? {
-        val signature = calls.joinToString("|") { it.name + ":" + it.argumentsJson.filterNot(Char::isWhitespace) }
+        val signature = calls.joinToString("|") { callKey(it) }
         repeats = if (signature == lastSignature) repeats + 1 else 1
         lastSignature = signature
         if (repeats < threshold) return null
         repeats = 0
         return "You have issued the identical action $threshold times in a row. Stop repeating it. " +
             "Re-read the current state, then either take a different action or explain what is blocking you."
+    }
+
+    private fun callKey(c: ToolCall) = c.name + ":" + c.argumentsJson.filterNot(Char::isWhitespace)
+
+
+    /** What a result said, ignoring per-call noise (the browser card's preview file name). */
+    private fun digest(r: ToolResult?): String {
+        if (r == null) return "-"
+        val text = r.text.lineSequence().filterNot { it.startsWith("Preview: ") }.joinToString("\n")
+        val images = r.images.joinToString(",") { it.hashCode().toString() }
+        return "${r.isError}:${text.hashCode()}:${text.length}:$images"
     }
 }

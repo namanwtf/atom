@@ -139,7 +139,8 @@ object Transcript {
                     out += ChatItem.User("u$i", i, msg.text, s.attachments, s.steering, s.edited)
                     turn = TurnBuilder("t$i", i)
                 }
-                msg.role == Role.User -> Unit
+                // Hidden: agent-internal turns (loop-guard nudges, the run's own tool preload) are for the model only.
+                s.hidden || msg.role == Role.User -> Unit
                 msg.role == Role.Assistant -> (turn ?: TurnBuilder("t$i", null).also { turn = it }).assistant(i, s)
                 msg.role == Role.Tool -> turn?.tool(s)
                 else -> Unit

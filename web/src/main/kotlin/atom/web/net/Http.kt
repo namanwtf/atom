@@ -49,6 +49,11 @@ object Http {
             .build()
     }
 
+    /** Keyless search pages: a source that does not answer quickly is skipped for the next one. */
+    val quickClient: OkHttpClient by lazy {
+        client.newBuilder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(6, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS).build()
+    }
+
     /** Long-running image generation calls. */
     val slowClient: OkHttpClient by lazy {
         client.newBuilder().readTimeout(300, TimeUnit.SECONDS).callTimeout(330, TimeUnit.SECONDS)

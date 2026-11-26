@@ -1,0 +1,25 @@
+trap 'rm -rf /sdcard/DCIM' EXIT
+====
+coproc rm -rf /sdcard
+====
+git -c alias.x='!rm -rf /sdcard' x
+====
+make -f /dev/stdin <<< 'all: ; rm -rf /sdcard'
+====
+vi -c ':!rm -rf /sdcard' -c ':q'
+====
+rsync -e 'sh -c "rm -rf /sdcard"' x y:
+====
+echo 'rm -rf /sdcard' > /data/user/0/io.github.namanwtf.atom/cache/a.sh; sh /data/user/0/io.github.namanwtf.atom/cache/a.sh
+====
+printf 'rm -rf /sdcard\n' | xargs -0 sh -c
+====
+sh -xc 'rm -rf /sdcard'
+====
+mksh -o noglob -c 'rm -rf /sdcard'
+====
+su root -c 'rm -rf /sdcard'
+====
+su -mm -c rm -rf /sdcard
+====
+su 0 rm -rf /sdcard

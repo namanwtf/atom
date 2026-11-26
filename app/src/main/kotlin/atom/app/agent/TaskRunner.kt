@@ -91,9 +91,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
-data class PendingApproval(val id: Long, val action: String, val expiresAtMillis: Long)
+/**
+ * An approval the run waits for. [reason] is one line on why it asks; [taskGrantable] offers "allow all commands for
+ * this task" (shell-type calls in a run the user started).
+ */
+data class PendingApproval(
+    val id: Long,
+    val action: String,
+    val expiresAtMillis: Long,
+    val reason: String? = null,
+    val taskGrantable: Boolean = false,
+)
 
 enum class RunOutcome { Completed, StepLimit, OutputLimit, Failed, Cancelled }
 
@@ -424,6 +436,12 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         approvals[approvalId]?.complete(approved)
     }
 
+    /** Approves [approvalId] and lets its run's shell commands run without asking until that run ends. */
+    override fun allowForTask(approvalId: Long) {
+        synchronized(lock) { executions.values.firstOrNull { it.owns(approvalId) } }?.grantShell()
+        approvals[approvalId]?.complete(true)
+    }
+
     /**
      * Changes a conversation's own settings (title, pin, model, reasoning). A running task keeps the change, so its
      * final save cannot undo it. Returns the saved conversation, or null if it was never saved yet.
@@ -574,7 +592,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
         scope.launch {
             holdsMutex.withLock {
-                val now = synchronized(lock) { executions.values.count { !it.paused.value } }
+                // A run waiting for the screen to be unlocked is parked: no wake lock while it waits (the screen-on and
+                // user-present broadcasts wake it).
+                val now = synchronized(lock) { executions.values.count { !it.paused.value && !atom.ui.feature.ScreenWait.waiting(it.runId) } }
                 graph.runPower.update(now, graph.settings.current().keepScreenOn)
             }
         }
@@ -585,6 +605,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     init {
         // "Keep screen on while running" applies at once, also to a run already going.
         scope.launch { graph.settings.settings.map { it.keepScreenOn }.distinctUntilChanged().collect { refreshHolds() } }
+        // A run starting or ending a wait for the screen to be unlocked changes what holds the wake lock.
+        scope.launch { atom.ui.feature.ScreenWait.tasks.collect { refreshHolds() } }
     }
 
     /** The conversation's own model if it still exists, else the default; second is a notice when it fell back. */
@@ -641,7 +663,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             phase = run.phase,
             text = run.stream.text.ifEmpty { if (!run.active) lastAnswer?.message?.text.orEmpty() else "" },
             steps = steps,
-            pending = run.pending?.let { HostApproval(it.id, it.action, it.expiresAtMillis) },
+            pending = run.pending?.let { HostApproval(it.id, it.action, it.expiresAtMillis, it.reason) },
             queued = queues[run.conversation.id]?.items?.value?.map { it.text }.orEmpty(),
             error = run.error,
         )
@@ -670,6 +692,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private var outcome: RunOutcome? = null
         private var error: String? = null
         private var finalText: String? = null
+
+        /** The run ended at the step limit because the loop guard found it repeating itself. */
+        private var stuck = false
         private var routed: RoutedEngine? = null
         private var support = ReasoningSupport.None
         private var journalOpen = false
@@ -683,8 +708,22 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
         private val toolContext = object : ToolContext {
             override val taskId: String = runId
-            override suspend fun confirm(action: String): Boolean = requestApproval(action)
+            override suspend fun confirm(action: String): Boolean = requestApproval(atom.core.tool.ApprovalRequest(action))
+            override suspend fun approve(request: atom.core.tool.ApprovalRequest): Boolean = requestApproval(request)
         }
+
+        /**
+         * "Allow all commands for this task": shell, terminal_run, terminal_job_start and terminal_session sends run
+         * without asking until this run ends. Never saved, never offered to scheduled or automation runs, and
+         * commands that look plainly destructive still ask.
+         */
+        private val shellGrant = atom.core.tool.TaskGrant(
+            offered = request.source != RunSource.Automation && request.source != RunSource.Schedule,
+        )
+
+        fun owns(approvalId: Long): Boolean = approvalId in myApprovals
+
+        fun grantShell() = shellGrant.grant()
 
         val startedAt = System.currentTimeMillis()
 
@@ -799,6 +838,22 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 )
                 loadout.preload(history.messages)
                 val registry = ToolRegistry(loadout.all)
+                val autoCompact = settings.autoCompaction
+                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools)
+                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
+                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                // The groups the request most likely needs are loaded now, so the model rarely has to call
+                // enable_tools first (small models almost never do). The load goes into the conversation as an
+                // enable_tools call with its result (and the groups' notes): it persists with the conversation and
+                // the system prompt, the cached prefix, stays the same from turn to turn.
+                val preloaded = if (request.regenerate != null) null else atom.core.agent.ToolPreload.apply(
+                    loadout,
+                    atom.automation.ToolRouter.route(
+                        request = request.prompt ?: history.messages.lastOrNull { it.role == Role.User }?.text.orEmpty(),
+                        recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
+                    ),
+                    baseConfig,
+                ).asExchange(loadout, takenIds = stored.flatMap { m -> m.message.toolCalls.map { it.id } }.toSet())
                 val basePrompt = SystemPrompt.build(
                     tier = shell.tier,
                     onDevice = engine.onDevice,
@@ -809,10 +864,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 // The clock time rides on the latest user message, so the system prompt (and the cached prefix) stays
                 // the same all day. Character chats keep their own framing.
                 val messages = if (character == null) SystemPrompt.withTime(history.messages) else history.messages
-                val autoCompact = settings.autoCompaction
-                val config = engine.agentConfig(systemPrompt = systemPrompt, tools = registry.specs, slowApprovals = settings.confirmActTools)
-                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1) else c }
-                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                val config = baseConfig.copy(systemPrompt = systemPrompt)
                 if (debuggable) logRequestSize(systemPrompt, messages, loadout.specs(), registry.specs, config)
                 val notice = listOfNotNull(
                     fallbackNotice?.takeIf { roleSelection == null },
@@ -820,6 +872,15 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     if (window == null && autoCompact) app.getString(atom.app.R.string.run_window_unknown) else null,
                 ).joinToString("\n").ifEmpty { null }
                 if (fallbackNotice != null && roleSelection == null && request.regenerate == null) commit(StoredMessage.notice(fallbackNotice), modelVisible = false)
+                // A tiny on-device model asked for browser or phone work: say plainly, once per conversation, that it
+                // will probably not manage it. The run goes ahead anyway.
+                if (request.regenerate == null) {
+                    val warning = app.getString(atom.app.R.string.run_small_model_agent)
+                    val warned = stored.any { it.kind == EntryKind.Notice && it.message.text == warning }
+                    if (atom.core.agent.SmallModel.shouldWarn(engine.onDevice, engine.smallModel, request.prompt.orEmpty(), warned)) {
+                        commit(StoredMessage.notice(warning), modelVisible = false)
+                    }
+                }
                 contextWindow = config.usableWindow
                 updateRun(id) { copy(phase = if (paused.value) RunPhase.Paused else RunPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = notice) }
 
@@ -834,7 +895,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
 
                 stats = stats.withTurn()
-                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control).collect { handle(it) }
+                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control, preloaded).collect { handle(it) }
                 settle(RunOutcome.Completed)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
@@ -928,7 +989,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 .map { it.switchChecked() }
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
-            return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
+            return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk; toolOf[it.spec.name] = it }
         }
 
         private fun originOf(featureId: String): ToolOrigin = ToolFamilies.originOf(featureId)
@@ -979,6 +1040,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 is AgentEvent.Appended -> appended(event.message, event.info)
                 is AgentEvent.ToolStarted -> {
                     flushStream()
+                    judge(event.call)?.let { callRisk[event.call.id] = it }
                     updateRun(id) {
                         copy(
                             currentTool = event.call.name,
@@ -1025,12 +1087,21 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     finalText = event.finalText
                     outcome = when (event.reason) {
                         StopReason.Completed -> RunOutcome.Completed
-                        StopReason.StepLimit -> RunOutcome.StepLimit
+                        StopReason.StepLimit, StopReason.Stuck -> RunOutcome.StepLimit
                         StopReason.OutputLimit -> RunOutcome.OutputLimit
                     }
+                    stuck = event.reason == StopReason.Stuck
                 }
                 is AgentEvent.Failed -> {
-                    flushStream()
+                    if (event.failure == atom.core.llm.LlmFailure.Unreadable) {
+                        // A runaway loop of symbols: not kept as an answer, and not sent back to the model next turn.
+                        flushJob?.cancel()
+                        pendingText.clear()
+                        pendingReasoning.clear()
+                        updateRun(id) { copy(stream = StreamState()) }
+                    } else {
+                        flushStream()
+                    }
                     outcome = RunOutcome.Failed
                     error = event.message
                 }
@@ -1049,6 +1120,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         message,
                         reasoning = info.reasoning,
                         reasoningMs = info.reasoningMs,
+                        hidden = info.internal,
                         createdAt = now,
                         searchSuggestions = info.searchSuggestions,
                     )
@@ -1057,7 +1129,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     message = if (info.sensitive) Scrubber.scrub(message) else stripImages(message),
                     durationMs = info.durationMs,
                     isError = info.isError,
-                    risk = message.toolName?.let { riskOf[it] },
+                    hidden = info.internal,
+                    risk = message.toolCallId?.let { callRisk.remove(it) } ?: message.toolName?.let { riskOf[it] },
                     createdAt = now,
                 )
                 else -> if (info.steering) {
@@ -1072,6 +1145,18 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
 
         private val riskOf = HashMap<String, Risk>()
+        private val toolOf = HashMap<String, Tool>()
+
+        /** The risk each running call was judged at (a shell's `ls` is not marked like its `rm -rf`). */
+        private val callRisk = HashMap<String, Risk>()
+
+        private fun judge(call: atom.core.llm.ToolCall): Risk? {
+            val tool = toolOf[call.name] ?: return null
+            return runCatching {
+                val args = if (call.argumentsJson.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(call.argumentsJson).jsonObject
+                tool.riskFor(args)
+            }.getOrNull()
+        }
 
         private fun commit(entry: StoredMessage, modelVisible: Boolean) {
             stored += entry
@@ -1135,12 +1220,20 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
 
-        private suspend fun requestApproval(action: String): Boolean {
+        private suspend fun requestApproval(ask: atom.core.tool.ApprovalRequest): Boolean {
+            if (shellGrant.covers(ask)) return true
+            val grantable = shellGrant.grantable(ask)
             val approvalId = approvalSeq.incrementAndGet()
             val deferred = CompletableDeferred<Boolean>()
             approvals[approvalId] = deferred
             myApprovals += approvalId
-            val pending = PendingApproval(approvalId, action, System.currentTimeMillis() + APPROVAL_TIMEOUT_MS)
+            val pending = PendingApproval(
+                approvalId,
+                ask.action,
+                System.currentTimeMillis() + APPROVAL_TIMEOUT_MS,
+                reason = ask.reason,
+                taskGrantable = grantable,
+            )
             updateRun(id) { copy(pending = pending, phase = RunPhase.WaitingForApproval, stream = stream.copy(awaitingApproval = true)) }
             val approved = try {
                 withTimeoutOrNull(APPROVAL_TIMEOUT_MS) { deferred.await() } ?: false
@@ -1210,7 +1303,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
                 RunOutcome.Cancelled -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_stopped))
                 RunOutcome.Failed -> stored += StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true)
-                RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_step_limit))
+                RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(if (stuck) atom.app.R.string.run_stuck else atom.app.R.string.run_step_limit))
                 RunOutcome.OutputLimit -> stored += StoredMessage.notice(LlmErrors.explain(atom.core.llm.LlmFailure.OutputLimit))
                 else -> Unit
             }
@@ -1337,6 +1430,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         const val TITLE_TIMEOUT_MS = 20_000L
         const val KEEP_FINISHED = 6
         val RUN_SCOPED = setOf("release_phone_control")
+
+        /** Messages at the end of the history whose tool calls count as "recently used" for tool routing. */
+        const val RECENT_FOR_ROUTING = 8
 
         /** About two frames at 60 Hz: smooth to the eye, far fewer recompositions than per token. */
         const val TEXT_FLUSH_MS = 32L

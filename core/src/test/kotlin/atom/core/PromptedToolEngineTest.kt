@@ -53,6 +53,38 @@ class PromptedToolEngineTest {
     }
 
     @Test
+    fun stopsWhenTheModelInventsTheToolResult() = runTest {
+        // What Qwen3 0.6B wrote on the runner: a call, then a made-up result for it.
+        val inner = chunked(
+            "\n\n", "<tool_call>{\"name\": \"tap\", \"arguments\": {\"id\": \"3\"}}</tool_call>", "\n", "<tool_result", ">",
+            "\n1. Quantum chip", " announced", "\n</tool_result>",
+        )
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")), tools)).toList()
+        val text = events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text }
+        assertTrue("tool_result" !in text && "Quantum" !in text, text)
+        assertEquals("tap", events.filterIsInstance<LlmEvent.ToolCallReady>().single().call.name)
+        assertEquals(FinishReason.ToolCalls, (events.last() as LlmEvent.Finished).reason)
+    }
+
+    @Test
+    fun aCallInTheNoToolsWrapUpNeverShowsAsText() = runTest {
+        // The step-limit wrap-up offers no tools; a small model writes a call anyway.
+        val inner = chunked("I opened the page but ran out of steps. ", "<tool_call>{\"name\": \"tap\", ", "\"arguments\": {}}</tool", "_call>", " Sorry.")
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")))).toList()
+        val text = events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text }
+        assertEquals("I opened the page but ran out of steps.  Sorry.", text)
+        assertTrue(events.none { it is LlmEvent.ToolCallReady })
+        assertEquals(FinishReason.Stop, (events.last() as LlmEvent.Finished).reason)
+    }
+
+    @Test
+    fun aToolResultTagBeforeAnyCallIsKept() = runTest {
+        val inner = chunked("Atom sends results in <tool_result> blocks.")
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")), tools)).toList()
+        assertEquals("Atom sends results in <tool_result> blocks.", events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text })
+    }
+
+    @Test
     fun rewritesHistoryIntoPlainMessages() = runTest {
         val inner = chunked("ok")
         val call = ToolCall("c1", "tap", """{"id":"1"}""")
@@ -68,6 +100,27 @@ class PromptedToolEngineTest {
         assertTrue(sent.messages.first().text.contains("## tap"))
         assertTrue(sent.messages[2].text.contains("<tool_call>"))
         assertEquals(Role.User, sent.messages[3].role)
+    }
+
+    @Test
+    fun requestWithoutToolsStillWritesOutEarlierCalls() = runTest {
+        val inner = chunked("Done for now.")
+        val call = ToolCall("c1", "tap", """{"id":"1"}""")
+        val history = listOf(
+            ChatMessage.system("sys"),
+            ChatMessage.user("go"),
+            ChatMessage.assistant("", listOf(call)),
+            ChatMessage.toolResult(call, listOf(ContentPart.Text("tapped"))),
+            ChatMessage.user("wrap up"),
+        )
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", history)).toList()
+        val sent = inner.requests.single()
+        assertEquals("sys", sent.messages.first().text, "no tool instructions without tools")
+        assertTrue(sent.messages[2].text.contains("<tool_call>"))
+        assertTrue(sent.messages[2].toolCalls.isEmpty())
+        assertEquals(Role.User, sent.messages[3].role)
+        assertTrue(sent.messages[3].text.contains("<tool_result name=\"tap\">"))
+        assertEquals("Done for now.", events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text })
     }
 }
 

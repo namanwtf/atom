@@ -8,6 +8,8 @@ Atom is built and tested only on GitHub's disposable runners, never on a persona
 | **CI** (`ci.yml`) | Unit tests, debug and release builds, the release-hygiene checks | Every push to main and every pull request |
 | **Screenshots** (`screenshots.yml`) | Walks the debug build's screens on an emulator and prints each screenshot into the log | Pull requests that touch UI modules |
 | **E2E** (`e2e.yml`) | Real agent tasks on an emulator, end to end | On demand, weekly, and on labelled or release pull requests |
+| **Compare** (`compare.yml`) | The previous Atom (latest 3.4.x) and the new one, side by side on one emulator and model | On demand, and on the release pull request |
+| **On-device model** (`ondevice-model.yml`) | The catalog's Qwen3 0.6B (`.litertlm`) on the runner's CPU with the app's LiteRT-LM version | On demand, and on pull requests that touch the LiteRT-LM engine or the probe |
 
 ## End-to-end tasks
 
@@ -57,6 +59,12 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | f | Stop mid-task: a longer task, stopped from the running-task notification after its first tool call | The run ends as stopped, its partial history is saved and the app is alive |
 | g | Characters: open the library and tap Lumen | No crash |
 | h | Bubble: open the floating bubble, type into the mini chat and send | The bubble's conversation gets a reply |
+| i | Battery fix: the boot / clock receiver, after e created a task | The receiver is enabled while an enabled task exists |
+| j | Battery fix: an ordinary notification is posted | It is in the searchable notification history (only progress updates are skipped) |
+| k | Battery fix: "Hey Atom" on (needs the on-device pack, which the job installs), screen off, then plugged in | Listening with the screen on, paused with the screen off on battery, listening again when plugged in |
+| m | Screen off mid-task: a shell command task, screen turned off after its first step | It completes with the screen off; the task wake lock and foreground service are held during it and the wake lock is released after |
+| n | Screen off mid-task: a task operating Settings, screen turned off after its first step | It neither fails nor spins (at most 2 tool calls while off), waits with "Waiting for the screen to be unlocked" in its notification without holding the task wake lock, and completes after unlocking |
+| l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
 All of them are core: the job fails if any of them fails. Every scenario also fails on any entry in the crash buffer
 (`adb logcat -b crash`).
@@ -107,3 +115,43 @@ adb shell content read --uri content://io.github.namanwtf.atom.debug.e2e/state  
 Other methods: `clear` (forget finished runs), `stop` (the same broadcast the notification's Stop button sends),
 `approve` / `deny` (a pending confirmation) and `linux_install`. Runner: `tools/e2e/run.py` (scenario keys can be passed
 as arguments, e.g. `run.py c d`).
+
+## On-device model (LiteRT-LM)
+
+`ondevice-model.yml` installs the LiteRT-LM Python runtime at the version the app ships (`litertlm` in
+`gradle/libs.versions.toml`, the `litert-lm` wheel on PyPI) and downloads the catalog's Qwen3 0.6B from the same URL,
+checked against the same SHA-256, as the app's model downloader (`models/ModelCatalog.kt`). `tools/ondevice/litert_probe.py`
+then prints:
+
+- the model file's own metadata: its context size (`max_num_tokens`, 4096 for Qwen3 0.6B), default sampler, stop
+  tokens, thinking channel and the Jinja chat template the runtime applies;
+- how the chat tokens tokenize (`<|im_start|>`, `<|im_end|>`, `<think>` must each be one special token);
+- the prompt the runtime renders from Atom's messages (the compact system prompt plus `PromptedToolEngine`'s tool
+  block) and the streamed answer, with the model's default sampler and thinking, and with thinking off and Qwen's
+  non-thinking sampler; for a chat question, the first step of a browser task, and prompts sized just under and over
+  the model's window.
+
+It also lists the Kotlin API of the app's LiteRT-LM AAR (`javap`), so a runtime upgrade shows what changed. The
+runner has no GPU, so the phone's GPU and NPU paths and their speed are not covered.
+
+## Old vs new (Compare)
+
+`compare.yml` installs the previous Atom (the latest 3.4.x release of `namanwtf/atom-old`, its published APK) and the
+new release build (signed on the runner with a throwaway key), one after the other on the same emulator. They share
+the application id, so each is uninstalled before the other goes on. Both are set up only through their own screens:
+Settings > Model providers > Add OpenAI-compatible provider, pointed at `http://10.0.2.2:8081/v1`.
+
+Port 8081 is `tools/compare/proxy.py`, a pass-through in front of the same llama-server. It writes one line per chat
+request: which app and task, the messages and tools sent, the model's tool calls and answer, and the server's own
+token counts. So both apps are measured the same way, without any hook inside either app. While the CPU is still
+reading a long prompt, the proxy sends SSE comment lines, which clients ignore, so neither app's read timeout measures
+the runner's CPU instead of the app.
+
+`tools/compare/run.py` then runs the same tasks in each app (a new conversation each, typed into the composer):
+"hi", Do Not Disturb, the last notification, a daily reminder, reading example.com, opening Settings, a shell command,
+and Stop during a longer task. Checks are on device state and the model's answers. After the tasks, the app sits 10
+minutes with the screen off and the charger "unplugged"; `dumpsys batterystats` then gives its wake locks, wakeup
+alarms, CPU time and jobs. `tools/compare/report.py` prints the table (also on the run's summary page).
+
+What an emulator cannot tell: real battery drain in mAh, radio and GPS cost, thermal behaviour, and on-device model
+speed on a phone's GPU or NPU.

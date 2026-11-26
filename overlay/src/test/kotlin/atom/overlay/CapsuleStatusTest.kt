@@ -35,6 +35,15 @@ class CapsuleStatusTest {
     }
 
     @Test
+    fun aScreenActionWaitingForUnlockSaysSo() {
+        val waiting = CapsuleStatuses.of(RunPhase.Running, pending = false, toolRunning = true, answering = false, stopping = false, notice = null, waitingForUnlock = true)
+        assertEquals(CapsuleStatus.WaitingForUnlock, waiting)
+        // Only while a (screen) tool is running; stopping and approvals still win.
+        assertEquals(CapsuleStatus.Reasoning, CapsuleStatuses.of(RunPhase.Running, false, false, false, false, null, waitingForUnlock = true))
+        assertEquals(CapsuleStatus.Stopping, CapsuleStatuses.of(RunPhase.Running, false, true, false, true, null, waitingForUnlock = true))
+    }
+
+    @Test
     fun stoppingAndBlockersWinOverNotices() {
         assertEquals(CapsuleStatus.Stopping, of(phase = RunPhase.Paused, stopping = true, notice = CapsuleNotice.Continuing))
         assertEquals(CapsuleStatus.NeedsApproval, of(pending = true, notice = CapsuleNotice.InputReceived))

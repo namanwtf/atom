@@ -122,6 +122,7 @@ import atom.vdisplay.system.PowerKeyRow
 import atom.vdisplay.system.rememberFrameworkSeen
 import atom.web.WebFeature
 import androidx.compose.material3.MaterialTheme
+import atom.app.ui.chat.label
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -135,6 +136,9 @@ class SettingsViewModel(app: Context, private val graph: AppGraph) : ViewModel()
     val savedKeys: StateFlow<Set<String>> =
         graph.vault.savedProviders.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val providers: StateFlow<List<ProviderConfig>> = ProviderStore.get(app).providers
+    /** Keys, sign-ins and installed models: the same readiness the home capsule and the drawer use. */
+    internal val readiness: StateFlow<atom.app.ui.chat.Readiness?> =
+        atom.app.ui.chat.Readiness.of(graph).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val imageBackend: StateFlow<String?> =
         WebFeature.imageBackendName(app).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -163,11 +167,14 @@ class SettingsViewModel(app: Context, private val graph: AppGraph) : ViewModel()
         viewModelScope.launch { graph.settings.setConfirmActTools(value) }
     }
 
-    /** "Provider / Model" for the Model providers row; null when nothing is configured. */
-    fun modelSummary(selection: EngineSelection?, noModel: (String) -> String): String? = when (selection) {
-        null -> null
-        is EngineSelection.Cloud -> if (selection.model.isBlank()) noModel(graph.modelInfo.providerName(selection)) else graph.modelInfo.label(selection)
-        is EngineSelection.Local -> graph.modelInfo.label(selection)
+    /**
+     * "Provider / Model" for the Model providers row, with the same state the home capsule shows ("· add key",
+     * "Not set"); null when nothing is configured.
+     */
+    internal fun modelSummary(selection: EngineSelection?, ready: atom.app.ui.chat.Readiness?, context: Context, noModel: (String) -> String): String? = when {
+        selection == null -> null
+        selection is EngineSelection.Cloud && selection.model.isBlank() -> noModel(graph.modelInfo.providerName(selection))
+        else -> atom.app.ui.chat.modelStatus(selection, ready, graph.modelInfo) { graph.modelInfo.label(it) }.label(context)
     }
 
     fun reasoningLevels(selection: EngineSelection?): List<ReasoningEffort> =
@@ -327,9 +334,10 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
         SettingsRows.MODEL_PROVIDERS -> {
             val noModel = stringResource(R.string.set_no_model, "%s")
             vm.providers.collectAsStateWithLifecycle().value
+            val ready by vm.readiness.collectAsStateWithLifecycle()
             ArrowRow(
                 title = stringResource(R.string.settings_model_providers),
-                summary = vm.modelSummary(s.selection) { noModel.replace("%s", it) } ?: stringResource(R.string.set_not_configured),
+                summary = vm.modelSummary(s.selection, ready, context) { noModel.replace("%s", it) } ?: stringResource(R.string.set_not_configured),
                 icon = Icons.Rounded.Cloud,
                 onClick = nav.openModels,
             )

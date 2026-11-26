@@ -15,6 +15,8 @@ enum class LlmFailure {
     ContentFilter,
     OutputLimit,
     ContextOverflow,
+    /** The model's output turned into a loop of repeated symbols ([DegenerateOutputGuard]). */
+    Unreadable,
     Server,
     Unknown,
 }
@@ -26,6 +28,7 @@ object LlmErrors {
         val text = generateSequence(error) { it.cause }.take(4).mapNotNull { it.message }.joinToString(" ").lowercase()
         val causes = generateSequence(error) { it.cause }.take(4).toList()
         return when {
+            DegenerateOutputGuard.UNREADABLE_MESSAGE.lowercase() in text -> LlmFailure.Unreadable
             CONTEXT.any { it in text } || status == 413 -> LlmFailure.ContextOverflow
             QUOTA.any { it in text } || status == 402 -> LlmFailure.Quota
             status == 429 || RATE.any { it in text } -> LlmFailure.RateLimited
@@ -60,6 +63,7 @@ object LlmErrors {
         LlmFailure.ContentFilter -> "The provider's content filter blocked this response. Rephrase the request and try again."
         LlmFailure.OutputLimit -> "The answer hit the model's output limit before it finished."
         LlmFailure.ContextOverflow -> "This conversation no longer fits the model's context window. Compact the context or start a new conversation."
+        LlmFailure.Unreadable -> DegenerateOutputGuard.UNREADABLE_MESSAGE
         LlmFailure.Server -> "The provider had a server error${status?.let { " (HTTP $it)" } ?: ""}. Try again shortly."
         LlmFailure.Unknown -> detail?.trim()?.take(300)?.ifEmpty { null } ?: "The model request failed."
     }

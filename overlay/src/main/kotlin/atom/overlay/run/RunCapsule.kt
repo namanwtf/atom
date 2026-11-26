@@ -49,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -164,7 +165,8 @@ private fun phaseAccent(v: CapsuleView): Color = when {
 
 @Composable
 private fun phaseLabel(v: CapsuleView): String = stringResource(
-    when (RunOverlays.statusOf(v)) {
+    // Only the run holding phone control runs screen tools, so a waiting run is the one this capsule shows.
+    when (RunOverlays.statusOf(v, atom.ui.feature.ScreenWait.tasks.collectAsState().value.isNotEmpty())) {
         CapsuleStatus.Starting -> R.string.overlay_phase_starting
         CapsuleStatus.Reasoning -> R.string.overlay_phase_reasoning
         CapsuleStatus.Working -> R.string.overlay_phase_working
@@ -172,6 +174,7 @@ private fun phaseLabel(v: CapsuleView): String = stringResource(
         CapsuleStatus.Stopping -> R.string.overlay_phase_stopping
         CapsuleStatus.Paused -> R.string.overlay_phase_paused
         CapsuleStatus.WaitingForControl -> R.string.overlay_phase_waiting_control
+        CapsuleStatus.WaitingForUnlock -> R.string.overlay_phase_waiting_unlock
         CapsuleStatus.NeedsApproval -> R.string.overlay_phase_approval
         CapsuleStatus.Continuing -> R.string.overlay_phase_continuing
         CapsuleStatus.InputReceived -> R.string.overlay_input_received

@@ -114,14 +114,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      # The app and the on-device AI pack: the "Hey Atom" check needs the pack's wake-word model.
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
 
       - name: Start the model server
         run: |
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
             -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
-            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 \
+            --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 2 -tb 2 \
             --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
@@ -137,6 +138,13 @@ jobs:
             "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city",
               "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
           }' | jq -c '.choices[0].message, .timings'
+
+      # The emulator needs the runner's memory more than the idle Gradle and Kotlin daemons do.
+      - name: Free memory for the emulator
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
 
       - name: Enable KVM
         run: |
@@ -156,10 +164,18 @@ jobs:
           profile: pixel_6
           cores: 2
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # ANGLE over SwiftShader Vulkan: the GL SwiftShader path crashed on blur effects on these GPU-less runners.
+          emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/screenshots/install_pack.py ondevice-pack/build/outputs/apk/debug/ondevice-pack-debug.apk
             python3 tools/e2e/run.py
+
+      - name: Host memory after the emulator
+        if: always()
+        run: |
+          free -m
+          sudo dmesg | grep -iE 'out of memory|oom-kill|killed process' | tail -n 20 || true
 
       - name: Model server log
         if: always()

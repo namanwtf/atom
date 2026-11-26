@@ -11,6 +11,7 @@ import atom.app.ui.MainActivity
 import atom.app.ui.Routes
 import atom.app.ui.chat.NotReady
 import atom.app.ui.chat.Readiness
+import atom.app.ui.chat.label
 import atom.app.ui.chat.notReadyReason
 import atom.core.llm.Role
 import atom.overlay.ModelChipState
@@ -68,18 +69,15 @@ class AppOverlayHooks(private val appContext: Context, private val graph: AppGra
         val reason = notReadyReason(selection, ready, graph.modelInfo)
         if (reason == null && selection != null) return ModelChipState(label(selection), ready = true)
         val provider = (selection as? EngineSelection.Cloud)?.let { runCatching { graph.modelInfo.provider(it) }.getOrNull() }?.displayName
-        val label = if (reason == NotReady.SignIn && provider != null) {
-            appContext.getString(R.string.home_sign_in_capsule, provider)
-        } else {
-            appContext.getString(R.string.home_not_selected)
-        }
+        // The same label the home capsule, the drawer and Settings show.
+        val chipLabel = atom.app.ui.chat.modelStatus(selection, ready, graph.modelInfo) { sel -> this.label(sel) }.label(appContext)
         val blocked = when {
             reason == NotReady.SignIn && provider != null -> appContext.getString(R.string.home_sign_in_needed, provider)
             reason == NotReady.KeyUnreadable && provider != null -> appContext.getString(R.string.mdl_route_key_unreadable, provider)
             reason == NotReady.NeedsPack -> appContext.getString(R.string.route_needs_pack)
             else -> appContext.getString(R.string.chat_configure_model)
         }
-        return ModelChipState(label, ready = false, blocked = blocked)
+        return ModelChipState(chipLabel, ready = false, blocked = blocked)
     }
 
     override fun modelChip(source: RunSource): StateFlow<ModelChipState> = chipBySource.getOrPut(source) {

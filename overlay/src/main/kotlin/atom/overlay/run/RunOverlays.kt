@@ -100,13 +100,14 @@ internal object RunOverlays {
     }
 
     /** The capsule's status for [v]. */
-    fun statusOf(v: CapsuleView): CapsuleStatus = CapsuleStatuses.of(
+    fun statusOf(v: CapsuleView, waitingForUnlock: Boolean = false): CapsuleStatus = CapsuleStatuses.of(
         phase = v.phase,
         pending = v.pending != null,
         toolRunning = v.toolRunning,
         answering = v.answering,
         stopping = stoppingId == v.conversationId,
         notice = notice,
+        waitingForUnlock = waitingForUnlock,
     )
 
     private val prefs get() = OverlayRuntime.prefs

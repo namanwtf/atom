@@ -50,7 +50,7 @@ data class StoredMessage(
     val durationMs: Long? = null,
     val isError: Boolean = false,
     val risk: Risk? = null,
-    /** Agent-internal user turns (loop-guard nudges): sent to the model, not shown in the transcript. */
+    /** Agent-internal turns (loop-guard nudges, the run's tool preload): sent to the model, not shown in the transcript. */
     val hidden: Boolean = false,
     val kind: EntryKind = EntryKind.Message,
     val reasoning: String? = null,

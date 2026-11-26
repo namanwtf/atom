@@ -78,6 +78,8 @@
     <string name="confirm_countdown">Denied automatically in %1$d s</string>
     <string name="confirm_allow">Allow</string>
     <string name="confirm_deny">Deny</string>
+    <string name="confirm_allow_task">Allow all commands for this task</string>
+    <string name="confirm_allow_task_hint">Until this task ends. Commands that look destructive still ask.</string>
 
     <!-- Routing -->
     <string name="route_no_engine">No model selected. Pick one in Models.</string>
@@ -111,7 +113,7 @@
     <string name="live_waiting">Approve</string>
     <string name="notif_done">Task done</string>
     <string name="notif_failed">Task failed</string>
-    <string name="notif_step_limit">Stopped at the step limit</string>
+    <string name="notif_step_limit">Stopped before finishing</string>
 
     <!-- Models -->
     <string name="tab_on_device">On-device</string>

@@ -6,6 +6,7 @@ import atom.device.tools.SelfConfirmingTool
 import atom.device.tools.SimpleTool
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -38,5 +39,16 @@ class AsksBeforeTapsTest {
         assertFalse(selfConfirming().asksBeforeTaps(confirmAct = true))
         assertFalse(GatedTool(selfConfirming(), emptySet()).asksBeforeTaps(confirmAct = true))
         assertFalse(GatedTool(GatedTool(selfConfirming(), emptySet()), emptySet()).asksBeforeTaps(confirmAct = true))
+    }
+
+    @Test
+    fun aShellThatJudgesEachCallIsAskedAboutWhenTheSettingIsOn() {
+        val shell = object : SimpleTool("shell", "Run", Risk.Sensitive, noArgs, body = { _, _ -> ToolResult.ok("") }), atom.core.tool.PerCallRisk {
+            override fun riskFor(args: JsonObject): Risk = Risk.Act
+        }
+        assertTrue(shell.asksBeforeTaps(confirmAct = true))
+        assertTrue(GatedTool(shell, emptySet()).asksBeforeTaps(confirmAct = true))
+        assertFalse(shell.asksBeforeTaps(confirmAct = false))
+        assertEquals(Risk.Act, GatedTool(shell, emptySet()).riskFor(noArgs), "the gate forwards the per-call risk")
     }
 }

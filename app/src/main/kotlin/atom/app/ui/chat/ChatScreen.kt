@@ -364,7 +364,7 @@ fun ChatScreen(
             query = query,
             onQuery = { vm.search.value = it },
             permissionsNeedAttention = permissionsNeedAttention,
-            activeModel = state.engine.name?.takeIf { state.engine.ready || state.engine.live },
+            activeModel = engineLabel(state.engine),
             open = drawer.target,
             callbacks = drawerCallbacks,
         )
@@ -422,7 +422,7 @@ fun ChatScreen(
         }
     }
 
-    state.pending?.let { pending -> ApprovalDialog(pending, onAnswer = { vm.answer(pending.id, it) }) }
+    state.pending?.let { pending -> ApprovalDialog(pending, onAnswer = { vm.answer(pending.id, it) }, onAllowTask = { vm.allowForTask(pending.id) }) }
     if (showPicker) {
         ModelPickerSheet(
             selected = state.selection,
@@ -489,7 +489,7 @@ internal fun paneColor(): Color {
 
 @Composable
 private fun Modifier.edgeLine(): Modifier {
-    val line = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+    val line = MaterialTheme.colorScheme.outlineVariant.copy(alpha = atom.ui.components.AtomGlass.EdgeAlpha)
     return this.then(
         Modifier.drawWithContent {
             drawContent()
@@ -548,6 +548,7 @@ internal class PushDrawerState {
 /** Share of the pane width the chat moves by when the pane is glass (the rest of the pane overlaps the chat). */
 private const val GLASS_PUSH = 0.3f
 
+
 @Composable
 private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, content: @Composable () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -556,9 +557,11 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
     val dir = if (rtl) -1f else 1f
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
-    // With blur on, the pane is frosted glass over the chat: the chat moves only part of the way and shows through,
-    // blurred. Without blur the pane is solid and pushes the chat all the way, as before. The blur itself is drawn
-    // only once the pane has settled open: while it slides the pane is solid, so nothing re-blurs every frame.
+    // With blur on (Appearance, Android 12+, no battery saver, not low-RAM), the pane is frosted glass over the chat:
+    // the chat moves only part of the way and shows through, blurred. The chat is a blur source the whole time the
+    // screen is visible, so the first frame of a slide is already frosted, and the pane keeps one modifier and one
+    // style in every frame: only its offset moves (4.0.4 swapped a solid pane for the blur once it settled, which
+    // popped). Without blur the pane is solid and pushes the chat all the way, as before.
     val glass = rememberGlassChrome().blur
     val chatGlass = rememberGlassState()
     val push = if (glass) GLASS_PUSH else 1f
@@ -619,7 +622,7 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
                     .width(paneWidth)
                     .fillMaxHeight()
                     .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
-                    .glassPane(chatGlass, paneColor(), glass && state.settledOpen)
+                    .then(if (glass) Modifier.glassPane(chatGlass, paneColor(), glass = true) else Modifier.background(paneColor()))
                     .edgeLine(),
             ) { pane() }
         }
@@ -732,7 +735,7 @@ private fun ChatPane(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (subagents > 0) SubagentChip(subagents, subagentsRunning, onOpenSubagents)
-            Banners(state, needsModel, onDismissNeedsModel, onOpenModels = onOpenModels)
+            Banners(state, needsModel, onDismissNeedsModel, onOpenModels = onOpenModels, onContinue = vm::continueRun)
             Composer(input, state, attachments, editing, editReplacesLater, composerCallbacks, micSlot)
         }
     }
@@ -910,11 +913,12 @@ private fun ModelCapsule(info: EngineInfo, enabled: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun capsuleLabel(info: EngineInfo): String = when {
-    info.live || (info.ready && info.name != null) -> info.name.orEmpty()
-    info.reason == NotReady.SignIn && info.providerName != null -> stringResource(R.string.home_sign_in_capsule, info.providerName)
-    else -> stringResource(R.string.home_not_selected)
-}
+private fun capsuleLabel(info: EngineInfo): String = engineLabel(info)
+
+/** The capsule's and the drawer's model label: the same [ModelStatus] that Settings shows. */
+@Composable
+internal fun engineLabel(info: EngineInfo): String =
+    if (info.live) info.name.orEmpty() else info.status.label(LocalContext.current)
 
 /** The send-blocked banner: the specific reason when there is one. */
 @Composable
@@ -992,7 +996,13 @@ private fun TitleBlock(
 // ---------------------------------------------------------------- Banners
 
 @Composable
-private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel: () -> Unit, onOpenModels: () -> Unit) {
+private fun Banners(
+    state: ChatUiState,
+    needsModel: Boolean,
+    onDismissNeedsModel: () -> Unit,
+    onOpenModels: () -> Unit,
+    onContinue: (prompt: String) -> Boolean,
+) {
     val colors = MaterialTheme.colorScheme
     if (needsModel) {
         QuietBanner(
@@ -1026,6 +1036,21 @@ private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel
             onDismiss = { dismissedError = true },
             action = stringResource(R.string.screen_models),
             onAction = onOpenModels,
+        )
+    }
+    // The last run stopped at its step limit: offer to carry on in a new run of the same conversation.
+    val stopTexts = setOf(stringResource(R.string.run_step_limit), stringResource(R.string.run_stuck))
+    val stepLimit = (state.items.lastOrNull() as? atom.app.agent.ChatItem.Notice)?.takeIf { !it.error && !state.running && it.text in stopTexts }
+    var dismissedStepLimit by remember(stepLimit?.key) { mutableStateOf(false) }
+    if (stepLimit != null && !dismissedStepLimit) {
+        val prompt = stringResource(R.string.run_continue_prompt)
+        QuietBanner(
+            AtomIcons.Bolt,
+            colors.primary,
+            stringResource(if (stepLimit.text == stopTexts.first()) R.string.run_step_limit_banner else R.string.run_stuck_banner),
+            onDismiss = { dismissedStepLimit = true },
+            action = stringResource(R.string.run_continue),
+            onAction = { if (onContinue(prompt)) dismissedStepLimit = true },
         )
     }
 }
@@ -1231,7 +1256,7 @@ private fun AccessibilityNudge(onOpenSetup: () -> Unit) {
 // ---------------------------------------------------------------- Approval
 
 @Composable
-private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit) {
+private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit, onAllowTask: () -> Unit) {
     val remaining = rememberCountdown(pending.expiresAtMillis)
     val colors = MaterialTheme.colorScheme
     AtomDialog(
@@ -1249,6 +1274,17 @@ private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit
             Modifier.fillMaxWidth().heightIn(max = 220.dp).background(colors.surfaceContainer, RoundedCornerShape(16.dp)).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             Text(pending.action, style = MaterialTheme.extras.mono, color = colors.onSurface)
+        }
+        pending.reason?.let { why ->
+            Spacer(Modifier.height(10.dp))
+            Text(why, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        if (pending.taskGrantable) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onAllowTask, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.confirm_allow_task), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.primary)
+            }
+            Text(stringResource(R.string.confirm_allow_task_hint), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Text(stringResource(R.string.confirm_countdown, remaining), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)

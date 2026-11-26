@@ -35,7 +35,8 @@ AUTHORITY = f"content://{PKG}.e2e"
 SERVER = os.environ.get("E2E_SERVER", "http://127.0.0.1:8080")
 # What the app uses: the emulator's alias for the runner's loopback.
 APP_BASE_URL = os.environ.get("E2E_APP_BASE_URL", "http://10.0.2.2:8080/v1")
-POLL_S = 3
+# Each poll makes the app serialize its runs; on an emulator that translates the app from ARM, keep it light.
+POLL_S = 5
 
 
 def log(msg):
@@ -271,6 +272,30 @@ def s_browser(res):
     res.check(bool(answer(run)), "non-empty answer")
 
 
+def s_browser_read(res):
+    """o. Agent browser end to end: the page loads in Atom's own browser, its text is read, and the model summarizes it.
+
+    Guards the 4.0.4 failure where every browser_open died with "WebView method was called on thread ...".
+    """
+    run = agent_task(
+        res,
+        "Use the agent browser to open https://example.com, read the page, and tell me in one sentence what it says.",
+        600,
+    )
+    if run is None:
+        return
+    calls = run.get("toolCalls", [])
+    browser = [c for c in calls if c["name"].startswith("browser_")]
+    res.check(bool(browser), f"browser tools called: {[c['name'] for c in browser] or 'none'}")
+    threading = [c for c in browser if "thread" in (c.get("result") or "").lower() and c.get("isError")]
+    res.check(not threading, "no WebView threading errors" + (f": {threading[0].get('result', '')[:200]}" if threading else ""))
+    opened = [c for c in browser if c["name"] == "browser_open" and not c.get("isError")]
+    res.check(bool(opened), "browser_open succeeded")
+    read = [c for c in browser if not c.get("isError") and "example domain" in (c.get("result") or "").lower()]
+    res.check(bool(read), "the page text (Example Domain) reached the model")
+    res.check(re.search(r"example|illustrative|domain", answer(run), re.I) is not None, "the answer summarizes the page")
+
+
 def zen_mode():
     return sh("settings get global zen_mode").strip()
 
@@ -422,6 +447,219 @@ def s_bubble(res):
     tap("^Close$", wait=1.5)
 
 
+def s_receiver(res):
+    """i. Battery fix check: the boot / clock receiver is on while an automation exists (it was off with none)."""
+    before = SETUP.get("receiver_before")
+    res.notes.append(f"receiver before any automation: {before}")
+    st = state()
+    tasks = [t for t in st.get("scheduledTasks", []) if t.get("enabled")]
+    now = st.get("systemEventReceiver")
+    res.notes.append(f"enabled scheduled tasks: {len(tasks)}; receiver now: {now}")
+    if not tasks:
+        # The test model did not create one in e: create it the way the agent's tool does, so this check of the
+        # receiver does not depend on the model.
+        out = call("run_tool", json.dumps({"name": "scheduled_task_create", "args": {"name": "E2E water", "prompt": "Remind me to drink water", "schedule": "daily 09:00"}}))
+        res.notes.append(f"created a task with the tool directly: {out[:160]}")
+        time.sleep(3)
+        st = state()
+        tasks = [t for t in st.get("scheduledTasks", []) if t.get("enabled")]
+        now = st.get("systemEventReceiver")
+    if not res.check(bool(tasks), "an enabled scheduled task exists"):
+        return
+    res.check(now in ("enabled", "default"), f"receiver enabled while a task exists ({now})")
+
+
+def s_notification_history(res):
+    """j. Battery fix check: skipping progress updates must not lose ordinary notifications in the history."""
+    sh("cmd notification post -t 'Parcel' tag2 'Your parcel arrives today'")
+    found = None
+    for _ in range(10):
+        time.sleep(2)
+        found = next((n for n in state().get("notificationHistory", []) if n.get("title") == "Parcel"), None)
+        if found:
+            break
+    res.notes.append(f"history head: {[n.get('title') for n in state().get('notificationHistory', [])][:5]}")
+    res.check(found is not None, "ordinary notification recorded in the history")
+
+
+def wake_state():
+    return state().get("wake", "")
+
+
+def wait_wake(pattern, timeout=20):
+    end = time.time() + timeout
+    w = wake_state()
+    while time.time() < end:
+        w = wake_state()
+        if re.search(pattern, w):
+            return True, w
+        time.sleep(2)
+    return False, w
+
+
+def s_hey_atom_charging(res):
+    """k. Battery fix check: "Hey Atom" pauses with the screen off on battery and listens again when plugged in."""
+    st = state()
+    res.notes.append(f"pack ready: {st.get('packReady')}")
+    if not res.check(bool(st.get("packReady")), "on-device AI pack installed (it carries the wake word)"):
+        return
+    sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
+    launch(wait=3)  # the microphone service may only start from the foreground
+    log("  " + call("hey_atom", "on"))
+    ok, w = wait_wake(r"^Listening")
+    res.check(ok, f"screen on: listening ({w})")
+    try:
+        sh("dumpsys battery unplug")
+        sh("input keyevent KEYCODE_SLEEP")
+        ok, w = wait_wake(r"Paused.*[Ss]creen")
+        res.check(ok, f"screen off, on battery: paused ({w})")
+        sh("dumpsys battery set ac 1")
+        ok, w = wait_wake(r"^Listening")
+        res.check(ok, f"screen off, plugged in: listening ({w})")
+        sh("dumpsys battery set ac 0")
+        ok, w = wait_wake(r"Paused")
+        res.check(ok, f"screen off, unplugged again: paused ({w})")
+    finally:
+        sh("dumpsys battery reset")
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        log("  " + call("hey_atom", "off"))
+
+
+def screen_off():
+    sh("svc power stayon false")
+    sh("input keyevent KEYCODE_SLEEP")
+    time.sleep(2)
+
+
+def screen_on():
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+    sh("wm dismiss-keyguard")
+    sh("input keyevent 82")  # menu dismisses a swipe-only keyguard
+    time.sleep(2)
+    sh("svc power stayon true")
+
+
+def task_wake_lock():
+    """True while Atom's task wake lock is currently held (only the live list, not the wake lock history)."""
+    out = sh("dumpsys power")
+    m = re.search(r"Wake Locks: size=\d+\n((?:\s+.*\n)*?)\s*\n", out)
+    return bool(m) and "atom:task" in m.group(1)
+
+
+def completed(run):
+    return run.get("outcome") == "Completed" or run.get("phase") in ("Done", "Completed")
+
+
+def service_foreground():
+    out = sh(f"dumpsys activity services {PKG} | grep -iE 'AgentService|isForeground'")
+    return "AgentService" in out and "isForeground=true" in out
+
+
+def first_activity(w, name, timeout=480):
+    return w.wait(timeout, name, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
+
+
+def s_screen_off_background(res):
+    """m. Screen off mid-task, no screen needed: the run keeps going (foreground service, wake lock) and finishes."""
+    known = run_ids()
+    w = Watch(known)
+    send_prompt("Run the shell command 'sleep 20; echo screen-off-ok' and tell me exactly what it printed.")
+    run = first_activity(w, res.key)
+    if not res.check(run is not None and run["active"], "run started and is working"):
+        return
+    screen_off()
+    time.sleep(6)
+    held, fg = task_wake_lock(), service_foreground()
+    res.notes.append(f"screen off: wake lock atom:task held={held}, AgentService foreground={fg}")
+    run = w.wait(600, res.key)
+    off_end = not "Awake" in sh("dumpsys power | grep -E 'mWakefulness='")
+    res.notes.append(f"screen still off when the run ended: {off_end}")
+    time.sleep(3)
+    released = not task_wake_lock()
+    screen_on()
+    res.tools = names(run)
+    res.check(completed(run), f"run completed with the screen off ({run['phase']}, {run.get('outcome')})")
+    res.check("screen-off-ok" in answer(run), "answer has the command's output")
+    res.check(held, "partial wake lock held while the screen was off")
+    res.check(fg, "foreground service running during the task")
+    res.check(released, "wake lock released after the run")
+
+
+def notification_texts():
+    out = sh("dumpsys notification --noredact")
+    return " ".join(re.findall(r"android\.(?:text|title)=(?:String|SpannableString) \(([^)]*)\)", out))
+
+
+def s_screen_off_ui(res):
+    """n. Screen off mid-task while operating apps: the run waits for an unlocked screen instead of failing or
+    spinning, says so in its notification, and carries on after unlocking."""
+    known = run_ids()
+    w = Watch(known)
+    send_prompt("Open the Settings app, read its first screen and tell me three of the items listed there.")
+    run = first_activity(w, res.key)
+    if not res.check(run is not None and run["active"], "run started and is working"):
+        return
+    calls_before = len(run.get("toolCalls", []))
+    screen_off()
+    waiting, note, lock_while_waiting = False, "", False
+    for _ in range(12):  # about a minute with the screen off
+        time.sleep(5)
+        st = state()
+        if st.get("screenWait"):
+            waiting = True
+            lock_while_waiting = lock_while_waiting or task_wake_lock()
+        texts = notification_texts()
+        if "unlocked" in texts:
+            note = "Waiting for the screen to be unlocked"
+    run = w.poll() or run
+    calls_off = len(run.get("toolCalls", [])) - calls_before
+    phase_off = run["phase"]
+    res.notes.append(f"while off: phase {phase_off}, {calls_off} new tool calls, waiting={waiting}, notification: {note or '-'}")
+    screen_on()
+    launch(wait=2)
+    run = w.wait(600, res.key)
+    res.tools = names(run)
+    res.check(phase_off != "Failed", "did not fail while the screen was off")
+    res.check(calls_off <= 2, f"did not spin while the screen was off ({calls_off} calls)")
+    res.check(waiting, "waited for the screen to be unlocked")
+    res.check(bool(note), "notification said it is waiting for the screen to be unlocked")
+    res.check(not lock_while_waiting, "no task wake lock while it waited (the wait is woken by the unlock)")
+    res.check(completed(run), f"carried on and completed after unlocking ({run['phase']})")
+    res.check(bool(answer(run)), "an answer")
+
+
+def boot_receiver_enabled():
+    """True when the system would deliver BOOT_COMPLETED to Atom's receiver (only enabled receivers are listed)."""
+    out = sh("cmd package query-receivers --components -a android.intent.action.BOOT_COMPLETED")
+    return f"{PKG}/atom.automation.system.SystemEventReceiver" in out
+
+
+def s_reboot(res):
+    """l. Battery fix check: after a reboot the receiver is still on, Atom starts for BOOT_COMPLETED and re-arms."""
+    tasks = [t for t in state().get("scheduledTasks", []) if t.get("enabled")]
+    if not res.check(bool(tasks), f"an enabled scheduled task exists before the reboot ({len(tasks)})"):
+        return
+    res.notes.append(f"before reboot: boot receiver enabled={boot_receiver_enabled()}")
+    adb("reboot", timeout=60)
+    time.sleep(10)
+    adb("wait-for-device", timeout=300)
+    end = time.time() + 300
+    while time.time() < end and sh("getprop sys.boot_completed").strip() != "1":
+        time.sleep(5)
+    time.sleep(30)  # BOOT_COMPLETED is delivered after boot_completed is set
+    res.check(boot_receiver_enabled(), "receiver still enabled after the reboot")
+    alive = app_alive()
+    res.notes.append(f"Atom process after boot (started by BOOT_COMPLETED): {alive}")
+    alarms = sh("dumpsys alarm")
+    res.check(PKG in alarms, "Atom's alarm is armed again after the reboot")
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+
+
+SETUP = {}
+
 SCENARIOS = [
     # Ordered so the Linux install (queued at setup) has time to finish before the terminal task.
     ("g", "Character: open Lumen", s_character),
@@ -429,9 +667,19 @@ SCENARIOS = [
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
     ("b", "Agent browser: example.com", s_browser),
+    ("o", "Agent browser: open, read and summarize", s_browser_read),
     ("a", "Vibe coding: hello.py in the terminal", s_vibe),
     ("f", "Stop mid-task", s_stop),
     ("h", "Bubble mini chat", s_bubble),
+    # Checks that the battery fixes (#22) did not switch features off. i needs the task from e; l reboots, so it
+    # comes last.
+    ("i", "Automations: boot receiver on while a task exists", s_receiver),
+    ("j", "Notification history keeps ordinary notifications", s_notification_history),
+    ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
+    # The owner's question: does a run survive the screen turning off mid-task?
+    ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
+    ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),
+    ("l", "Reboot: receiver, boot start and alarm survive", s_reboot),
 ]
 
 
@@ -475,7 +723,9 @@ def setup():
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
     st = state()
-    log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')}")
+    SETUP["receiver_before"] = st.get("systemEventReceiver")
+    log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')} "
+        f"receiver={st.get('systemEventReceiver')} wake={st.get('wake')} pack={st.get('packReady')}")
     if not st.get("onboarded") or "local-test-model" not in str(st.get("selection")):
         capture.fail("the debug configure call did not take effect")
     shot("e2e_00_home")
@@ -490,6 +740,15 @@ def main():
             continue
         res = Result(key, title)
         log(f"===== {key}. {title} =====")
+        # A run the previous scenario left going (it timed out) would hold phone control and make this one wait.
+        leftover = [r for r in state().get("runs", []) if r.get("active")]
+        if leftover:
+            log(f"  stopping {len(leftover)} run(s) left from the previous scenario")
+            call("stop")
+            for _ in range(20):
+                time.sleep(3)
+                if not any(r.get("active") for r in state().get("runs", [])):
+                    break
         call("clear")
         clear_crashes()
         m0 = server_metrics()

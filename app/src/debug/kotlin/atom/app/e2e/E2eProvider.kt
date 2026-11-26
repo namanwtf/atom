@@ -138,6 +138,35 @@ class E2eProvider : ContentProvider() {
                 env.install(distro)
                 "linux install queued: $distro"
             }
+            // Runs one of the app's tools directly, the way the agent would, without a model: for checks that must
+            // not depend on what a small test model decides (e.g. creating a scheduled task for the battery checks).
+            // --arg '{"name": "scheduled_task_create", "args": {...}}'
+            "run_tool" -> runBlocking(Dispatchers.Default) {
+                val spec = JSONObject(arg ?: "{}")
+                val name = spec.optString("name")
+                val tool = atom.app.feature.Features.all.flatMap { f -> runCatching { f.tools(ctx) }.getOrDefault(emptyList()) }
+                    .firstOrNull { it.spec.name == name }
+                if (tool == null) {
+                    "no tool $name"
+                } else {
+                    val args = kotlinx.serialization.json.Json.parseToJsonElement(spec.optJSONObject("args")?.toString() ?: "{}")
+                        as kotlinx.serialization.json.JsonObject
+                    val toolCtx = object : atom.core.tool.ToolContext {
+                        override val taskId: String = "e2e-" + System.currentTimeMillis()
+                        override suspend fun confirm(action: String): Boolean = true
+                    }
+                    val r = tool.run(args, toolCtx)
+                    (if (r.isError) "error: " else "ok: ") + r.text.take(300)
+                }
+            }
+            // "Hey Atom" on or off, the way the Speech settings switch sets it (screen-off listening stays off,
+            // listening while charging stays on: the defaults).
+            "hey_atom" -> {
+                val on = arg.equals("on", ignoreCase = true)
+                runBlocking(Dispatchers.IO) { graph.settings.setHeyAtom(on) }
+                atom.voice.Wake.setEnabled(ctx, on, atom.voice.WakePolicy(screenOffListening = false, listenWhileCharging = true))
+                "hey atom ${if (on) "on" else "off"}"
+            }
             "state" -> {
                 result.putString("json", state().toString())
                 "ok"
@@ -179,6 +208,11 @@ class E2eProvider : ContentProvider() {
             put("linux", runCatching { atom.linux.LinuxEnv.get(ctx).state.value.toString() }.getOrDefault("unknown"))
             put("runs", JSONArray().apply { runs.forEach { put(runJson(it)) } })
             put("scheduledTasks", scheduledTasks())
+            put("wake", runCatching { atom.voice.Wake.state.value.toString() }.getOrDefault("unknown"))
+            put("screenWait", atom.ui.feature.ScreenWait.tasks.value.isNotEmpty())
+            put("packReady", runCatching { atom.app.ondevice.OnDevicePack.ready.value }.getOrDefault(false))
+            put("systemEventReceiver", componentState("atom.automation.system.SystemEventReceiver"))
+            put("notificationHistory", notificationHistory())
         }
     }
 
@@ -261,6 +295,26 @@ class E2eProvider : ContentProvider() {
                     },
                 )
             }
+        }
+    }
+
+    /** "enabled", "disabled" or "default" (the manifest's state) for one of the app's components. */
+    private fun componentState(cls: String): String {
+        val ctx = context!!
+        return when (ctx.packageManager.getComponentEnabledSetting(android.content.ComponentName(ctx, cls))) {
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> "enabled"
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED -> "disabled"
+            else -> "default"
+        }
+    }
+
+    /** The newest entries of the searchable notification history (what notification_history reads). */
+    private fun notificationHistory(): JSONArray = JSONArray().apply {
+        val records: List<atom.context.notifications.NotificationRecord> = runCatching {
+            atom.context.notifications.Notifications.history(context!!).search(null, null, null, 0, 10).first
+        }.getOrDefault(emptyList())
+        records.forEach { r ->
+            put(JSONObject().put("package", r.packageName).put("title", r.title).put("text", r.text.take(200)).put("postedAt", r.postedAt))
         }
     }
 

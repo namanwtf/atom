@@ -13,7 +13,11 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.PowerManager
+import atom.core.tool.ApprovalRequest
+import atom.core.tool.PerCallRisk
 import atom.core.tool.Risk
+import atom.core.tool.ShellRisk
+import atom.core.tool.ShellScope
 import atom.core.tool.Tool
 import atom.core.tool.ToolResult
 import atom.core.tool.optBoolean
@@ -31,6 +35,7 @@ import atom.device.power.PowerPolicy
 import atom.device.screen.UiController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -170,26 +175,42 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
             ShellTier.App -> "Runs as Atom's own app user (no root): fine for files in Atom's storage, network tools and " +
                 "general commands; system settings and other apps' data are off limits."
         }
-        return SimpleTool(
+        return object : SimpleTool(
             name = "shell",
             description = "Run a shell command on the phone. $where Each call is a fresh subshell (cd does not " +
-                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see.",
+                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see. Each " +
+                "command asks the user first unless they allowed all commands for this task.",
             risk = Risk.Sensitive,
             parameters = schema {
                 string("command", "The sh command line.", required = true)
                 integer("timeout_s", "Seconds before the command is killed, 1-55. Default 30.")
             },
-        ) { args, _ ->
-            val command = args.string("command")
-            val timeout = (args.optInt("timeout_s") ?: 30).coerceIn(1, 55) * 1_000L
-            val r = shell.run(command, timeout)
-            val body = buildString {
-                append("exit ").append(r.exitCode)
-                if (r.stdout.isNotBlank()) append("\nstdout:\n").append(capText(r.stdout.trim(), 3_000))
-                if (r.stderr.isNotBlank()) append("\nstderr:\n").append(capText(r.stderr.trim(), 1_000))
-                if (r.stdout.isBlank() && r.stderr.isBlank()) append(" (no output)")
-            }
-            ToolResult(body, isError = r.exitCode != 0)
+            body = { args, _ ->
+                val command = args.string("command")
+                val timeout = (args.optInt("timeout_s") ?: 30).coerceIn(1, 55) * 1_000L
+                val r = shell.run(command, timeout)
+                val body = buildString {
+                    append("exit ").append(r.exitCode)
+                    if (r.stdout.isNotBlank()) append("\nstdout:\n").append(capText(r.stdout.trim(), 3_000))
+                    if (r.stderr.isNotBlank()) append("\nstderr:\n").append(capText(r.stderr.trim(), 1_000))
+                    if (r.stdout.isBlank() && r.stderr.isBlank()) append(" (no output)")
+                }
+                ToolResult(body, isError = r.exitCode != 0)
+            },
+        ), PerCallRisk {
+            private fun scope() = ShellScope.android(
+                packageName = app.packageName,
+                dataDir = app.applicationInfo.dataDir,
+                cacheDir = app.cacheDir.path,
+                workDirs = listOf(java.io.File(app.filesDir, "atom4_workspace").path),
+                privileged = shell.tier != ShellTier.App,
+            )
+
+            // Every command asks unless the task's grant covers it (ShellRisk.AUTO_RUN_PROVEN is off).
+            override fun riskFor(args: JsonObject): Risk = ShellRisk.approvalRisk(args.optString("command").orEmpty(), scope())
+
+            override fun approvalRequest(args: JsonObject): ApprovalRequest =
+                ShellRisk.approval(args.optString("command").orEmpty(), scope(), if (shell.tier == ShellTier.Root) "a root shell" else "the phone's shell")
         }
     }
 

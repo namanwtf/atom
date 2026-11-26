@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import atom.app.agent.LiveRun
 import atom.app.graph
 import atom.ui.feature.RunPhase
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -49,9 +50,11 @@ class AgentService : LifecycleService() {
         announced += graph.tasks.liveRuns.value.values.filter { !it.active }.map { it.runId }
         lifecycleScope.launch {
             // Only re-post when what the notifications show changes, never per streamed token.
+            // A screen action waiting for the screen to be unlocked changes the text too.
             graph.tasks.liveRuns
-                .map { runs -> runs.values.sortedBy { it.startedAt } }
-                .distinctUntilChanged { a, b -> a.map(Key::of) == b.map(Key::of) }
+                .combine(atom.ui.feature.ScreenWait.tasks) { runs, waiting -> runs.values.sortedBy { it.startedAt } to waiting }
+                .distinctUntilChanged { a, b -> a.second == b.second && a.first.map(Key::of) == b.first.map(Key::of) }
+                .map { it.first }
                 .collect { runs ->
                     val active = runs.filter { it.active }
                     runs.filter { !it.active && it.runId !in announced }.forEach { finished ->
