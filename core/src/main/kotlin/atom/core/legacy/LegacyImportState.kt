@@ -27,6 +27,8 @@ data class LegacyImportState(
     /** Old conversation id to Atom 4 conversation id. */
     val conversations: Map<String, String> = emptyMap(),
     val selectionApplied: Boolean = false,
+    /** The old long-term memory was brought over (or there was none). Its file is removed only after that. */
+    val memoryImported: Boolean = false,
     val report: LegacyImportReport? = null,
     /** False while the result of the last run still waits to be shown once. */
     val noticeShown: Boolean = true,
@@ -58,6 +60,12 @@ data class LegacyImportReport(
     val signInAgain: List<String> = emptyList(),
     val failedProviders: Int = 0,
     val failedConversations: Int = 0,
+    /** Sign-ins whose file is there but could not be read this time (a Keystore or storage error): retried. */
+    val failedSignIns: Int = 0,
+    /** The old long-term memory was copied into Atom 4's memory in this run. */
+    val memory: Boolean = false,
+    /** The old long-term memory could not be brought over (unreadable, or too large together with Atom 4's). */
+    val failedMemory: Boolean = false,
     val damagedMessages: Int = 0,
     /** Messages cut to the size limit, with a note. */
     val truncatedMessages: Int = 0,
@@ -85,7 +93,11 @@ object LegacyImportPlan {
 
     /** Whether a run with this report counts as finished: no error and nothing left to retry. */
     fun isComplete(report: LegacyImportReport): Boolean =
-        report.error == null && report.failedConversations == 0 && report.failedProviders == 0
+        report.error == null && report.failedConversations == 0 && report.failedProviders == 0 &&
+            report.failedSignIns == 0 && !report.failedMemory
+
+    /** The heading old memory goes under when Atom 4 already has memory of its own. */
+    const val MEMORY_HEADING = "Imported from the previous Atom"
 
     enum class ConversationAction { Import, AlreadyImported, ExistsInAtom4 }
 

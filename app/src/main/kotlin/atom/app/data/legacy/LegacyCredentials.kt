@@ -1,9 +1,11 @@
 package atom.app.data.legacy
 
 import android.content.Context
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import atom.core.legacy.LegacyFiles
 import java.io.File
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -21,6 +23,9 @@ internal object LegacyCredentials {
         /** No key, a wrong tag, a damaged file: the user signs in again. */
         data object Undecryptable : Read
 
+        /** The file is there but reading it failed (a Keystore or storage error): the import tries again later. */
+        data object Failed : Read
+
         class Plain(val json: String) : Read
     }
 
@@ -34,8 +39,8 @@ internal object LegacyCredentials {
         val name = LegacyFiles.credentialFileName(providerId)
         // AtomicFile: a ".bak" copy is the valid one when present; ".new" is an unfinished write and is ignored.
         val file = listOf(File(dir, "$name.bak"), File(dir, name)).firstOrNull { it.isFile } ?: return Read.Missing
-        val bytes = runCatching { file.takeIf { it.length() in MIN_BYTES..MAX_BYTES }?.readBytes() }.getOrNull()
-            ?: return Read.Undecryptable
+        if (file.length() !in MIN_BYTES..MAX_BYTES) return Read.Undecryptable
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return Read.Failed
         return try {
             val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             val key = keyStore.getKey(LegacyFiles.CREDENTIALS_ALIAS, null) as? SecretKey ?: return Read.Undecryptable
@@ -43,8 +48,13 @@ internal object LegacyCredentials {
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, bytes, 0, IV_BYTES))
             cipher.updateAAD(providerId.toByteArray(Charsets.UTF_8))
             Read.Plain(String(cipher.doFinal(bytes, IV_BYTES, bytes.size - IV_BYTES), Charsets.UTF_8))
-        } catch (e: Exception) {
+        } catch (e: AEADBadTagException) {
+            // Wrong key or damaged file: this never gets better.
             Read.Undecryptable
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            Read.Undecryptable
+        } catch (e: Exception) {
+            Read.Failed
         }
     }
 }

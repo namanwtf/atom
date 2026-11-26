@@ -28,6 +28,9 @@ class LegacyImportPlanTest {
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(error = "disk")))
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedConversations = 1)))
         assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedProviders = 1)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedSignIns = 1)), "a sign-in that failed to read is retried")
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedMemory = true)))
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(memory = true)))
         assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(signInAgain = listOf("xAI"))), "a sign-in to redo is not retried")
     }
 

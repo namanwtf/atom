@@ -13,8 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -45,6 +45,7 @@ import atom.ui.feature.Backups
 import atom.ui.feature.FeatureNav
 import atom.ui.theme.AtomIcons
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -69,8 +70,8 @@ internal fun BackupScreen(nav: FeatureNav) {
     var working by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<BackupDialog?>(null) }
     val legacy = GeneralHooks.legacyImport
-    // Bumped after a removal, so both legacy rows check the files again.
-    var legacyChecks by remember { mutableIntStateOf(0) }
+    // Changes after every import run and removal, also the automatic ones, so both legacy rows check the files again.
+    val legacyChecks by remember(legacy) { legacy?.changes() ?: flowOf(0) }.collectAsState(0)
     val legacyAvailable by produceState(false, legacy, legacyChecks) { value = withContext(Dispatchers.IO) { legacy?.available() == true } }
     val cleanupOffer by produceState(LegacyCleanup.Offer.Hidden, legacy, legacyChecks, working) {
         value = withContext(Dispatchers.IO) { legacy?.cleanupOffer() ?: LegacyCleanup.Offer.Hidden }
@@ -314,17 +315,22 @@ internal fun BackupScreen(nav: FeatureNav) {
                     val hook = legacy
                     if (hook != null) scope.launch {
                         working = true
-                        val done = try {
+                        val result = try {
                             hook.removeOldData()
                         } catch (e: Exception) {
                             if (e is kotlinx.coroutines.CancellationException) throw e
-                            false
+                            LegacyCleanup.Removal.Partial
                         }
                         working = false
-                        legacyChecks++
                         dialog = BackupDialog.Message(
                             context.getString(R.string.backup_legacy_remove),
-                            context.getString(if (done) R.string.backup_legacy_removed else R.string.backup_legacy_remove_partial),
+                            context.getString(
+                                when (result) {
+                                    LegacyCleanup.Removal.Done -> R.string.backup_legacy_removed
+                                    LegacyCleanup.Removal.DoneWithMemory -> R.string.backup_legacy_removed_memory
+                                    LegacyCleanup.Removal.Partial -> R.string.backup_legacy_remove_partial
+                                },
+                            ),
                         )
                     }
                 },
