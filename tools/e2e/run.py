@@ -36,6 +36,8 @@ SERVER = os.environ.get("E2E_SERVER", "http://127.0.0.1:8080")
 # What the app uses: the emulator's alias for the runner's loopback.
 APP_BASE_URL = os.environ.get("E2E_APP_BASE_URL", "http://10.0.2.2:8080/v1")
 POLL_S = 3
+# Set by setup() when the device clock can be fixed (adb root); toybox `date` format MMDDhhmmCCYY.ss.
+FIXED_TIME = None
 
 
 def log(msg):
@@ -114,7 +116,23 @@ def state():
             if attempt == 4:
                 log(f"state unreadable: {e}")
             time.sleep(2)
+    check_device()
     return {"runs": [], "scheduledTasks": [], "unreadable": True}
+
+
+class DeviceGone(Exception):
+    """The emulator itself stopped answering: nothing after this can be measured."""
+
+
+def check_device():
+    try:
+        r = subprocess.run(["adb", "get-state"], capture_output=True, timeout=20)
+        if r.stdout.decode(errors="replace").strip() == "device":
+            return
+        detail = (r.stdout + r.stderr).decode(errors="replace").strip()
+    except subprocess.TimeoutExpired:
+        detail = "adb get-state timed out"
+    raise DeviceGone(f"the emulator stopped answering ({detail})")
 
 
 def run_ids():
@@ -169,10 +187,14 @@ class Watch:
         run = max(runs, key=lambda r: r["startedAt"])
         self.run = run
         calls = run.get("toolCalls", [])
-        for c in calls[self.seen_calls :]:
-            res = (c.get("result") or "").replace("\n", " ")[:160]
+        # Each call is logged once its result is in (or the run ended without one).
+        while self.seen_calls < len(calls):
+            c = calls[self.seen_calls]
+            if c.get("result") is None and run["active"]:
+                break
+            res = (c.get("result") or "(no result)").replace("\n", " ")[:200]
             log(f"  tool {c['name']} {c.get('args', '')[:160]} -> {'ERROR ' if c.get('isError') else ''}{res}")
-        self.seen_calls = len(calls)
+            self.seen_calls += 1
         pending = run.get("pending")
         if pending and self.approve:
             log(f"  approving: {pending['action'][:200]}")
@@ -199,6 +221,16 @@ class Watch:
                 shot(f"{name}_mid")
             time.sleep(POLL_S)
         log(f"  timed out after {timeout}s")
+        if self.run and self.run["active"]:
+            # Free the single model slot for the next scenario: an abandoned run would keep the server busy.
+            log("  stopping the run: " + call("stop", self.run["conversationId"]))
+            end = time.time() + 60
+            while time.time() < end:
+                run = self.poll()
+                if run and not run["active"]:
+                    break
+                time.sleep(POLL_S)
+            self.run["timedOut"] = True
         return self.run
 
 
@@ -219,17 +251,51 @@ class Result:
         return ok
 
 
-def agent_task(res, prompt, timeout, source=None):
+A11Y = f"{PKG}/atom.device.AtomAccessibilityService"
+
+
+def ensure_accessibility(wait_s=30):
+    """Atom's accessibility service, as a user enables it in Settings. It does not always connect on the first
+    try on a fresh emulator, so it is switched off and on again until the app reports it connected."""
+    for attempt in range(3):
+        end = time.time() + wait_s
+        while time.time() < end:
+            if state().get("accessibility"):
+                return True
+            time.sleep(3)
+        log(f"accessibility service not connected; enabling it again (attempt {attempt + 1})")
+        sh("settings put secure enabled_accessibility_services ''")
+        time.sleep(2)
+        sh(f"settings put secure enabled_accessibility_services {A11Y}")
+        sh("settings put secure accessibility_enabled 1")
+    log("accessibility service still not connected; screen tools will fail")
+    return False
+
+
+def freeze_clock():
+    """Sets the device clock to the same minute before every run. Atom's system prompt carries the time to the minute
+    ahead of the tool list, so an identical minute lets llama-server reuse the cached prompt across scenarios instead
+    of reading every tool schema again on the CPU."""
+    if FIXED_TIME:
+        sh(f"date {FIXED_TIME} >/dev/null")
+
+
+def agent_task(res, prompt, timeout, source=None, background=False):
     known = run_ids()
     w = Watch(known, source=source)
+    freeze_clock()
     send_prompt(prompt)
+    if background:
+        # The chat keeps running in the task service; off screen the emulator stops drawing and leaves the CPU
+        # to the model server.
+        time.sleep(5)
+        sh("input keyevent KEYCODE_HOME")
     run = w.wait(timeout, res.key)
     if run is None:
         res.check(False, "no run started")
         return None
     res.tools = names(run)
-    ended = not run["active"]
-    res.check(ended, f"run ended ({run['phase']}, outcome {run.get('outcome')})")
+    res.check(not run.get("timedOut") and not run["active"], f"run finished within {timeout}s ({run['phase']}, outcome {run.get('outcome')})")
     if run.get("error"):
         res.notes.append(f"error: {run['error'][:300]}")
     if run.get("notice"):
@@ -240,26 +306,37 @@ def agent_task(res, prompt, timeout, source=None):
     return run
 
 
+def s_warm_up(res):
+    """Not a test: the first request carries Atom's whole system prompt and every tool schema, which takes the CPU
+    many minutes to read. Done once here; every scenario after it reuses the server's cached prompt."""
+    run = agent_task(res, "Reply with just the word OK.", 2100, background=True)
+    if run is not None:
+        res.check(bool(answer(run)), "an answer came back")
+
+
 def s_vibe(res):
     """a. Terminal: write and run a script, report its output."""
     st = state()
-    deadline = time.time() + 240
+    deadline = time.time() + 120
     while "Ready" not in st.get("linux", "") and "Failed" not in st.get("linux", "") and time.time() < deadline:
         log(f"  waiting for Linux: {st.get('linux', '')[:160]}")
         time.sleep(15)
         st = state()
     res.notes.append(f"linux: {st.get('linux', '')[:120]}")
-    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 900)
+    run = agent_task(res, "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.", 720)
     if run is None:
         return
     terminal = [n for n in names(run) if n.startswith("terminal_") or n in ("shell", "file_write")]
     res.check(bool(terminal), f"terminal/shell tools called: {terminal or 'none'}")
     res.check(re.search(r"\b5\b", answer(run)) is not None, "answer contains 5")
+    # The answer alone could be the model's arithmetic; the script must really have printed it.
+    ran = [c for c in run.get("toolCalls", []) if c["name"] in terminal and re.search(r"(?m)^\s*5\s*$", c.get("result") or "")]
+    res.check(bool(ran), "a terminal result shows the script printing 5")
 
 
 def s_browser(res):
     """b. Built-in agent browser (browser_open), not the external browser (open_url)."""
-    run = agent_task(res, "Open the agent browser and summarize the top story on https://example.com.", 600)
+    run = agent_task(res, "Open the agent browser and summarize the top story on https://example.com.", 480)
     if run is None:
         return
     n = names(run)
@@ -267,6 +344,9 @@ def s_browser(res):
     if offered:
         res.notes.append(f"browser tools offered: {sorted(t for t in offered if t.startswith('browser_')) or 'none'}")
     res.check("browser_open" in n, "browser_open called")
+    opened = [c for c in run.get("toolCalls", []) if c["name"] == "browser_open"]
+    if opened:
+        res.check(any(not c.get("isError") for c in opened), "browser_open loaded the page (no error result)")
     res.check("open_url" not in n, "open_url not called")
     res.check(bool(answer(run)), "non-empty answer")
 
@@ -280,7 +360,7 @@ def s_dnd(res):
     sh("cmd notification set_dnd off")
     time.sleep(1)
     res.notes.append(f"zen_mode before: {zen_mode()}")
-    run = agent_task(res, "Turn on Do Not Disturb.", 480)
+    run = agent_task(res, "Turn on Do Not Disturb.", 360)
     if run is None:
         return
     n = names(run)
@@ -292,9 +372,13 @@ def s_dnd(res):
 
 def s_notification(res):
     """d. Context: read the last notification."""
-    sh("cmd notification post -S bigtext -t 'Dinner' tag1 'Pizza at 8'")
+    # Posted as the shell user (adb may be root here, and a notification needs a package behind it).
+    post = "cmd notification post -S bigtext -t 'Dinner' tag1 'Pizza at 8'"
+    out = sh(f"su 2000 {post}" if FIXED_TIME else post)
+    if out.strip():
+        log(f"  notification post: {out.strip()[:200]}")
     time.sleep(3)
-    run = agent_task(res, "What was my last notification about?", 480)
+    run = agent_task(res, "What was my last notification about?", 360)
     if run is None:
         return
     n = names(run)
@@ -305,7 +389,7 @@ def s_notification(res):
 def s_schedule(res):
     """e. Scheduling: a daily reminder becomes a scheduled task."""
     before = state().get("scheduledTasks", [])
-    run = agent_task(res, "Every day at 9am remind me to drink water.", 480)
+    run = agent_task(res, "Every day at 9am remind me to drink water.", 360)
     if run is None:
         return
     res.check("scheduled_task_create" in names(run), "scheduled_task_create called")
@@ -326,6 +410,18 @@ def tap_notification_stop():
     sh("cmd statusbar expand-notifications")
     time.sleep(2.5)
     ok = tap("^Stop$|^STOP$", wait=1.5)
+    if not ok:
+        # A collapsed notification hides its buttons: tap its Expand (the one nearest the task's text), look again.
+        nodes = capture.dump()
+        task = next((b for t, d, b in nodes if b and re.match(r"Check the device status", t or "")), None)
+        expands = [b for t, d, b in nodes if b and (t == "Expand" or d == "Expand")]
+        if task and expands:
+            cy = (task[1] + task[3]) // 2
+            tap_bounds(min(expands, key=lambda b: abs((b[1] + b[3]) // 2 - cy)))
+            time.sleep(1.5)
+            ok = tap("^Stop$|^STOP$", wait=1.5)
+        if not ok:
+            shot("f_shade")
     sh("cmd statusbar collapse")
     return ok
 
@@ -334,11 +430,12 @@ def s_stop(res):
     """f. Stop mid-task: after the first tool call, stop; the partial run must be kept."""
     known = run_ids()
     w = Watch(known)
+    freeze_clock()
     send_prompt(
         "Check the device status, then list my installed apps, then read the screen, then check the time and location, "
         "and finally write a detailed report about everything you found."
     )
-    run = w.wait(480, res.key, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
+    run = w.wait(360, res.key, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
     if run is None:
         res.check(False, "no run started")
         return
@@ -368,12 +465,22 @@ def s_stop(res):
 def s_character(res):
     """g. Character library: open Lumen."""
     launch("characters/library", wait=4)
-    found = find("^Lumen$") or find("Lumen")
+    found = None
+    for _ in range(8):  # the library loads its cards after the screen appears
+        found = find("^Lumen$") or find(r"^Lumen\b")
+        if found:
+            break
+        time.sleep(2)
     if not res.check(found is not None, "Lumen listed"):
+        shot(f"{res.key}_library")
         return
     tap_bounds(found)
     time.sleep(5)
     res.check(app_alive(), "app process alive after opening Lumen")
+    shot(f"{res.key}_lumen")
+    # Back to the chat, so the next tasks do not start on this screen.
+    capture.back()
+    capture.back()
 
 
 def s_bubble(res):
@@ -402,15 +509,20 @@ def s_bubble(res):
     sh("input text 'What%sis%s2%splus%s2?'")
     time.sleep(2)
     shot(f"{res.key}_typed")
+    if "mInputShown=true" in sh("dumpsys input_method | grep mInputShown"):
+        # The on-screen keyboard can cover the send button; the first Back closes only the keyboard.
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(2)
     known = run_ids()
     w = Watch(known)
     send = find("^Send$")
     if not res.check(send is not None, "send button found"):
         return
+    freeze_clock()
     tap_bounds(send)
     time.sleep(2)
     shot(f"{res.key}_sent")
-    run = w.wait(480, res.key)
+    run = w.wait(360, res.key)
     if not res.check(run is not None, "bubble run started"):
         return
     res.check(run["source"] == "Bubble", f"run came from the bubble (source {run['source']})")
@@ -425,6 +537,7 @@ def s_bubble(res):
 SCENARIOS = [
     # Ordered so the Linux install (queued at setup) has time to finish before the terminal task.
     ("g", "Character: open Lumen", s_character),
+    ("0", "Warm-up: prompt cache (not core)", s_warm_up),
     ("c", "Phone control: Do Not Disturb", s_dnd),
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
@@ -452,11 +565,25 @@ def setup():
         "settings put global window_animation_scale 0.5",
         "settings put system screen_off_timeout 1800000",
         "svc power stayon true",
+        # No lock screen: an agent may lock the phone (global_action lock_screen), and the next task needs the screen.
+        "locksettings set-disabled true",
     ):
         out = sh(cmd).strip()
         log(f"$ {cmd}" + (f" -> {out[:200]}" if out else ""))
     sh("input keyevent KEYCODE_WAKEUP")
     sh("wm dismiss-keyguard")
+    # A fixed clock (see freeze_clock) needs root; google_apis emulator images allow adb root.
+    global FIXED_TIME
+    out = subprocess.run(["adb", "root"], capture_output=True, timeout=60).stdout.decode(errors="replace").strip()
+    subprocess.run(["adb", "wait-for-device"], timeout=120)
+    time.sleep(3)
+    if sh("id -u").strip() == "0":
+        sh("settings put global auto_time 0")
+        FIXED_TIME = time.strftime("%m%d0900%Y.00")
+        freeze_clock()
+        log(f"adb root: {out}; device clock fixed at 09:00 for every run: {sh('date').strip()}")
+    else:
+        log(f"adb root unavailable ({out}); the clock runs, so each scenario's first request reads the whole prompt")
     launch(wait=6)
     options = {
         "base_url": APP_BASE_URL,
@@ -474,6 +601,7 @@ def setup():
     launch(wait=4)
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
+    ensure_accessibility()
     st = state()
     log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')}")
     if not st.get("onboarded") or "local-test-model" not in str(st.get("selection")):
@@ -485,42 +613,70 @@ def main():
     only = set(a.lower() for a in sys.argv[1:]) or set(filter(None, os.environ.get("E2E_ONLY", "").lower().split(",")))
     setup()
     results = []
+    gone = None
     for key, title, fn in SCENARIOS:
-        if only and key not in only:
+        if only and key not in only and key != "0":
             continue
-        res = Result(key, title)
-        log(f"===== {key}. {title} =====")
-        call("clear")
-        clear_crashes()
-        m0 = server_metrics()
-        t0 = time.time()
-        try:
-            fn(res)
-        except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
-            res.check(False, f"harness error: {type(e).__name__}: {e}")
-        res.duration = time.time() - t0
-        res.speed = speed(m0, server_metrics())
-        crash = crash_log()
-        if res.check(not crash, "no crash in logcat -b crash") is False:
-            print("=====CRASH " + key + "=====")
-            # The head carries the exception and the app's own frames; Compose's layout frames follow.
-            print("\n".join(crash.splitlines()[:80]))
-            print("=====END=====")
-        res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
-        try:
-            shot(f"e2e_{key}_end")
-        except Exception as e:
-            log(f"screenshot failed: {e}")
-        log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
-        for n in res.notes:
-            log("  " + n)
+        res = Result(key, title, core=key != "0")
         results.append(res)
-        # Leave the next scenario a clean home chat.
-        sh("input keyevent KEYCODE_HOME")
-        time.sleep(1)
+        if gone:
+            res.check(False, "not run: " + gone)
+            continue
+        try:
+            run_one(res, fn)
+        except DeviceGone as e:
+            gone = str(e)
+            res.check(False, gone)
+            res.passed = False
+            log(f"{key}: FAIL; {gone}. The remaining scenarios cannot run.")
     scorecard(results)
     failed = [r for r in results if r.core and not r.passed]
     sys.exit(1 if failed else 0)
+
+
+def run_one(res, fn):
+    key = res.key
+    log(f"===== {key}. {res.title} =====")
+    call("clear")
+    # Whatever the last task did to the screen (locked it, left a panel or the shade open), start awake and home.
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh("cmd statusbar collapse")
+    sh("input keyevent KEYCODE_HOME")
+    if not ensure_accessibility(wait_s=10):
+        res.notes.append("accessibility service not connected")
+    clear_crashes()
+    m0 = server_metrics()
+    t0 = time.time()
+    try:
+        fn(res)
+    except DeviceGone:
+        raise
+    except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
+        res.check(False, f"harness error: {type(e).__name__}: {e}")
+    res.duration = time.time() - t0
+    res.speed = speed(m0, server_metrics())
+    try:
+        crash = crash_log()
+    except subprocess.TimeoutExpired:
+        check_device()
+        crash = ""
+    if res.check(not crash, "no crash in logcat -b crash") is False:
+        print("=====CRASH " + key + "=====")
+        # The head carries the exception and the app's own frames; Compose's layout frames follow.
+        print("\n".join(crash.splitlines()[:80]))
+        print("=====END=====")
+    res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
+    try:
+        shot(f"e2e_{key}_end")
+    except Exception as e:
+        log(f"screenshot failed: {e}")
+    log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
+    for n in res.notes:
+        log("  " + n)
+    # Leave the next scenario a clean home chat.
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(1)
 
 
 def scorecard(results):
@@ -542,15 +698,16 @@ def scorecard(results):
             for n in r.notes:
                 print("    " + n)
     print("=====END=====")
-    passed = sum(r.passed for r in results)
-    print(f"{passed}/{len(results)} scenarios passed")
+    core = [r for r in results if r.core]
+    passed = sum(r.passed for r in core)
+    print(f"{passed}/{len(core)} core scenarios passed")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as f:
             f.write("## End-to-end tasks\n\n| | Scenario | Result | Tool calls | Time | Model speed |\n|---|---|---|---|---|---|\n")
             for r in results:
                 f.write(f"| {r.key} | {r.title} | {'PASS' if r.passed else 'FAIL'} | {', '.join(r.tools) or '-'} | {r.duration:.0f}s | {r.speed or '-'} |\n")
-            f.write(f"\n{passed}/{len(results)} passed\n")
+            f.write(f"\n{passed}/{len(core)} core scenarios passed\n")
             for r in results:
                 if not r.passed:
                     f.write(f"\n**{r.key}. {r.title}**\n\n" + "".join(f"- {n}\n" for n in r.notes))
