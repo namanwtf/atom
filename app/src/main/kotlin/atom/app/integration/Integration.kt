@@ -48,7 +48,7 @@ internal object Integration {
         )
 
         // Overlay: deep links, model chip, the real phone-control lease, the voice module's dictation and voice.
-        Overlay.hooks = AppOverlayHooks(graph)
+        Overlay.hooks = AppOverlayHooks(app, graph)
         Overlay.voice = ModuleVoiceBridge()
         Overlay.readAloud = ModuleReadAloudBridge(graph.appScope)
         Accessibility.serviceHook = object : Accessibility.ServiceHook {

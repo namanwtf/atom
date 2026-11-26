@@ -152,6 +152,8 @@ class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
         if (off.isNotEmpty()) return ToolResult.error(ToolSwitches.offMessage(off))
         return inner.run(args, ctx)
     }
+
+    override suspend fun approvalText(args: JsonObject): String? = inner.approvalText(args)
 }
 
 fun Tool.gated(vararg switches: ToolSwitch): Tool {
@@ -182,6 +184,13 @@ fun Tool.switchChecked(): Tool = if (this is GatedTool) this else GatedTool(this
 
 /** True when [this] (or the tool a [GatedTool] wraps) asks the user itself with a plain-English preview. */
 fun Tool.confirmsItself(): Boolean = this is atom.device.tools.ConfirmsItself || (this is GatedTool && inner.confirmsItself())
+
+/**
+ * True when "Ask before taps and typing" ([confirmAct]) should wrap [this] in an extra confirmation: an Act tool
+ * that does not already ask with its own preview. Looks through [GatedTool], so a gated self-confirming tool
+ * (freeze, force stop, write setting...) is asked about once, not twice.
+ */
+fun Tool.asksBeforeTaps(confirmAct: Boolean): Boolean = confirmAct && risk == Risk.Act && !confirmsItself()
 
 /** Leaves out the tools switched off one by one on the Tool list (the model never sees them). */
 fun List<Tool>.withoutSwitchedOff(): List<Tool> = filter { ToolSwitches.isToolOn(it.spec.name) }

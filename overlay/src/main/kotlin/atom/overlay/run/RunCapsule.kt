@@ -103,6 +103,7 @@ private val Green = Color(0xFF34C759)
 @Composable
 internal fun RunCapsule() {
     val view = RunOverlays.view ?: return
+    val locked = RunOverlays.locked
     if (RunOverlays.expanded && !RunOverlays.steering) {
         LaunchedEffect(view.conversationId, RunOverlays.expanded) {
             delay(AUTO_COLLAPSE_MS)
@@ -111,8 +112,9 @@ internal fun RunCapsule() {
     }
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(260, easing = Emphasized)) }
-    val expanded = RunOverlays.expanded || view.pending != null
-    val stage = expanded && view.viewfinder
+    // Over the lock screen a pending approval does not open the controls: they would only say "Unlock to answer".
+    val expanded = RunOverlays.expanded || (view.pending != null && !locked)
+    val stage = expanded && view.viewfinder && !locked
     val width by animateDpAsState(
         when {
             stage -> 296.dp
@@ -137,16 +139,16 @@ internal fun RunCapsule() {
                 .shadow(10.dp, shape, ambientColor = accent, spotColor = accent)
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
-                .clickable(enabled = !expanded) { RunOverlays.expanded = true }
+                .clickable(enabled = !expanded && !locked) { RunOverlays.expanded = true }
                 .semantics { if (!expanded) contentDescription = capsuleDescription },
         ) {
-            CollapsedRow(view, accent, expanded)
+            CollapsedRow(view, accent, expanded, locked)
             AnimatedVisibility(
-                expanded,
+                expanded || locked,
                 enter = expandVertically(tween(260, easing = Emphasized)) + fadeIn(tween(260, easing = Emphasized)),
                 exit = shrinkVertically(tween(200, easing = Emphasized)) + fadeOut(tween(160)),
             ) {
-                Controls(view, stage)
+                if (locked) LockedControls(view) else Controls(view, stage)
             }
         }
     }
@@ -179,7 +181,7 @@ private fun phaseLabel(v: CapsuleView): String = stringResource(
 )
 
 @Composable
-private fun CollapsedRow(v: CapsuleView, accent: Color, expanded: Boolean) {
+private fun CollapsedRow(v: CapsuleView, accent: Color, expanded: Boolean, locked: Boolean) {
     Row(
         Modifier.fillMaxWidth().padding(start = 13.dp, end = 16.dp, top = 9.5.dp, bottom = 9.5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -204,7 +206,12 @@ private fun CollapsedRow(v: CapsuleView, accent: Color, expanded: Boolean) {
             ) { label ->
                 Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
             }
-            val thought = if (v.phase == RunPhase.Paused) stringResource(R.string.overlay_paused_detail) else v.step
+            // The step names what Atom is doing (an app, a contact, typed text): not shown over the lock screen.
+            val thought = when {
+                v.phase == RunPhase.Paused -> stringResource(R.string.overlay_paused_detail)
+                locked -> null
+                else -> v.step
+            }
             AnimatedContent(targetState = thought, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(220)) }, label = "thought") { t ->
                 if (t != null) {
                     Text(
@@ -218,7 +225,7 @@ private fun CollapsedRow(v: CapsuleView, accent: Color, expanded: Boolean) {
                 }
             }
         }
-        if (v.viewfinder && !expanded) {
+        if (v.viewfinder && !expanded && !locked) {
             val run = RunOverlays.runFor(v.conversationId)
             val slot = Overlay.viewfinder
             if (run != null && slot != null) {
@@ -290,6 +297,31 @@ private fun Controls(v: CapsuleView, stage: Boolean) {
                 ControlButton(AtomIcons.Stop, stringResource(R.string.overlay_stop), c.error, RunOverlays::stop)
             }
         }
+    }
+}
+
+/** While the phone is locked: Stop, and "Unlock to answer" when an approval waits. Nothing else can be answered. */
+@Composable
+private fun LockedControls(v: CapsuleView) {
+    val c = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().padding(start = 13.dp, end = 13.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (v.pending != null) {
+            Text(
+                stringResource(R.string.overlay_unlock_to_answer),
+                color = c.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        ControlButton(AtomIcons.Stop, stringResource(R.string.overlay_stop), c.error, RunOverlays::stop)
     }
 }
 

@@ -136,6 +136,7 @@ What the promise does not cover:
   fails again each period, without crashing the app. WebView keeps its profile in its own folders
   (`app_webview/`), and androidx ProfileInstaller writes its `files/profileinstaller_*` markers.
 - **`cache/`.** Android may clear it at any time, and Atom 4 and its libraries keep temporary files there (the
-  built-in browser also clears the WebView cache).
+  built-in browser also clears the WebView cache). Atom 4's own cache files still use the prefix
+  (`atom4_updates/`, `atom4_models_dev_catalog.json`), so a cached file the earlier app left is never read.
 - **Commands the user runs.** The Android shell tool starts in `files/` with `HOME` set to it, so a command the user
   or the agent runs there can read or change any file, including the earlier app's.

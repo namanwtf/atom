@@ -102,4 +102,22 @@ class ChatDetailsTest {
         assertTrue(hosted.all { it.kind == HostedToolKind.WebSearch })
         assertEquals("found it", (events.last() as AgentEvent.Done).finalText)
     }
+
+    @Test
+    fun hostedCallsKeepOneSlotPerCall() {
+        val calls = atom.core.agent.HostedCalls()
+        assertEquals(HostedToolKind.WebSearch, calls.update(HostedToolKind.WebSearch, started = true, callId = "a"))
+        assertEquals(HostedToolKind.CodeExecution, calls.update(HostedToolKind.CodeExecution, started = true, callId = "b"))
+        // The first call finishing leaves the second on screen.
+        assertEquals(HostedToolKind.CodeExecution, calls.update(HostedToolKind.WebSearch, started = false, callId = "a"))
+        assertNull(calls.update(HostedToolKind.CodeExecution, started = false, callId = "b"))
+        // Two searches at once: the label stays until both are done.
+        calls.update(HostedToolKind.WebSearch, started = true, callId = "c")
+        calls.update(HostedToolKind.WebSearch, started = true, callId = "d")
+        assertEquals(HostedToolKind.WebSearch, calls.update(HostedToolKind.WebSearch, started = false, callId = "c"))
+        assertNull(calls.update(HostedToolKind.WebSearch, started = false, callId = "d"))
+        // Without ids a call has a slot per kind.
+        calls.update(HostedToolKind.Mcp, started = true, callId = null)
+        assertNull(calls.update(HostedToolKind.Mcp, started = false, callId = null))
+    }
 }

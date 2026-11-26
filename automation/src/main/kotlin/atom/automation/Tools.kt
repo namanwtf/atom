@@ -1,6 +1,8 @@
 package atom.automation
 
+import atom.automation.rule.Action
 import atom.automation.rule.BatteryEstimator
+import atom.automation.rule.CompileResult
 import atom.automation.rule.ConflictDetector
 import atom.automation.rule.Triggers
 import atom.automation.rule.describe
@@ -30,16 +32,56 @@ private class SimpleTool(
     description: String,
     parameters: JsonObject,
     override val risk: Risk,
+    private val approval: (suspend (JsonObject) -> String?)? = null,
     private val body: suspend (JsonObject) -> ToolResult,
 ) : Tool {
     override val spec = ToolSpec(name, description, parameters)
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult =
         runCatching { body(args) }.getOrElse { ToolResult.error(it.message ?: it::class.simpleName ?: "error") }
+
+    override suspend fun approvalText(args: JsonObject): String? {
+        val text = approval ?: return null
+        return try {
+            text(args)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * The last sentence compiled for an approval, so the call that follows the user's yes saves exactly the rule they
+ * approved (and the model compiles it once, not twice).
+ */
+private class CompileCache {
+    private var sentence: String? = null
+    private var result: CompileResult? = null
+
+    @Synchronized
+    fun put(sentence: String, result: CompileResult) {
+        this.sentence = sentence
+        this.result = result
+    }
+
+    @Synchronized
+    fun take(sentence: String): CompileResult? {
+        val hit = result.takeIf { this.sentence == sentence }
+        this.sentence = null
+        result = null
+        return hit
+    }
 }
 
 /** Chat tools for creating and managing scheduled tasks and automations. */
 internal object AutomationTools {
-    fun all(rt: AutomationRuntime): List<Tool> = listOf(
+    fun all(rt: AutomationRuntime): List<Tool> {
+        val compiled = CompileCache()
+        return tools(rt, compiled)
+    }
+
+    private fun tools(rt: AutomationRuntime, compiled: CompileCache): List<Tool> = listOf(
         SimpleTool(
             "scheduled_task_create",
             "Create a scheduled task: Atom runs the prompt on a schedule and notifies the result. Schedule examples: " +
@@ -120,8 +162,15 @@ internal object AutomationTools {
                 boolean("enabled", "Switch it on right away (default true)")
             },
             Risk.Sensitive,
+            approval = { a ->
+                val sentence = a.string("sentence")
+                val result = Automations.compiler.compile(sentence)
+                compiled.put(sentence, result)
+                approvalPreview(result)
+            },
         ) { a ->
-            val result = Automations.compiler.compile(a.string("sentence"))
+            val sentence = a.string("sentence")
+            val result = compiled.take(sentence) ?: Automations.compiler.compile(sentence)
             val rule = result.rule
             if (rule == null || !result.ok) {
                 return@SimpleTool ToolResult.error(
@@ -174,6 +223,28 @@ internal object AutomationTools {
             ToolResult.ok("Deleted \"${rule.name}\".")
         },
     )
+
+    /**
+     * What the approval for automation_create shows: the compiled trigger, conditions and steps, with the
+     * capabilities each agent step and the direct steps get, so the user approves what will actually run.
+     */
+    internal fun approvalPreview(result: CompileResult): String {
+        val rule = result.rule
+        if (rule == null || !result.ok) {
+            return "Create an automation (it could not be compiled: ${result.errors.joinToString("; ").ifBlank { "unknown error" }})"
+        }
+        return buildString {
+            append("Create automation \"${rule.name}\"\n")
+            append("When: ${Triggers.describe(rule.trigger)}\n")
+            rule.conditions.forEach { append("Only if: ${atom.automation.rule.Conditions.describe(it)}\n") }
+            rule.actions.forEachIndexed { i, s ->
+                append("${i + 1}. ${s.describe()}")
+                if (s is Action.Agent) append(" - may use: ${Capability.describe(s.capabilities)}")
+                append("\n")
+            }
+            if (rule.actions.any { it is Action.Tool }) append("Direct steps may use: ${Capability.describe(rule.stepCapabilities)}\n")
+        }.trim()
+    }
 
     private fun next(t: ScheduledTask): String {
         val now = Instant.now()

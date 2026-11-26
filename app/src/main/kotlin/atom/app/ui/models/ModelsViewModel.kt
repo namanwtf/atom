@@ -459,7 +459,7 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
 
     // ------------------------------------------------------------ models.dev
 
-    private val catalogFile = File(app.cacheDir, "models_dev_catalog.json")
+    private val catalogFile = File(app.cacheDir, "atom4_models_dev_catalog.json")
 
     /**
      * Shows the community catalog at once (the local cache, else the bundled snapshot), then refreshes it online

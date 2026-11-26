@@ -13,6 +13,9 @@ Two sources are accepted:
 The repository form follows the catalog's own v2-to-v1 rules for the fields kept here (base models, v2-only
 models, provider aliases, modality names). It writes `models_dev_snapshot.json` and `models_dev_snapshot.meta`
 (the fetch time and where the data came from) into OUT_DIR. Run it with `-I` so nothing next to the input loads.
+
+The catalog data is MIT-licensed (Copyright (c) 2025 models.dev, https://github.com/sst/models.dev). The app
+credits it in NOTICE and ships the licence as licenses/MIT-models.dev.txt; keep both when the source changes.
 """
 
 import argparse

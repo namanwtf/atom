@@ -146,15 +146,16 @@ class EngineRouter(
         role: ModelRole,
         conversationSelection: EngineSelection?,
         override: EngineSelection? = null,
-        hostedSearch: Boolean = true,
+        hostedSearch: Boolean = false,
     ): RoutedEngine = acquire(ModelRoles.get(context).resolve(role, conversationSelection, override), hostedSearch)
 
     /**
-     * The engine for [selection] (a conversation's model), or the global default when null. [hostedSearch] false
-     * keeps provider-hosted web search (Gemini Google Search, OpenAI web_search) off for this engine even when the
-     * provider has it on: runs whose capabilities exclude the web (scheduled "Chat only" tasks) must not search.
+     * The engine for [selection] (a conversation's model), or the global default when null. Provider-hosted web
+     * search (Gemini Google Search, OpenAI web_search) is on only when [hostedSearch] is true and the provider has
+     * it on. Only a run passes true, as decided by `CapabilityTools.hostedSearch` (capabilities, the web_search
+     * switch and "Web search and reading"); side calls (titles, compaction, dictation, tests) keep the default.
      */
-    suspend fun acquire(selection: EngineSelection? = null, hostedSearch: Boolean = true): RoutedEngine = mutex.withLock {
+    suspend fun acquire(selection: EngineSelection? = null, hostedSearch: Boolean = false): RoutedEngine = mutex.withLock {
         idleJob?.cancel()
         idleJob = null
         val current = settings.current()
@@ -217,7 +218,7 @@ class EngineRouter(
         }
     }
 
-    private suspend fun cloud(selection: EngineSelection.Cloud, notice: String?, hostedSearch: Boolean = true): RoutedEngine {
+    private suspend fun cloud(selection: EngineSelection.Cloud, notice: String?, hostedSearch: Boolean): RoutedEngine {
         val config = providers.get(selection.providerId) ?: ProviderResolver.legacyConfig(selection)
             ?: throw RouteException(context.getString(R.string.route_unknown_provider, selection.providerId))
         if (!config.enabled) throw RouteException(context.getString(R.string.mdl_route_disabled, config.displayName))

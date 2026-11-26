@@ -53,6 +53,20 @@ internal object CapsuleStatuses {
     }
 
     /**
+     * Whether the streamed [text] reads as the final answer rather than a preamble the model writes before a tool
+     * call ("Opening Settings."). The stream does not say which it is until the call arrives, so a short single
+     * line is taken as a preamble: the capsule keeps "Thinking" and "Add input" stays open (the input then waits
+     * for the next safe point, or the next turn).
+     */
+    fun answerStarted(text: String): Boolean {
+        val t = text.trim()
+        return t.length >= ANSWER_MIN_CHARS || '\n' in t
+    }
+
+    /** Longer than any one-line preamble. */
+    const val ANSWER_MIN_CHARS = 160
+
+    /**
      * What "Add input" does now: null opens the steering field; otherwise the notice to show instead. While the
      * final answer streams the run cannot take input any more, and without a host nothing can be delivered.
      */

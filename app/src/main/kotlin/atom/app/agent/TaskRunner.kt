@@ -1,6 +1,7 @@
 package atom.app.agent
 
 import atom.device.switches.ToolSwitches
+import atom.device.switches.asksBeforeTaps
 import atom.device.switches.switchChecked
 import atom.device.switches.withoutSwitchedOff
 import android.app.Application
@@ -46,7 +47,6 @@ import atom.core.tool.ToolResult
 import atom.core.tool.schema
 import atom.device.Accessibility
 import atom.device.DeviceTools
-import atom.device.tools.ConfirmsItself
 import atom.automation.CapabilityTools
 import atom.automation.ToolOrigin
 import atom.linux.LinuxTools
@@ -57,6 +57,7 @@ import atom.ui.feature.HostStep
 import atom.ui.feature.RunPhase
 import atom.ui.feature.RunSource
 import atom.ui.feature.StepState
+import atom.web.WebFeature
 import atom.app.data.ModelRole
 import atom.characters.session.CharacterRun
 import atom.characters.session.CharacterSession
@@ -467,8 +468,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
 
-    /** False for a capability-limited run without the web: its subagents get no provider-hosted search either. */
-    fun hostedSearchOf(runId: String): Boolean = byRunId[runId]?.hostedSearchInUse ?: true
+    /**
+     * Whether run [runId] may use provider-hosted search, for its subagents. False for a run without the web and
+     * for a run that is not found (nothing to inherit from).
+     */
+    fun hostedSearchOf(runId: String): Boolean = byRunId[runId]?.hostedSearchInUse ?: false
 
     /** Context window of the newest active run, for features that size themselves to it. */
     fun currentContextWindow(): Int? = byRunId.values.maxByOrNull { it.startedAt }?.windowInUse
@@ -481,7 +485,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         val view = ModelHistory.build(conversation.messages)
         var routed: RoutedEngine? = null
         return try {
-            val engine = graph.router.acquire(selectionFor(conversation).first).also { routed = it }
+            // A summary needs no web: no provider-hosted search on this call.
+            val engine = graph.router.acquire(selectionFor(conversation).first, hostedSearch = false).also { routed = it }
             val config = engine.agentConfig("", emptyList(), slowApprovals = false)
             val known = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(engine.selection ?: selectionFor(conversation).first) }.getOrNull()
             val window = minOf(known ?: config.context.budgetTokens, config.context.budgetTokens)
@@ -702,11 +707,20 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
 
-        /** Provider-hosted search follows the run's capabilities and the web_search switch on the Tool list. */
-        private fun hostedSearchAllowed(): Boolean =
-            CapabilityTools.allowsHostedSearch(request.capabilities) && ToolSwitches.isToolOn("web_search")
+        /**
+         * Provider-hosted search follows the run's capabilities, the web_search switch on the Tool list and "Web
+         * search and reading" in Settings.
+         */
+        private fun hostedSearchAllowed(): Boolean = CapabilityTools.hostedSearch(
+            request.capabilities,
+            webSearchToolOn = ToolSwitches.isToolOn("web_search"),
+            webEnabled = WebFeature.webEnabled(app),
+        )
 
         private val pendingAttachments = ArrayDeque<List<Attachment>>()
+
+        /** Provider-hosted calls running in the current model call. */
+        private val hostedCalls = atom.core.agent.HostedCalls()
 
         suspend fun run() {
             var character: CharacterRun? = null
@@ -852,7 +866,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
             val wrapped = base.withoutSwitchedOff()
-                .map { if (confirmAct && it.risk == Risk.Act && it !is ConfirmsItself) ConfirmingTool(it) else it }
+                .map { if (it.asksBeforeTaps(confirmAct)) ConfirmingTool(it) else it }
                 .map(LongTools::apply)
                 // Each call re-checks the tool's own switch, so turning it off on the Tool list stops it mid-run.
                 .map { it.switchChecked() }
@@ -861,16 +875,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
         }
 
-        private fun originOf(featureId: String): ToolOrigin = when (featureId) {
-            "device", "context", "vdisplay" -> ToolOrigin.Device
-            "linux" -> ToolOrigin.Linux
-            "web" -> ToolOrigin.Web
-            "extend" -> ToolOrigin.Extend
-            else -> ToolOrigin.Other
-        }
+        private fun originOf(featureId: String): ToolOrigin = ToolFamilies.originOf(featureId)
 
-        private fun familyOf(tool: Tool, origin: ToolOrigin) =
-            CapabilityTools.classify(tool.spec.name, tool.spec.description, origin, tool.risk, tool.usesPhoneUi)
+        private fun familyOf(tool: Tool, origin: ToolOrigin) = ToolFamilies.familyOf(tool, origin)
 
         private fun releaseTool(): Tool = object : Tool {
             override val spec = ToolSpec(
@@ -903,10 +910,12 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         updateRun(id) { copy(stream = StreamState()) }
                     }
                     val notice = RetryNotice(event.attempt, event.maxAttempts, System.currentTimeMillis() + event.delayMs, event.reason)
+                    hostedCalls.clear()
                     updateRun(id) { copy(retry = notice, hostedTool = null) }
                 }
                 is AgentEvent.ModelCall -> {
                     stats = stats.withModelCall(event.stats)
+                    hostedCalls.clear()
                     updateRun(id) { copy(retry = null, hostedTool = null) }
                     graph.runPower.progress()
                 }
@@ -932,7 +941,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     publish()
                 }
                 AgentEvent.Compacting -> updateRun(id) { copy(compacting = true) }
-                is AgentEvent.HostedTool -> updateRun(id) { copy(hostedTool = if (event.running) event.kind else null) }
+                is AgentEvent.HostedTool -> {
+                    // One slot per call: a call finishing leaves "Running X" up while another is still running.
+                    val showing = hostedCalls.update(event.kind, event.running, event.callId)
+                    updateRun(id) { copy(hostedTool = showing) }
+                }
                 is AgentEvent.Compacted -> {
                     val at = view.getOrElse(event.summarizedCount) { stored.size }
                     val entry = StoredMessage.summary(event.summary)
@@ -1199,7 +1212,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             val choice = runCatching { graph.modelRoles.titleModel(final.selection ?: selectionUsed) }.getOrNull() ?: return
             var extra: RoutedEngine? = null
             try {
-                val engine = runCatching { graph.router.acquire(choice.selection) }.getOrNull()?.also { extra = it } ?: return
+                val engine = runCatching { graph.router.acquire(choice.selection, hostedSearch = false) }.getOrNull()?.also { extra = it } ?: return
                 val reasoning = if (choice.reasoning == null && ReasoningSupport.of(engine.reasoning.supported, engine.reasoning.levels).canDisable) {
                     ReasoningEffort.Off
                 } else {
