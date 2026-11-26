@@ -35,6 +35,9 @@ class AtomNotificationListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return
         val n = sbn.notification ?: return
         if (n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE or Notification.FLAG_GROUP_SUMMARY) != 0) return
+        // Progress bars (downloads, uploads, installs) repost many times a minute with a new percentage each time:
+        // none of those updates is worth a database write (and the worker thread waking up for it).
+        if (isProgressUpdate(n)) return
         val record = toRecord(this, sbn) ?: return
         val app = applicationContext
         writer.execute { runCatching { Notifications.history(app).record(record) } }
@@ -56,6 +59,13 @@ class AtomNotificationListener : NotificationListenerService() {
         var postedHook: PostedHook? = null
 
         fun component(context: Context) = ComponentName(context, AtomNotificationListener::class.java)
+
+        /** A notification that shows a progress bar (or is filed as progress): it is reposted on every step. */
+        fun isProgressUpdate(n: Notification): Boolean {
+            if (n.category == Notification.CATEGORY_PROGRESS) return true
+            val e = n.extras ?: return false
+            return e.getInt(Notification.EXTRA_PROGRESS_MAX, 0) > 0 || e.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
+        }
 
         private val labels = HashMap<String, String>()
 

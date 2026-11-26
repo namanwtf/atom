@@ -95,6 +95,18 @@ jobs:
           fi
           echo "Pack native libraries:"
           unzip -lv "$pack" | awk '$8 ~ /^lib\// {print $1, $2, $8}'
+          # Classes the pack defines, by package (Kotlin, kotlinx and Atom's core come from the app at run time).
+          dexdump=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | tail -n 1 || true)
+          if [ -n "$dexdump" ]; then
+            tmp=$(mktemp -d)
+            unzip -q -o "$pack" 'classes*.dex' -d "$tmp"
+            defs=$( (for dex in "$tmp"/classes*.dex; do "$dexdump" "$dex"; done) | grep -E "^  Class descriptor" | sed -E "s/.*'L([^;]*);'.*/\1/" || true)
+            echo "Pack classes by package (top 15 of $(wc -l <<< "$defs") classes):"
+            (awk -F/ '{print $1"/"$2"/"$3}' <<< "$defs" | sort | uniq -c | sort -rn | head -n 15) || true
+            if grep -qx 'kotlin/collections/CollectionsKt' <<< "$defs"; then
+              echo "::warning::The pack carries its own Kotlin standard library"
+            fi
+          fi
 
       - name: Upload APKs
         uses: actions/upload-artifact@v7

@@ -76,7 +76,12 @@ private fun PackCard() {
                             stringResource(R.string.pack_missing_text)
                         },
                         icon = Icons.Filled.Download,
-                        trailing = { CompactButton(stringResource(R.string.pack_download), onClick = ::download) },
+                        // Nothing to fetch when this version's release has no pack (for example a debug build).
+                        trailing = if (offer == PackOffer.NotPublished) {
+                            null
+                        } else {
+                            { CompactButton(stringResource(R.string.pack_download), onClick = ::download) }
+                        },
                     )
                 }
                 is PackState.Downloading -> {

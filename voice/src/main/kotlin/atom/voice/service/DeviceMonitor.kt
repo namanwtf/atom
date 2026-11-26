@@ -40,10 +40,11 @@ internal class DeviceMonitor(
                 Intent.ACTION_SCREEN_ON -> update(screen = true)
                 Intent.ACTION_SCREEN_OFF -> update(screen = false)
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> update(saver = power.isPowerSaveMode)
-                Intent.ACTION_BATTERY_CHANGED -> readBattery(intent)
                 else -> false
             }
-            if (changed) onChange()
+            // Every event also re-reads the battery (plug state, the 20% line) from the sticky intent, for free.
+            val battery = refreshBattery()
+            if (changed || battery) onChange()
         }
     }
 
@@ -85,10 +86,16 @@ internal class DeviceMonitor(
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
-            addAction(Intent.ACTION_BATTERY_CHANGED)
+            // Not BATTERY_CHANGED: it arrives on every voltage and temperature tick (every few seconds while
+            // charging) and would wake the listener for nothing. Plug changes and the low-battery edges are enough.
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(Intent.ACTION_BATTERY_LOW)
+            addAction(Intent.ACTION_BATTERY_OKAY)
         }
-        // All protected system broadcasts; the sticky BATTERY_CHANGED intent is returned immediately.
-        context.registerReceiver(receiver, filter, null, handler)?.let(::readBattery)
+        // All protected system broadcasts.
+        context.registerReceiver(receiver, filter, null, handler)
+        refreshBattery()
         power.addThermalStatusListener(context.mainExecutor, thermalListener)
         if (Build.VERSION.SDK_INT >= 31) {
             audio.addOnModeChangedListener(context.mainExecutor, modeListener as AudioManager.OnModeChangedListener)
@@ -134,7 +141,13 @@ internal class DeviceMonitor(
         return changed
     }
 
-    /** BATTERY_CHANGED arrives on every voltage/temperature tick; only plug state and the 20% line matter. */
+    /** Reads the sticky BATTERY_CHANGED intent without subscribing to it. */
+    private fun refreshBattery(): Boolean {
+        val sticky = runCatching { context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
+        return sticky?.let(::readBattery) ?: false
+    }
+
+    /** Only plug state and the 20% line matter. */
     private fun readBattery(intent: Intent): Boolean {
         val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)

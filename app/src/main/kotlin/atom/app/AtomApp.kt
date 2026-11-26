@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import atom.app.feature.Features
 import atom.app.integration.Integration
+import atom.app.service.RunPowerPolicy
 import atom.app.ui.MainActivity
 import atom.ui.feature.Atom
 import atom.voice.Wake
@@ -60,7 +61,8 @@ class AtomApp : Application() {
 
         registerActivityLifecycleCallbacks(KeepScreenOn())
         graph.appScope.launch(Dispatchers.Main) {
-            graph.runPower.keepScreenOn.collect { keep -> resumed?.get()?.let { applyKeepScreenOn(it, keep) } }
+            // Only the activity in front can carry the flag: a paused one (background, screen off) never does.
+            graph.runPower.keepScreenOn.collect { keep -> resumed?.get()?.let { applyKeepScreenOn(it, RunPowerPolicy.windowKeepsScreenOn(keep, windowInFront = true)) } }
         }
 
         Wake.setAssistLaunchComponent(ComponentName(this, MainActivity::class.java))
@@ -90,12 +92,13 @@ class AtomApp : Application() {
     private inner class KeepScreenOn : ActivityLifecycleCallbacks {
         override fun onActivityResumed(activity: Activity) {
             resumed = WeakReference(activity)
-            applyKeepScreenOn(activity, graph.runPower.keepScreenOn.value)
+            applyKeepScreenOn(activity, RunPowerPolicy.windowKeepsScreenOn(graph.runPower.keepScreenOn.value, windowInFront = true))
         }
 
         override fun onActivityPaused(activity: Activity) {
             if (resumed?.get() === activity) resumed = null
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // Backgrounded or screen off: never keep the screen on for a window the user cannot see.
+            applyKeepScreenOn(activity, RunPowerPolicy.windowKeepsScreenOn(graph.runPower.keepScreenOn.value, windowInFront = false))
         }
 
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
