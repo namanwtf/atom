@@ -1,0 +1,151 @@
+# Builds a signed test copy of release/next for the owner to try before a release. It is published as a DRAFT
+# release: drafts are visible only to people with write access to this repository, never returned by
+# /releases/latest, and never tagged, so no installed Atom offers it as an update and nobody else can see it.
+# It is signed with the release key, so it installs over an existing Atom and keeps its data.
+name: Test build
+
+on:
+  push:
+    branches: [release/next]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: test-build
+  cancel-in-progress: true
+
+env:
+  EXPECTED_CERT_SHA256: d2b83bec14ad2b0ee6a01885461a0a9dbd78a4b3d374d292714de863b47a4578
+  BUILD_TOOLS: "36.0.0"
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/heads/release/next
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install NDK, CMake and build tools
+        run: sdkmanager --install "ndk;30.0.16248370" "cmake;4.1.2" "build-tools;${BUILD_TOOLS}"
+
+      - name: Compute test version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prev=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          body=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .body | tr -d '\r')
+          previous=$( (grep -E '^versionCode [0-9]+$' <<< "$body" || true) | tail -n 1 | grep -oE '[0-9]+' || echo 0)
+          IFS=. read -r major minor patch <<< "${prev#v}"
+          version="$major.$minor.$((patch + 1))-test.${GITHUB_RUN_NUMBER}"
+          now=$(date -u +%Y%m%d)
+          slot=$(( (10#$(date -u +%H) * 60 + 10#$(date -u +%M)) / 15 ))
+          code=$(( now * 100 + slot ))
+          if [ $((previous + 1)) -gt "$code" ]; then code=$((previous + 1)); fi
+          echo "Test build $version, versionCode $code (latest release $prev, versionCode $previous)"
+          { echo "version=$version"; echo "code=$code"; } >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version (runner only)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s/^(\s*)versionCode = [0-9]+\s*$/\1versionCode = $CODE/" app/build.gradle.kts
+          sed -i -E "s/^(\s*)versionName = \"[^\"]*\"\s*$/\1versionName = \"$VERSION\"/" app/build.gradle.kts
+          grep -qE "^\s*versionCode = $CODE$" app/build.gradle.kts
+          grep -qE '^\s*applicationId = "io\.github\.namanwtf\.atom"$' app/build.gradle.kts
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Sign and verify
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          # Optional: the key alias defaults to "atom" and the key password to the keystore password.
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'atom' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          bt="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+
+          umask 077
+          ks="$RUNNER_TEMP/release.keystore"
+          aligned="$RUNNER_TEMP/aligned.apk"
+          trap 'rm -f "$ks" "$aligned"' EXIT
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$ks"
+          mkdir -p dist
+
+          # sign_and_check <build output dir> <published file name> <expected package name>
+          sign_and_check() {
+            local dir="$1" name="$2" expected_package="$3"
+            local unsigned apk certs signers actual badging package
+            unsigned=$(find "$dir" -maxdepth 1 -name '*.apk' | head -n 1)
+            if [ -z "$unsigned" ]; then echo "::error::No release APK was built in $dir"; exit 1; fi
+            apk="dist/$name"
+            # -P 16: uncompressed native libraries (the pack's) stay 16 KB page-aligned, so they load from the APK.
+            "$bt/zipalign" -P 16 -f 4 "$unsigned" "$aligned"
+            "$bt/apksigner" sign --ks "$ks" --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$apk" "$aligned"
+
+            "$bt/apksigner" verify --verbose "$apk"
+            certs=$("$bt/apksigner" verify --print-certs "$apk")
+            echo "$certs"
+            signers=$(grep -cE 'certificate SHA-256 digest:' <<< "$certs" || true)
+            actual=$( (grep -E 'Signer #1 certificate SHA-256 digest:' <<< "$certs" || true) | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+            if [ "$signers" != "1" ] || [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$name is signed with '$actual' ($signers signer(s)); it must be $EXPECTED_CERT_SHA256. Nothing was published."
+              exit 1
+            fi
+            "$bt/zipalign" -c -P 16 4 "$apk" >/dev/null || { echo "::error::$name is not aligned"; exit 1; }
+
+            badging=$("$bt/aapt2" dump badging "$apk")
+            package=$(grep -m 1 -E '^package:' <<< "$badging" || true)
+            echo "$package"
+            grep -q "name='$expected_package'" <<< "$package" || { echo "::error::Wrong package name in $name"; exit 1; }
+            grep -q "versionCode='$CODE'" <<< "$package" || { echo "::error::Wrong versionCode in $name"; exit 1; }
+            grep -q "versionName='$VERSION'" <<< "$package" || { echo "::error::Wrong versionName in $name"; exit 1; }
+
+            (cd dist && sha256sum "$name" > "$name.sha256" && cat "$name.sha256")
+          }
+
+          sign_and_check app/build/outputs/apk/release "atom-$VERSION.apk" io.github.namanwtf.atom
+          # The pack is never installed; the app loads it only with this same certificate and versionCode.
+          sign_and_check ondevice-pack/build/outputs/apk/release "atom-ondevice-$VERSION.apk" io.github.namanwtf.atom.ondevice
+
+      - name: Publish as a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Keep only the newest test draft.
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" \
+            --jq '.[] | select(.draft and (.name | startswith("Test build"))) | .id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"; done
+          gh release create "v$VERSION" "dist/atom-$VERSION.apk" "dist/atom-$VERSION.apk.sha256" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title "Test build $VERSION" \
+            --notes "Test copy of release/next at $GITHUB_SHA, for trying before the release. Draft: only repository members can see it, and no installed Atom is offered it as an update."
+          draft=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          [ "$draft" = "true" ] || { echo "::error::Test build was not saved as a draft"; exit 1; }
