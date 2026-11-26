@@ -80,10 +80,10 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | p | Make a website: "Make a one-page site that says hello." (optional) | Site tools are called, `files/sites/<site>/index.html` says hello, `site_preview` returns its local URL and that server serves the page with the live reload script |
 | l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
-Bubble send (h): the mini chat moves up for the on-screen keyboard, and the accessibility bounds of its Send button can
-still be those from before the move, so a tap there landed on the keyboard's Enter key. The runner therefore taps Send's
-x on the row of the composer field, whose bounds are fresh because its text just changed; if the message is still in
-the composer after that, it closes the keyboard (the first Back closes only the keyboard) and finds Send again. The log
+Bubble send (h): the mini chat moves up for the on-screen keyboard, and the accessibility bounds of its nodes can still
+be those from before the move, so a tap on Send landed on the keyboard's Enter key. The runner therefore closes the
+keyboard first (the first Back closes only the keyboard; the panel stays), finds Send again from a fresh dump and taps
+it on the composer field's row; if the message is still in the composer, it finds Send and taps once more. The log
 shows the bounds each tap used.
 
 All of them are core except the warm-up (0) and p: the job fails if any core scenario fails. p is marked optional because the 3B test

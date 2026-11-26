@@ -418,7 +418,10 @@ def s_site(res):
     port = url.group(1)
     adb("forward", "tcp:18555", f"tcp:{port}")
     try:
-        with urllib.request.urlopen("http://127.0.0.1:18555/", timeout=15) as r:
+        # The server only answers requests that name its own address (DNS rebinding guard), so the forwarded request
+        # carries the device-side Host.
+        req = urllib.request.Request("http://127.0.0.1:18555/", headers={"Host": f"127.0.0.1:{port}"})
+        with urllib.request.urlopen(req, timeout=15) as r:
             body = r.read().decode(errors="replace")
             res.check(r.status == 200 and re.search(r"hello", body, re.I) is not None, "the preview server serves the page")
             res.check("__atom_reload" in body, "the page carries the live reload script")
@@ -591,18 +594,17 @@ def composer_and_send():
 
 
 def bubble_send(res):
-    """Taps the mini chat's Send. The overlay moves up for the keyboard, and the accessibility bounds of the Send
-    button can still be the ones from before the move: a tap there lands on the keyboard's Enter key (scenario h
-    never passed for this). The composer field reports fresh bounds because its text just changed, and Send sits on
-    the same row (both are bottom-aligned 46 dp), so the tap goes to Send's x on the field's row. If the message is
-    still in the composer after that, the keyboard is closed (the first Back only closes the keyboard) and Send is
-    found again. Every tap logs the bounds it used."""
-    for attempt in ("fresh composer bounds", "keyboard closed"):
-        if attempt == "keyboard closed":
-            if not keyboard_shown():
-                break
-            sh("input keyevent KEYCODE_BACK")
-            time.sleep(2)
+    """Taps the mini chat's Send. The overlay moves up for the keyboard, and the accessibility bounds of its nodes can
+    still be the ones from before the move: a tap there lands on the keyboard's Enter key (scenario h never passed
+    for this; a run showed the composer's bounds lagging as well). So the keyboard is closed first (the first Back
+    closes only the keyboard; the panel stays), the panel is given a moment to settle, and Send is found again from a
+    fresh dump, on the composer field's row (both are bottom-aligned 46 dp). If the message is still in the composer
+    after the tap, Send is found and tapped once more. Every tap logs the bounds it used."""
+    if keyboard_shown():
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(2.5)
+        log(f"  keyboard closed before tapping Send (shown now: {keyboard_shown()})")
+    for attempt in ("keyboard closed", "again"):
         field, send = composer_and_send()
         ime = keyboard_shown()
         if field is None or send is None:
@@ -612,7 +614,7 @@ def bubble_send(res):
         x = (send[0] + send[2]) // 2
         y = (field[1] + field[3]) // 2
         log(f"  tapping Send at ({x},{y}) [{attempt}]: Send node {send}, composer node {field}, keyboard shown {ime}")
-        res.notes.append(f"Send tap ({attempt}) at ({x},{y}); Send {send}, composer {field}")
+        res.notes.append(f"Send tap ({attempt}) at ({x},{y}); Send {send}, composer {field}, keyboard shown {ime}")
         sh(f"input tap {x} {y}")
         time.sleep(2.5)
         field_after, _ = composer_and_send()
