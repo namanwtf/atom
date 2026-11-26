@@ -76,7 +76,7 @@ Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, file
 
 Download the APK from [Releases](https://github.com/namanwtf/atom/releases). Releases are built and signed by GitHub Actions when `main` changes.
 
-Installing a newer Atom over an existing one keeps your data and permissions. You never need to uninstall first. Coming from Atom 3? Install over it: on first start Atom brings over your providers, API keys, ChatGPT/Grok sign-ins and conversations, and leaves the old files untouched. Atom checks this repository's Releases from Settings → About and installs an update only after verifying its checksum and signing key; Android asks you to confirm.
+Installing a newer Atom over an existing one keeps your data and permissions. You never need to uninstall first. Atom checks this repository's Releases from Settings → About and installs an update only after verifying its checksum and signing key; Android asks you to confirm.
 
 ## Build
 
