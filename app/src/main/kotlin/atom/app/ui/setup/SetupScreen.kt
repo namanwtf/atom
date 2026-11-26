@@ -66,7 +66,7 @@ import atom.ui.components.PrimaryButton
 import atom.ui.components.StatusDot
 import atom.ui.components.CompactButton
 import atom.ui.theme.AtomIcons
-import atom.ui.theme.AtomMark
+import atom.ui.theme.AtomEmblem
 import atom.ui.theme.extras
 import atom.device.Accessibility
 import atom.device.ShellTier
@@ -266,7 +266,7 @@ private fun Welcome() {
         Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) { AtomMark(Modifier.size(96.dp)) }
+        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) { AtomEmblem(96.dp) }
         Spacer(Modifier.height(22.dp))
         Text(
             stringResource(R.string.setup_welcome_title),

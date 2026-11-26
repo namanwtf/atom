@@ -1,17 +1,13 @@
 package atom.ui.theme
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,15 +100,19 @@ fun AtomMark(modifier: Modifier = Modifier.size(28.dp), fill: Float = 0.87f) {
     )
 }
 
-/** The emblem on a black disc, filling 80% of it: the app's badge wherever the brand appears. */
+/**
+ * The Atom emblem on a transparent background, drawn in one ink so it sits cleanly on any surface:
+ * light on the dark theme and dark on the light theme. Use this everywhere the brand appears inside
+ * the app; [AtomMark] (the emblem on its black disc) is only for the floating bubble.
+ */
 @Composable
-fun AtomBadge(size: Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier.size(size).clip(CircleShape).background(Color.Black),
-        contentAlignment = Alignment.Center,
-    ) {
-        AtomMark(Modifier.fillMaxSize(), fill = 0.8f)
-    }
+fun AtomEmblem(size: Dp, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurface) {
+    Image(
+        painter = painterResource(R.drawable.atom_emblem),
+        contentDescription = null,
+        modifier = modifier.size(size),
+        colorFilter = ColorFilter.tint(tint),
+    )
 }
 
 private const val EMBLEM_SHARE = 242f / 432f

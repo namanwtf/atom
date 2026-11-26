@@ -98,7 +98,7 @@ import atom.ui.components.AtomMenu
 import atom.ui.components.Group
 import androidx.compose.material3.minimumInteractiveComponentSize
 import atom.ui.components.ScreenIcons
-import atom.ui.theme.AtomBadge
+import atom.ui.theme.AtomEmblem
 import atom.ui.theme.AtomIcons
 
 internal class DrawerCallbacks(
@@ -281,10 +281,10 @@ internal fun ConversationDrawer(
     }
 }
 
-/** The emblem on a black disc, as on the launcher icon. */
+/** The Atom emblem, transparent, in the theme's ink. */
 @Composable
 private fun BrandBadge() {
-    AtomBadge(30.dp)
+    AtomEmblem(32.dp)
 }
 
 @Composable
@@ -339,7 +339,7 @@ private fun EmptyList(searching: Boolean) {
                 Icon(ChatGlyphs.Search, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
             }
         } else {
-            AtomBadge(56.dp)
+            AtomEmblem(56.dp, tint = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Text(

@@ -90,7 +90,7 @@ import atom.overlay.ui.drawGlyph
 import atom.overlay.window.Windows
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunSource
-import atom.ui.theme.AtomMark
+import atom.ui.theme.AtomEmblem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.max
@@ -308,7 +308,7 @@ private fun EmptyState() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(56.dp).clip(CircleShape), contentAlignment = Alignment.Center) { AtomMark(Modifier.fillMaxSize()) }
+        AtomEmblem(56.dp, tint = Warm.Text)
         Spacer(Modifier.height(14.dp))
         Text(stringResource(R.string.overlay_empty_title), color = Warm.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
