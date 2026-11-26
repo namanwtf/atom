@@ -1,0 +1,43 @@
+# Runs an on-device catalog model on this runner's CPU with the LiteRT-LM runtime version the app ships, on the exact
+# file the app's model downloader fetches (same URL and SHA-256 as models/ModelCatalog.kt). It prints the model file's
+# own settings and what the model answers to Atom's prompts. No key or secret is used.
+name: On-device model
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix-ondevice-output]
+    paths:
+      - tools/ondevice/**
+      - .github/workflows/ondevice-model.yml
+
+permissions:
+  contents: read
+
+env:
+  LITERTLM_VERSION: "0.20.0"   # gradle/libs.versions.toml: litertlm
+  MODEL_URL: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm
+  MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install LiteRT-LM
+        run: pip install "litert-lm==$LITERTLM_VERSION"
+      - uses: actions/cache@v5
+        with:
+          path: ~/model
+          key: litertlm-${{ env.MODEL_SHA256 }}
+      - name: Download the model
+        run: |
+          mkdir -p ~/model && cd ~/model
+          [ -f model.litertlm ] || curl -fsSL --retry 3 -o model.litertlm "$MODEL_URL"
+          echo "$MODEL_SHA256  model.litertlm" | sha256sum -c -
+      - name: Probe
+        run: python3 tools/ondevice/litert_probe.py ~/model/model.litertlm
