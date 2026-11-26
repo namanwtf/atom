@@ -83,8 +83,10 @@ class RoutedEngine internal constructor(
                 model = model,
                 systemPrompt = systemPrompt,
                 maxSteps = 30,
-                maxOutputTokens = 2048,
+                maxOutputTokens = CLOUD_MAX_OUTPUT,
                 toolTimeoutMs = toolTimeout,
+                // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
+                // starts near 85% of that (AgentConfig.usableWindow).
                 context = ContextPolicy(keepImages = if (vision) 1 else 0),
             )
         }
@@ -114,6 +116,9 @@ class RoutedEngine internal constructor(
     companion object {
         const val LOCAL_CONTEXT_WINDOW = 8_192
         const val LOCAL_PROMPT_BUDGET = 6_000
+
+        /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
+        const val CLOUD_MAX_OUTPUT = 2048
     }
 }
 

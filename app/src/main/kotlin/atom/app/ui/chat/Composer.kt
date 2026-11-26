@@ -388,6 +388,7 @@ private fun ContextRing(ctx: ContextInfo, onClick: () -> Unit) {
         else -> ink.ink(0.48f, 0.42f)
     }
     val track = ink.ink(0.12f, 0.08f)
+    val mark = ink.ink(0.40f, 0.34f)
     val description = stringResource(R.string.context_ring_cd, (fraction * 100).toInt())
     Box(
         Modifier
@@ -402,6 +403,8 @@ private fun ContextRing(ctx: ContextInfo, onClick: () -> Unit) {
             val inset = stroke / 2
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+            // Where automatic compaction starts.
+            ctx.compactMark?.let { m -> drawArc(mark, -90f + 360f * m - 5f, 10f, false, Offset(inset, inset), arcSize, style = Stroke(stroke)) }
             drawArc(arc, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
         }
     }
