@@ -3,17 +3,37 @@ package atom.core.agent
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.Role
+import atom.core.llm.ToolSpec
 
 data class ContextPolicy(
-    /** Rough prompt budget. Smaller prompts are faster, cheaper, and on-device they are directly battery. */
-    val budgetTokens: Int = 24_000,
+    /**
+     * A deliberate cap on the prompt in tokens (on-device, where every prompt token is prefill on the phone). Null
+     * means "the model's own window": [AgentConfig] derives the budget from it, and from [UNKNOWN_WINDOW_BUDGET] when
+     * the window is unknown. Never set a small cap for a cloud model with a known window: the history would be cut
+     * and compacted long before the model is anywhere near full.
+     */
+    val budgetTokens: Int? = null,
     /** Most recent tool results kept at full length; older ones are shrunk to a stub. */
     val keepFullToolResults: Int = 3,
     val maxToolResultChars: Int = 8_000,
     val compactedToolResultChars: Int = 280,
     /** Screenshots are the most expensive input; only the newest few survive. */
     val keepImages: Int = 1,
-)
+) {
+    companion object {
+        /** Prompt budget when the model's window is unknown: generous enough for any current model, never tiny. */
+        const val UNKNOWN_WINDOW_BUDGET = 64_000
+
+        /**
+         * What a prompt may use in a [window]-token model while leaving room for [maxOutputTokens] of answer
+         * (providers count both against the window). Null window: [UNKNOWN_WINDOW_BUDGET].
+         */
+        fun promptBudget(window: Int?, maxOutputTokens: Int): Int {
+            if (window == null || window <= 0) return UNKNOWN_WINDOW_BUDGET
+            return (window - maxOutputTokens).coerceAtLeast(window / 2)
+        }
+    }
+}
 
 /**
  * Builds the message list actually sent to the model. The stored conversation is never mutated:
@@ -26,7 +46,8 @@ object ContextPacker {
     fun pack(systemPrompt: String, convo: List<ChatMessage>, policy: ContextPolicy): List<ChatMessage> {
         val shrunk = shrinkToolResults(convo, policy)
         val imaged = limitImages(shrunk, policy.keepImages)
-        val fitted = dropOldestGroups(imaged, policy.budgetTokens - estimate(systemPrompt))
+        val budget = policy.budgetTokens ?: ContextPolicy.UNKNOWN_WINDOW_BUDGET
+        val fitted = dropOldestGroups(imaged, budget - estimate(systemPrompt))
         return listOf(ChatMessage.system(systemPrompt)) + fitted
     }
 
@@ -35,6 +56,11 @@ object ContextPacker {
         estimate(systemPrompt) + limitImages(shrinkToolResults(convo, policy), policy.keepImages).sumOf(::estimate)
 
     fun estimate(text: String): Int = text.length / CHARS_PER_TOKEN + 1
+
+    /** Rough tokens one tool declaration costs in every request (name, description and JSON schema). */
+    fun estimateTool(spec: ToolSpec): Int = estimate(spec.name) + estimate(spec.description) + estimate(spec.parameters.toString()) + 8
+
+    fun estimateTools(specs: List<ToolSpec>): Int = specs.sumOf { estimateTool(it) }
 
     fun estimate(message: ChatMessage): Int =
         message.parts.sumOf { if (it is ContentPart.Text) estimate(it.text) else IMAGE_TOKENS } +

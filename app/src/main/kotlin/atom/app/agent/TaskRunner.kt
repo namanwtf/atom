@@ -487,9 +487,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         return try {
             // A summary needs no web: no provider-hosted search on this call.
             val engine = graph.router.acquire(selectionFor(conversation).first, hostedSearch = false).also { routed = it }
-            val config = engine.agentConfig("", emptyList(), slowApprovals = false)
             val known = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(engine.selection ?: selectionFor(conversation).first) }.getOrNull()
-            val window = minOf(known ?: config.context.budgetTokens, config.context.budgetTokens)
+            val config = engine.agentConfig("", emptyList(), slowApprovals = false).copy(contextWindow = known)
+            val window = config.usableWindow ?: config.packing.budgetTokens ?: atom.core.agent.ContextPolicy.UNKNOWN_WINDOW_BUDGET
             val cut = Compactor.cutIndex(view.messages, keepRecentTokens = (window * 0.3).toInt())
             if (cut <= 0) return CompactResult.NothingToCompact
             val before = ContextPacker.measure("", view.messages, config.context)
@@ -769,14 +769,33 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val gathered = buildTools(settings.confirmActTools, shell)
                 val tools = character?.filterTools(gathered) ?: gathered
                 this.tools = tools
-                val registry = ToolRegistry(tools)
-                val basePrompt = SystemPrompt.build(shell.tier, engine.onDevice) +
-                    Features.all.mapNotNull { runCatching { it.promptHint(app) }.getOrNull() }.joinToString("") { "\n\n" + it }
+                // A small core set goes with every request; the rest is loaded by the model when a task needs it.
+                // Hints about on-demand tools go out with them instead of in every system prompt.
+                val hints = Features.all.mapNotNull { f -> runCatching { f.promptHint(app) }.getOrNull()?.let { f.id to it } }
+                val loadout = ToolFamilies.loadout(
+                    tools = tools,
+                    featureOf = toolFeature,
+                    featureNotes = hints.filter { it.first in ToolFamilies.DEFERRED_HINTS }.toMap(),
+                    toolNotes = Features.all.flatMap { f -> runCatching { f.toolNotes(app) }.getOrDefault(emptyMap()).entries }
+                        .associate { it.key to it.value },
+                )
+                loadout.preload(history.messages)
+                val registry = ToolRegistry(loadout.all)
+                val basePrompt = SystemPrompt.build(
+                    tier = shell.tier,
+                    onDevice = engine.onDevice,
+                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second },
+                    onDemandTools = loadout.loader != null,
+                )
                 val systemPrompt = character?.let { basePrompt + "\n\n" + it.prompt.systemWithPostHistory() } ?: basePrompt
+                // The clock time rides on the latest user message, so the system prompt (and the cached prefix) stays
+                // the same all day. Character chats keep their own framing.
+                val messages = if (character == null) SystemPrompt.withTime(history.messages) else history.messages
                 val autoCompact = settings.autoCompaction
                 val config = engine.agentConfig(systemPrompt = systemPrompt, tools = registry.specs, slowApprovals = settings.confirmActTools)
                     .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1) else c }
                     .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                if (debuggable) logRequestSize(systemPrompt, messages, loadout.specs(), registry.specs, config)
                 val notice = listOfNotNull(
                     fallbackNotice?.takeIf { roleSelection == null },
                     engine.notice,
@@ -797,7 +816,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
 
                 stats = stats.withTurn()
-                Agent(engine.engine, registry, config).run(history.messages, toolContext, control).collect { handle(it) }
+                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control).collect { handle(it) }
                 if (outcome == null) outcome = RunOutcome.Completed
                 finish()
             } catch (e: CancellationException) {
@@ -855,13 +874,33 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             return mapOf(at to paths.mapNotNull { Attachments.loadImage(it.path) })
         }
 
+        /** Tool name -> id of the feature that gave it, for routing feature hints to on-demand tool groups. */
+        private val toolFeature = HashMap<String, String>()
+
+        private val debuggable: Boolean
+            get() = (app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+        /** Debug builds only: where the first request's tokens go, and what sending every tool would cost. */
+        private fun logRequestSize(systemPrompt: String, messages: List<ChatMessage>, offered: List<ToolSpec>, all: List<ToolSpec>, config: atom.core.agent.AgentConfig) {
+            runCatching {
+                val packed = ContextPacker.pack(systemPrompt, messages, config.packing)
+                val label = { s: ToolSpec -> ToolFamilies.groupLabel(s.name, s.description) }
+                val first = atom.core.agent.RequestSize.of(packed, offered, label)
+                val every = atom.core.agent.RequestSize.of(packed, all.filter { it.name != atom.core.tool.ToolLoadout.LOADER }, label)
+                android.util.Log.d("AtomContext", "first " + first.describe())
+                android.util.Log.d("AtomContext", "if every tool were sent " + every.describe())
+                android.util.Log.d("AtomContext", "window ${config.contextWindow} usable ${config.usableWindow} compact at ${config.usableWindow?.let { (it * config.compactAt).toInt() }}")
+            }
+        }
+
         private suspend fun buildTools(confirmAct: Boolean, shell: atom.device.ShellExecutor): List<Tool> {
             val origin = java.util.IdentityHashMap<Tool, ToolOrigin>()
-            val gathered = DeviceTools.create(app, shell).onEach { origin[it] = ToolOrigin.Device } +
-                LinuxTools.create(app).onEach { origin[it] = ToolOrigin.Linux } +
+            fun Tool.from(feature: String) { toolFeature.putIfAbsent(spec.name, feature) }
+            val gathered = DeviceTools.create(app, shell).onEach { origin[it] = ToolOrigin.Device; it.from("device") } +
+                LinuxTools.create(app).onEach { origin[it] = ToolOrigin.Linux; it.from("linux") } +
                 Features.all.flatMap { f ->
                     val o = originOf(f.id)
-                    runCatching { f.tools(app) }.getOrDefault(emptyList()).onEach { origin[it] = o }
+                    runCatching { f.tools(app) }.getOrDefault(emptyList()).onEach { origin[it] = o; it.from(f.id) }
                 }
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
