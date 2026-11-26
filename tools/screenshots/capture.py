@@ -146,6 +146,56 @@ def shot(name):
     sys.stdout.flush()
 
 
+def frames(name, count=5, gap=0.15):
+    """Quick screenshots in a row, without the UI dump: a sequence through an animation (run it slowed down)."""
+    for i in range(count):
+        try:
+            shot_only(f"{name}_{i + 1}")
+        except Exception as e:  # one lost frame must not stop the pass
+            print(f"[capture] frame {name}_{i + 1} failed: {e}")
+        time.sleep(gap)
+
+
+def shot_only(name):
+    png = adb("exec-out", "screencap", "-p", timeout=60)
+    os.makedirs(OUT, exist_ok=True)
+    with open(os.path.join(OUT, f"{name}.png"), "wb") as f:
+        f.write(png)
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    img = img.resize((img.width // 3, img.height // 3))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=75)
+    enc = base64.b64encode(buf.getvalue()).decode()
+    print(f"=====SHOT {name}.jpg=====")
+    for i in range(0, len(enc), 16000):
+        print(enc[i : i + 16000])
+    print("=====END=====")
+    sys.stdout.flush()
+
+
+def drawer_motion(p, label):
+    """The drawer opening and closing, slowed 10x (animator duration scale), five frames each way."""
+    sh("settings put global animator_duration_scale 10")
+    try:
+        b = find("^Conversations$")
+        if b is None:
+            print("[capture] no drawer button for the motion frames")
+            return
+        tap_bounds(b)
+        frames(p + label + "_opening")
+        time.sleep(9)
+        shot_only(p + label + "_open")
+        # Close by tapping the dimmed chat to the right of the pane.
+        sh("input tap 1030 1200")
+        frames(p + label + "_closing")
+        time.sleep(9)
+    finally:
+        sh("settings put global animator_duration_scale 1")
+        time.sleep(1)
+
+
 def fail(message):
     print(f"[capture] FATAL: {message}", file=sys.stderr)
     sys.stdout.flush()
@@ -344,6 +394,7 @@ def main():
     if tap("^Conversations$", wait=3.0) or tap("conversations|drawer|menu|sidebar", wait=3.0):
         shot(p + "03_drawer")
         back()
+    drawer_motion(p, "03m_drawer")
 
     # Overflow menu.
     if tap("^More options$", wait=1.2) or tap("more|overflow|options", wait=1.2):
@@ -368,6 +419,7 @@ def main():
         if tap("^Conversations$", wait=3.0):
             shot(p + "07_drawer_over_chat")
             back()
+        drawer_motion(p, "07m_drawer_over_chat")
         if tap("^More options$", wait=1.2):
             tap("^New conversation$", wait=1.5)
         demo("clear", wait=2)

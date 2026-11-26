@@ -135,8 +135,6 @@ import atom.device.Accessibility
 import atom.ui.components.AtomMenu
 import atom.ui.components.GlassEdge
 import atom.ui.components.glassBand
-import atom.ui.components.glassPane
-import atom.ui.components.glassSource
 import atom.ui.components.rememberGlassChrome
 import atom.ui.components.rememberGlassState
 import atom.ui.theme.AtomEmblem
@@ -548,6 +546,12 @@ internal class PushDrawerState {
 /** Share of the pane width the chat moves by when the pane is glass (the rest of the pane overlaps the chat). */
 private const val GLASS_PUSH = 0.3f
 
+/**
+ * Opacity of the glass pane's tint over the chat. The pane is one translucent surface in every state (sliding,
+ * open, closing), so nothing pops in or swaps when it settles; the chat shows through faintly, dimmed by the scrim.
+ */
+private const val GLASS_PANE_ALPHA = 0.93f
+
 @Composable
 private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, content: @Composable () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -556,11 +560,12 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
     val dir = if (rtl) -1f else 1f
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
-    // With blur on, the pane is frosted glass over the chat: the chat moves only part of the way and shows through,
-    // blurred. Without blur the pane is solid and pushes the chat all the way, as before. The blur itself is drawn
-    // only once the pane has settled open: while it slides the pane is solid, so nothing re-blurs every frame.
+    // With blur on (Appearance, Android 12+, no battery saver), the pane is glass over the chat: the chat moves only
+    // part of the way and shows through a translucent tint. Without it the pane is solid and pushes the chat all the
+    // way, as before. No live blur here: a blur that switched on once the pane settled (4.0.4) popped in after the
+    // slide and swapped back at the start of every close, and re-blurring the moving chat every frame is too heavy
+    // for 120 Hz. The pane now looks the same in every frame of the slide.
     val glass = rememberGlassChrome().blur
-    val chatGlass = rememberGlassState()
     val push = if (glass) GLASS_PUSH else 1f
     BackHandler(enabled = state.target) { scope.launch { state.animateTo(false) } }
     LaunchedEffect(state.target) {
@@ -590,7 +595,7 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
         }
         // Chat page, pushed right by the pane.
         Box(Modifier.fillMaxSize().offset { IntOffset((state.offset * push).roundToInt(), 0) }) {
-            Box(Modifier.fillMaxSize().then(if (glass) Modifier.glassSource(chatGlass) else Modifier)) { content() }
+            Box(Modifier.fillMaxSize()) { content() }
             val progress = state.progress
             if (progress > 0f) {
                 val closeLabel = stringResource(R.string.home_close_drawer)
@@ -619,7 +624,7 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
                     .width(paneWidth)
                     .fillMaxHeight()
                     .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
-                    .glassPane(chatGlass, paneColor(), glass && state.settledOpen)
+                    .background(if (glass) paneColor().copy(alpha = GLASS_PANE_ALPHA) else paneColor())
                     .edgeLine(),
             ) { pane() }
         }
