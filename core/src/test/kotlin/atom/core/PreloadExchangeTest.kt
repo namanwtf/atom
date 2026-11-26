@@ -92,14 +92,19 @@ class PreloadExchangeTest {
             (1..12).map { tool("browser_step_$it", "Browser step $it. " + "d".repeat(500)) }
         val groups = big.associate { it.spec.name to if (it.spec.name.startsWith("set_")) "settings" else "browser" }
         val loadout = ToolLoadout(listOf(tool("read_screen")) + big, { t -> setOfNotNull(groups[t.spec.name]) })
-        loadout.load(listOf("settings"))
-        loadout.load(listOf("browser"))
+        val earlier = atom.core.llm.ToolCall("c0", "set_thing_1", "{}")
         val call = atom.core.llm.ToolCall("c1", "browser_step_1", "{}")
         val history = listOf(
+            ChatMessage.user("turn it on"),
+            ChatMessage.assistant("", listOf(earlier)),
+            ChatMessage.toolResult(earlier, listOf(atom.core.llm.ContentPart.Text("on"))),
+            ChatMessage.assistant("Done."),
             ChatMessage.user("summarize the page"),
             ChatMessage.assistant("", listOf(call)),
             ChatMessage.toolResult(call, listOf(atom.core.llm.ContentPart.Text("p".repeat(12_000)))),
         )
+        // Both groups come back from the history, as on the next turn of a real conversation.
+        loadout.preload(history)
         val config = AgentConfig(
             "m", "s", maxOutputTokens = 512, contextWindow = 4_096,
             context = ContextPolicy(budgetTokens = 3_200, sharedWindow = 4_096, maxToolResultChars = 1_500),
@@ -113,6 +118,17 @@ class PreloadExchangeTest {
         // The oldest group went; the core tools and the loader stay, and the task is still there.
         assertTrue(sent.tools.none { it.name.startsWith("set_thing") })
         assertTrue(sent.tools.any { it.name == "read_screen" } && sent.tools.any { it.name == ToolLoadout.LOADER })
-        assertEquals("summarize the page", sent.messages[1].text)
+        assertEquals("turn it on", sent.messages[1].text)
+    }
+
+    @Test
+    fun theExchangeIdSuitsEveryProvider() {
+        val taken = setOf("abc123XYZ")
+        repeat(50) {
+            val l = loadout()
+            val id = assertNotNull(l.preloadGroups(listOf("browser")).asExchange(l, takenIds = taken)).first.id
+            assertTrue(atom.core.llm.ToolCallIds.isStrict(id), id)
+            assertTrue(id !in taken)
+        }
     }
 }

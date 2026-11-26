@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.flow
  * new is said. Small on-device models fall into such loops and would otherwise fill the answer to the output limit.
  *
  * Legitimate repetitive output is left alone: code fences, `<tool_call>` blocks and Markdown table rows are not
- * judged at all; data words (a binary string, base64 such as "AAAA…", hex) and number lists ("{0, 0, 0, …}") are
- * skipped unless absurdly long. The rest is judged over long windows only: [WINDOW] characters with at most four
+ * judged, for up to [MAX_UNJUDGED] characters each (one that never closes is a loop too); data words (a binary
+ * string, base64 such as "AAAA…", hex) and number lists ("{0, 0, 0, …}") are skipped unless absurdly long. The rest is judged over long windows only: [WINDOW] characters with at most four
  * distinct symbols, or [LONG] characters whose share of new six-character pieces is below [MIN_NOVELTY]. Runs of
  * whitespace count as one space, and only the last [MAX_TAIL] characters are kept, so the cost per chunk is bounded.
  */
@@ -22,6 +22,9 @@ class DegenerateOutputDetector {
     private var inTable = false
     private var lineStart = true
     private var lastWasSpace = false
+
+    /** Characters skipped in the current fence, tool call or run of table rows. */
+    private var unjudged = 0
 
     /** True once the text fed so far ends in a runaway loop. */
     var tripped = false
@@ -52,6 +55,7 @@ class DegenerateOutputDetector {
                     CALL_OPEN -> inCall = true
                     CALL_CLOSE -> inCall = false
                 }
+                unjudged = 0
                 pending.clear()
                 lineStart = false
                 return
@@ -64,7 +68,8 @@ class DegenerateOutputDetector {
     }
 
     private fun text(c: Char) {
-        if (inFence || inCall) return
+        // Fences, tool calls and table rows are skipped, but only for so long: one that never ends is judged too.
+        if ((inFence || inCall) && ++unjudged <= MAX_UNJUDGED) return
         if (c == '\n') {
             lineStart = true
             inTable = false
@@ -74,9 +79,13 @@ class DegenerateOutputDetector {
         if (lineStart) {
             if (c == ' ' || c == '\t') return
             lineStart = false
-            if (c == '|') inTable = true
+            if (c == '|') {
+                inTable = true
+            } else if (!inFence && !inCall) {
+                unjudged = 0
+            }
         }
-        if (inTable) return
+        if (inTable && !inFence && !inCall && ++unjudged <= MAX_UNJUDGED) return
         add(if (c.isWhitespace()) ' ' else c)
     }
 
@@ -133,6 +142,9 @@ class DegenerateOutputDetector {
         const val MAX_TAIL = 1_024
         const val MIN_DATA_WORD = 16
         const val MAX_DATA_WORD = 512
+
+        /** A fence, tool call or table run longer than this is judged like any text (a loop that never closes). */
+        const val MAX_UNJUDGED = 2_000
 
         private const val FENCE = "```"
         private const val CALL_OPEN = "<tool_call>"

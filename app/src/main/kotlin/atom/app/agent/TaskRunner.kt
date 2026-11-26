@@ -858,7 +858,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
                     ),
                     baseConfig,
-                ).asExchange(loadout)
+                ).asExchange(loadout, takenIds = stored.flatMap { m -> m.message.toolCalls.map { it.id } }.toSet())
                 val basePrompt = SystemPrompt.build(
                     tier = shell.tier,
                     onDevice = engine.onDevice,
