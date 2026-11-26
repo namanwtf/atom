@@ -114,8 +114,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      # The app and the on-device AI pack: the "Hey Atom" check needs the pack's wake-word model.
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
 
       - name: Start the model server
         run: |
@@ -159,6 +160,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/screenshots/install_pack.py ondevice-pack/build/outputs/apk/debug/ondevice-pack-debug.apk
             python3 tools/e2e/run.py
 
       - name: Model server log

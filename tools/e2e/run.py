@@ -422,6 +422,107 @@ def s_bubble(res):
     tap("^Close$", wait=1.5)
 
 
+def s_receiver(res):
+    """i. Battery fix check: the boot / clock receiver is on while an automation exists (it was off with none)."""
+    before = SETUP.get("receiver_before")
+    res.notes.append(f"receiver before any automation: {before}")
+    st = state()
+    tasks = [t for t in st.get("scheduledTasks", []) if t.get("enabled")]
+    now = st.get("systemEventReceiver")
+    res.notes.append(f"enabled scheduled tasks: {len(tasks)}; receiver now: {now}")
+    if not tasks:
+        res.check(False, "an enabled scheduled task exists (scenario e must create one first)")
+        return
+    res.check(now in ("enabled", "default"), f"receiver enabled while a task exists ({now})")
+
+
+def s_notification_history(res):
+    """j. Battery fix check: skipping progress updates must not lose ordinary notifications in the history."""
+    sh("cmd notification post -t 'Parcel' tag2 'Your parcel arrives today'")
+    found = None
+    for _ in range(10):
+        time.sleep(2)
+        found = next((n for n in state().get("notificationHistory", []) if n.get("title") == "Parcel"), None)
+        if found:
+            break
+    res.notes.append(f"history head: {[n.get('title') for n in state().get('notificationHistory', [])][:5]}")
+    res.check(found is not None, "ordinary notification recorded in the history")
+
+
+def wake_state():
+    return state().get("wake", "")
+
+
+def wait_wake(pattern, timeout=20):
+    end = time.time() + timeout
+    w = wake_state()
+    while time.time() < end:
+        w = wake_state()
+        if re.search(pattern, w):
+            return True, w
+        time.sleep(2)
+    return False, w
+
+
+def s_hey_atom_charging(res):
+    """k. Battery fix check: "Hey Atom" pauses with the screen off on battery and listens again when plugged in."""
+    st = state()
+    res.notes.append(f"pack ready: {st.get('packReady')}")
+    if not res.check(bool(st.get("packReady")), "on-device AI pack installed (it carries the wake word)"):
+        return
+    sh(f"pm grant {PKG} android.permission.RECORD_AUDIO")
+    launch(wait=3)  # the microphone service may only start from the foreground
+    log("  " + call("hey_atom", "on"))
+    ok, w = wait_wake(r"^Listening")
+    res.check(ok, f"screen on: listening ({w})")
+    try:
+        sh("dumpsys battery unplug")
+        sh("input keyevent KEYCODE_SLEEP")
+        ok, w = wait_wake(r"Paused.*[Ss]creen")
+        res.check(ok, f"screen off, on battery: paused ({w})")
+        sh("dumpsys battery set ac 1")
+        ok, w = wait_wake(r"^Listening")
+        res.check(ok, f"screen off, plugged in: listening ({w})")
+        sh("dumpsys battery set ac 0")
+        ok, w = wait_wake(r"Paused")
+        res.check(ok, f"screen off, unplugged again: paused ({w})")
+    finally:
+        sh("dumpsys battery reset")
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        log("  " + call("hey_atom", "off"))
+
+
+def package_components(section):
+    """Component class names listed under enabledComponents: / disabledComponents: in dumpsys package."""
+    out = sh(f"dumpsys package {PKG}")
+    m = re.search(section + r":\n((?:\s+\S+\n)+)", out)
+    return [ln.strip() for ln in m.group(1).splitlines()] if m else []
+
+
+def s_reboot(res):
+    """l. Battery fix check: after a reboot the receiver is still on, Atom starts for BOOT_COMPLETED and re-arms."""
+    rx = "atom.automation.system.SystemEventReceiver"
+    res.notes.append(f"before reboot: enabled={rx in package_components('enabledComponents')} disabled={rx in package_components('disabledComponents')}")
+    adb("reboot", timeout=60)
+    time.sleep(10)
+    adb("wait-for-device", timeout=300)
+    end = time.time() + 300
+    while time.time() < end and sh("getprop sys.boot_completed").strip() != "1":
+        time.sleep(5)
+    time.sleep(30)  # BOOT_COMPLETED is delivered after boot_completed is set
+    disabled = rx in package_components("disabledComponents")
+    res.check(not disabled, "receiver still enabled after the reboot")
+    alive = app_alive()
+    res.notes.append(f"Atom process after boot (started by BOOT_COMPLETED): {alive}")
+    alarms = sh("dumpsys alarm")
+    res.check(PKG in alarms, "Atom's alarm is armed again after the reboot")
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+
+
+SETUP = {}
+
 SCENARIOS = [
     # Ordered so the Linux install (queued at setup) has time to finish before the terminal task.
     ("g", "Character: open Lumen", s_character),
@@ -432,6 +533,12 @@ SCENARIOS = [
     ("a", "Vibe coding: hello.py in the terminal", s_vibe),
     ("f", "Stop mid-task", s_stop),
     ("h", "Bubble mini chat", s_bubble),
+    # Checks that the battery fixes (#22) did not switch features off. i needs the task from e; l reboots, so it
+    # comes last.
+    ("i", "Automations: boot receiver on while a task exists", s_receiver),
+    ("j", "Notification history keeps ordinary notifications", s_notification_history),
+    ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
+    ("l", "Reboot: receiver, boot start and alarm survive", s_reboot),
 ]
 
 
@@ -475,7 +582,9 @@ def setup():
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
     st = state()
-    log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')}")
+    SETUP["receiver_before"] = st.get("systemEventReceiver")
+    log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')} "
+        f"receiver={st.get('systemEventReceiver')} wake={st.get('wake')} pack={st.get('packReady')}")
     if not st.get("onboarded") or "local-test-model" not in str(st.get("selection")):
         capture.fail("the debug configure call did not take effect")
     shot("e2e_00_home")
