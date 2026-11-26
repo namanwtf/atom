@@ -32,9 +32,9 @@ import org.json.JSONObject
  * Debug builds only (src/debug). The end-to-end task tests (tools/e2e/run.py, docs/TESTING.md) drive the app through
  * this provider over adb, so no screen has to be typed into:
  *
- * - `content call --uri content://<pkg>.e2e --method configure --extra base_url:s:... --extra model:s:...
- *   --extra context_window:i:... [--extra extra_body:s:{...}] [--extra titles:b:false]` adds the "Local test model" provider (OpenAI-compatible, no key), selects it and
- *   finishes onboarding.
+ * - `content call --uri content://<pkg>.e2e --method configure --arg '{"base_url": "...", "model": "...",
+ *   "context_window": n, "extra_body": {...}, "titles": false}'` adds the "Local test model" provider
+ *   (OpenAI-compatible, no key), selects it and finishes onboarding.
  * - `content read --uri content://<pkg>.e2e/state` prints a JSON dump of the runs (phase, tool calls, answer, errors),
  *   scheduled tasks, Linux and accessibility state.
  * - methods `clear`, `stop`, `approve`, `deny`, `linux_install` (see [call]).
@@ -59,12 +59,15 @@ class E2eProvider : ContentProvider() {
         val result = Bundle()
         val message: String = when (method) {
             "configure" -> runBlocking(Dispatchers.IO) {
-                val baseUrl = extras?.getString("base_url") ?: "http://10.0.2.2:8080/v1"
-                val model = extras?.getString("model") ?: error("model is required")
-                val window = extras?.getInt("context_window", 0)?.takeIf { it > 0 }
-                val name = extras?.getString("name") ?: PROVIDER_NAME
+                // The options come as one JSON object in --arg: `content call --extra` cannot carry values with a
+                // colon (URLs, JSON).
+                val options = JSONObject(arg?.takeIf { it.isNotBlank() } ?: "{}")
+                val baseUrl = options.optString("base_url").ifBlank { "http://10.0.2.2:8080/v1" }
+                val model = options.optString("model").ifBlank { error("model is required") }
+                val window = options.optInt("context_window", 0).takeIf { it > 0 }
+                val name = options.optString("name").ifBlank { PROVIDER_NAME }
                 // Merged into every request body (e.g. llama-server's {"return_progress":true}).
-                val extraBody = extras?.getString("extra_body").orEmpty()
+                val extraBody = options.optJSONObject("extra_body")?.toString().orEmpty()
                 val models = listOf(
                     ModelConfig(
                         id = model,
@@ -105,7 +108,7 @@ class E2eProvider : ContentProvider() {
                 graph.settings.setOnboarded()
                 graph.settings.setReasoningByDefault(false)
                 // Titles are a second model call per chat; on a CPU-only test server they only slow the run down.
-                extras?.takeIf { it.containsKey("titles") }?.let { graph.settings.setAutoTitles(it.getBoolean("titles")) }
+                if (options.has("titles")) graph.settings.setAutoTitles(options.optBoolean("titles"))
                 "configured provider=$id model=$model window=$window base=$baseUrl"
             }
             "clear" -> {

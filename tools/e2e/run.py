@@ -400,18 +400,20 @@ def s_bubble(res):
     sh(f"input tap {max(60, anchor[0] - 260)} {(anchor[1] + anchor[3]) // 2}")
     time.sleep(2)
     sh("input text 'What%sis%s2%splus%s2?'")
-    time.sleep(1.5)
+    time.sleep(2)
+    shot(f"{res.key}_typed")
     known = run_ids()
-    w = Watch(known, source="Bubble")
-    sh("input keyevent KEYCODE_BACK")  # the keyboard; the panel stays
-    time.sleep(1.5)
+    w = Watch(known)
     send = find("^Send$")
     if not res.check(send is not None, "send button found"):
         return
     tap_bounds(send)
+    time.sleep(2)
+    shot(f"{res.key}_sent")
     run = w.wait(480, res.key)
     if not res.check(run is not None, "bubble run started"):
         return
+    res.check(run["source"] == "Bubble", f"run came from the bubble (source {run['source']})")
     res.tools = names(run)
     res.check(not run["active"], f"run ended ({run['phase']})")
     log(f"  bubble answer: {answer(run)[:300]!r}")
@@ -456,22 +458,25 @@ def setup():
     sh("input keyevent KEYCODE_WAKEUP")
     sh("wm dismiss-keyguard")
     launch(wait=6)
-    log("configure: " + call(
-        "configure",
-        base_url=APP_BASE_URL,
-        model=model_id,
-        context_window=n_ctx,
-        titles=False,
+    options = {
+        "base_url": APP_BASE_URL,
+        "model": model_id,
+        "context_window": n_ctx,
+        "titles": False,
         # Streams prompt-processing progress so a long CPU prefill never hits the app's read timeout.
-        extra_body='{"return_progress":true}',
-    ))
+        "extra_body": {"return_progress": True},
+    }
+    configured = call("configure", json.dumps(options, separators=(",", ":")))
+    log("configure: " + configured)
+    if not configured.startswith("configured"):
+        capture.fail("the debug configure call failed")
     # The settings are flows: the open chat picks up the selection and the finished onboarding without a restart.
     launch(wait=4)
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
     st = state()
     log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')}")
-    if not st.get("onboarded"):
+    if not st.get("onboarded") or "local-test-model" not in str(st.get("selection")):
         capture.fail("the debug configure call did not take effect")
     shot("e2e_00_home")
 
@@ -498,7 +503,8 @@ def main():
         crash = crash_log()
         if res.check(not crash, "no crash in logcat -b crash") is False:
             print("=====CRASH " + key + "=====")
-            print(crash[-6000:])
+            # The head carries the exception and the app's own frames; Compose's layout frames follow.
+            print("\n".join(crash.splitlines()[:80]))
             print("=====END=====")
         res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
         try:
