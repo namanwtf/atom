@@ -1,5 +1,6 @@
 package atom.automation.ui
 
+import atom.ui.permission.PermissionAsks
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -108,6 +109,13 @@ internal fun Context.launch(intent: Intent?) {
         .onFailure { runCatching { startActivity(Health.appSettings(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
 }
 
+/**
+ * Scheduled tasks and automations report through notifications. Nothing asks for them at setup; the first time
+ * the user turns one on, Atom asks once, with the reason.
+ */
+internal fun Context.askNotificationsForResults() =
+    PermissionAsks.notifications(this, "Atom sends each scheduled task's result, and any failure, as a notification.")
+
 /** The health banner copy and button for one failing check; null when the check passes. */
 private fun banner(h: HealthItem): Pair<String, String>? = if (h.ok) null else when (h.key) {
     Health.KEY_BATTERY -> "Allow unrestricted background battery" to "Open settings"
@@ -138,6 +146,7 @@ internal fun HealthCard(items: List<HealthItem>) {
 
 @Composable
 internal fun TasksScreen(nav: FeatureNav) {
+    val context = LocalContext.current
     val rt = rememberRuntime()
     val snap by rt.state.flow.collectAsState()
     val health = rememberOnResume { Health.scheduled(it) }
@@ -177,7 +186,10 @@ internal fun TasksScreen(nav: FeatureNav) {
                         title = t.name,
                         summary = TaskListLabels.summary(t, last) { at -> ScheduleText.relative(Instant.ofEpochMilli(at), now) },
                         onClick = { nav.open(R_TASK + t.id) },
-                        end = { Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(t.enabled, { rt.tasks.setEnabled(t.id, it) }) } },
+                        end = { Box(Modifier.align(Alignment.CenterVertically)) { AtomSwitch(t.enabled, { on ->
+                                rt.tasks.setEnabled(t.id, on)
+                                if (on) context.askNotificationsForResults()
+                            }) } },
                     )
                 }
             }
@@ -253,6 +265,7 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
                 PrimaryButton("Save", {
                     val saved = t.copy(id = t.id.ifEmpty { UUID.randomUUID().toString() }, name = t.name.trim(), prompt = t.prompt.trim())
                     if (runCatching { rt.tasks.save(saved) }.isSuccess) {
+                        if (saved.enabled) context.askNotificationsForResults()
                         nav.back()
                     } else {
                         Toast.makeText(context, "Failed to save scheduled task", Toast.LENGTH_SHORT).show()
@@ -502,7 +515,10 @@ internal fun TaskDetailScreen(taskId: String, nav: FeatureNav) {
                 SwitchRow(
                     title = "Enable schedule",
                     checked = task.enabled,
-                    onCheckedChange = { rt.tasks.setEnabled(task.id, it) },
+                    onCheckedChange = {
+                        rt.tasks.setEnabled(task.id, it)
+                        if (it) context.askNotificationsForResults()
+                    },
                     summary = if (task.enabled) {
                         "Automatically wakes Atom to run " + ScheduleText.describe(task.schedule).replaceFirstChar { it.lowercase() }
                     } else {

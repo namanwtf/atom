@@ -14,6 +14,7 @@ import atom.core.llm.ToolCall
 import atom.core.tool.Risk
 import atom.core.tool.ToolArgumentException
 import atom.core.tool.ToolContext
+import atom.core.tool.ToolExposure
 import atom.core.tool.ToolRegistry
 import atom.core.tool.ToolResult
 import kotlinx.coroutines.CancellationException
@@ -42,10 +43,20 @@ data class AgentConfig(
     val contextWindow: Int? = null,
     val autoCompact: Boolean = true,
     /** Fraction of the usable window at which the conversation is compacted automatically. */
-    val compactAt: Double = 0.85,
+    val compactAt: Double = ContextMeter.DEFAULT_COMPACT_AT,
 ) {
-    /** What one prompt may actually use: the model window, capped by the packer's budget. */
-    val usableWindow: Int? get() = contextWindow?.let { minOf(it, context.budgetTokens) }
+    /**
+     * What one prompt may actually use: the model window minus room for the answer, or the policy's deliberate
+     * cap when one is set and smaller. Null when the window is unknown.
+     */
+    val usableWindow: Int?
+        get() = contextWindow?.takeIf { it > 0 }?.let { w ->
+            context.budgetTokens?.let { minOf(w, it) } ?: ContextPolicy.promptBudget(w, maxOutputTokens)
+        }
+
+    /** The packing policy with its budget resolved: the deliberate cap, else the usable window, else a generous default. */
+    val packing: ContextPolicy
+        get() = if (context.budgetTokens != null) context else context.copy(budgetTokens = usableWindow ?: ContextPolicy.UNKNOWN_WINDOW_BUDGET)
 
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
 }
@@ -155,6 +166,8 @@ class Agent(
     private val engine: LlmEngine,
     private val tools: ToolRegistry,
     private val config: AgentConfig,
+    /** Which tools each request offers; by default all of [tools]. A [atom.core.tool.ToolLoadout] offers a core set. */
+    private val exposure: ToolExposure = ToolExposure.All(tools),
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -166,12 +179,14 @@ class Agent(
         for (step in 1..config.maxSteps) {
             control.checkpoint()
             deliverSteering(state, control)
+            val specs = exposure.specs()
+            state.toolTokens = ContextPacker.estimateTools(specs)
             maybeCompact(state)
 
             val request = LlmRequest(
                 model = config.model,
-                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.context),
-                tools = tools.specs,
+                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packing),
+                tools = specs,
                 maxOutputTokens = config.maxOutputTokens,
                 reasoning = config.reasoning,
             )
@@ -187,8 +202,11 @@ class Agent(
             emit(AgentEvent.ModelCall(turn.stats))
             emit(AgentEvent.Usage(state.inTokens, state.outTokens))
 
-            append(state, ChatMessage.assistant(turn.text, turn.calls), MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
-            state.lastReported = turn.reportedInput + turn.reportedOutput
+            val answer = ChatMessage.assistant(turn.text, turn.calls)
+            append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
+            // The provider's prompt count already holds the system prompt and every tool schema. Reasoning is not
+            // sent back, so the answer counts by what it adds to the next prompt rather than by output tokens.
+            state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
             state.sinceReport = 0
             emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
 
@@ -226,7 +244,7 @@ class Agent(
         )
     }
 
-    private class RunState(history: List<ChatMessage>) {
+    private inner class RunState(history: List<ChatMessage>) {
         val convo = history.toMutableList()
         val sensitive = MutableList(history.size) { false }
         val appended = ArrayList<ChatMessage>()
@@ -239,7 +257,17 @@ class Agent(
         /** Estimated tokens added since that report. */
         var sinceReport = 0
 
-        fun used(): Int = if (lastReported > 0) lastReported + sinceReport else convo.sumOf { ContextPacker.estimate(it) }
+        /** Estimated size of the tool declarations the last request offered. */
+        var toolTokens = 0
+
+        /** Conversation size right after the last automatic compaction, and the tokens it left; -1 before any. */
+        var compactedSize = -1
+        var compactedTokens = 0
+
+        /** Estimated prompt size from the conversation itself: system prompt, tools, shrunk messages. */
+        fun estimated(): Int = ContextPacker.measure(config.systemPrompt, convo, config.packing) + toolTokens
+
+        fun used(): Int = if (lastReported > 0) lastReported + sinceReport else estimated()
     }
 
     private suspend fun FlowCollector<AgentEvent>.append(state: RunState, message: ChatMessage, info: MessageInfo) {
@@ -259,9 +287,14 @@ class Agent(
     private suspend fun FlowCollector<AgentEvent>.maybeCompact(state: RunState) {
         val window = config.usableWindow ?: return
         if (!config.autoCompact) return
-        val measured = ContextPacker.measure(config.systemPrompt, state.convo, config.context)
-        val used = maxOf(measured, if (state.lastReported > 0) state.used() else 0)
+        val used = maxOf(state.estimated(), if (state.lastReported > 0) state.used() else 0)
         if (used < window * config.compactAt) return
+        // Never twice in a row: after a compaction, wait for new messages and real growth, so a prompt whose fixed
+        // part (system prompt, tools) alone sits near the threshold does not compact on every step.
+        if (state.compactedSize >= 0) {
+            if (state.convo.size <= state.compactedSize) return
+            if (used - state.compactedTokens < window * MIN_GROWTH_SHARE) return
+        }
         val cut = Compactor.cutIndex(state.convo, keepRecentTokens = (window * KEEP_RECENT_SHARE).toInt())
         if (cut <= 0) return
         emit(AgentEvent.Compacting)
@@ -288,9 +321,11 @@ class Agent(
         state.sensitive.clear()
         state.sensitive += false
         state.sensitive += keptFlags
-        val after = ContextPacker.measure(config.systemPrompt, state.convo, config.context)
+        val after = state.estimated()
         state.lastReported = 0
         state.sinceReport = 0
+        state.compactedSize = state.convo.size
+        state.compactedTokens = after
         emit(AgentEvent.Compacted(summary, cut, used, after, result.stats))
         emit(AgentEvent.ContextUsage(after, window))
     }
@@ -354,7 +389,7 @@ class Agent(
                 }
                 val end = System.nanoTime()
                 val reported = usage
-                val estimatedIn = request.messages.sumOf { ContextPacker.estimate(it) }
+                val estimatedIn = request.messages.sumOf { ContextPacker.estimate(it) } + ContextPacker.estimateTools(request.tools)
                 val estimatedOut = ContextPacker.estimate(text.toString()) + ContextPacker.estimate(reasoning.toString())
                 return Turn(
                     text = text.toString(),
@@ -386,7 +421,8 @@ class Agent(
 
     private suspend fun execute(call: ToolCall, ctx: ToolContext, control: RunControl): ToolResult {
         val tool = tools[call.name]
-            ?: return ToolResult.error("Unknown tool '${call.name}'. Available: ${tools.specs.joinToString { it.name }}")
+            ?: return ToolResult.error("Unknown tool '${call.name}'. Available: ${exposure.specs().joinToString { it.name }}")
+        exposure.onCall(call.name)
 
         val args: JsonObject = try {
             if (call.argumentsJson.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(call.argumentsJson).jsonObject
@@ -421,6 +457,9 @@ class Agent(
 
     private companion object {
         const val KEEP_RECENT_SHARE = 0.3
+
+        /** Growth (share of the window) needed after one automatic compaction before the next. */
+        const val MIN_GROWTH_SHARE = 0.1
     }
 }
 

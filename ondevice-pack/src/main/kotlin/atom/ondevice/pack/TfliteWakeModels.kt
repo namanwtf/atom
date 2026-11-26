@@ -1,25 +1,25 @@
-package atom.voice.engine
+package atom.ondevice.pack
 
-import android.content.Context
-import atom.voice.Wake
-import atom.voice.engine.WakePipeline.Companion.EMBEDDING_DIM
-import atom.voice.engine.WakePipeline.Companion.MEL_BINS
-import atom.voice.engine.WakePipeline.Companion.MEL_FRAMES_PER_CHUNK
-import atom.voice.engine.WakePipeline.Companion.MEL_INPUT_SAMPLES
-import atom.voice.engine.WakePipeline.Companion.MEL_WINDOW_FRAMES
-import java.io.FileInputStream
+import atom.core.ondevice.WakeModels
+import atom.core.ondevice.WakeModelsLoad
+import atom.core.ondevice.WakeShapes
+import atom.core.ondevice.WakeShapes.EMBEDDING_DIM
+import atom.core.ondevice.WakeShapes.MEL_BINS
+import atom.core.ondevice.WakeShapes.MEL_FRAMES_PER_CHUNK
+import atom.core.ondevice.WakeShapes.MEL_INPUT_SAMPLES
+import atom.core.ondevice.WakeShapes.MEL_WINDOW_FRAMES
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
+import java.util.zip.ZipFile
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 
 /**
  * LiteRT (TFLite) implementation of [WakeModels]: CPU only, 1 thread, XNNPack on, never GPU (waking the GPU
- * for kilobyte-sized models costs more than the inference). Models are memory-mapped straight from the APK
- * (assets are stored uncompressed) and all I/O goes through preallocated direct buffers.
+ * for kilobyte-sized models costs more than the inference). The models are read from the pack APK's
+ * `assets/wakeword/` into direct buffers (about 2.4 MB, held only while a listening session runs), and all I/O goes
+ * through preallocated direct buffers.
  *
  * Shapes are validated at load time against openWakeWord's front-end (dscripka/openWakeWord,
  * `openwakeword/utils.py` AudioFeatures and `openwakeword/model.py`):
@@ -81,46 +81,43 @@ internal class TfliteWakeModels private constructor(
         cls.close()
     }
 
-    sealed interface LoadResult {
-        class Ok(val models: TfliteWakeModels) : LoadResult
-        class Failed(val reason: String) : LoadResult
-    }
-
     companion object {
-        private val NAMES = listOf(Wake.MELSPEC_MODEL, Wake.EMBEDDING_MODEL, Wake.CLASSIFIER_MODEL)
-
-        fun isBundled(context: Context): Boolean {
-            val present = try {
-                context.assets.list(Wake.ASSET_DIR)?.toSet().orEmpty()
-            } catch (e: Exception) {
-                emptySet()
-            }
-            return present.containsAll(NAMES)
-        }
-
-        fun load(context: Context): LoadResult {
-            if (!isBundled(context)) return LoadResult.Failed("${Wake.REASON_NO_MODEL} (assets/${Wake.ASSET_DIR})")
+        fun load(packPath: String): WakeModelsLoad {
             val opened = mutableListOf<Interpreter>()
             return try {
-                val mel = open(context, Wake.MELSPEC_MODEL).also(opened::add)
-                val emb = open(context, Wake.EMBEDDING_MODEL).also(opened::add)
-                val cls = open(context, Wake.CLASSIFIER_MODEL).also(opened::add)
+                val files = ZipFile(packPath).use { zip ->
+                    listOf(WakeShapes.MELSPEC_MODEL, WakeShapes.EMBEDDING_MODEL, WakeShapes.CLASSIFIER_MODEL).map { read(zip, it) }
+                }
+                val mel = open(files[0]).also(opened::add)
+                val emb = open(files[1]).also(opened::add)
+                val cls = open(files[2]).also(opened::add)
                 val frames = classifierFrames(cls)
                 val error = validateMel(mel) ?: validateEmbedding(emb)
                     ?: if (frames == null) classifierError(cls) else null
                 if (error != null || frames == null) {
                     fail(opened, error ?: classifierError(cls))
                 } else {
-                    LoadResult.Ok(TfliteWakeModels(mel, emb, cls, frames))
+                    WakeModelsLoad.Ok(TfliteWakeModels(mel, emb, cls, frames))
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 fail(opened, "Wake-word model failed to load: ${e.message ?: e.javaClass.simpleName}")
             }
         }
 
-        private fun fail(opened: List<Interpreter>, reason: String): LoadResult {
+        private fun fail(opened: List<Interpreter>, reason: String): WakeModelsLoad {
             opened.forEach { runCatching { it.close() } }
-            return LoadResult.Failed(reason)
+            return WakeModelsLoad.Failed(reason)
+        }
+
+        /** One model file of the pack, in a direct buffer as the interpreter needs it. */
+        private fun read(zip: ZipFile, name: String): ByteBuffer {
+            val entry = zip.getEntry("assets/${WakeShapes.ASSET_DIR}/$name")
+                ?: throw IllegalStateException("$name is missing from the on-device AI pack")
+            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+            return ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
+                put(bytes)
+                rewind()
+            }
         }
 
         /**
@@ -128,23 +125,13 @@ internal class TfliteWakeModels private constructor(
          * kernels. On some phones XNNPack fails to prepare a node of these small models ("failed to reshape");
          * the plain kernels are fast enough for 80 ms audio frames.
          */
-        private fun open(context: Context, name: String): Interpreter {
-            val path = "${Wake.ASSET_DIR}/$name"
-            return try {
-                Interpreter(map(context, path), Interpreter.Options().setNumThreads(1).setUseXNNPACK(true))
-                    .also { it.allocateTensors() }
-            } catch (e: Exception) {
-                Interpreter(map(context, path), Interpreter.Options().setNumThreads(1).setUseXNNPACK(false))
-                    .also { it.allocateTensors() }
-            }
+        private fun open(model: ByteBuffer): Interpreter = try {
+            Interpreter(model.duplicate().order(ByteOrder.nativeOrder()), Interpreter.Options().setNumThreads(1).setUseXNNPACK(true))
+                .also { it.allocateTensors() }
+        } catch (e: Exception) {
+            Interpreter(model.duplicate().order(ByteOrder.nativeOrder()), Interpreter.Options().setNumThreads(1).setUseXNNPACK(false))
+                .also { it.allocateTensors() }
         }
-
-        private fun map(context: Context, path: String): MappedByteBuffer =
-            context.assets.openFd(path).use { afd ->
-                FileInputStream(afd.fileDescriptor).channel.use { channel ->
-                    channel.map(FileChannel.MapMode.READ_ONLY, afd.startOffset, afd.declaredLength)
-                }
-            }
 
         private fun validateMel(mel: Interpreter): String? {
             val input = mel.getInputTensor(0)
@@ -199,7 +186,7 @@ internal class TfliteWakeModels private constructor(
         private fun classifierError(cls: Interpreter): String {
             val input = cls.getInputTensor(0)
             val out = cls.getOutputTensor(0)
-            return "${Wake.CLASSIFIER_MODEL}: expected float32 [1, 16, $EMBEDDING_DIM] -> [1, 1], got " +
+            return "${WakeShapes.CLASSIFIER_MODEL}: expected float32 [1, 16, $EMBEDDING_DIM] -> [1, 1], got " +
                 "${input.dataType()} ${input.shape().contentToString()} -> ${out.dataType()} ${out.shape().contentToString()}"
         }
 

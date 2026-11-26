@@ -9,6 +9,9 @@ object MemoryText {
     const val CORE_TITLE = "Core memory"
     const val MAX_BYTES = 1 shl 20
 
+    /** Core memory goes out with every request; the rest stays one memory_read away. */
+    const val MAX_CORE_TOKENS = 1_200
+
     val TEMPLATE = """
         |# Core memory
         |
@@ -44,10 +47,10 @@ object MemoryText {
         return text.lines().subList(s.startLine + 1, s.endLine).joinToString("\n").trim()
     }
 
-    /** Characters of Core memory sent with every request: about 3% of the window, between 200 and 2000 tokens. */
+    /** Characters of Core memory sent with every request: about 3% of the window, between 200 and 1200 tokens. */
     fun budgetChars(contextWindow: Int?): Int {
         val window = contextWindow?.takeIf { it > 0 } ?: ContextWindowProvider.DEFAULT_CONTEXT_WINDOW
-        return (window * 0.03).toInt().coerceIn(200, 2_000) * 4
+        return (window * 0.03).toInt().coerceIn(200, MAX_CORE_TOKENS) * 4
     }
 
     /** Core memory cut to [budgetChars] at a line boundary, plus whether anything was cut. */

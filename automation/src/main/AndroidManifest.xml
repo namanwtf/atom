@@ -23,6 +23,8 @@
             android:name="atom.automation.system.AlarmReceiver"
             android:exported="false" />
 
+        <!-- Switched off at run time while no automation exists (AutomationRuntime.syncSystemEvents), so boot and
+             clock changes never start Atom for nothing. -->
         <receiver
             android:name="atom.automation.system.SystemEventReceiver"
             android:exported="false">

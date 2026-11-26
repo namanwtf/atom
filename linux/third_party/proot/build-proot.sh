@@ -1,7 +1,8 @@
 #!/bin/bash
-# Rebuilds linux/src/main/jniLibs/arm64-v8a/libproot.so and libproot_loader.so from source.
+# Builds libproot.so and libproot_loader.so (arm64-v8a) from source.
 #
-# These two files are the only third-party binaries in the module. They are built from:
+# The linux module's Gradle build runs this script (task :linux:buildProot) and packages the result, so the
+# binaries are never committed. They are the only third-party binaries in the module and are built from:
 #   - PRoot  https://github.com/termux/proot  commit 0e4287546a7df1a7f4395c75f7eca8b62d5f2cc9
 #            GPL-2.0-or-later (file headers: "either version 2 of the License, or (at your option)
 #            any later version"; licence text in licenses/GPL-2.0.txt)
@@ -10,17 +11,27 @@
 #            LGPL-3.0-or-later (licenses/LGPL-3.0.txt), linked statically into libproot.so
 # Both are shipped as separate executables that Atom runs as child processes.
 #
-# Usage: build-proot.sh WORK_DIR [NDK_DIR]
-#   WORK_DIR  an empty scratch directory outside the repository
+# The build is path-independent: every compile maps the work directory to "." (__FILE__ in talloc and PRoot
+# asserts, debug info), the outputs are stripped, and the script fails if a host path is left in them.
+#
+# Usage: build-proot.sh WORK_DIR OUT_DIR [NDK_DIR]
+#   WORK_DIR  a scratch directory (sources and objects; reused between runs)
+#   OUT_DIR   receives libproot.so and libproot_loader.so
 #   NDK_DIR   defaults to $ANDROID_HOME/ndk/30.0.16248370 (the module's ndkVersion)
 set -euo pipefail
 
-WORK="${1:?usage: build-proot.sh WORK_DIR [NDK_DIR]}"
-NDK="${2:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/ndk/30.0.16248370}"
+USAGE="usage: build-proot.sh WORK_DIR OUT_DIR [NDK_DIR]"
+WORK="${1:?$USAGE}"
+OUT="${2:?$USAGE}"
+NDK="${3:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/ndk/30.0.16248370}"
 PROOT_COMMIT=0e4287546a7df1a7f4395c75f7eca8b62d5f2cc9
 TALLOC_VERSION=2.5.0
 TALLOC_SHA256=912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007
-OUT="$(cd "$(dirname "$0")/../../src/main/jniLibs/arm64-v8a" && pwd)"
+TALLOC_URLS=("https://www.samba.org/ftp/talloc/talloc-$TALLOC_VERSION.tar.gz"
+             "https://download.samba.org/pub/talloc/talloc-$TALLOC_VERSION.tar.gz")
+mkdir -p "$WORK" "$OUT"
+WORK="$(cd "$WORK" && pwd)"
+OUT="$(cd "$OUT" && pwd)"
 
 case "$(uname -s)" in
   Darwin) HOST=darwin-x86_64 ;;
@@ -30,8 +41,9 @@ T="$NDK/toolchains/llvm/prebuilt/$HOST/bin"
 CC="$T/aarch64-linux-android30-clang"
 [ -x "$CC" ] || { echo "NDK clang not found at $CC" >&2; exit 1; }
 
-mkdir -p "$WORK"
 cd "$WORK"
+# Source paths that end up in __FILE__ strings and debug info are written relative to the work directory.
+MAP="-ffile-prefix-map=$WORK/=./ -fmacro-prefix-map=$WORK/=./ -fdebug-prefix-map=$WORK/=./ -g0"
 
 # ---- sources
 if [ ! -d proot ]; then
@@ -39,9 +51,13 @@ if [ ! -d proot ]; then
 fi
 git -C proot checkout -q "$PROOT_COMMIT"
 if [ ! -f "talloc-$TALLOC_VERSION.tar.gz" ]; then
-  curl -fsSLO "https://www.samba.org/ftp/talloc/talloc-$TALLOC_VERSION.tar.gz"
+  for url in "${TALLOC_URLS[@]}"; do
+    curl -fsSL --retry 4 --retry-delay 5 -o "talloc-$TALLOC_VERSION.tar.gz.part" "$url" && break
+  done
+  mv "talloc-$TALLOC_VERSION.tar.gz.part" "talloc-$TALLOC_VERSION.tar.gz"
 fi
-echo "$TALLOC_SHA256  talloc-$TALLOC_VERSION.tar.gz" | shasum -a 256 -c -
+if command -v sha256sum >/dev/null; then SHA256SUM=(sha256sum); else SHA256SUM=(shasum -a 256); fi
+echo "$TALLOC_SHA256  talloc-$TALLOC_VERSION.tar.gz" | "${SHA256SUM[@]}" -c -
 rm -rf "talloc-$TALLOC_VERSION" && tar xzf "talloc-$TALLOC_VERSION.tar.gz"
 
 # ---- talloc: one translation unit plus a hand-written config for bionic (no waf cross-answers needed)
@@ -120,9 +136,9 @@ void *rep_memset_explicit(void *block, int c, size_t size)
 	return ptr;
 }
 EOF
-"$CC" -Os -fPIC -D__STDC_WANT_LIB_EXT1__=1 -DHAVE_CONFIG_H -Ibuild/talloc -I"talloc-$TALLOC_VERSION" \
+"$CC" -Os -fPIC $MAP -D__STDC_WANT_LIB_EXT1__=1 -DHAVE_CONFIG_H -Ibuild/talloc -I"talloc-$TALLOC_VERSION" \
   -I"talloc-$TALLOC_VERSION/lib/replace" -c "talloc-$TALLOC_VERSION/talloc.c" -o build/talloc/talloc.o
-"$CC" -Os -fPIC -c build/talloc/shim.c -o build/talloc/shim.o
+"$CC" -Os -fPIC $MAP -c build/talloc/shim.c -o build/talloc/shim.o
 "$T/llvm-ar" rcs build/talloc/libtalloc.a build/talloc/talloc.o build/talloc/shim.o
 cp "talloc-$TALLOC_VERSION/talloc.h" build/talloc/
 
@@ -132,12 +148,23 @@ cp -R proot build/proot
 cd build/proot/src
 COMMON=(V=1 "CC=$CC" "STRIP=$T/llvm-strip" "OBJCOPY=$T/llvm-objcopy" "OBJDUMP=$T/llvm-objdump"
         HAS_LOADER_32BIT= PROOT_UNBUNDLE_LOADER=/data/local/tmp/atom-proot)
-make "${COMMON[@]}" CFLAGS="-Os" loader/loader
+make "${COMMON[@]}" CFLAGS="-Os $MAP" loader/loader
 DEF="-DPROOT_UNBUNDLE_LOADER='\"/data/local/tmp/atom-proot\"'"
 make -j8 "${COMMON[@]}" \
-  CFLAGS="-I$WORK/build/talloc -Os -fPIE -include string.h $DEF" \
+  CFLAGS="-I$WORK/build/talloc -Os -fPIE $MAP -include string.h $DEF" \
   LDFLAGS="-L$WORK/build/talloc -pie -ltalloc -Wl,-z,noexecstack -Wl,-z,max-page-size=16384" proot
 
 "$T/llvm-strip" --strip-all -o "$OUT/libproot.so" proot
 "$T/llvm-strip" --strip-all -o "$OUT/libproot_loader.so" loader/loader
+
+# ---- no host path may remain. The only "/tmp/" strings allowed are PRoot's own: its help text and the
+# default loader location (Atom always sets PROOT_LOADER).
+ALLOWED='[[:space:]]*(\* )?/tmp/|/data/local/tmp/atom-proot/loader(32)?'
+for f in "$OUT/libproot.so" "$OUT/libproot_loader.so"; do
+  if "$T/llvm-strings" -a "$f" | grep -E '/tmp/|/Users/|/home/|/private/' | grep -vxE "$ALLOWED" \
+     || "$T/llvm-strings" -a "$f" | grep -F "$WORK"; then
+    echo "error: host paths left in $f (see above)" >&2
+    exit 1
+  fi
+done
 ls -l "$OUT"

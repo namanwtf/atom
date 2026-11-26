@@ -17,6 +17,8 @@ on:
       - "linux/**"
       - "characters/**"
       - "automation/**"
+      - "ondevice-pack/**"
+      - "core/**"
       - "tools/screenshots/**"
       - ".github/workflows/screenshots.yml"
   workflow_dispatch:
@@ -49,8 +51,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build debug APKs (app and on-device AI pack)
+        run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
 
       - name: Enable KVM
         run: |
@@ -72,8 +74,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/screenshots/capture.py pack-missing
+            python3 tools/screenshots/install_pack.py ondevice-pack/build/outputs/apk/debug/ondevice-pack-debug.apk
             python3 tools/screenshots/capture.py dark
             python3 tools/screenshots/capture.py light
+            echo "=====CRASH BUFFER====="; adb logcat -d -b crash | tail -n 80; echo "=====END====="
 
       - name: Upload screenshots
         if: always()

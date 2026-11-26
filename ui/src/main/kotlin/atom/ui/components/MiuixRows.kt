@@ -349,9 +349,59 @@ fun AtomDialog(
     onDismiss: () -> Unit,
     title: String? = null,
     summary: String? = null,
+    onDismissFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    WindowDialog(show = show, title = title, summary = summary, onDismissRequest = onDismiss, content = content)
+    // Callers often derive the title from the value that closing clears ("title = item?.name"). Keep the last
+    // shown text while the card animates out, so it does not lose its title and jump in height on the way down.
+    val held = remember { arrayOfNulls<String>(2) }
+    if (show) {
+        held[0] = title
+        held[1] = summary
+    }
+    WindowDialog(
+        show = show,
+        title = if (show) title else held[0],
+        summary = if (show) summary else held[1],
+        onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
+        content = content,
+    )
+}
+
+/**
+ * [AtomDialog] for a nullable [value]: shown while it is non-null, and the last value stays on screen through the
+ * exit animation, so the content never recomposes to empty while the card slides away.
+ */
+@Composable
+fun <T : Any> AtomDialogFor(
+    value: T?,
+    onDismiss: () -> Unit,
+    title: (T) -> String? = { null },
+    summary: (T) -> String? = { null },
+    content: @Composable (T) -> Unit,
+) {
+    val held = rememberHeld(value)
+    AtomDialog(
+        show = value != null,
+        onDismiss = onDismiss,
+        title = held.value?.let(title),
+        summary = held.value?.let(summary),
+        onDismissFinished = { if (value == null) held.value = null },
+    ) {
+        held.value?.let { content(it) }
+    }
+}
+
+/** Holds the last non-null value; plain field, so updating it during composition triggers nothing. */
+private class Held<T : Any>(var value: T?)
+
+/** The last non-null [value], kept until the caller's exit animation finishes and clears it. */
+@Composable
+private fun <T : Any> rememberHeld(value: T?): Held<T> {
+    val held = remember { Held(value) }
+    if (value != null) held.value = value
+    return held
 }
 
 /**
@@ -391,7 +441,35 @@ fun AtomBottomSheet(
     show: Boolean,
     onDismiss: () -> Unit,
     title: String? = null,
+    onDismissFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    WindowBottomSheet(show = show, title = title, onDismissRequest = onDismiss, content = content)
+    val held = remember { arrayOfNulls<String>(1) }
+    if (show) held[0] = title
+    WindowBottomSheet(
+        show = show,
+        title = if (show) title else held[0],
+        onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
+        content = content,
+    )
+}
+
+/** [AtomBottomSheet] for a nullable [value]; like [AtomDialogFor], the last value stays through the exit animation. */
+@Composable
+fun <T : Any> AtomBottomSheetFor(
+    value: T?,
+    onDismiss: () -> Unit,
+    title: (T) -> String? = { null },
+    content: @Composable (T) -> Unit,
+) {
+    val held = rememberHeld(value)
+    AtomBottomSheet(
+        show = value != null,
+        onDismiss = onDismiss,
+        title = held.value?.let(title),
+        onDismissFinished = { if (value == null) held.value = null },
+    ) {
+        held.value?.let { content(it) }
+    }
 }

@@ -43,12 +43,24 @@ object Shells {
     val tier: StateFlow<ShellTier?> = _tier.asStateFlow()
 
     /**
-     * Root (granted via [RootAccess], probed once) beats Shizuku (binder alive + permission granted) beats the app's
-     * own shell. The same executor is returned while the tier is unchanged, so every caller shares one process.
+     * The tier to use right now, from the live root status and the last Shizuku result. Never probes, so tool
+     * gates can call it at any time.
      */
-    suspend fun detect(context: Context): ShellExecutor = mutex.withLock {
+    fun currentTier(): ShellTier = when {
+        RootAccess.granted -> ShellTier.Root
+        _tier.value == ShellTier.Shizuku -> ShellTier.Shizuku
+        else -> ShellTier.App
+    }
+
+    /**
+     * Root (granted via [RootAccess]) beats Shizuku (binder alive + permission granted) beats the app's own shell.
+     * The same executor is returned while the tier is unchanged, so every caller shares one process. With
+     * [probeRoot] false only the current root status counts (no superuser prompt can appear).
+     */
+    suspend fun detect(context: Context, probeRoot: Boolean = true): ShellExecutor = mutex.withLock {
+        val root = if (probeRoot) RootAccess.ensure(context) else RootAccess.granted
         val wanted = when {
-            RootAccess.ensure(context) -> ShellTier.Root
+            root -> ShellTier.Root
             shizukuState() == ShizukuState.Ready -> ShellTier.Shizuku
             else -> ShellTier.App
         }

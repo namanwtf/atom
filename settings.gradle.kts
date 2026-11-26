@@ -36,4 +36,5 @@ include(
     ":xposed",
     ":general",
     ":app",
+    ":ondevice-pack",
 )

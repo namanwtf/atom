@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Drive a CI emulator through Atom's main screens and print every screenshot into the job log.
 
-Runs only on GitHub's disposable runners (never on a personal machine). Workflow artifacts are not
-reachable from every review environment, so each screenshot is printed as base64 JPEG between
-markers; tools/screenshots/extract.py turns a downloaded log back into image files.
+Runs only on GitHub's disposable runners (never on a personal machine). Besides the uploaded artifact,
+each screenshot is printed as base64 JPEG between markers, so a job log alone is enough;
+tools/screenshots/extract.py turns a downloaded log back into image files.
 
-Each shot also prints the visible texts from a UI hierarchy dump, which is the "window dump"
-evidence PROJECT.md asks for.
+Each shot also prints the visible texts from a UI hierarchy dump, so the screen's wording can be
+checked without opening the image.
 """
 
 import base64
@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 PKG = os.environ.get("ATOM_PKG", "io.github.namanwtf.atom.debug")
 ACTIVITY = f"{PKG}/atom.app.ui.MainActivity"
 EXTRA_ROUTE = "atom.app.EXTRA_ROUTE"
+EXTRA_DEMO = "atom.app.debug.EXTRA_DEMO_TRANSCRIPT"
 OUT = os.environ.get("SHOT_DIR", "shots")
 
 
@@ -174,6 +175,25 @@ def launch(route=None, wait=4):
     time.sleep(wait)
 
 
+def demo(action, wait=4):
+    """Debug builds only: opens ("open") or deletes ("clear") a long, clearly fake sample conversation.
+
+    See app/src/debug/kotlin/atom/app/debug/DebugLaunch.kt; release builds ignore the extra. CI has no model key,
+    so this is the only way to photograph a scrolled conversation.
+    """
+    r = subprocess.run(
+        ["adb", "shell", "am", "start", "-W", "-n", ACTIVITY, "--es", EXTRA_DEMO, action],
+        capture_output=True,
+        timeout=60,
+    )
+    text = (r.stdout + r.stderr).decode(errors="replace")
+    if r.returncode != 0 or "Error" in text:
+        print(f"[capture] demo {action} failed: {text.strip()[:400]}")
+        return False
+    time.sleep(wait)
+    return True
+
+
 def back(wait=1.2):
     sh("input keyevent KEYCODE_BACK")
     time.sleep(wait)
@@ -234,9 +254,60 @@ def bubble_bounds():
     return None
 
 
+def crash_log():
+    """Prints the crash buffer and the newest error lines, so a crash's stack trace lands in the job log."""
+    print("=====CRASHLOG=====")
+    crash = adb("logcat", "-d", "-b", "crash", timeout=60).decode(errors="replace")
+    print(crash.strip() or "(crash buffer empty)")
+    print("----- logcat *:E (last 200 lines) -----")
+    errors = adb("logcat", "-d", "*:E", timeout=60).decode(errors="replace").splitlines()
+    for line in errors[-200:]:
+        print(line)
+    print("=====END=====")
+    sys.stdout.flush()
+
+
+def character_detail(p):
+    """Opens the built-in character from the library: its detail screen once crashed the whole app."""
+    try:
+        launch("characters/library", wait=3)
+        if tap("^Lumen$", wait=3.0):
+            pid = sh(f"pidof {PKG}").strip()
+            print(f"[capture] after opening Lumen the app pid is: {pid or '(not running: crashed)'}")
+            shot(p + "22b_character_detail")
+            back()
+        else:
+            shot(p + "22b_character_detail")
+    finally:
+        crash_log()
+
+
+def pack_missing():
+    """Before the on-device AI pack is installed: its download card, and "Hey Atom" explaining it needs the pack."""
+    sh("cmd uimode night yes")
+    checked_sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
+    sh(f"am force-stop {PKG}")
+    launch(wait=6)
+    for label in ("Skip", "Not now", "Later", "Continue", "Get started", "Done", "Finish"):
+        if find(f"^{label}$"):
+            tap(f"^{label}$")
+    launch("models-on-device", wait=4)
+    shot("pack_01_on_device_missing")
+    back()
+    launch("voice/settings", wait=3)
+    for _ in range(3):
+        sh("input swipe 540 1800 540 500 300")
+        time.sleep(1)
+    shot("pack_02_hey_atom_missing")
+    back()
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
+    if mode == "pack-missing":
+        pack_missing()
+        return
     sh(f"cmd uimode night {'yes' if mode == 'dark' else 'no'}")
     # The bubble is on by default; keep it off the app screenshots until the bubble section below allows it.
     checked_sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
@@ -274,9 +345,28 @@ def main():
         shot(p + "05_model_picker")
         back()
 
+    # A long sample conversation: the frosted top bar and composer band over scrolled text, then the glass drawer
+    # over it. Afterwards the chat goes back to a new conversation and the sample is deleted, so later shots and the
+    # next pass start from the usual empty home.
+    if demo("open"):
+        if not find("^Demo transcript"):
+            print("[capture] the sample conversation did not open")
+        # Lands on the newest message; scroll a little towards older ones so text sits under both bars.
+        sh("input swipe 540 1000 540 1350 700")
+        time.sleep(2)
+        shot(p + "06_chat_scrolled")
+        if tap("^Conversations$", wait=3.0):
+            shot(p + "07_drawer_over_chat")
+            back()
+        if tap("^More options$", wait=1.2):
+            tap("^New conversation$", wait=1.5)
+        demo("clear", wait=2)
+
     routes = [
         ("10_settings", "settings"),
         ("11_models", "models"),
+        # With the debug on-device AI pack installed (tools/screenshots/install_pack.py): "Ready" and its engines.
+        ("11b_on_device", "models-on-device"),
         ("12_overlay_settings", "overlay/settings"),
         ("13_appearance", "general/appearance"),
         ("14_voice_settings", "voice/settings"),
@@ -312,6 +402,8 @@ def main():
             time.sleep(1)
             shot(p + name + f"_scrolled{i}")
         back()
+
+    character_detail(p)
 
     if mode != "dark":
         return

@@ -8,30 +8,34 @@ import kotlin.test.assertTrue
 
 class PermissionRowsTest {
     @Test
-    fun twelveClassicRowsInOrder() {
-        assertEquals(12, PermissionRows.CLASSIC.size)
-        assertEquals(
-            listOf(
-                "Background running permission", "Floating window permissions", "Application list reading", "Local network access",
-                "Calendar access", "Do Not Disturb access", "Location permissions", "Notification access", "Usage access",
-                "Accessibility permissions", "Background task notifications", "Root and system enhancements",
-            ),
-            PermissionRows.CLASSIC.map { it.second },
-        )
+    fun onlyAccessibilityAndOverlayAreCore() {
+        assertEquals(listOf("accessibility", "overlay"), PermissionRows.CORE.map { it.first })
+        assertTrue(PermissionRows.isCore("accessibility"))
+        assertTrue(PermissionRows.isCore("overlay"))
+        assertFalse(PermissionRows.isCore("notifications_post"))
+        assertFalse(PermissionRows.isCore("battery"))
+        assertFalse(PermissionRows.isCore("microphone"))
     }
 
     @Test
-    fun classicRowsMissingOnThisBuildAreSkippedButRootStays() {
-        val rows = PermissionRows.classic(setOf("overlay", "accessibility"))
-        assertEquals(listOf("overlay", "accessibility", PermissionRows.ROOT), rows.map { it.first })
+    fun optionalRowsMissingOnThisBuildAreSkippedButRootStays() {
+        val rows = PermissionRows.optional(setOf("overlay", "accessibility", "location"))
+        assertEquals(listOf("location", PermissionRows.ROOT), rows.map { it.first })
+        assertEquals(listOf("overlay"), PermissionRows.core(setOf("overlay")).map { it.first })
     }
 
     @Test
-    fun everythingElseGoesBelow() {
+    fun unlistedRowsFollowTheOptionalOnes() {
         val others = PermissionRows.others(listOf("accessibility", "microphone", "overlay", "contacts", "all_files"))
-        assertEquals(listOf("microphone", "contacts", "all_files"), others)
-        assertTrue(PermissionRows.isClassic("battery"))
-        assertFalse(PermissionRows.isClassic("exact_alarms"))
+        assertEquals(listOf("contacts", "all_files"), others)
+    }
+
+    @Test
+    fun optionalRowsThatAreNotSetUpReadWhenNeeded() {
+        assertEquals("When needed", PermissionRows.label(CapStatus.Missing, optional = true))
+        assertEquals("When needed", PermissionRows.label(CapStatus.NotEnabled, optional = true))
+        assertEquals("Missing", PermissionRows.label(CapStatus.Missing))
+        assertEquals("Available", PermissionRows.label(CapStatus.Available, optional = true))
     }
 
     @Test

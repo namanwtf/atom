@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -43,6 +44,46 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse build-tool traces
+        # Development tooling leaves no marks in the repository: no tool settings, no attribution lines, no
+        # temp or home paths of a developer machine (also inside committed binaries, hence -a). Anthropic's
+        # models are a product feature and stay. The models.dev snapshot is the upstream catalog verbatim; it
+        # lists third-party model ids. The patterns below are written so they do not match this file.
+        run: |
+          pattern='claude[ -]code|claude\.ai/code|co-authored-by:\s*claude|/tmp/[c]laude|\.[c]laude/'
+          if git grep -n -o -a -i -P "$pattern" -- ':!engine/llamacpp/third_party' \
+               ':!llm/cloud/src/main/resources/atom/llm/cloud/models_dev_snapshot.json'; then
+            echo "::error::Remove build-tool traces (see lines above)"
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.[c]laude/'; then
+            echo "::error::Tool settings directories must not be committed"
+            exit 1
+          fi
+          # Committed native binaries must not carry host build paths (__FILE__ strings, debug info).
+          bad=0
+          while IFS= read -r f; do
+            if strings -a "$f" | grep -E '/Users/|/home/|/private/|/tmp/[c]laude'; then
+              echo "::error file=$f::host build paths in a committed binary"
+              bad=1
+            fi
+          done < <(git ls-files -- '*.so' '*.a' '*.o' ':!engine/llamacpp/third_party')
+          exit $bad
+
+      - name: Refuse build-tool attribution in commit messages
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" \
+            --jq '.[] | "\(.sha[0:10]) \(.commit.message | gsub("\n"; " "))"' > "$RUNNER_TEMP/pr-commits.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/pr-commits.txt") commits in this pull request"
+          if grep -i -P 'co-authored-by:\s*claude|claude\.ai/code|claude-[s]ession' "$RUNNER_TEMP/pr-commits.txt"; then
+            echo "::error::Commit messages must not carry build-tool attribution (see lines above)"
+            exit 1
+          fi
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -58,13 +99,36 @@ jobs:
       - name: Unit tests
         run: ./gradlew test testDebugUnitTest --continue --stacktrace
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build debug APKs (app and on-device AI pack)
+        run: ./gradlew :app:assembleDebug :ondevice-pack:assembleDebug --stacktrace
+
+      - name: Check packaged PRoot
+        # PRoot is built from source by :linux:buildProot. It must be in the APK, and like every packaged
+        # native library it must not carry paths of a developer machine.
+        run: |
+          libs="$RUNNER_TEMP/apk-libs"
+          unzip -q -o app/build/outputs/apk/debug/app-debug.apk 'lib/*' -d "$libs"
+          ls -l "$libs/lib/arm64-v8a/libproot.so" "$libs/lib/arm64-v8a/libproot_loader.so"
+          file "$libs/lib/arm64-v8a/libproot.so" "$libs/lib/arm64-v8a/libproot_loader.so"
+          bad=0
+          for f in "$libs"/lib/*/*.so; do
+            if strings -a "$f" | grep -E '/Users/|/private/|/tmp/[c]laude'; then
+              echo "::error::host build paths in $(basename "$f")"
+              bad=1
+            fi
+          done
+          for f in "$libs/lib/arm64-v8a/libproot.so" "$libs/lib/arm64-v8a/libproot_loader.so"; do
+            if strings -a "$f" | grep -F "$GITHUB_WORKSPACE"; then
+              echo "::error::build paths in $(basename "$f")"
+              bad=1
+            fi
+          done
+          exit $bad
 
       # The minified (R8) release variant, unsigned: it has no signingConfig. Signing happens only in release.yml.
       # Building it here shows shrinker and lint-vital problems on the pull request instead of on main.
-      - name: Build release APK (unsigned)
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Build release APKs (unsigned)
+        run: ./gradlew :app:assembleRelease :ondevice-pack:assembleRelease --stacktrace
 
       # The end-to-end test hook (app/src/debug, docs/TESTING.md) must exist in debug builds and never in a release.
       - name: Debug-only hooks stay out of release
@@ -82,21 +146,77 @@ jobs:
               echo "::error::$apk contains the debug-only e2e hook (atom.app.e2e)"
               exit 1
             fi
+            if "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -q 'DebugPackReceiver'; then
+              echo "::error::$apk contains the debug-only pack receiver (DebugPackReceiver)"
+              exit 1
+            fi
             echo "$apk: no debug hooks"
           done
 
-      - name: Report APK size
+      - name: Report APK sizes
         run: |
-          for apk in app/build/outputs/apk/release/*.apk; do
-            echo "::notice title=Release APK size::$(basename "$apk"): $(( $(stat -c %s "$apk") / 1024 / 1024 )) MB"
-            unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $8}' | sort -rn | head -n 12
+          for apk in app/build/outputs/apk/release/*.apk ondevice-pack/build/outputs/apk/release/*.apk; do
+            kb=$(( $(stat -c %s "$apk") / 1024 ))
+            echo "::notice title=Release APK size::$(basename "$apk"): $(( kb / 1024 )).$(( kb % 1024 * 10 / 1024 )) MB ($kb KB)"
+            unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $2, $8}' | sort -rn | head -n 14
           done
 
-      - name: Upload APK
+      # The app carries no on-device engine: those libraries and the wake-word models live only in the pack, and
+      # the pack's native libraries are stored uncompressed (the linker maps them straight from the APK).
+      - name: Check what each APK carries
+        run: |
+          set -euo pipefail
+          app=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          pack=$(ls ondevice-pack/build/outputs/apk/release/*.apk | head -n 1)
+          banned='lib/[^ ]*/lib(litertlm_jni|LiteRt|LiteRtClGlAccelerator|litert_jni|tensorflowlite_jni|atom_llama|c\+\+_shared)\.so|assets/wakeword/'
+          if unzip -l "$app" | grep -E "$banned"; then
+            echo "::error::The app APK contains on-device engine files (above); they belong in the on-device AI pack."
+            exit 1
+          fi
+          unzip -l "$pack" | grep -E 'lib/arm64-v8a/libatom_llama\.so' >/dev/null || { echo "::error::The pack has no llama.cpp library"; exit 1; }
+          unzip -l "$pack" | grep -E 'assets/wakeword/hey_atom\.tflite' >/dev/null || { echo "::error::The pack has no wake-word model"; exit 1; }
+          compressed=$(unzip -lv "$pack" | awk '$8 ~ /^lib\/.*\.so$/ && $2 != "Stored" {print $8}')
+          if [ -n "$compressed" ]; then
+            echo "::error::Native libraries in the pack must be stored uncompressed: $compressed"
+            exit 1
+          fi
+          echo "Pack native libraries:"
+          unzip -lv "$pack" | awk '$8 ~ /^lib\// {print $1, $2, $8}'
+          # Classes the pack defines, by package (Kotlin, kotlinx and Atom's core come from the app at run time).
+          dexdump=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | tail -n 1 || true)
+          if [ -n "$dexdump" ]; then
+            tmp=$(mktemp -d)
+            unzip -q -o "$pack" 'classes*.dex' -d "$tmp"
+            defs=$( (for dex in "$tmp"/classes*.dex; do "$dexdump" "$dex"; done) | grep -E "^  Class descriptor" | sed -E "s/.*'L([^;]*);'.*/\1/" || true)
+            echo "Pack classes by package (top 15 of $(wc -l <<< "$defs") classes):"
+            (awk -F/ '{print $1"/"$2"/"$3}' <<< "$defs" | sort | uniq -c | sort -rn | head -n 15) || true
+            if grep -qx 'kotlin/collections/CollectionsKt' <<< "$defs"; then
+              echo "::warning::The pack carries its own Kotlin standard library"
+            fi
+          fi
+
+      - name: Release readiness
+        # The weekly release PR (release/next into main) may auto-merge, so it must not go green until the
+        # combined release has passed the end-to-end tasks and the side-by-side comparison. That result is
+        # written to docs/RELEASE_SCORECARD.md, which every release PR must update, ending in "Result: ready".
+        if: github.event_name == 'pull_request' && github.head_ref == 'release/next'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch -q --depth=1 origin "$BASE_SHA"
+          if ! git diff --name-only "$BASE_SHA" HEAD | grep -qx 'docs/RELEASE_SCORECARD.md' \
+             || ! grep -qx 'Result: ready' docs/RELEASE_SCORECARD.md; then
+            echo "::error::Release still being assembled and tested. It merges once docs/RELEASE_SCORECARD.md is updated and ends in 'Result: ready'."
+            exit 1
+          fi
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v7
         with:
           name: atom-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            ondevice-pack/build/outputs/apk/debug/*.apk
           retention-days: 14
 
       - name: Upload test reports

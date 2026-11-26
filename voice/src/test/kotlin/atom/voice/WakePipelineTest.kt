@@ -1,6 +1,6 @@
 package atom.voice
 
-import atom.voice.engine.WakeModels
+import atom.core.ondevice.WakeModels
 import atom.voice.engine.WakePipeline
 import kotlin.test.Test
 import kotlin.test.assertEquals

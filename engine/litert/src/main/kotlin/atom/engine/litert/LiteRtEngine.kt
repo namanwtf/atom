@@ -170,7 +170,9 @@ class LiteRtEngine(
                         // Wait for the native decode loop to wind down before the conversation is freed.
                         withTimeoutOrNull(10_000) { runCatching { done.await() } }
                     }
-                    withContext(worker) { runCatching { conversation.close() } }
+                    // Freeing a conversation the native loop still decodes into aborts the process; when Stop's
+                    // cancel was not honoured in time, leave it to the engine's own release instead.
+                    if (done.isCompleted) withContext(worker) { runCatching { conversation.close() } }
                 }
             }
         }

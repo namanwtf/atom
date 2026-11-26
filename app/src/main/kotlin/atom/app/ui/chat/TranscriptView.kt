@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -102,10 +103,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.animateFloat
 import atom.ui.components.AtomMenu
+import atom.ui.components.glassSource
 import atom.ui.feature.RunPhase
 import atom.ui.feature.StepState
 import atom.ui.theme.AtomIcons
 import atom.ui.theme.extras
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -148,6 +151,8 @@ private const val PAGE = 40
 internal fun TranscriptList(
     state: ChatUiState,
     bars: PaddingValues,
+    glass: HazeState,
+    cover: BarCover,
     actions: MessageActions,
     restore: Pair<String, ReadingPosition>?,
     onRestored: () -> Unit,
@@ -186,6 +191,22 @@ internal fun TranscriptList(
         onRestored()
     }
 
+    // Tell the bars whether text sits under them. The list is reversed: forward is towards older messages (up).
+    LaunchedEffect(listState, cover) {
+        snapshotFlow { listState.canScrollForward to listState.canScrollBackward }
+            .distinctUntilChanged()
+            .collect { (older, newer) ->
+                cover.top = older
+                cover.bottom = newer
+            }
+    }
+    DisposableEffect(cover) {
+        onDispose {
+            cover.top = false
+            cover.bottom = false
+        }
+    }
+
     val id = state.conversationId
     DisposableEffect(id) {
         onDispose {
@@ -201,8 +222,9 @@ internal fun TranscriptList(
         LazyColumn(
             state = listState,
             reverseLayout = true,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = bars.calculateTopPadding() + 10.dp, bottom = bars.calculateBottomPadding() + 14.dp),
+            modifier = Modifier.fillMaxSize().glassSource(glass),
+            // Past the bars and their fading edges, so the first and last messages come fully clear of them.
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = bars.calculateTopPadding() + 20.dp, bottom = bars.calculateBottomPadding() + 14.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.Bottom),
         ) {
             if (state.running) {
@@ -234,6 +256,13 @@ internal fun TranscriptList(
             )
         }
     }
+}
+
+/** Whether transcript content currently sits under the top bar and under the composer (drives their blur). */
+@Stable
+internal class BarCover {
+    var top by mutableStateOf(false)
+    var bottom by mutableStateOf(false)
 }
 
 @Composable

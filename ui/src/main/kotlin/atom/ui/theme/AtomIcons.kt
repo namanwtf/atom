@@ -1,10 +1,13 @@
 package atom.ui.theme
 
 import androidx.compose.foundation.Image
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -80,16 +83,36 @@ object AtomIcons {
             .build()
 }
 
-/** The Atom emblem, the same artwork as the launcher icon. */
+/**
+ * The Atom emblem, the same artwork as the launcher icon. [fill] is the share of the box the emblem's
+ * outer ring covers (the launcher foreground keeps the emblem inside the adaptive-icon safe zone, at 56%).
+ */
 @Composable
-fun AtomMark(modifier: Modifier = Modifier.size(28.dp)) {
+fun AtomMark(modifier: Modifier = Modifier.size(28.dp), fill: Float = 0.87f) {
+    val scale = fill / EMBLEM_SHARE
     Image(
         painter = painterResource(R.mipmap.ic_launcher_fg),
         contentDescription = null,
-        // The launcher foreground keeps the emblem inside the adaptive-icon safe zone; undo that padding here.
         modifier = modifier.graphicsLayer {
-            scaleX = 1.55f
-            scaleY = 1.55f
+            scaleX = scale
+            scaleY = scale
         },
     )
 }
+
+/**
+ * The Atom emblem on a transparent background, drawn in one ink so it sits cleanly on any surface:
+ * light on the dark theme and dark on the light theme. Use this everywhere the brand appears inside
+ * the app; [AtomMark] (the emblem on its black disc) is only for the floating bubble.
+ */
+@Composable
+fun AtomEmblem(size: Dp, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurface) {
+    Image(
+        painter = painterResource(R.drawable.atom_emblem),
+        contentDescription = null,
+        modifier = modifier.size(size),
+        colorFilter = ColorFilter.tint(tint),
+    )
+}
+
+private const val EMBLEM_SHARE = 242f / 432f

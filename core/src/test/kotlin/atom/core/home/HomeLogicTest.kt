@@ -54,6 +54,9 @@ class ModelReadinessTest {
         assertTrue(ModelReadiness.anyUsable(listOf(deepseek, off), emptySet(), emptySet(), installedCount = 1))
         assertTrue(ModelReadiness.anyUsable(listOf(deepseek), setOf("deepseek"), emptySet(), installedCount = 0))
         assertFalse(ModelReadiness.anyUsable(listOf(off), setOf("mistral"), emptySet(), installedCount = 0))
+        // Without the on-device AI pack an installed model is not usable.
+        assertFalse(ModelReadiness.localReady("gemma", listOf("gemma"), packReady = false))
+        assertFalse(ModelReadiness.anyUsable(listOf(deepseek, off), emptySet(), emptySet(), installedCount = 1, packReady = false))
     }
 }
 

@@ -16,13 +16,11 @@ import atom.core.llm.ToolSpec
 import atom.device.power.PowerGovernor
 import atom.device.power.PowerState
 import atom.device.power.Thermal
-import atom.engine.litert.LiteRtBackend
-import atom.engine.litert.LiteRtEngine
-import atom.engine.llamacpp.LlamaConfig
-import atom.engine.llamacpp.LlamaCppEngine
 import atom.app.data.ModelRole
 import atom.app.data.ModelRoles
 import atom.app.data.ProviderStore
+import atom.app.ondevice.OnDevicePack
+import atom.core.ondevice.OnDeviceBackend
 import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.AuthMethod
 import atom.llm.cloud.ChatGptAuth
@@ -83,8 +81,10 @@ class RoutedEngine internal constructor(
                 model = model,
                 systemPrompt = systemPrompt,
                 maxSteps = 30,
-                maxOutputTokens = 2048,
+                maxOutputTokens = CLOUD_MAX_OUTPUT,
                 toolTimeoutMs = toolTimeout,
+                // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
+                // starts near 85% of that (AgentConfig.usableWindow).
                 context = ContextPolicy(keepImages = if (vision) 1 else 0),
             )
         }
@@ -114,6 +114,9 @@ class RoutedEngine internal constructor(
     companion object {
         const val LOCAL_CONTEXT_WINDOW = 8_192
         const val LOCAL_PROMPT_BUDGET = 6_000
+
+        /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
+        const val CLOUD_MAX_OUTPUT = 2048
     }
 }
 
@@ -297,6 +300,7 @@ class EngineRouter(
     }
 
     private suspend fun local(selection: EngineSelection.Local): RoutedEngine {
+        if (!OnDevicePack.ready.value) throw RouteException(context.getString(R.string.route_needs_pack))
         val installed = models().installed.value.firstOrNull { it.id == selection.installedModelId }
             ?: throw RouteException(context.getString(R.string.route_model_missing))
         val key = LocalKey(installed.id, selection.backend)
@@ -328,25 +332,27 @@ class EngineRouter(
         )
     }
 
-    private fun createLocal(model: InstalledModel, backend: LocalBackend): LlmEngine = when (model.format) {
-        ModelFormat.LiteRtLm -> LiteRtEngine(
-            context = context,
-            modelPath = model.path,
-            backend = when (backend) {
-                LocalBackend.Auto -> LiteRtBackend.Auto
-                LocalBackend.Npu -> LiteRtBackend.Npu
-                LocalBackend.Gpu -> LiteRtBackend.Gpu
-                LocalBackend.Cpu -> LiteRtBackend.Cpu
-            },
-            contextWindow = RoutedEngine.LOCAL_CONTEXT_WINDOW,
-        )
-        ModelFormat.Gguf -> LlamaCppEngine(
-            modelPath = model.path,
-            config = LlamaConfig(
+    /** On-device engines live in the optional on-device AI pack; every call goes through its interface. */
+    private fun createLocal(model: InstalledModel, backend: LocalBackend): LlmEngine {
+        val pack = OnDevicePack.engines() ?: throw RouteException(context.getString(R.string.route_needs_pack))
+        return when (model.format) {
+            ModelFormat.LiteRtLm -> pack.liteRt(
+                context = context,
+                modelPath = model.path,
+                backend = when (backend) {
+                    LocalBackend.Auto -> OnDeviceBackend.Auto
+                    LocalBackend.Npu -> OnDeviceBackend.Npu
+                    LocalBackend.Gpu -> OnDeviceBackend.Gpu
+                    LocalBackend.Cpu -> OnDeviceBackend.Cpu
+                },
+                contextWindow = RoutedEngine.LOCAL_CONTEXT_WINDOW,
+            )
+            ModelFormat.Gguf -> pack.llamaCpp(
+                modelPath = model.path,
                 contextWindow = RoutedEngine.LOCAL_CONTEXT_WINDOW,
                 gpuLayers = if (backend == LocalBackend.Gpu) GGUF_GPU_ALL_LAYERS else 0,
-            ),
-        )
+            )
+        }
     }
 
     private fun blockReason(state: PowerState): String = when {

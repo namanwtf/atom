@@ -108,8 +108,15 @@ object ExtendFeature : AtomFeature {
 
     override fun promptHint(context: Context): String? {
         ExtendRuntime.init(context)
-        val parts = listOfNotNull(memoryHint(), skillsHint(), subagentsHint(ExtendRuntime.subagents))
+        val parts = listOfNotNull(memoryHint(), skillsHint())
         return parts.joinToString("\n\n").ifEmpty { null }
+    }
+
+    /** The subagent guide goes out with the subagent tools, when the run loads them, not with every request. */
+    override fun toolNotes(context: Context): Map<String, String> {
+        ExtendRuntime.init(context)
+        val hint = subagentsHint(ExtendRuntime.subagents) ?: return emptyMap()
+        return mapOf("spawn_subagent" to hint, "spawn_subagents_parallel" to hint)
     }
 
     private fun memoryHint(): String? {
@@ -121,10 +128,9 @@ object ExtendFeature : AtomFeature {
     private fun skillsHint(): String = buildString {
         val enabled = ExtendRuntime.skills.enabled()
         append("## Skills\n")
-        append("Skills are instruction packages for particular tasks. When a request matches one, call skill_read with its ")
-        append("name before acting and follow it; open its other files only when it points to them. Scripts in skills never ")
-        append("run by themselves: run one only through a terminal tool, which asks the user. Install new skills from GitHub ")
-        append("with skill_install_github; create or improve user skills with skill_write.")
+        append("When a request matches a skill, call skill_read with its name before acting and follow it. Skill scripts ")
+        append("never run by themselves, only through a terminal tool, which asks the user. skill_install_github and ")
+        append("skill_write add or change skills.")
         if (enabled.isEmpty()) {
             append("\n(No skills are enabled.)")
         } else {

@@ -46,10 +46,19 @@ object ModelReadiness {
         return hasCredentials(p, savedKeys, signedIn)
     }
 
-    /** An on-device selection is usable while its model is still installed. */
-    fun localReady(installedId: String, installed: Collection<String>): Boolean = installedId in installed
+    /**
+     * An on-device selection is usable while its model is still installed and the optional on-device AI pack (which
+     * carries the engines) is installed too.
+     */
+    fun localReady(installedId: String, installed: Collection<String>, packReady: Boolean = true): Boolean =
+        packReady && installedId in installed
 
     /** True when at least one provider or on-device model could be picked and used. */
-    fun anyUsable(providers: List<ProviderFacts>, savedKeys: Set<String>, signedIn: Set<String>, installedCount: Int): Boolean =
-        installedCount > 0 || providers.any { it.enabled && hasCredentials(it, savedKeys, signedIn) }
+    fun anyUsable(
+        providers: List<ProviderFacts>,
+        savedKeys: Set<String>,
+        signedIn: Set<String>,
+        installedCount: Int,
+        packReady: Boolean = true,
+    ): Boolean = (packReady && installedCount > 0) || providers.any { it.enabled && hasCredentials(it, savedKeys, signedIn) }
 }

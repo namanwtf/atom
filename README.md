@@ -120,7 +120,7 @@ Giving an AI real control of a phone only works if you can trust it, so Atom is 
 
 ## Permissions and devices
 
-Atom asks for each permission only when a feature first needs it, and works without the optional ones.
+Atom asks for each permission only when a feature first needs it, and works without the optional ones. The full list, with what uses each one and when it is asked, is in [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
 
 | Feature | What it needs |
 |---|---|

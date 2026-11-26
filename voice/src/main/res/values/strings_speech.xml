@@ -108,7 +108,7 @@
     <string name="speech_set_hey_atom_screen_off_sub">Uses more battery</string>
     <string name="speech_set_hey_atom_charging">Listen while charging</string>
     <string name="speech_set_hey_atom_charging_sub">Even with the screen off</string>
-    <string name="speech_set_hey_atom_missing">Wake-word model not installed in this build</string>
+    <string name="speech_set_hey_atom_missing">Needs the on-device AI pack. Tap to get it.</string>
     <string name="speech_set_try">Try it</string>
     <string name="speech_set_try_sub">Uses the settings on this page, even before you save. Cloud services may charge you.</string>
     <string name="speech_set_test_recognition">Test recognition</string>

@@ -88,17 +88,6 @@ internal object HomeGlyphs {
         stroke("NewMessage", "M11,4.5H7a3,3 0,0 0,-3,3v9.5a3,3 0,0 0,3,3h9.5a3,3 0,0 0,3,-3v-4M18,3.6l2.4,2.4l-8.2,8.2l-3.2,0.8l0.8,-3.2z", 1.7f)
     }
 
-    /** Two crossed orbits around a nucleus: the reasoning ("Deep Think") chip and the drawer mark. */
-    val Orbit: ImageVector by lazy {
-        stroke(
-            "Orbit",
-            "M4.93,4.93A10,4.2 45 1 1 19.07,19.07A10,4.2 45 1 1 4.93,4.93z" +
-                "M4.93,19.07A10,4.2 -45 1 1 19.07,4.93A10,4.2 -45 1 1 4.93,19.07z" +
-                "M12.9,12a0.9,0.9 0 1 1 -1.8,0a0.9,0.9 0 1 1 1.8,0z",
-            1.8f,
-        )
-    }
-
     val Lightbulb: ImageVector by lazy {
         stroke("Lightbulb", "M9,18h6M10,21h4M12,3a6,6 0,0 0,-3.6,10.8c0.6,0.5 1.1,1.3 1.1,2.2h5c0,-0.9 0.5,-1.7 1.1,-2.2A6,6 0,0 0,12 3z", 1.7f)
     }

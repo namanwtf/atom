@@ -30,7 +30,7 @@ internal class ReadItem(context: Context, private val personal: PersonalTools, p
                 when (kind) {
                     "event" -> calendar.detail(id)
                     "notif" -> {
-                        if (!Notifications.accessGranted(app)) throw Missing("Notification access is off.")
+                        if (!Notifications.accessGranted(app)) throw Missing(atom.ui.permission.PermissionAsks.toolMessage(app, JitAsks.notificationAccess(app), "Reading notifications"))
                         Notifications.history(app).byId(id)?.let {
                             "${it.appLabel} (${it.packageName}) at ${When.at(it.postedAt)}${it.conversation?.let { c -> " in $c" }.orEmpty()}\n${it.title}\n${it.text}"
                         }

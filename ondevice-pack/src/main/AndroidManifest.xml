@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A signed code container for Atom, never installed: no activities, no services, no permissions. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Atom on-device AI" android:hasCode="true" />
+</manifest>

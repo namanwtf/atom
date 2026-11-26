@@ -171,6 +171,7 @@ private enum class Editing { Trigger, Condition, Action }
 
 @Composable
 internal fun RuleEditorScreen(id: String, nav: FeatureNav) {
+    val context = LocalContext.current
     val rt = rememberRuntime()
     val snap by rt.state.flow.collectAsState()
     val draft = id == "draft" || id == "new"
@@ -206,7 +207,9 @@ internal fun RuleEditorScreen(id: String, nav: FeatureNav) {
         bottomBar = {
             BottomActionBar {
                 PrimaryButton(if (draft) "Save and turn on" else "Save", {
-                    rt.rules.save(rule.copy(enabled = if (draft) true else rule.enabled))
+                    val toSave = rule.copy(enabled = if (draft) true else rule.enabled)
+                    rt.rules.save(toSave)
+                    if (toSave.enabled && toSave.actions.any { it is Action.Notify || it is Action.Agent }) context.askNotificationsForResults()
                     if (id == "draft") Drafts.result = null
                     nav.back()
                 }, enabled = blocking.isEmpty() && (draft || dirty > 0))
@@ -398,7 +401,10 @@ private fun needsOf(context: Context, rule: Rule, request: (Array<String>) -> Un
     }
     if (t is Trigger.Time) out += Health.exactAlarms(context).let { h -> Need(h.title, h.ok, h.detail) { c -> c.launch(h.fix) } }
     if (rule.actions.any { it is Action.Agent } || atom.automation.system.TriggerService.needsService(t)) {
-        out += Health.battery(context).let { h -> Need(h.title, h.ok, "Lets Atom start work from the background") { c -> c.launch(h.fix) } }
+        // The one-tap battery dialog is only offered from Scheduled tasks' health banner; here it opens the list.
+        out += Health.battery(context).let { h ->
+            Need(h.title, h.ok, "Lets Atom start work from the background") { c -> c.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        }
     }
     if (rule.actions.any { it is Action.Notify }) out += Health.notifications(context).let { h -> Need(h.title, h.ok, h.detail) { c -> c.launch(h.fix) } }
     return out

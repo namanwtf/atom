@@ -1,0 +1,120 @@
+package atom.app.debug
+
+import android.content.Intent
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import atom.app.ChatRequest
+import atom.app.data.Conversation
+import atom.app.data.StoredMessage
+import atom.app.data.TitleSource
+import atom.app.graph
+import atom.core.llm.ChatMessage
+import kotlinx.coroutines.launch
+
+/**
+ * Debug builds only (this file lives in src/debug; release builds compile the no-op in src/release).
+ *
+ * Lets tools/screenshots/capture.py show a long conversation on a CI emulator, which has no model key:
+ *
+ *     am start -n <pkg>/atom.app.ui.MainActivity --es atom.app.debug.EXTRA_DEMO_TRANSCRIPT open
+ *
+ * "open" saves a clearly fake sample conversation under a fixed id and opens it; "clear" deletes it again.
+ */
+internal object DebugLaunch {
+    private const val EXTRA_DEMO = "atom.app.debug.EXTRA_DEMO_TRANSCRIPT"
+    private const val DEMO_ID = "debug-demo-transcript"
+
+    fun handle(activity: ComponentActivity, intent: Intent) {
+        val action = intent.getStringExtra(EXTRA_DEMO) ?: return
+        intent.removeExtra(EXTRA_DEMO)
+        val graph = activity.graph
+        activity.lifecycleScope.launch {
+            when (action) {
+                "open" -> {
+                    graph.conversations.save(demo())
+                    graph.runtimePrefs.setReadingPosition(DEMO_ID, null)
+                    graph.postChatRequest(ChatRequest.Open(DEMO_ID))
+                }
+                "clear" -> {
+                    graph.conversations.delete(DEMO_ID)
+                    graph.runtimePrefs.setReadingPosition(DEMO_ID, null)
+                }
+            }
+        }
+    }
+
+    private fun demo(): Conversation {
+        val start = System.currentTimeMillis() - 60 * 60 * 1000L
+        val messages = SAMPLE.flatMapIndexed { i, (question, answer) ->
+            val at = start + i * 120_000L
+            listOf(
+                StoredMessage(ChatMessage.user(question), createdAt = at),
+                StoredMessage(ChatMessage.assistant(answer), createdAt = at + 30_000L, durationMs = 2_400L),
+            )
+        }
+        return Conversation(
+            id = DEMO_ID,
+            title = "Demo transcript (debug sample)",
+            createdAt = start,
+            updatedAt = start + SAMPLE.size * 120_000L,
+            messages = messages,
+            titleSource = TitleSource.User,
+        )
+    }
+
+    /** Made-up sample text for screenshots. Nothing here came from a model. */
+    private val SAMPLE = listOf(
+        "Sample question one: how should I lay out a small reading nook?" to """
+            This is a **debug sample answer**, written by hand for screenshots.
+
+            1. **Pick the corner.** A spot next to a window gives daylight for most of the afternoon.
+            2. **Choose one good chair.** Comfort matters more than style; try it for ten minutes before buying.
+            3. **Add a lamp** at shoulder height behind the chair, so the page is lit without glare.
+               - A warm bulb (around 2700K) is easier on the eyes in the evening.
+               - A dimmer helps when the nook doubles as a place to rest.
+            4. **Keep a small shelf** within reach for the current pile of books.
+
+            Which part would you like to start with?
+        """.trimIndent(),
+        "Sample question two: the window faces west. Does that change anything?" to """
+            Another hand-written sample. A west window means strong, low sun late in the day:
+
+            - A sheer curtain softens the glare without darkening the room.
+            - Turn the chair so the light comes over your shoulder, not into your eyes.
+            - Plants on the sill will like the warmth, but water them a little more often.
+
+            In the morning the corner stays cooler and dimmer, so the lamp will do more of the work then.
+        """.trimIndent(),
+        "Sample question three: list a few colour schemes that would work." to """
+            Sample answer three. A few calm combinations:
+
+            1. **Sand and olive**: warm beige walls, an olive armchair, oak shelf.
+            2. **Slate and brass**: blue-grey walls, a brass lamp, cream cushions.
+            3. **White and terracotta**: bright walls with a terracotta throw and clay pots.
+            4. **Forest and walnut**: deep green paint behind a walnut bookcase.
+
+            Each of these keeps the corner restful, which suits long reading sessions.
+        """.trimIndent(),
+        "Sample question four: what about a rug?" to """
+            Sample answer four. A rug anchors the nook and makes it feel like its own place:
+
+            - Size it so at least the chair's front legs sit on it.
+            - A low pile is easier to clean and keeps a footstool steady.
+            - A simple pattern hides wear better than a plain colour.
+
+            Round rugs work well in corners because they soften the right angle of the walls.
+        """.trimIndent(),
+        "Sample question five: summarise the plan in a short checklist." to """
+            Sample answer five, the checklist:
+
+            - Corner by the west window
+            - Comfortable chair, tried in person
+            - Lamp behind the chair, warm dimmable bulb
+            - Sheer curtain for the late sun
+            - Low-pile rug under the chair's front legs
+            - Small shelf for the current books
+
+            That is the whole plan. Scroll up to see each step in detail.
+        """.trimIndent(),
+    )
+}

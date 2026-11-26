@@ -62,6 +62,19 @@ class LeaseManager(private val backend: DisplayBackend, private val mainDisplayI
     val current: DisplayLease?
         get() = (state.value as? LeaseState.Active)?.lease
 
+    /**
+     * True while the hidden display (live, or lost and not yet released) is leased to one of [owners] (a run id or a
+     * conversation id). A run working only there never takes phone control, so the run capsule asks this instead.
+     */
+    fun hiddenHeldBy(owners: Collection<String>): Boolean {
+        val lease = when (val s = state.value) {
+            is LeaseState.Active -> s.lease.takeIf { !it.main }
+            is LeaseState.Lost -> s.lease
+            LeaseState.Idle -> null
+        } ?: return false
+        return lease.conversationId != null && lease.conversationId in owners
+    }
+
     /** A lease on the hidden display, creating it if needed; reuses the display if one is already up. */
     fun acquireHidden(targetPackage: String?, conversationId: String?, reason: RouteReason = RouteReason.Hidden): DisplayLease =
         synchronized(lock) {

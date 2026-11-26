@@ -37,7 +37,10 @@ enum class UiStyle { Miuix }
  */
 enum class TextSize(val scale: Float) { XSmall(0.80f), Small(0.88f), Default(1.0f), Large(1.12f), XLarge(1.25f) }
 
-/** Look of the blurred band behind top bars. */
+/**
+ * Look of the frosted band behind top bars (and the chat composer). [Gradient]: a strong band of the page colour
+ * over a light blur. [Progressive]: a stronger blur under a thinner tint. See atom.ui.components.glassBand.
+ */
 enum class TopBarBlur { Gradient, Progressive }
 
 /**
@@ -46,7 +49,9 @@ enum class TopBarBlur { Gradient, Progressive }
  *
  * - [monet]: derive the colours from [accent] / the wallpaper in [colorStyle]. Off = stock Miuix blue.
  * - [blur]: glass bars blur what scrolls under them. Off = a plain translucent tint (cheaper on the GPU).
- * - [topBarBlur] / [progressiveBlur]: style hints for top-bar glass; ignored when [blur] is off.
+ * - [topBarBlur]: band-first or blur-first look of the frosted bars; ignored when [blur] is off.
+ * - [progressiveBlur]: the blur radius ramps down across a bar's fading edge; off, a uniform blur is faded with a
+ *   mask (cheaper). Ignored when [blur] is off.
  * - [predictiveBack]: the app animates screen pops with the back gesture's progress when on.
  * - [swipeBackAnywhere]: a horizontal swipe starting anywhere on a secondary screen goes back
  *   (see the [swipeBackAnywhere] modifier).

@@ -44,14 +44,16 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.ImportContacts
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -74,7 +76,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
@@ -98,8 +99,7 @@ import atom.ui.components.ArrowRow
 import atom.ui.components.AtomMenu
 import atom.ui.components.Group
 import androidx.compose.material3.minimumInteractiveComponentSize
-import atom.ui.components.ScreenIcons
-import atom.ui.theme.AtomIcons
+import atom.ui.theme.AtomEmblem
 
 internal class DrawerCallbacks(
     val onNewChat: () -> Unit,
@@ -281,18 +281,10 @@ internal fun ConversationDrawer(
     }
 }
 
-/** A 26dp accent disc (primary, shading 12% towards white or black) holding the white orbit mark. */
+/** The Atom emblem, transparent, in the theme's ink. */
 @Composable
 private fun BrandBadge() {
-    val primary = MaterialTheme.colorScheme.primary
-    val ink = homeInk()
-    val end = (if (ink.dark) Color.White else Color.Black).copy(alpha = 0.12f).compositeOver(primary)
-    Box(
-        Modifier.size(26.dp).background(Brush.linearGradient(listOf(primary, end)), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(HomeGlyphs.Orbit, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
-    }
+    AtomEmblem(32.dp)
 }
 
 @Composable
@@ -319,11 +311,12 @@ private fun AttentionRow(onClick: () -> Unit) {
 private fun Workbench(activeModel: String?, callbacks: DrawerCallbacks) {
     val colors = MaterialTheme.colorScheme
     val entries = buildList<Triple<ImageVector, Int, () -> Unit>> {
-        add(Triple(AtomIcons.Chip, R.string.screen_models, callbacks.onModels))
-        callbacks.onCharacters?.let { add(Triple(Icons.Outlined.Person, R.string.drawer_characters, it)) }
-        callbacks.onTools?.let { add(Triple(Icons.Outlined.Build, R.string.drawer_tools, it)) }
-        callbacks.onSkills?.let { add(Triple(Icons.Outlined.AutoAwesome, R.string.drawer_skills, it)) }
-        callbacks.onScheduled?.let { add(Triple(Icons.Outlined.Schedule, R.string.drawer_scheduled, it)) }
+        // The same monochrome Material Rounded glyphs as the matching Settings rows.
+        add(Triple(Icons.Rounded.Cloud, R.string.screen_models, callbacks.onModels))
+        callbacks.onCharacters?.let { add(Triple(Icons.Rounded.SportsBar, R.string.drawer_characters, it)) }
+        callbacks.onTools?.let { add(Triple(Icons.Rounded.Dashboard, R.string.drawer_tools, it)) }
+        callbacks.onSkills?.let { add(Triple(Icons.Rounded.ImportContacts, R.string.drawer_skills, it)) }
+        callbacks.onScheduled?.let { add(Triple(Icons.Rounded.Schedule, R.string.drawer_scheduled, it)) }
     }
     // The foundation's Miuix card and arrow rows (icon, title, end value, arrow).
     Group(Modifier.padding(horizontal = 16.dp)) {
@@ -342,8 +335,12 @@ private fun Workbench(activeModel: String?, callbacks: DrawerCallbacks) {
 private fun EmptyList(searching: Boolean) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(44.dp).background(colors.surfaceContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-            Icon(if (searching) ChatGlyphs.Search else HomeGlyphs.Orbit, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+        if (searching) {
+            Box(Modifier.size(44.dp).background(colors.surfaceContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(ChatGlyphs.Search, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+            }
+        } else {
+            AtomEmblem(56.dp, tint = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Text(
@@ -518,7 +515,7 @@ private fun Dock(
             Row {
                 Spacer(Modifier.width(8.dp))
                 Box {
-                    GlassIconButton(ScreenIcons.Shield, stringResource(R.string.drawer_permissions), callbacks.onPermissions)
+                    GlassIconButton(Icons.Rounded.Shield, stringResource(R.string.drawer_permissions), callbacks.onPermissions)
                     if (attention) {
                         Box(
                             Modifier
@@ -531,7 +528,7 @@ private fun Dock(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                GlassIconButton(Icons.Outlined.Settings, stringResource(R.string.screen_settings), callbacks.onSettings)
+                GlassIconButton(Icons.Rounded.Settings, stringResource(R.string.screen_settings), callbacks.onSettings)
             }
         }
         AnimatedVisibility(
@@ -541,7 +538,7 @@ private fun Dock(
         ) {
             Row {
                 Spacer(Modifier.width(8.dp))
-                GlassIconButton(Icons.Filled.Close, stringResource(R.string.drawer_close_search), {
+                GlassIconButton(Icons.Rounded.Close, stringResource(R.string.drawer_close_search), {
                     onQuery("")
                     onSearching(false)
                     focus.clearFocus()
@@ -603,7 +600,7 @@ private fun SearchCapsule(query: String, onQuery: (String) -> Unit, onFocus: (Bo
                     .semantics { contentDescription = clear },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Close, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                Icon(Icons.Rounded.Close, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
             }
         } else {
             Spacer(Modifier.width(14.dp))

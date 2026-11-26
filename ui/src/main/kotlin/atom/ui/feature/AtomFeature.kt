@@ -48,6 +48,12 @@ interface AtomFeature {
     /** Extra text appended to the agent's system prompt (short; it is sent on every request). */
     fun promptHint(context: Context): String? = null
 
+    /**
+     * Guidance for tools the run offers on demand, keyed by tool name: sent once, with the first load of a group
+     * holding that tool, instead of in every system prompt.
+     */
+    fun toolNotes(context: Context): Map<String, String> = emptyMap()
+
     val entries: List<FeatureEntry> get() = emptyList()
 
     /** Renders [route] (one of this feature's [entries] or a nested route it opened). */
