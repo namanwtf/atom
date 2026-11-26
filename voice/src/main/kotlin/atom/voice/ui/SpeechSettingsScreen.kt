@@ -295,7 +295,7 @@ private fun WakeGroup() {
     val flow = remember { wakePreferences?.current ?: Speech.config.map { WakePrefs(it.wakeEnabled, it.wakeScreenOff, it.wakeWhileCharging) } }
     val prefs by flow.collectAsStateWithLifecycle(initialValue = null)
     val state by Wake.state.collectAsStateWithLifecycle()
-    val modelReady = remember { Wake.isModelAvailable(context) }
+    val modelReady by Wake.modelAvailable.collectAsStateWithLifecycle()
     val p = prefs ?: return
 
     fun apply(next: WakePrefs) {
@@ -327,9 +327,9 @@ private fun WakeGroup() {
                     WakeState.Off -> null
                 }
             },
-            enabled = modelReady,
-            onClick = { toggle(!p.enabled) },
-            trailing = { AtomSwitch(p.enabled, ::toggle, enabled = modelReady) },
+            // Without the on-device AI pack the row opens the screen that downloads it.
+            onClick = { if (modelReady) toggle(!p.enabled) else Wake.openPackSettings?.invoke() },
+            trailing = { AtomSwitch(p.enabled && modelReady, ::toggle, enabled = modelReady) },
         )
         if (p.enabled) {
             GroupDivider(inset = 18.dp)

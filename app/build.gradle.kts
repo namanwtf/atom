@@ -43,7 +43,7 @@ androidComponents {
 
 android {
     // Same NDK as the native modules: without it the release build cannot strip debug symbols from the
-    // bundled native libraries and ships them unstripped (tens of MB).
+    // bundled native libraries and ships them unstripped.
     ndkVersion = "30.0.16248370"
     namespace = "atom.app"
     compileSdk {
@@ -95,8 +95,8 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":llm:cloud"))
-    implementation(project(":engine:litert"))
-    implementation(project(":engine:llamacpp"))
+    // No on-device engines here: LiteRT-LM, llama.cpp and the wake-word runtime ship in the optional on-device AI
+    // pack (:ondevice-pack), which the app downloads and loads on request (atom.app.ondevice.OnDevicePack).
     implementation(project(":device"))
     implementation(project(":context"))
     implementation(project(":models"))

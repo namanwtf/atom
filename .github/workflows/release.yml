@@ -1,6 +1,8 @@
 # Publishes a signed Atom release for the tip of main. Earlier Atom installs (and this app's own updater) read
 # GET /repos/namanwtf/atom/releases/latest, so each run makes one normal (not draft, not pre-release) release
-# tagged v4.<minor>.<patch> with atom-<version>.apk and atom-<version>.apk.sha256 attached. See docs/UPDATES.md.
+# tagged v4.<minor>.<patch> with atom-<version>.apk and atom-<version>.apk.sha256 attached, plus the optional
+# on-device AI pack atom-ondevice-<version>.apk and its .sha256 (never installed; the app downloads and checks it).
+# See docs/UPDATES.md.
 #
 # Runs on every push to main, or by hand (workflow_dispatch) for main's current tip, e.g. after adding the signing
 # secrets. A run releases only main's tip, and only when the previous release is an ancestor of it; a re-run of an
@@ -133,8 +135,8 @@ jobs:
             if [ -z "$previous" ]; then
               dir="$RUNNER_TEMP/previous"
               mkdir -p "$dir"
-              gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern 'atom-*.apk' --dir "$dir" --clobber
-              apk=$(find "$dir" -maxdepth 1 -name 'atom-*.apk' | head -n 1)
+              gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern 'atom-[0-9]*.apk' --dir "$dir" --clobber
+              apk=$(find "$dir" -maxdepth 1 -name 'atom-[0-9]*.apk' | head -n 1)
               if [ -n "$apk" ]; then
                 badging=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt2" dump badging "$apk")
                 previous=$( (grep -m 1 -E '^package:' <<< "$badging" || true) | grep -oE "versionCode='[0-9]+'" | grep -oE '[0-9]+' || true)
@@ -185,9 +187,11 @@ jobs:
         if: steps.plan.outputs.skip == 'false'
         run: ./gradlew test testDebugUnitTest --continue --stacktrace
 
-      - name: Build release APK
+      # The app and the optional on-device AI pack (engines, wake word), built from the same stamped version: the
+      # app loads only a pack with its own versionCode and signing certificate.
+      - name: Build release APKs
         if: steps.plan.outputs.skip == 'false'
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: ./gradlew :app:assembleRelease :ondevice-pack:assembleRelease --stacktrace
 
       - name: Sign and verify
         if: steps.plan.outputs.skip == 'false'
@@ -202,8 +206,6 @@ jobs:
         run: |
           set -euo pipefail
           bt="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
-          unsigned=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)
-          if [ -z "$unsigned" ]; then echo "::error::No release APK was built"; exit 1; fi
 
           umask 077
           ks="$RUNNER_TEMP/release.keystore"
@@ -211,29 +213,43 @@ jobs:
           trap 'rm -f "$ks" "$aligned"' EXIT
           echo "$KEYSTORE_BASE64" | base64 --decode > "$ks"
           mkdir -p dist
-          apk="dist/atom-$VERSION.apk"
-          "$bt/zipalign" -P 16 -f 4 "$unsigned" "$aligned"
-          "$bt/apksigner" sign --ks "$ks" --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$apk" "$aligned"
 
-          "$bt/apksigner" verify --verbose "$apk"
-          certs=$("$bt/apksigner" verify --print-certs "$apk")
-          echo "$certs"
-          signers=$(grep -cE 'certificate SHA-256 digest:' <<< "$certs" || true)
-          actual=$( (grep -E 'Signer #1 certificate SHA-256 digest:' <<< "$certs" || true) | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
-          if [ "$signers" != "1" ] || [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
-            echo "::error::APK is signed with '$actual' ($signers signer(s)); installs can only update with $EXPECTED_CERT_SHA256. Nothing was published."
-            exit 1
-          fi
+          # sign_and_check <build output dir> <published file name> <expected package name>
+          sign_and_check() {
+            local dir="$1" name="$2" expected_package="$3"
+            local unsigned apk certs signers actual badging package
+            unsigned=$(find "$dir" -maxdepth 1 -name '*.apk' | head -n 1)
+            if [ -z "$unsigned" ]; then echo "::error::No release APK was built in $dir"; exit 1; fi
+            apk="dist/$name"
+            # -P 16: uncompressed native libraries (the pack's) stay 16 KB page-aligned, so they load from the APK.
+            "$bt/zipalign" -P 16 -f 4 "$unsigned" "$aligned"
+            "$bt/apksigner" sign --ks "$ks" --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$apk" "$aligned"
 
-          badging=$("$bt/aapt2" dump badging "$apk")
-          package=$(grep -m 1 -E '^package:' <<< "$badging" || true)
-          echo "$package"
-          grep -q "name='io.github.namanwtf.atom'" <<< "$package" || { echo "::error::Wrong applicationId"; exit 1; }
-          grep -q "versionCode='$CODE'" <<< "$package" || { echo "::error::Wrong versionCode"; exit 1; }
-          grep -q "versionName='$VERSION'" <<< "$package" || { echo "::error::Wrong versionName"; exit 1; }
+            "$bt/apksigner" verify --verbose "$apk"
+            certs=$("$bt/apksigner" verify --print-certs "$apk")
+            echo "$certs"
+            signers=$(grep -cE 'certificate SHA-256 digest:' <<< "$certs" || true)
+            actual=$( (grep -E 'Signer #1 certificate SHA-256 digest:' <<< "$certs" || true) | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+            if [ "$signers" != "1" ] || [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$name is signed with '$actual' ($signers signer(s)); it must be $EXPECTED_CERT_SHA256. Nothing was published."
+              exit 1
+            fi
+            "$bt/zipalign" -c -P 16 4 "$apk" >/dev/null || { echo "::error::$name is not aligned"; exit 1; }
 
-          (cd dist && sha256sum "atom-$VERSION.apk" > "atom-$VERSION.apk.sha256" && cat "atom-$VERSION.apk.sha256")
+            badging=$("$bt/aapt2" dump badging "$apk")
+            package=$(grep -m 1 -E '^package:' <<< "$badging" || true)
+            echo "$package"
+            grep -q "name='$expected_package'" <<< "$package" || { echo "::error::Wrong package name in $name"; exit 1; }
+            grep -q "versionCode='$CODE'" <<< "$package" || { echo "::error::Wrong versionCode in $name"; exit 1; }
+            grep -q "versionName='$VERSION'" <<< "$package" || { echo "::error::Wrong versionName in $name"; exit 1; }
+
+            (cd dist && sha256sum "$name" > "$name.sha256" && cat "$name.sha256")
+          }
+
+          sign_and_check app/build/outputs/apk/release "atom-$VERSION.apk" io.github.namanwtf.atom
+          # The pack is never installed; the app loads it only with this same certificate and versionCode.
+          sign_and_check ondevice-pack/build/outputs/apk/release "atom-ondevice-$VERSION.apk" io.github.namanwtf.atom.ondevice
 
       - name: Write release notes
         if: steps.plan.outputs.skip == 'false'
@@ -252,6 +268,10 @@ jobs:
             echo "Install \`atom-$VERSION.apk\`. It updates an existing Atom install in place and keeps its data."
             echo
             echo "SHA-256 \`$(cut -d' ' -f1 "dist/atom-$VERSION.apk.sha256")\`"
+            echo
+            echo "\`atom-ondevice-$VERSION.apk\` is the optional on-device AI pack (offline models and \"Hey Atom\")."
+            echo "Do not install it: Atom downloads it from this release when you tap Download in Settings > LLM providers >"
+            echo "On-device models, and checks it before use. SHA-256 \`$(cut -d' ' -f1 "dist/atom-ondevice-$VERSION.apk.sha256")\`"
             echo
             # Read back by the next release; keep it the last line, alone.
             echo "versionCode $CODE"
@@ -273,6 +293,7 @@ jobs:
           fi
           gh release create "v$VERSION" \
             "dist/atom-$VERSION.apk" "dist/atom-$VERSION.apk.sha256" \
+            "dist/atom-ondevice-$VERSION.apk" "dist/atom-ondevice-$VERSION.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SHA" \
             --title "Atom $VERSION" \

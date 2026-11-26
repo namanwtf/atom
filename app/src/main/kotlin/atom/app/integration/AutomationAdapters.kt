@@ -98,7 +98,10 @@ class AppModelChoices(private val context: Context, private val graph: AppGraph)
                 ModelChoice(ModelIds.encode(s), "${p.displayName} / ${m.displayName}")
             }
         }
-        val local = graph.models.installed.value.map { m -> ModelChoice(ModelIds.encode(EngineSelection.Local(m.id)), m.name) }
+        // On-device models only while the optional on-device AI pack is installed.
+        val local = if (!atom.app.ondevice.OnDevicePack.ready.value) emptyList() else {
+            graph.models.installed.value.map { m -> ModelChoice(ModelIds.encode(EngineSelection.Local(m.id)), m.name) }
+        }
         return local + cloud
     }
 

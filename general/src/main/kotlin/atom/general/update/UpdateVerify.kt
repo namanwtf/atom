@@ -80,6 +80,28 @@ object UpdateVerify {
         return ApkCheck.Ok
     }
 
+    sealed interface PackCheck {
+        data object Ok : PackCheck
+        data object Unreadable : PackCheck
+        data class WrongPackage(val found: String) : PackCheck
+        data class WrongVersion(val found: Long, val app: Long) : PackCheck
+        data object SignerMismatch : PackCheck
+    }
+
+    /**
+     * The on-device AI pack is code that runs inside the app, so it must be the pack ([packPackage]), built for
+     * exactly this app version, and signed by exactly the app's own certificate set (no rotation is accepted).
+     */
+    fun checkPack(app: ApkFacts, pack: ApkFacts?, packPackage: String): PackCheck {
+        if (pack == null || pack.signers.isEmpty() || app.signers.isEmpty()) return PackCheck.Unreadable
+        if (pack.packageName != packPackage) return PackCheck.WrongPackage(pack.packageName)
+        val a = app.signers.map { it.lowercase() }.toSet()
+        val b = pack.signers.map { it.lowercase() }.toSet()
+        if (a != b) return PackCheck.SignerMismatch
+        if (pack.versionCode != app.versionCode) return PackCheck.WrongVersion(pack.versionCode, app.versionCode)
+        return PackCheck.Ok
+    }
+
     private fun signersMatch(installed: ApkFacts, candidate: ApkFacts): Boolean {
         val a = installed.signers.map { it.lowercase() }.toSet()
         val b = candidate.signers.map { it.lowercase() }.toSet()

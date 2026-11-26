@@ -76,6 +76,7 @@ class AppOverlayHooks(private val appContext: Context, private val graph: AppGra
         val blocked = when {
             reason == NotReady.SignIn && provider != null -> appContext.getString(R.string.home_sign_in_needed, provider)
             reason == NotReady.KeyUnreadable && provider != null -> appContext.getString(R.string.mdl_route_key_unreadable, provider)
+            reason == NotReady.NeedsPack -> appContext.getString(R.string.route_needs_pack)
             else -> appContext.getString(R.string.chat_configure_model)
         }
         return ModelChipState(label, ready = false, blocked = blocked)

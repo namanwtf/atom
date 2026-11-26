@@ -26,6 +26,8 @@ class AtomApp : Application() {
         graph = AppGraph(this)
         graph.notifications.createChannels()
         Atom.install(graph.tasks)
+        // The optional on-device AI pack: one file check on an I/O thread; nothing is loaded until it is used.
+        atom.app.ondevice.OnDevicePack.init(this, graph.appScope)
         // Every module's install / bind call (extend, voice, overlay, automation, web, vdisplay, backup) first,
         // so each feature's onAppCreate already sees the app's adapters.
         Integration.install(this)

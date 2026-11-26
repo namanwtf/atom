@@ -234,9 +234,32 @@ def bubble_bounds():
     return None
 
 
+def pack_missing():
+    """Before the on-device AI pack is installed: its download card, and "Hey Atom" explaining it needs the pack."""
+    sh("cmd uimode night yes")
+    checked_sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
+    sh(f"am force-stop {PKG}")
+    launch(wait=6)
+    for label in ("Skip", "Not now", "Later", "Continue", "Get started", "Done", "Finish"):
+        if find(f"^{label}$"):
+            tap(f"^{label}$")
+    launch("models-on-device", wait=4)
+    shot("pack_01_on_device_missing")
+    back()
+    launch("voice/settings", wait=3)
+    for _ in range(3):
+        sh("input swipe 540 1800 540 500 300")
+        time.sleep(1)
+    shot("pack_02_hey_atom_missing")
+    back()
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
+    if mode == "pack-missing":
+        pack_missing()
+        return
     sh(f"cmd uimode night {'yes' if mode == 'dark' else 'no'}")
     # The bubble is on by default; keep it off the app screenshots until the bubble section below allows it.
     checked_sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
@@ -277,6 +300,8 @@ def main():
     routes = [
         ("10_settings", "settings"),
         ("11_models", "models"),
+        # With the debug on-device AI pack installed (tools/screenshots/install_pack.py): "Ready" and its engines.
+        ("11b_on_device", "models-on-device"),
         ("12_overlay_settings", "overlay/settings"),
         ("13_appearance", "general/appearance"),
         ("14_voice_settings", "voice/settings"),
