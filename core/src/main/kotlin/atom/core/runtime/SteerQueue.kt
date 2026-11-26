@@ -15,9 +15,28 @@ data class QueuedMessage(
     val hasImages: Boolean = false,
     /** Deliver at the running task's next safe point instead of after it finishes. */
     val steer: Boolean = false,
+    /** How many of [attachments] are images (the rest are file and folder references). */
+    val imageCount: Int = if (hasImages) 1 else 0,
 ) {
     val canSteer: Boolean get() = !hasImages
+
+    val fileCount: Int get() = (attachments.size - imageCount).coerceAtLeast(0)
+
+    /** What the queue strip shows for a message without text: images first, then file references. */
+    val placeholder: Placeholder?
+        get() = when {
+            text.isNotBlank() -> null
+            imageCount > 0 -> Placeholder(images = imageCount)
+            fileCount > 0 -> Placeholder(files = fileCount)
+            else -> null
+        }
+
+    /** "[N images]" or "[N files]" for a queued message that has only attachments. */
+    data class Placeholder(val images: Int = 0, val files: Int = 0)
 }
+
+/** True while a steering message waits for the running task's next safe point (the strip reads "Interrupting"). */
+fun List<QueuedMessage>.interrupting(running: Boolean): Boolean = running && any { it.steer }
 
 /**
  * Messages waiting for one conversation. Steering messages go to the running task at its next safe point in the
@@ -30,8 +49,15 @@ class SteerQueue {
 
     val size: Int get() = _items.value.size
 
-    fun add(text: String, attachments: List<String> = emptyList(), hasImages: Boolean = false, steer: Boolean = false): QueuedMessage {
-        val message = synchronized(this) { QueuedMessage(++seq, text, attachments, hasImages, steer && !hasImages) }
+    fun add(
+        text: String,
+        attachments: List<String> = emptyList(),
+        hasImages: Boolean = false,
+        steer: Boolean = false,
+        imageCount: Int = if (hasImages) 1 else 0,
+    ): QueuedMessage {
+        val images = if (hasImages) imageCount.coerceIn(1, attachments.size.coerceAtLeast(1)) else 0
+        val message = synchronized(this) { QueuedMessage(++seq, text, attachments, hasImages, steer && !hasImages, images) }
         _items.update { it + message }
         return message
     }

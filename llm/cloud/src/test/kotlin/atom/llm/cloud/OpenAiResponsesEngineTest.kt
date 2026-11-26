@@ -72,6 +72,24 @@ class OpenAiResponsesEngineTest {
     }
 
     @Test
+    fun reportsProviderHostedToolsAsTheyRun() {
+        server.enqueueSse(
+            events(
+                "response.output_item.added" to """{"type":"response.output_item.added","output_index":0,"item":{"id":"ws_1","type":"web_search_call","status":"in_progress"}}""",
+                "response.output_item.done" to """{"type":"response.output_item.done","item":{"id":"ws_1","type":"web_search_call","status":"completed"}}""",
+                "response.output_text.delta" to """{"type":"response.output_text.delta","delta":"Found"}""",
+                "response.completed" to """{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":1}}}""",
+            ),
+        )
+        val events = engine(EngineOptions(hostedWebSearch = true)).collect(LlmRequest("gpt-6.1-sol", listOf(ChatMessage.user("news?"))))
+        val hosted = events.filterIsInstance<LlmEvent.HostedTool>()
+        assertEquals(listOf(true, false), hosted.map { it.running })
+        assertTrue(hosted.all { it.kind == atom.core.llm.HostedToolKind.WebSearch })
+        assertEquals("Found", events.text())
+        assertEquals(listOf(LlmEvent.Finished(FinishReason.Stop)), events.finished())
+    }
+
+    @Test
     fun buildsStatelessRequestAndReplaysReasoningItems() {
         server.enqueueSse(toolTurn)
         server.enqueueSse(

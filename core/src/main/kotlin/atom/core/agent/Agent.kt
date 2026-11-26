@@ -99,6 +99,9 @@ sealed interface AgentEvent {
 
     data object Compacting : AgentEvent
 
+    /** A provider-hosted tool (its web search, code execution...) started ([running]) or finished. */
+    data class HostedTool(val kind: atom.core.llm.HostedToolKind, val running: Boolean) : AgentEvent
+
     /**
      * The first [summarizedCount] messages of the conversation the agent works on (history given to [Agent.run]
      * plus what it appended) are now represented by [summary].
@@ -343,6 +346,7 @@ class Agent(
                         is LlmEvent.Usage -> usage = event
                         is LlmEvent.Finished -> finish = event.reason
                         is LlmEvent.Suggestions -> if (!event.suggestions.isEmpty) suggestions = event.suggestions
+                        is LlmEvent.HostedTool -> emit(AgentEvent.HostedTool(event.kind, event.running))
                     }
                 }
                 val end = System.nanoTime()

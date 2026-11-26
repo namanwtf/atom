@@ -80,6 +80,39 @@ sealed interface LlmEvent {
 
     /** Grounding search suggestions for this response (at most one per response, before [Finished]). */
     data class Suggestions(val suggestions: SearchSuggestions) : LlmEvent
+
+    /**
+     * A tool the provider runs on its side (its own web search, code execution...) started or finished. Shown as
+     * "Running Web search"; nothing is executed on the device.
+     */
+    data class HostedTool(val kind: HostedToolKind, val running: Boolean) : LlmEvent
+}
+
+/** Tools a provider can run on its own servers during a response. */
+enum class HostedToolKind {
+    WebSearch,
+    FileSearch,
+    CodeExecution,
+    ComputerUse,
+    ImageGeneration,
+    Mcp,
+    ;
+
+    companion object {
+        /**
+         * The kind for a provider's output-item or block type, e.g. "web_search_call" (OpenAI Responses) or
+         * "server_tool_use" with name "web_search" (Anthropic). Null for anything that is not a hosted tool.
+         */
+        fun fromWireType(type: String?): HostedToolKind? = when (type?.lowercase()) {
+            "web_search_call", "web_search", "web_search_preview", "google_search", "web_fetch" -> WebSearch
+            "file_search_call", "file_search" -> FileSearch
+            "code_interpreter_call", "code_interpreter", "code_execution", "code_execution_call" -> CodeExecution
+            "computer_call", "computer_use", "computer_use_preview" -> ComputerUse
+            "image_generation_call", "image_generation" -> ImageGeneration
+            "mcp_call", "mcp_list_tools", "mcp_tool_use" -> Mcp
+            else -> null
+        }
+    }
 }
 
 data class EngineCapabilities(

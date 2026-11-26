@@ -4,6 +4,7 @@
     <string name="assistant_voice_channel">Assistant voice</string>
     <string name="assistant_voice_channel_desc">Shown while Atom is listening or reading aloud outside the app, with a Stop button.</string>
     <string name="assistant_voice_listening">Atom is listening</string>
+    <string name="assistant_voice_listening_text">Active only while the assistant overlay is visible</string>
     <string name="speech_reading_title">Atom is reading aloud</string>
     <string name="speech_stop">Stop</string>
     <string name="speech_read_aloud">Read aloud</string>
@@ -22,7 +23,13 @@
     <string name="speech_dictation_done">Done</string>
     <string name="speech_dictation_cancel">Cancel</string>
     <string name="speech_dictation_settings_link">Voice settings</string>
-    <string name="speech_dictation_mic_denied">Allow microphone access to use voice input.</string>
+    <string name="speech_dictation_mic_denied">Allow microphone access to use voice input. The keyboard still works.</string>
+    <string name="speech_voice_female">Female</string>
+    <string name="speech_voice_male">Male</string>
+    <string name="speech_dictation_open_settings">Open app settings</string>
+    <string name="speech_dictation_finish">Finish dictation</string>
+    <string name="speech_dictation_sending">Transcribing and sending…</string>
+    <string name="speech_dictation_file_wait">Waiting for file transcription, tap to cancel anytime</string>
 
     <!-- Phases -->
     <string name="speech_phase_connecting">Connecting…</string>

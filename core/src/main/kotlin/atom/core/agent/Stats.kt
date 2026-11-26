@@ -32,6 +32,12 @@ data class SessionStats(
     val compactions: Int = 0,
     val compactionTokens: Long = 0,
     val compactionSavedTokens: Long = 0,
+    /** Model requests that read nothing from the prompt cache (counted once the provider reports caching). */
+    val cacheMisses: Int = 0,
+    val subagentRuns: Int = 0,
+    val subagentToolCalls: Int = 0,
+    val subagentInputTokens: Long = 0,
+    val subagentOutputTokens: Long = 0,
 ) {
     val averageTtftMs: Long? get() = if (ttftSamples == 0) null else ttftTotalMs / ttftSamples
 
@@ -59,7 +65,20 @@ data class SessionStats(
         outputTokens = outputTokens + call.outputTokens,
         cacheReadTokens = cacheReadTokens + call.cacheReadTokens,
         cacheWriteTokens = cacheWriteTokens + call.cacheWriteTokens,
+        cacheMisses = cacheMisses + if (call.inputTokens > 0 && call.cacheReadTokens == 0) 1 else 0,
     )
+
+    /** Whether the provider reported any prompt-cache activity, so hit and miss figures mean something. */
+    val cacheReported: Boolean get() = cacheReadTokens > 0 || cacheWriteTokens > 0
+
+    /** Adds the subagents a turn spawned: how many ran, their tool calls and the tokens they used. */
+    fun withSubagents(runs: Int, toolCalls: Int, inputTokens: Long, outputTokens: Long): SessionStats =
+        if (runs <= 0) this else copy(
+            subagentRuns = subagentRuns + runs,
+            subagentToolCalls = subagentToolCalls + toolCalls.coerceAtLeast(0),
+            subagentInputTokens = subagentInputTokens + inputTokens.coerceAtLeast(0),
+            subagentOutputTokens = subagentOutputTokens + outputTokens.coerceAtLeast(0),
+        )
 
     fun withTool(durationMs: Long, failed: Boolean): SessionStats = copy(
         toolCalls = toolCalls + 1,
