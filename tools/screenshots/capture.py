@@ -234,6 +234,34 @@ def bubble_bounds():
     return None
 
 
+def crash_log():
+    """Prints the crash buffer and the newest error lines, so a crash's stack trace lands in the job log."""
+    print("=====CRASHLOG=====")
+    crash = adb("logcat", "-d", "-b", "crash", timeout=60).decode(errors="replace")
+    print(crash.strip() or "(crash buffer empty)")
+    print("----- logcat *:E (last 200 lines) -----")
+    errors = adb("logcat", "-d", "*:E", timeout=60).decode(errors="replace").splitlines()
+    for line in errors[-200:]:
+        print(line)
+    print("=====END=====")
+    sys.stdout.flush()
+
+
+def character_detail(p):
+    """Opens the built-in character from the library: its detail screen once crashed the whole app."""
+    try:
+        launch("characters/library", wait=3)
+        if tap("^Lumen$", wait=3.0):
+            pid = sh(f"pidof {PKG}").strip()
+            print(f"[capture] after opening Lumen the app pid is: {pid or '(not running: crashed)'}")
+            shot(p + "22b_character_detail")
+            back()
+        else:
+            shot(p + "22b_character_detail")
+    finally:
+        crash_log()
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
@@ -312,6 +340,8 @@ def main():
             time.sleep(1)
             shot(p + name + f"_scrolled{i}")
         back()
+
+    character_detail(p)
 
     if mode != "dark":
         return
