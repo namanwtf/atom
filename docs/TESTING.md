@@ -70,7 +70,7 @@ bubble. It also queues the Linux (Alpine) install that the terminal task needs.
 The **Run the tasks** step prints, for each scenario, every tool call with its arguments and result, each phase change,
 the final answer and a screenshot at the end (plus one mid-run for long tasks). Screenshots are printed into the log as
 base64 between `=====SHOT name=====` and `=====END=====`, like the Screenshots workflow; turn a downloaded log into
-images with `python3 tools/screenshots/extract.py <log>`. They are also uploaded as the `e2e` artifact, with the model
+images with `python3 tools/screenshots/extract.py <log> <out-dir>`. They are also uploaded as the `e2e` artifact, with the model
 server's log.
 
 At the end comes the scorecard (also shown on the run's summary page):

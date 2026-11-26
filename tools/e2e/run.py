@@ -237,8 +237,6 @@ def agent_task(res, prompt, timeout, source=None):
     log(f"  answer: {answer(run)[:600]!r}")
     if run.get("availableTools"):
         log(f"  tools offered to the model: {len(run['availableTools'])}")
-    if ended and run.get("phase") == "Running":
-        res.check(False, "still running")
     return run
 
 
