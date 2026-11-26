@@ -968,6 +968,11 @@ private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel
             },
         )
     }
+    val importNotice by atom.app.data.legacy.LegacyImport.notice.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    importNotice?.let { text ->
+        QuietBanner(AtomIcons.Download, colors.primary, text, onDismiss = { atom.app.data.legacy.LegacyImport.dismissNotice(context) }, maxLines = 10)
+    }
     var dismissedNotice by remember(state.notice) { mutableStateOf(false) }
     state.notice?.takeIf { !dismissedNotice }?.let { notice ->
         QuietBanner(AtomIcons.Bolt, MaterialTheme.extras.warning, notice, onDismiss = { dismissedNotice = true })
@@ -987,7 +992,15 @@ private fun Banners(state: ChatUiState, needsModel: Boolean, onDismissNeedsModel
 }
 
 @Composable
-private fun QuietBanner(icon: ImageVector, tint: Color, text: String, onDismiss: (() -> Unit)?, action: String? = null, onAction: (() -> Unit)? = null) {
+private fun QuietBanner(
+    icon: ImageVector,
+    tint: Color,
+    text: String,
+    onDismiss: (() -> Unit)?,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+    maxLines: Int = 4,
+) {
     val colors = MaterialTheme.colorScheme
     val ink = homeInk()
     val shape = RoundedCornerShape(16.dp)
@@ -995,7 +1008,7 @@ private fun QuietBanner(icon: ImageVector, tint: Color, text: String, onDismiss:
         Row(Modifier.heightIn(min = 44.dp).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(16.dp), tint = tint)
             Spacer(Modifier.width(12.dp))
-            Text(text, style = MaterialTheme.typography.bodySmall, color = colors.onSurface, modifier = Modifier.weight(1f).padding(vertical = 6.dp), maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = colors.onSurface, modifier = Modifier.weight(1f).padding(vertical = 6.dp), maxLines = maxLines, overflow = TextOverflow.Ellipsis)
             if (action != null && onAction != null) {
                 TextButton(onClick = onAction) {
                     Text(action, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.primary)

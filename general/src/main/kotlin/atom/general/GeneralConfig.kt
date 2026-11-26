@@ -35,4 +35,15 @@ object GeneralHooks {
 
     /** Called on the main thread after a successful import, so the app can reload caches / selections. */
     @Volatile var onImported: (() -> Unit)? = null
+
+    /** Import from the previous Atom app; the backup screen offers it while that app's data is on the phone. */
+    @Volatile var legacyImport: LegacyImportHook? = null
+
+    interface LegacyImportHook {
+        /** True when the previous app's data is on this phone (a cheap file check). */
+        fun available(): Boolean
+
+        /** Runs the import again (only what is not imported yet) and returns the result text. */
+        suspend fun run(): String
+    }
 }

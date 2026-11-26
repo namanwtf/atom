@@ -51,6 +51,10 @@ class AtomApp : Application() {
         // Work a crash or kill cut short is restored (and marked interrupted) before anything else touches it.
         graph.appScope.launch { graph.tasks.recover() }
 
+        // Once, when the previous Atom's data is on this phone: keys, sign-ins and conversations (docs/IMPORT.md).
+        // Off the main thread, after every module is installed; old files are only read.
+        graph.appScope.launch(Dispatchers.IO) { runCatching { atom.app.data.legacy.LegacyImport.onAppStart(this@AtomApp, graph) } }
+
         registerActivityLifecycleCallbacks(KeepScreenOn())
         graph.appScope.launch(Dispatchers.Main) {
             graph.runPower.keepScreenOn.collect { keep -> resumed?.get()?.let { applyKeepScreenOn(it, keep) } }

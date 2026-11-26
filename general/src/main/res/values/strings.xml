@@ -111,6 +111,8 @@
     <string name="backup_problem_section">%1$s: %2$s</string>
     <string name="backup_problem_nothing">The file has nothing this version of Atom can import.</string>
     <string name="backup_read_failed">Could not read the file.</string>
+    <string name="backup_legacy_import">Import from previous Atom</string>
+    <string name="backup_legacy_import_sub">API keys, sign-ins, the default model and conversations from the earlier Atom app on this phone. Only what is not imported yet; the old files are left untouched.</string>
     <string name="general_backup_section_appearance">Appearance</string>
 
     <!-- Language -->
