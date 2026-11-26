@@ -9,6 +9,28 @@ Running log for the work of bringing this app to the old app's look and behaviou
 - Branches: `fix/ci-temp-delete-guard` (PR #1, CI fix) is the base. Each batch is a branch `parity-<name>` with its own PR into `parity`; those PRs are the review history. Agents in this setup are not allowed to merge PRs, so verified batches are combined on `claude/charming-cori-caxhqb`, whose PR #2 into `main` is the single integration PR for the owner. `parity` is only moved forward to that branch's tooling so batches start from the same base. Nothing is merged into `main` by an agent.
 - Clean-room: the old app is studied through its docs, screenshots, string resources and behaviour. Agents that read old source write behaviour and measurements only, in their own words; the code here is new.
 
+## Batches
+
+Each batch was built by one agent, reviewed adversarially by a different agent, fixed, and then combined on the integration branch (PR #2). Every batch had green CI (unit tests, debug APK, unsigned release APK) and a green Screenshots run before being combined.
+
+| PR | Batch | Review result | In PR #2 |
+|---|---|---|---|
+| #1 | CI fix: safe deletes inside the temp dir | green | base |
+| #2 | Integration (screenshot tooling, other-app guard, this log) | — | — |
+| #3 | Update path: package id, versioning, release workflow, in-app updater, `atom4_` storage | pass with fixes → fixed, re-reviewed | yes |
+| #4 | Parity spec audit | docs | yes |
+| #5 | README (standalone, into `main`) | docs | no (separate) |
+| #6 | UI foundation: Miuix theme and shared components | fail (dark text) → fixed | yes |
+| #7 | Behaviour: Live Update, voice channel, lock-screen assist, task capabilities, device tools | fail (lock screen) → fixed | yes |
+| #8 | Bubble, hold menu, dismiss target, mini chat, run capsule, assistant overlay | fail (keyboard fit) → fixed | yes |
+| #9 | Home chat and drawer | pass with fixes → fixed | yes |
+| #10 | Settings tree, model providers, permissions, tool list | pass with fixes → fixed | yes |
+| #11 | Feature screens: terminal, Linux, skills, MCP, subagents, tasks, characters, web, backup | fail (image cards) → fixed | yes |
+| #12 | Chat, models and voice details | pass with fixes → fixes in the hardening batch | yes |
+| — | Spec re-check against the combined app (412 / 440 done) | docs | yes |
+
+A final review of the combined branch found no blockers; its lock-screen, approval and licence findings go into a hardening batch.
+
 ## Decisions taken on the owner's behalf
 
 | # | Decision | Why |
