@@ -73,7 +73,7 @@ internal class RankingTools(context: Context) {
         parameters = schema { integer("top", "How many apps, default 15.") },
     ) { args, _ ->
         guarded {
-            if (!Usage.granted(app)) throw Missing("Per-app storage needs usage access (Permissions page).")
+            if (!Usage.granted(app)) throw Missing(atom.ui.permission.PermissionAsks.toolMessage(app, JitAsks.usageAccess(app), "Per-app storage"))
             val top = (args.optInt("top") ?: 15).coerceIn(3, 50)
             val ssm = app.getSystemService(StorageStatsManager::class.java) ?: throw Missing("Storage stats unavailable.")
             val rows = withContext(Dispatchers.IO) {

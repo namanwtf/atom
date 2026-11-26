@@ -235,22 +235,21 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
             }
         }
     }
-    if (confirmClear) {
-        ConfirmDialog(
-            "Clear all browser data?",
-            "Removes cookies, cache, site data and sign-ins for this browser and the agent's browser. Open agent pages are closed.",
-            "Clear",
-            onConfirm = {
-                BrowserSessions.closeAll()
-                web.clearHistory()
-                web.clearCache(true)
-                WebViewSecurity.clearAll(context) { Toast.makeText(context, "Browser data cleared", Toast.LENGTH_SHORT).show() }
-                web.loadUrl("about:blank")
-                url = ""
-            },
-            onDismiss = { confirmClear = false },
-        )
-    }
+    ConfirmDialog(
+        "Clear all browser data?",
+        "Removes cookies, cache, site data and sign-ins for this browser and the agent's browser. Open agent pages are closed.",
+        "Clear",
+        onConfirm = {
+            BrowserSessions.closeAll()
+            web.clearHistory()
+            web.clearCache(true)
+            WebViewSecurity.clearAll(context) { Toast.makeText(context, "Browser data cleared", Toast.LENGTH_SHORT).show() }
+            web.loadUrl("about:blank")
+            url = ""
+        },
+        onDismiss = { confirmClear = false },
+        show = confirmClear,
+    )
 }
 
 private fun displayHost(u: String): String =

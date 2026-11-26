@@ -106,10 +106,6 @@ fun SetupScreen(
             checkingShell = false
         }
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationsGranted = granted
-    }
-
     val colors = MaterialTheme.colorScheme
     val ok = MaterialTheme.extras.success
     val warn = MaterialTheme.extras.warning
@@ -174,27 +170,12 @@ fun SetupScreen(
             CapabilityGroup(
                 icon = Icons.Filled.Notifications,
                 title = stringResource(R.string.setup_notifications_title),
-                dot = if (notificationsGranted) ok else warn,
-                status = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_not_allowed),
+                // Not asked here: Atom asks the first time a task keeps running in the background.
+                dot = if (notificationsGranted) ok else colors.outline,
+                status = stringResource(if (notificationsGranted) R.string.status_allowed else R.string.status_when_needed),
             ) {
                 Body(stringResource(R.string.setup_notifications_text))
-                if (!notificationsGranted) {
-                    Actions {
-                        CompactButton(stringResource(R.string.setup_allow_notifications), onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }
-                            }
-                        })
-                    }
-                }
+                if (!notificationsGranted) Hint(stringResource(R.string.setup_notifications_later))
             }
         }
 

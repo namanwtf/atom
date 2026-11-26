@@ -83,9 +83,10 @@ private fun permissionsPage(context: Context): Intent =
     Intent("android.intent.action.MANAGE_APP_PERMISSIONS").putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
 
 /**
- * Permissions and status: the twelve classic rows, each an arrow row with a coloured status on the right; tapping
- * the row asks for the permission or opens the system page. Everything newer (microphone, contacts, Shizuku...)
- * follows below, with the Current device / All capabilities switch. Reading this page never prompts.
+ * Permissions and status, in two groups: "Needed for core features" (accessibility, floating window) and
+ * "Optional — asked only when used" (everything else; each is requested in context the first time a feature needs
+ * it). Each is an arrow row with a coloured status; tapping asks for it or opens the system page. Reading this page
+ * never prompts.
  */
 @Composable
 fun PermissionsScreen(nav: FeatureNav) {
@@ -132,45 +133,33 @@ fun PermissionsScreen(nav: FeatureNav) {
         }
     }
 
-    if (explainNearby) {
-        AtomDialog(show = true, onDismiss = { explainNearby = false }, title = "Local network access") {
-            Column {
-                Text(
-                    "You can allow Nearby devices for Atom in the system settings (Permissions › Nearby devices). Atom " +
-                        "needs it for models, MCP servers, the browser and terminals on your local network; internet " +
-                        "access keeps working without it.",
-                )
-                DialogButtons(
-                    confirmText = "Open settings",
-                    onConfirm = {
-                        explainNearby = false
-                        context.open(permissionsPage(context))
-                    },
-                    dismissText = "Not now",
-                    onDismiss = { explainNearby = false },
-                )
-            }
+    AtomDialog(show = explainNearby, onDismiss = { explainNearby = false }, title = "Local network access") {
+        Column {
+            Text(
+                "You can allow local network access for Atom in the system settings (Permissions). Atom needs it for " +
+                    "models, MCP servers, the browser and terminals on your local network; internet access keeps " +
+                    "working without it.",
+            )
+            DialogButtons(
+                confirmText = "Open settings",
+                onConfirm = {
+                    explainNearby = false
+                    context.open(permissionsPage(context))
+                },
+                dismissText = "Not now",
+                onDismiss = { explainNearby = false },
+            )
         }
     }
 
     LargeTitleScreen(title = "Permissions", onBack = nav::back) {
-        item(key = "h-classic") { SectionLabel("Permissions and status") }
-        item(key = "g-classic") {
+        item(key = "h-core") { SectionLabel("Needed for core features") }
+        item(key = "g-core") {
             Group {
-                PermissionRows.classic(byId.keys).forEach { (id, title) ->
-                    if (id == PermissionRows.ROOT) {
-                        StatusRow(
-                            title = title,
-                            summary = "Optional enhancement permissions",
-                            status = PermissionRows.rootStatus(root),
-                            optional = true,
-                            onClick = { nav.open(ROUTE_SYSTEM) },
-                        )
-                    } else {
-                        val c = byId.getValue(id)
-                        val st = states[id] ?: CapState(CapStatus.Checking)
-                        StatusRow(title = title, summary = summaryOf(c, st, allView), status = st.status, onClick = { act(c) })
-                    }
+                PermissionRows.core(byId.keys).forEach { (id, title) ->
+                    val c = byId.getValue(id)
+                    val st = states[id] ?: CapState(CapStatus.Checking)
+                    StatusRow(title = title, summary = summaryOf(c, st, allView), status = st.status, onClick = { act(c) })
                 }
             }
         }
@@ -184,17 +173,38 @@ fun PermissionsScreen(nav: FeatureNav) {
             )
         }
 
+        val titled = PermissionRows.optional(byId.keys).filter { (id, _) -> id == PermissionRows.ROOT || allView || byId.getValue(id).applicable(context) }
         val others = PermissionRows.others(caps.map { it.id }).mapNotNull(byId::get).filter { allView || it.applicable(context) }
-        if (others.isNotEmpty()) {
-            item(key = "h-more") { SectionLabel("More permissions") }
-            item(key = "g-more") {
-                Group {
-                    others.forEach { c ->
-                        val st = states[c.id] ?: CapState(CapStatus.Checking)
-                        StatusRow(title = c.title, summary = summaryOf(c, st, allView), status = st.status, optional = c.optional, onClick = { act(c) })
+        item(key = "h-optional") { SectionLabel("Optional — asked only when used") }
+        item(key = "g-optional") {
+            Group {
+                titled.forEach { (id, title) ->
+                    if (id == PermissionRows.ROOT) {
+                        StatusRow(
+                            title = title,
+                            summary = "Optional enhancement permissions",
+                            status = PermissionRows.rootStatus(root),
+                            optional = true,
+                            onClick = { nav.open(ROUTE_SYSTEM) },
+                        )
+                    } else {
+                        val c = byId.getValue(id)
+                        val st = states[id] ?: CapState(CapStatus.Checking)
+                        StatusRow(title = title, summary = summaryOf(c, st, allView), status = st.status, optional = true, onClick = { act(c) })
                     }
                 }
+                others.forEach { c ->
+                    val st = states[c.id] ?: CapState(CapStatus.Checking)
+                    StatusRow(title = c.title, summary = summaryOf(c, st, allView), status = st.status, optional = true, onClick = { act(c) })
+                }
             }
+            Text(
+                "Atom asks for each of these once, at the moment a feature first needs it, and says why. Saying no only " +
+                    "turns that feature off; you can allow it here any time.",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
         }
 
         item(key = "h-shell") { SectionLabel("Root and Shizuku") }
@@ -261,7 +271,6 @@ private fun summaryOf(c: Capability, st: CapState, allView: Boolean): String = b
     append(c.purpose)
     st.detail?.let { append("\n").append(it) }
     if (allView) append("\n").append(c.requirement)
-    if (c.optional) append("\nOptional")
 }
 
 /** Arrow row with the coloured status label at the end; tapping it acts. */
@@ -282,5 +291,5 @@ private fun StatusRow(title: String, summary: String?, status: CapStatus, onClic
 
 @Composable
 private fun StatusText(status: CapStatus, optional: Boolean = false) {
-    Text(status.label, style = MiuixTheme.textStyles.body2, color = statusColor(status, optional), maxLines = 1)
+    Text(PermissionRows.label(status, optional), style = MiuixTheme.textStyles.body2, color = statusColor(status, optional), maxLines = 1)
 }

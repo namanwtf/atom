@@ -57,6 +57,7 @@ import atom.ui.feature.HostStep
 import atom.ui.feature.RunPhase
 import atom.ui.feature.RunSource
 import atom.ui.feature.StepState
+import atom.ui.permission.PermissionAsks
 import atom.web.WebFeature
 import atom.app.data.ModelRole
 import atom.characters.session.CharacterRun
@@ -330,7 +331,22 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
         execution.job = scope.launch(execution.dispatcher) { execution.run() }
         AgentService.start(app)
+        askForNotificationsIfLong(request.conversationId)
         return request.conversationId
+    }
+
+    /**
+     * Notifications are not asked at first launch. The first time a task is still running after a few seconds
+     * (so it will likely continue while the user is elsewhere), Atom asks once, with the reason; quick answers never
+     * trigger it.
+     */
+    private fun askForNotificationsIfLong(conversationId: String) {
+        scope.launch {
+            delay(NOTIFY_ASK_AFTER_MS)
+            if (isRunning(conversationId)) {
+                PermissionAsks.notifications(app, "Atom shows a running task in a notification, so you can follow it or stop it after you leave the app.")
+            }
+        }
     }
 
     private fun userEntry(request: TurnRequest, now: Long) =
@@ -1259,6 +1275,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
     private companion object {
         const val APPROVAL_TIMEOUT_MS = 60_000L
+        const val NOTIFY_ASK_AFTER_MS = 8_000L
         const val TITLE_TIMEOUT_MS = 20_000L
         const val KEEP_FINISHED = 6
         val RUN_SCOPED = setOf("release_phone_control")

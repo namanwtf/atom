@@ -1,11 +1,18 @@
 package atom.vdisplay.system
 
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -28,6 +35,7 @@ import atom.vdisplay.R
 import atom.vdisplay.route.DisplayRouter
 import atom.xposed.ModuleStatus
 import atom.xposed.PowerKeyTarget
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /*
@@ -76,12 +84,7 @@ fun BackgroundDisplayRow(icon: ImageVector?) {
 @Composable
 fun DigitalAssistantRow(icon: ImageVector?) {
     val context = LocalContext.current
-    var resumes by remember { mutableIntStateOf(0) }
-    LifecycleResumeEffect(Unit) {
-        resumes++
-        onPauseOrDispose { }
-    }
-    val holder = remember(resumes) { assistantHolderOf(context) }
+    val holder = rememberAssistantHolder()
     val isAtom = holder == context.getString(R.string.vd_assistant_atom)
     GroupRow(
         title = stringResource(R.string.vd_digital_assistant),
@@ -102,6 +105,42 @@ fun DigitalAssistantRow(icon: ImageVector?) {
             }
         },
     )
+}
+
+/**
+ * The current default assistant, kept live: read again on every resume and once more shortly after (the role
+ * holder settles asynchronously after the system picker closes), and whenever the system's assistant settings
+ * change while Atom is in front (for example when "Automatically set" takes the role through root).
+ */
+@Composable
+internal fun rememberAssistantHolder(): String {
+    val context = LocalContext.current
+    var holder by remember { mutableStateOf(assistantHolderOf(context)) }
+    var resumes by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        resumes++
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(resumes) {
+        holder = assistantHolderOf(context)
+        for (wait in longArrayOf(500, 1_500)) {
+            delay(wait)
+            holder = assistantHolderOf(context)
+        }
+    }
+    DisposableEffect(Unit) {
+        val resolver = context.contentResolver
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                holder = assistantHolderOf(context)
+            }
+        }
+        for (key in listOf("assistant", "voice_interaction_service")) {
+            runCatching { resolver.registerContentObserver(Settings.Secure.getUriFor(key), false, observer) }
+        }
+        onDispose { runCatching { resolver.unregisterContentObserver(observer) } }
+    }
+    return holder
 }
 
 /** "Long press the power button": shown once the framework was seen, editable only while it is connected. */

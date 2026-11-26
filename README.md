@@ -29,7 +29,7 @@ Taken on an Android emulator by this repository's CI, on a fresh install with no
 - Voice in and out: dictation, hold-to-talk, auto-send after a pause, a choice of cloud recognition and speech services with the system voice as fallback, and an on-device **"Hey Atom"** wake word.
 
 ### Knows your context, when you ask
-Notifications (with a searchable 7-day history kept on the phone), SMS and one-time codes, contacts, call log, calendar (read and write), photos, files, downloads, recordings, location, app usage, device status and health data. Each source needs its own Android permission, and Atom only reads what a task needs.
+Notifications (with a searchable 7-day history kept on the phone), SMS and one-time codes, contacts, call log, calendar (read and write), photos, files, downloads, recordings, location, app usage, device status and health data. Each source needs its own Android permission, which Atom asks for only when a task first needs it, and Atom only reads what a task needs. See [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
 
 ### Controls the device
 - Volume, Do Not Disturb, sound mode, flashlight, brightness, connectivity toggles, media playback, alarms and timers, each checked before and after.

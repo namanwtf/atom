@@ -1,5 +1,6 @@
 package atom.linux
 
+import atom.ui.permission.PermissionAsks
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.StatFs
@@ -152,6 +153,7 @@ class LinuxEnv private constructor(context: Context) {
             .addTag(TAG_PREFIX + distro.name)
             .build()
         workManager.enqueueUniqueWork(LinuxInstallWorker.UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+        PermissionAsks.notifications(app, "Atom shows install progress in a notification while Linux installs in the background.")
         _state.value = LinuxState.Installing(distro, LinuxInstallWorker.STEP_RESOLVE, 0f, steps.first().title, 0, steps.size)
     }
 
