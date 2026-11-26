@@ -88,7 +88,7 @@ internal object DebugLaunch {
     /** A made-up run that failed: one failed tool step, then the run's error notice. */
     private fun failed(): Conversation {
         val at = System.currentTimeMillis() - 5 * 60 * 1000L
-        val call = ToolCall("debug-call-1", "set_do_not_disturb", """{"enabled":true}""")
+        val call = ToolCall("dbgFail01", "set_do_not_disturb", """{"enabled":true}""")
         return Conversation(
             id = FAILED_ID,
             title = "Failed run (debug sample)",
@@ -113,11 +113,11 @@ internal object DebugLaunch {
     private fun siteDemo(): Conversation {
         val start = System.currentTimeMillis() - 10 * 60 * 1000L
         val calls = listOf(
-            ToolCall("demo-1", "site_create", "{\"name\":\"Atom demo\"}") to
+            ToolCall("demoSite1", "site_create", "{\"name\":\"Atom demo\"}") to
                 "Created site atom-demo with a placeholder index.html. Write its files with site_write, then show it with site_preview.",
-            ToolCall("demo-2", "site_write", "{\"path\":\"index.html\",\"content\":\"(debug sample)\"}") to
+            ToolCall("demoSite2", "site_write", "{\"path\":\"index.html\",\"content\":\"(debug sample)\"}") to
                 "Wrote index.html (1.2 KB) in site atom-demo. Show it with site_preview.",
-            ToolCall("demo-3", "site_preview", "{\"name\":\"atom-demo\"}") to
+            ToolCall("demoSite3", "site_preview", "{\"name\":\"atom-demo\"}") to
                 "The live preview of \"Water tracker\" is open on the phone.\nURL: http://127.0.0.1:0/ (debug sample)\n" +
                 "Site preview: atom-demo",
         )

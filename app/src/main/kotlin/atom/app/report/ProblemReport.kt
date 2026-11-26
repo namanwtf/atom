@@ -181,7 +181,8 @@ object ProblemReport {
         val results = HashMap<String, StoredMessage>()
         val calls = ArrayList<atom.core.llm.ToolCall>()
         for (s in messages.drop(from.coerceIn(0, messages.size))) {
-            if (s.kind != EntryKind.Message) continue
+            // Hidden entries (the run's own tool preload, loop-guard nudges) are no steps the person took or saw.
+            if (s.kind != EntryKind.Message || s.hidden) continue
             when (s.message.role) {
                 Role.Assistant -> calls += s.message.toolCalls
                 Role.Tool -> s.message.toolCallId?.let { results[it] = s }

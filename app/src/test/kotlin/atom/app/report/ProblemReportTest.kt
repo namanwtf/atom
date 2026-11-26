@@ -179,4 +179,18 @@ class ProblemReportTest {
         assertEquals("One UI 6.1", RomNames.detect(mapOf("ro.build.version.oneui" to "60100")::get))
         assertNull(RomNames.detect { null })
     }
+
+    /** The run's own tool preload (stored hidden) is no step the person saw, so the report leaves it out too. */
+    @Test fun theHiddenToolPreloadIsNoStep() {
+        val preload = ToolCall("pre123456", "enable_tools", """{"groups":"settings"}""")
+        val dnd = ToolCall("call12345", "set_do_not_disturb", """{"enabled":true}""")
+        val messages = listOf(
+            StoredMessage(ChatMessage.user("turn on do not disturb")),
+            StoredMessage(ChatMessage.assistant("", listOf(preload)), hidden = true),
+            StoredMessage(ChatMessage.toolResult(preload, listOf(ContentPart.Text("Loaded for this task: settings"))), hidden = true),
+            StoredMessage(ChatMessage.assistant("", listOf(dnd))),
+            StoredMessage(ChatMessage.toolResult(dnd, listOf(ContentPart.Text("Do Not Disturb is on"))), durationMs = 200),
+        )
+        assertEquals(listOf("set_do_not_disturb"), ProblemReport.steps(messages, 0).map { it.tool })
+    }
 }
