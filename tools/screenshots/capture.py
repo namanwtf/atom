@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 PKG = os.environ.get("ATOM_PKG", "io.github.namanwtf.atom.debug")
 ACTIVITY = f"{PKG}/atom.app.ui.MainActivity"
 EXTRA_ROUTE = "atom.app.EXTRA_ROUTE"
+EXTRA_DEMO = "atom.app.debug.EXTRA_DEMO_TRANSCRIPT"
 OUT = os.environ.get("SHOT_DIR", "shots")
 
 
@@ -174,6 +175,25 @@ def launch(route=None, wait=4):
     time.sleep(wait)
 
 
+def demo(action, wait=4):
+    """Debug builds only: opens ("open") or deletes ("clear") a long, clearly fake sample conversation.
+
+    See app/src/debug/kotlin/atom/app/debug/DebugLaunch.kt; release builds ignore the extra. CI has no model key,
+    so this is the only way to photograph a scrolled conversation.
+    """
+    r = subprocess.run(
+        ["adb", "shell", "am", "start", "-W", "-n", ACTIVITY, "--es", EXTRA_DEMO, action],
+        capture_output=True,
+        timeout=60,
+    )
+    text = (r.stdout + r.stderr).decode(errors="replace")
+    if r.returncode != 0 or "Error" in text:
+        print(f"[capture] demo {action} failed: {text.strip()[:400]}")
+        return False
+    time.sleep(wait)
+    return True
+
+
 def back(wait=1.2):
     sh("input keyevent KEYCODE_BACK")
     time.sleep(wait)
@@ -273,6 +293,23 @@ def main():
     if tap("^Choose model$", wait=1.5):
         shot(p + "05_model_picker")
         back()
+
+    # A long sample conversation: the frosted top bar and composer band over scrolled text, then the glass drawer
+    # over it. Afterwards the chat goes back to a new conversation and the sample is deleted, so later shots and the
+    # next pass start from the usual empty home.
+    if demo("open"):
+        if not find("^Demo transcript"):
+            print("[capture] the sample conversation did not open")
+        # Lands on the newest message; scroll a little towards older ones so text sits under both bars.
+        sh("input swipe 540 1000 540 1350 700")
+        time.sleep(2)
+        shot(p + "06_chat_scrolled")
+        if tap("^Conversations$", wait=3.0):
+            shot(p + "07_drawer_over_chat")
+            back()
+        if tap("^More options$", wait=1.2):
+            tap("^New conversation$", wait=1.5)
+        demo("clear", wait=2)
 
     routes = [
         ("10_settings", "settings"),

@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import atom.app.ChatRequest
 import atom.app.data.AppSettings
+import atom.app.debug.DebugLaunch
 import atom.app.graph
 import atom.app.integration.NavRequests
 import atom.automation.AutomationFeature
@@ -139,6 +140,8 @@ class MainActivity : ComponentActivity() {
             intent.action = null
             if (conversationId == null) NavRequests.reset()
         }
+        // Debug builds only: the screenshot workflow's sample conversation. A no-op in release builds.
+        DebugLaunch.handle(this, intent)
     }
 
     companion object {
