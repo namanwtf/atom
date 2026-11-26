@@ -1,14 +1,17 @@
 # Runs an on-device catalog model on this runner with the LiteRT-LM runtime version the app ships, on the exact file
 # the app's model downloader fetches (same URL and SHA-256 as models/ModelCatalog.kt). It prints the model file's own
-# settings and what the model answers to Atom's prompts. No key or secret is used.
+# settings and what the model answers to Atom's prompts, with Atom 4.0.4's settings ("before") and the current ones
+# ("after"). No key or secret is used. The runner has no GPU: the phone's GPU and NPU paths are not covered.
 name: On-device model
 
 on:
   workflow_dispatch:
-  push:
-    branches: [fix-ondevice-output]
+  pull_request:
     paths:
+      - engine/litert/**
       - tools/ondevice/**
+      - models/src/main/kotlin/atom/models/ModelCatalog.kt
+      - gradle/libs.versions.toml
       - .github/workflows/ondevice-model.yml
 
 permissions:
