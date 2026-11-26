@@ -96,10 +96,13 @@ class ToolRouterTest {
     }
 
     @Test
-    fun weakMatchesAreLeftOutForSmallModels() {
-        // "news" alone is answered with the core web_search; only a roomy window also loads the browser for it.
-        assertEquals(listOf("browser"), groups("what's in the news today?"))
-        assertEquals(emptyList(), groups("what's in the news today?", minScore = ToolRouter.STRONG - 1))
+    fun weakWordsAloneLoadNothing() {
+        // "news" alone is answered with the core web_search; a lone "run", "copy" or "code" is no reason to load a
+        // group either, for cloud models too (the default threshold).
+        assertEquals(listOf("browser"), groups("what's in the news today?", minScore = 1))
+        for (r in listOf("what's in the news today?", "run the numbers again and copy them here", "what does this code do?", "pause for a second and think")) {
+            assertEquals(emptyList(), ToolRouter.route(r), r)
+        }
     }
 
     @Test
@@ -169,6 +172,17 @@ class ToolRouterTest {
         val pre = ToolPreload.apply(loadout, listOf("settings", "browser"), tiny)
         assertEquals(emptyList(), pre.groups)
         assertEquals(core, loadout.specs())
+    }
+
+    @Test
+    fun cloudPreloadsAtMostFourGroups() {
+        val loadout = loadout()
+        val cloud = AgentConfig("m", "s", contextWindow = 200_000)
+        val routed = ToolRouter.route(
+            "Turn on Do Not Disturb, set an alarm, check my notifications, remind me every day, open the website and run the script in the terminal",
+        )
+        assertTrue(routed.size > ToolPreload.MAX_GROUPS, routed.toString())
+        assertEquals(ToolPreload.MAX_GROUPS, ToolPreload.apply(loadout, routed, cloud).groups.size)
     }
 
     @Test

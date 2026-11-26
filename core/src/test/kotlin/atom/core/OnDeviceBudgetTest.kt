@@ -46,7 +46,7 @@ class OnDeviceBudgetTest {
         val toolTokens = ContextPacker.estimate(PromptedTools.instructions(tools, compact = true))
         assertEquals(4_096 - 512 - toolTokens - ContextPolicy.SHARED_MARGIN, local().packingFor(tools).budgetTokens)
         assertEquals(3_200, local().packingFor(emptyList()).budgetTokens) // never above the deliberate cap
-        assertEquals(ContextPolicy.SHARED_MIN_BUDGET, local(window = 1_500).packingFor(tools).budgetTokens)
+        assertEquals(ContextPolicy.SHARED_FLOOR, local(window = 1_500).packingFor(tools).budgetTokens)
     }
 
     @Test

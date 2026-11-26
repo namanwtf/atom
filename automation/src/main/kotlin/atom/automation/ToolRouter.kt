@@ -15,8 +15,8 @@ object ToolRouter {
     /** A rule match this strong is enough on its own, also for small models. */
     const val STRONG = 3
 
-    /** Weight of a group the conversation's recent tool calls used. */
-    const val RECENT = 2
+    /** Weight of a group the conversation's recent tool calls used: enough on its own. */
+    const val RECENT = STRONG
 
     private class Rule(val group: String, val weight: Int, val pattern: Regex)
 
@@ -97,12 +97,13 @@ object ToolRouter {
         addAll(rules("personal", 2, "photos?", "pictures?", "gallery", "fotos?", "location"))
         addAll(
             rules(
-                "phone", 2,
-                "battery", "akku", "batería", "batterie", "charging", "network status", "clipboard", "copy", "paste",
-                "long ?press", "press (?:the )?(?:back|home|enter) (?:key|button)", "play (?:the )?music", "pause",
+                "phone", STRONG,
+                "battery", "akku", "batería", "batterie", "charging", "network status", "clipboard",
+                "long ?press", "press (?:the )?(?:back|home|enter) (?:key|button)", "play (?:the )?music",
                 "next song", "skip (?:the )?song",
             ),
         )
+        addAll(rules("phone", 1, "copy", "paste", "pause"))
         addAll(
             rules(
                 "calendar", STRONG,
@@ -128,9 +129,10 @@ object ToolRouter {
     /**
      * Groups the request likely needs, best first: each rule that matches adds its weight once, and every group the
      * [recentTools] (tool names the conversation called lately) belong to adds [RECENT]. Only groups with at least
-     * [minScore] are returned; ties keep the order of the first match in the text.
+     * [minScore] are returned (by default one strong match, or weaker ones adding up to it: a lone "run", "copy" or
+     * "news" loads nothing); ties keep the order of the first match in the text.
      */
-    fun route(request: String, recentTools: List<String> = emptyList(), minScore: Int = 1): List<String> {
+    fun route(request: String, recentTools: List<String> = emptyList(), minScore: Int = STRONG): List<String> {
         val text = request.lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
         val score = LinkedHashMap<String, Int>()
         val first = HashMap<String, Int>()

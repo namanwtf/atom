@@ -809,20 +809,21 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
                     .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
                 // The groups the request most likely needs are loaded now, so the model rarely has to call
-                // enable_tools first (small models almost never do). Their notes go into the system prompt.
-                val preloaded = atom.core.agent.ToolPreload.apply(
+                // enable_tools first (small models almost never do). The load goes into the conversation as an
+                // enable_tools call with its result (and the groups' notes): it persists with the conversation and
+                // the system prompt, the cached prefix, stays the same from turn to turn.
+                val preloaded = if (request.regenerate != null) null else atom.core.agent.ToolPreload.apply(
                     loadout,
                     atom.automation.ToolRouter.route(
                         request = request.prompt ?: history.messages.lastOrNull { it.role == Role.User }?.text.orEmpty(),
                         recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
-                        minScore = if (atom.core.agent.ToolPreload.small(baseConfig)) atom.automation.ToolRouter.STRONG - 1 else 1,
                     ),
                     baseConfig,
-                )
+                ).asExchange(loadout)
                 val basePrompt = SystemPrompt.build(
                     tier = shell.tier,
                     onDevice = engine.onDevice,
-                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second } + preloaded.notes,
+                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second },
                     onDemandTools = loadout.loader != null,
                 )
                 val systemPrompt = character?.let { basePrompt + "\n\n" + it.prompt.systemWithPostHistory() } ?: basePrompt
@@ -860,7 +861,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
 
                 stats = stats.withTurn()
-                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control).collect { handle(it) }
+                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control, preloaded).collect { handle(it) }
                 settle(RunOutcome.Completed)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
