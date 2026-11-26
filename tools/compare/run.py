@@ -630,9 +630,10 @@ def idle_battery(label):
     for r in rows:
         kind = r[3]
         try:
-            if kind == "wl":  # name, full ms, 'f', count, partial ms, 'p', count, ...
-                wl_ms += int(r[7]) if len(r) > 7 else 0
-                wl_n += int(r[9]) if len(r) > 9 else 0
+            if kind == "wl":  # name, full ms, f, count, partial ms, p, count, ... (the name may hold commas)
+                p = len(r) - 1 - r[::-1].index("p")
+                wl_ms += int(r[p - 1])
+                wl_n += int(r[p + 1])
             elif kind == "wua":
                 wua += int(r[-1])
             elif kind == "cpu":
