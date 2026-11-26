@@ -19,6 +19,14 @@ class CapsuleStatusTest {
     ) = CapsuleStatuses.of(phase, pending, tool, answering, stopping, notice)
 
     @Test
+    fun aShortPreambleIsNotTheAnswer() {
+        assertEquals(false, CapsuleStatuses.answerStarted(""))
+        assertEquals(false, CapsuleStatuses.answerStarted("Opening Settings to check the battery."))
+        assertEquals(true, CapsuleStatuses.answerStarted("Here is what I found:\n- 82% battery"))
+        assertEquals(true, CapsuleStatuses.answerStarted("x".repeat(CapsuleStatuses.ANSWER_MIN_CHARS)))
+    }
+
+    @Test
     fun runningStatesFollowWhatTheRunDoes() {
         assertEquals(CapsuleStatus.Reasoning, of())
         assertEquals(CapsuleStatus.Working, of(tool = true))

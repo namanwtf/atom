@@ -157,7 +157,7 @@ class ChatProofreader(private val graph: AppGraph) : SpeechProofreader {
     override suspend fun proofread(instructions: String, text: String): String? {
         val selection = currentChatModel() ?: return null
         if (selection is EngineSelection.Local) return null
-        val routed = graph.router.acquire(selection)
+        val routed = graph.router.acquire(selection, hostedSearch = false)
         try {
             val reasoning = if (routed.reasoning.supported) routed.reasoning.levels.firstOrNull() else null
             val request = LlmRequest(

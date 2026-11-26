@@ -101,7 +101,15 @@ internal fun ChatImageViewer(path: String, onDismiss: () -> Unit, onContinueEdit
             ) {
                 ViewerButton(stringResource(R.string.image_save)) {
                     scope.launch {
-                        val ok = runCatching { atom.web.image.ImageSaver.toPictures(context, File(path)) }.isSuccess
+                        // Closing the viewer cancels this scope: that is not a failed save, so no "Could not save".
+                        val ok = try {
+                            atom.web.image.ImageSaver.toPictures(context, File(path))
+                            true
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            false
+                        }
                         Toast.makeText(context, if (ok) R.string.image_saved else R.string.image_save_failed, Toast.LENGTH_SHORT).show()
                     }
                 }

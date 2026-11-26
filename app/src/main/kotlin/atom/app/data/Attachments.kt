@@ -161,6 +161,21 @@ object Attachments {
         attachments.filter { it.kind == AttachmentKind.Image }.forEach { runCatching { File(it.path).delete() } }
     }
 
+    /**
+     * Deletes the private copies made for [attachments] that will not be sent: downscaled images and files copied
+     * into [sharedDir]. A file attached by its real path (the user's own file) is never touched.
+     */
+    fun discardCopies(context: Context, attachments: List<Attachment>) {
+        deleteImages(attachments)
+        val shared = runCatching { sharedDir(context).canonicalFile }.getOrNull() ?: return
+        attachments.filter { it.kind == AttachmentKind.File }.forEach { a ->
+            runCatching {
+                val file = File(a.path).canonicalFile
+                if (file.parentFile == shared && file.isFile) file.delete()
+            }
+        }
+    }
+
     private fun documentPath(uri: Uri): String? {
         if (uri.authority != EXTERNAL_STORAGE && uri.authority != DOWNLOADS) return null
         val docId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return null

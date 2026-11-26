@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -138,7 +139,12 @@ fun CharacterAvatar(character: Character, modifier: Modifier = Modifier) = Chara
 internal fun CharacterArt(c: Character, modifier: Modifier = Modifier, corner: Dp = 22.dp) {
     val file = remember(c.image, c.imageVersion) { CharacterSession.store.imageFile(c) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(corner)
-    BoxWithConstraints(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    val colors = MaterialTheme.colorScheme
+    // The built-in companion's orb is a white glow: in the light theme it sits on the inverse (graphite) surface,
+    // as on its exported card, so it does not vanish into the light grey.
+    val orbOnDark = file == null && c.origin == CharacterOrigin.BuiltIn && colors.surface.luminance() > 0.5f
+    val background = if (orbOnDark) colors.inverseSurface else colors.surfaceContainerHigh
+    BoxWithConstraints(modifier.clip(shape).background(background)) {
         val boxWidth = maxWidth
         val widthPx = with(LocalDensity.current) { boxWidth.toPx() }.roundToInt().coerceIn(64, 1440)
         val key = "${c.id}:${c.imageVersion}:$widthPx"

@@ -85,4 +85,18 @@ class CapabilityToolsTest {
         assertFalse(CapabilityTools.allowsHostedSearch(emptySet()))
         assertFalse(CapabilityTools.allowsHostedSearch(setOf(Capability.DeviceRead, Capability.Terminal)))
     }
+
+    @Test
+    fun hostedSearchNeedsTheCapabilityTheSwitchAndTheWebSetting() {
+        assertTrue(CapabilityTools.hostedSearch(null, webSearchToolOn = true, webEnabled = true))
+        assertTrue(CapabilityTools.hostedSearch(setOf(Capability.Web), webSearchToolOn = true, webEnabled = true))
+        // "Chat only" and runs without the web.
+        assertFalse(CapabilityTools.hostedSearch(emptySet(), webSearchToolOn = true, webEnabled = true))
+        assertFalse(CapabilityTools.hostedSearch(setOf(Capability.Terminal), webSearchToolOn = true, webEnabled = true))
+        // web_search switched off on the Tool list.
+        assertFalse(CapabilityTools.hostedSearch(null, webSearchToolOn = false, webEnabled = true))
+        // "Web search and reading" turned off in Settings.
+        assertFalse(CapabilityTools.hostedSearch(null, webSearchToolOn = true, webEnabled = false))
+        assertFalse(CapabilityTools.hostedSearch(setOf(Capability.Web), webSearchToolOn = true, webEnabled = false))
+    }
 }
