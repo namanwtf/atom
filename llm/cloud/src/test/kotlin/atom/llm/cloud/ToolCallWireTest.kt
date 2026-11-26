@@ -3,6 +3,7 @@ package atom.llm.cloud
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.LlmRequest
+import atom.core.llm.ReasoningEffort
 import atom.core.llm.ToolCall
 import atom.core.llm.ToolCallIds
 import atom.core.tool.ToolLoadout
@@ -32,10 +33,10 @@ class ToolCallWireTest {
 
     private val done = sseBody("""{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""", "[DONE]")
 
-    private fun sent(providerId: String, history: List<ChatMessage>): List<JsonObject> {
+    private fun sent(providerId: String, history: List<ChatMessage>, effort: ReasoningEffort? = null): List<JsonObject> {
         server.enqueueSse(done)
         CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", "m", server.url("/v1").toString())
-            .collect(LlmRequest("m", history))
+            .collect(LlmRequest("m", history, reasoning = effort))
         return server.takeRequest().json()["messages"]!!.jsonArray.map { it.jsonObject }
     }
 
@@ -115,5 +116,79 @@ class ToolCallWireTest {
         assertEquals(listOf("user"), messages.map { it.str("role") })
         val parts = messages.single()["content"]!!.jsonArray.map { it.jsonObject }
         assertTrue(parts.last().str("text")!!.contains("[Tools loaded for this task]"))
+    }
+
+    /**
+     * An earlier task (before the latest user message) as the app reads it back after a restart: the reasoning cache
+     * is empty, so only what was stored with the turn ([ChatMessage.reasoning]) is there. A fresh id per test keeps
+     * the in-memory cache out of it.
+     */
+    private fun restarted(reasoning: String?): Pair<List<ChatMessage>, String> {
+        val call = ToolCall(ToolCallIds.fresh(), "set_volume", """{"level":20}""")
+        return listOf(
+            ChatMessage.user("turn the volume down"),
+            ChatMessage.assistant("", listOf(call)).copy(reasoning = reasoning),
+            ChatMessage.toolResult(call, listOf(ContentPart.Text("Volume 20%"))),
+            ChatMessage.assistant("Done, the volume is at 20%."),
+            ChatMessage.user("and now a bit louder"),
+        ) to call.id
+    }
+
+    private fun roles(messages: List<JsonObject>) = messages.map { it.str("role") }
+
+    @Test
+    fun storedReasoningGoesBackWithItsToolCallTurnAfterARestart() {
+        for (provider in listOf("deepseek", "moonshot")) {
+            val (history, id) = restarted("The user wants it quieter; 20% is fine.")
+            val messages = sent(provider, history)
+            val turn = messages.single { it["tool_calls"] != null }
+            assertEquals("The user wants it quieter; 20% is fine.", turn.str("reasoning_content"), provider)
+            assertEquals(listOf(id), callIds(messages), provider)
+            assertEquals(listOf(id), resultIds(messages), provider)
+            assertEquals(listOf("user", "assistant", "tool", "assistant", "user"), roles(messages), provider)
+        }
+    }
+
+    @Test
+    fun otherProvidersNeverGetTheReasoning() {
+        for (provider in listOf("openai", "groq", "mistral", "openrouter")) {
+            val messages = sent(provider, restarted("private thoughts").first)
+            assertTrue(messages.none { "reasoning_content" in it }, provider)
+            assertEquals(1, callIds(messages).size, provider)
+        }
+    }
+
+    @Test
+    fun anEarlierToolCallStoredWithoutReasoningGoesAsANote() {
+        for (provider in listOf("deepseek", "moonshot")) {
+            val messages = sent(provider, restarted(null).first)
+            // No tool-call turn without its reasoning_content: the vendor would reject the whole request.
+            assertTrue(callIds(messages).isEmpty() && resultIds(messages).isEmpty(), "$provider: $messages")
+            val first = messages.first { it.str("role") == "user" }.str("content")!!
+            assertTrue(first.startsWith("turn the volume down"), first)
+            assertTrue(first.contains("[Earlier tool call: set_volume({\"level\":20})]\nVolume 20%"), first)
+            assertEquals(listOf("user", "assistant", "user"), roles(messages), provider)
+            assertTrue(messages.none { "_atom_note" in it }, "the internal mark never goes out")
+        }
+    }
+
+    @Test
+    fun withThinkingOffAnEarlierToolCallKeepsItsForm() {
+        val (history, id) = restarted(null)
+        val messages = sent("deepseek", history, ReasoningEffort.Off)
+        assertEquals(listOf(id), callIds(messages))
+        assertTrue(messages.none { "reasoning_content" in it })
+    }
+
+    @Test
+    fun theCurrentTurnKeepsItsToolCallsWithoutReasoning() {
+        // After the latest user message: a model that is not thinking made these calls; they stay tool-call turns.
+        val call = ToolCall(ToolCallIds.fresh(), "set_volume", """{"level":20}""")
+        val history = listOf(
+            ChatMessage.user("turn the volume down"),
+            ChatMessage.assistant("", listOf(call)),
+            ChatMessage.toolResult(call, listOf(ContentPart.Text("Volume 20%"))),
+        )
+        assertEquals(listOf(call.id), callIds(sent("deepseek", history)))
     }
 }

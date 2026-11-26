@@ -35,6 +35,12 @@ data class ChatMessage(
     val toolCalls: List<ToolCall> = emptyList(),
     val toolCallId: String? = null,
     val toolName: String? = null,
+    /**
+     * The model's own reasoning for an assistant turn, as stored with the conversation. Only wires that need it
+     * back with a tool-call turn (DeepSeek and Kimi thinking, see `ChatReasoning.interleaved`) send it; everything
+     * else ignores it.
+     */
+    val reasoning: String? = null,
 ) {
     val text: String get() = parts.filterIsInstance<ContentPart.Text>().joinToString("") { it.text }
 

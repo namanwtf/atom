@@ -34,6 +34,8 @@ object ModelHistory {
                     val answered = answeredIds(stored, i)
                     val kept = msg.toolCalls.filter { it.id in answered }
                     if (kept.size != msg.toolCalls.size) msg = msg.copy(toolCalls = kept)
+                    // Thinking vendors want each tool-call turn's reasoning back, also after the app restarted.
+                    s.reasoning?.takeIf { it.isNotBlank() }?.let { msg = msg.copy(reasoning = it) }
                 }
                 Role.Tool -> {
                     val prev = messages.lastOrNull { it.role != Role.Tool }
