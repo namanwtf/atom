@@ -346,6 +346,9 @@ def configure_provider(label):
     fill(r"API key|Key", "sk-local-test")
     shot(f"{label}_01_provider_form")
     hide_keyboard()
+    # The save button sits under the form: scroll to the end first (no UI dump per swipe; dumps are slow here).
+    for _ in range(4):
+        swipe_up()
     saved = tap(r"^(Save configuration|Save|Create|create|Add provider|Done|Add)$", 3, scroll=6)
     screen_report(f"{label}-after-save")
     if not saved:
