@@ -8,8 +8,8 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif ()
 # Release = -O3 for everything, including the llama.cpp/ggml sources pulled in below.
-set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffunction-sections -fdata-sections" CACHE STRING "" FORCE)
 
 set(LLAMA_DIR ${CMAKE_CURRENT_LIST_DIR}/../../../third_party/llama.cpp)
 
@@ -60,4 +60,5 @@ target_compile_options(atom_llama PRIVATE
 target_link_options(atom_llama PRIVATE
         -Wl,--gc-sections
         -Wl,--exclude-libs,ALL
-        -Wl,--as-needed)
+        -Wl,--as-needed
+        -Wl,--strip-all)
