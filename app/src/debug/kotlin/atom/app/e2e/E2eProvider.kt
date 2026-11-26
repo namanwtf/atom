@@ -138,6 +138,27 @@ class E2eProvider : ContentProvider() {
                 env.install(distro)
                 "linux install queued: $distro"
             }
+            // Runs one of the app's tools directly, the way the agent would, without a model: for checks that must
+            // not depend on what a small test model decides (e.g. creating a scheduled task for the battery checks).
+            // --arg '{"name": "scheduled_task_create", "args": {...}}'
+            "run_tool" -> runBlocking(Dispatchers.Default) {
+                val spec = JSONObject(arg ?: "{}")
+                val name = spec.optString("name")
+                val tool = atom.app.feature.Features.all.flatMap { f -> runCatching { f.tools(ctx) }.getOrDefault(emptyList()) }
+                    .firstOrNull { it.spec.name == name }
+                if (tool == null) {
+                    "no tool $name"
+                } else {
+                    val args = kotlinx.serialization.json.Json.parseToJsonElement(spec.optJSONObject("args")?.toString() ?: "{}")
+                        as kotlinx.serialization.json.JsonObject
+                    val toolCtx = object : atom.core.tool.ToolContext {
+                        override val taskId: String = "e2e-" + System.currentTimeMillis()
+                        override suspend fun confirm(action: String): Boolean = true
+                    }
+                    val r = tool.run(args, toolCtx)
+                    (if (r.isError) "error: " else "ok: ") + r.text.take(300)
+                }
+            }
             // "Hey Atom" on or off, the way the Speech settings switch sets it (screen-off listening stays off,
             // listening while charging stays on: the defaults).
             "hey_atom" -> {

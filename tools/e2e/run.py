@@ -432,7 +432,15 @@ def s_receiver(res):
     now = st.get("systemEventReceiver")
     res.notes.append(f"enabled scheduled tasks: {len(tasks)}; receiver now: {now}")
     if not tasks:
-        res.check(False, "an enabled scheduled task exists (scenario e must create one first)")
+        # The test model did not create one in e: create it the way the agent's tool does, so this check of the
+        # receiver does not depend on the model.
+        out = call("run_tool", json.dumps({"name": "scheduled_task_create", "args": {"name": "E2E water", "prompt": "Remind me to drink water", "schedule": "daily 09:00"}}))
+        res.notes.append(f"created a task with the tool directly: {out[:160]}")
+        time.sleep(3)
+        st = state()
+        tasks = [t for t in st.get("scheduledTasks", []) if t.get("enabled")]
+        now = st.get("systemEventReceiver")
+    if not res.check(bool(tasks), "an enabled scheduled task exists"):
         return
     res.check(now in ("enabled", "default"), f"receiver enabled while a task exists ({now})")
 
@@ -510,7 +518,14 @@ def screen_on():
 
 
 def task_wake_lock():
-    return "atom:task" in sh("dumpsys power | grep -i 'atom:task'")
+    """True while Atom's task wake lock is currently held (only the live list, not the wake lock history)."""
+    out = sh("dumpsys power")
+    m = re.search(r"Wake Locks: size=\d+\n((?:\s+.*\n)*?)\s*\n", out)
+    return bool(m) and "atom:task" in m.group(1)
+
+
+def completed(run):
+    return run.get("outcome") == "Completed" or run.get("phase") in ("Done", "Completed")
 
 
 def service_foreground():
@@ -541,7 +556,7 @@ def s_screen_off_background(res):
     released = not task_wake_lock()
     screen_on()
     res.tools = names(run)
-    res.check(run["outcome"] == "Completed" or run["phase"] == "Completed", f"run completed with the screen off ({run['phase']}, {run.get('outcome')})")
+    res.check(completed(run), f"run completed with the screen off ({run['phase']}, {run.get('outcome')})")
     res.check("screen-off-ok" in answer(run), "answer has the command's output")
     res.check(held, "partial wake lock held while the screen was off")
     res.check(fg, "foreground service running during the task")
@@ -584,7 +599,7 @@ def s_screen_off_ui(res):
     res.check(calls_off <= 2, f"did not spin while the screen was off ({calls_off} calls)")
     res.check(waiting, "waited for the screen to be unlocked")
     res.check(bool(note), "notification said it is waiting for the screen to be unlocked")
-    res.check(run["outcome"] == "Completed" or run["phase"] == "Completed", f"carried on and completed after unlocking ({run['phase']})")
+    res.check(completed(run), f"carried on and completed after unlocking ({run['phase']})")
     res.check(bool(answer(run)), "an answer")
 
 
@@ -598,6 +613,9 @@ def package_components(section):
 def s_reboot(res):
     """l. Battery fix check: after a reboot the receiver is still on, Atom starts for BOOT_COMPLETED and re-arms."""
     rx = "atom.automation.system.SystemEventReceiver"
+    tasks = [t for t in state().get("scheduledTasks", []) if t.get("enabled")]
+    if not res.check(bool(tasks), f"an enabled scheduled task exists before the reboot ({len(tasks)})"):
+        return
     res.notes.append(f"before reboot: enabled={rx in package_components('enabledComponents')} disabled={rx in package_components('disabledComponents')}")
     adb("reboot", timeout=60)
     time.sleep(10)
