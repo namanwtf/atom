@@ -66,6 +66,13 @@ jobs:
       - name: Build release APK (unsigned)
         run: ./gradlew :app:assembleRelease --stacktrace
 
+      - name: Report APK size
+        run: |
+          for apk in app/build/outputs/apk/release/*.apk; do
+            echo "::notice title=Release APK size::$(basename "$apk"): $(( $(stat -c %s "$apk") / 1024 / 1024 )) MB"
+            unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $8}' | sort -rn | head -n 12
+          done
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
