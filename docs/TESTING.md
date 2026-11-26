@@ -64,9 +64,11 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | k | Battery fix: "Hey Atom" on (needs the on-device pack, which the job installs), screen off, then plugged in | Listening with the screen on, paused with the screen off on battery, listening again when plugged in |
 | m | Screen off mid-task: a shell command task, screen turned off after its first step | It completes with the screen off; the task wake lock and foreground service are held during it and the wake lock is released after |
 | n | Screen off mid-task: a task operating Settings, screen turned off after its first step | It neither fails nor spins (at most 2 tool calls while off), waits with "Waiting for the screen to be unlocked" in its notification without holding the task wake lock, and completes after unlocking |
+| p | Make a website: "Make a one-page site that says hello." (optional) | Site tools are called, `files/sites/<site>/index.html` says hello, `site_preview` returns its local URL and that server serves the page with the live reload script |
 | l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
-All of them are core: the job fails if any of them fails. Every scenario also fails on any entry in the crash buffer
+All of them are core except p: the job fails if any core scenario fails. p is marked optional because the 3B test
+model may not manage a whole site; its result is still printed and shown as "FAIL (optional)" in the scorecard. Every scenario also fails on any entry in the crash buffer
 (`adb logcat -b crash`).
 
 Before the scenarios start, the runner grants what a person would grant on the Permissions page: Atom's accessibility
@@ -113,7 +115,8 @@ adb shell content read --uri content://io.github.namanwtf.atom.debug.e2e/state  
 ```
 
 Other methods: `clear` (forget finished runs), `stop` (the same broadcast the notification's Stop button sends),
-`approve` / `deny` (a pending confirmation) and `linux_install`. Runner: `tools/e2e/run.py` (scenario keys can be passed
+`approve` / `deny` (a pending confirmation), `linux_install` and `run_tool` (one of the app's tools, run directly the
+way the agent would; the Screenshots workflow makes its demo website with it). Runner: `tools/e2e/run.py` (scenario keys can be passed
 as arguments, e.g. `run.py c d`).
 
 ## On-device model (LiteRT-LM)

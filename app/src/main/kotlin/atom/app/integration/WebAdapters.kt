@@ -34,6 +34,13 @@ class AppWebHost(private val context: Context, private val graph: AppGraph, vaul
 
     override fun conversationOf(taskId: String): String? = graph.tasks.conversationOf(taskId)
 
+    /** Only while the app is in front: a background run never pulls the app up; the chat card opens it later. */
+    override fun openScreen(route: String): Boolean {
+        if (!graph.uiVisible) return false
+        NavRequests.open(route)
+        return true
+    }
+
     /**
      * Imports the image (grants on content URIs are short-lived) and hands it to the chat as a new message draft,
      * then brings the app forward.

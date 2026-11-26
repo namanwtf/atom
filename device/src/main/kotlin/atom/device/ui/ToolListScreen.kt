@@ -246,6 +246,7 @@ private fun actionLink(row: ToolRow): Pair<String, String>? = when (row.group.id
     "web" -> "Configure service" to ROUTE_WEB
     "image" -> "Configure image generation" to ROUTE_IMAGES
     "browser" -> "Open browser" to ROUTE_BROWSER
+    "sites" -> "Open sites" to "web/sites"
     else -> if (row.group.needs == Needs.Nothing) null else "Manage permissions" to DeviceFeature.ROUTE_PERMISSIONS
 }
 

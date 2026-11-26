@@ -63,6 +63,12 @@ interface WebHost {
 
     /** Attaches [uri] (a generated image) to the chat composer for a follow-up edit. */
     fun attachToComposer(context: Context, uri: Uri) {}
+
+    /**
+     * Brings one of the app's screens forward (a route such as "web/sites/preview/<id>"), when the app is in front.
+     * Returns false when it could not (the app is in the background); callers then leave it to the chat card.
+     */
+    fun openScreen(route: String): Boolean = false
 }
 
 internal object NoSecrets : SecretStore {

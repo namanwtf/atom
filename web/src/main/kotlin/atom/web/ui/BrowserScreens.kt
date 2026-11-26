@@ -73,7 +73,7 @@ import atom.web.browser.UrlInput
 import atom.web.browser.WebViewSecurity
 import java.net.URLDecoder
 
-private fun openExternally(context: Context, url: String): Boolean {
+internal fun openExternally(context: Context, url: String): Boolean {
     val intent = runCatching {
         if (url.startsWith("intent:")) {
             Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {

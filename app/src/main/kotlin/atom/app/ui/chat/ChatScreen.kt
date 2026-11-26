@@ -336,6 +336,7 @@ fun ChatScreen(
                 }
             }
         },
+        onOpenRoute = onOpenRoute,
     )
 
     val mic: @Composable () -> Unit = micSlot ?: {

@@ -38,6 +38,7 @@ sealed interface StepCard {
 
     data class Image(override val text: String) : StepCard
     data class Browser(override val text: String) : StepCard
+    data class Site(override val text: String) : StepCard
 }
 
 sealed interface WorkEntry {
@@ -297,9 +298,13 @@ object Transcript {
         }
     }
 
-    /** Image jobs carry an `image_job:` marker; browser steps end with a `Preview: <path>` line. */
+    /**
+     * Image jobs carry an `image_job:` marker; site previews end with a `Site preview: <id>` line; browser steps end
+     * with a `Preview: <path>` line.
+     */
     fun cardFor(text: String): StepCard? {
         if (IMAGE_MARKER in text) return StepCard.Image(text.take(8_000))
+        if (atom.web.sites.SiteCards.siteOf(text) != null) return StepCard.Site(text.takeLast(2_000))
         val preview = text.lineSequence().lastOrNull { it.startsWith(BROWSER_PREVIEW) } ?: return null
         return StepCard.Browser(preview)
     }

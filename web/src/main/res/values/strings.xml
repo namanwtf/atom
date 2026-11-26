@@ -8,4 +8,6 @@
     <string name="web_entry_gallery_sub">View, save and share your images</string>
     <string name="web_entry_browser">Browser</string>
     <string name="web_entry_browser_sub">Browse with the agent\'s sign-ins</string>
+    <string name="web_entry_sites">Sites</string>
+    <string name="web_entry_sites_sub">Websites Atom made for you, with a live preview</string>
 </resources>

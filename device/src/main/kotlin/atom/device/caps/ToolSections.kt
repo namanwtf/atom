@@ -34,6 +34,7 @@ object ToolSections {
         "web" to ToolSection.Web,
         "browser" to ToolSection.Web,
         "image" to ToolSection.Web,
+        "sites" to ToolSection.Web,
         "apps" to ToolSection.Apps,
         "background" to ToolSection.Screen,
         "battery" to ToolSection.Apps,
