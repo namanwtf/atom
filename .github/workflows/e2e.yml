@@ -20,14 +20,14 @@ concurrency:
 env:
   # llama.cpp server, prebuilt for Linux x64 (CPU). Pinned tag and archive checksum.
   LLAMA_TAG: b12500
-  LLAMA_ASSET: llama-b12500-bin-ubuntu-x64.zip
-  LLAMA_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+  LLAMA_ASSET: llama-b12500-bin-ubuntu-x64.tar.gz
+  LLAMA_SHA256: "decd26836af2cb9e0925e3bd5c79f7aa3740df9f2dbe88bbc57b1b4249cfd7ea"
   # The model: Qwen2.5 3B Instruct, Q4_K_M (about 2 GB). Small enough for 4 vCPUs / 16 GB, fast enough on the CPU, and
   # its chat template has native tool calling (llama-server --jinja parses it). Pinned repo, revision, file, checksum.
   MODEL_REPO: Qwen/Qwen2.5-3B-Instruct-GGUF
-  MODEL_REVISION: main
+  MODEL_REVISION: 7dabda4d13d513e3e842b20f0d435c732f172cbe
   MODEL_FILE: qwen2.5-3b-instruct-q4_k_m.gguf
-  MODEL_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+  MODEL_SHA256: "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
   MODEL_ALIAS: qwen2.5-3b-instruct
   # Room for Atom's first request (system prompt plus every tool's schema) and a few steps of history.
   CTX_SIZE: "32768"
