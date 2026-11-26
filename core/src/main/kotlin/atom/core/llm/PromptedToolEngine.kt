@@ -2,6 +2,7 @@ package atom.core.llm
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -21,13 +22,16 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         return flow {
             val scanner = ToolCallScanner()
             var finish = FinishReason.Stop
-            inner.stream(rewritten).collect { event ->
+            // Small models often go on to write the tool's result themselves after a call; generation stops there,
+            // so the invented result is neither shown nor kept.
+            inner.stream(rewritten).transformWhile { event ->
                 when (event) {
                     is LlmEvent.TextDelta -> scanner.feed(event.text).forEach { emit(it) }
                     is LlmEvent.Finished -> finish = event.reason
                     else -> emit(event)
                 }
-            }
+                !scanner.inventingResult
+            }.collect { emit(it) }
             scanner.finish().forEach { emit(it) }
             emit(LlmEvent.Finished(if (scanner.callCount > 0) FinishReason.ToolCalls else finish))
         }
@@ -87,12 +91,24 @@ internal class ToolCallScanner {
     var callCount = 0
         private set
 
+    /** True once the model, after a call, started writing a `<tool_result>` itself; everything from there is dropped. */
+    var inventingResult = false
+        private set
+
     fun feed(chunk: String): List<LlmEvent> {
+        if (inventingResult) return emptyList()
         buffer.append(chunk)
         val out = mutableListOf<LlmEvent>()
         while (true) {
             if (!inCall) {
+                val invented = if (callCount > 0) buffer.indexOf(RESULT) else -1
                 val start = buffer.indexOf(OPEN)
+                if (invented >= 0 && (start < 0 || invented < start)) {
+                    if (invented > 0) out += LlmEvent.TextDelta(buffer.substring(0, invented))
+                    buffer.clear()
+                    inventingResult = true
+                    return out
+                }
                 if (start >= 0) {
                     if (start > 0) out += LlmEvent.TextDelta(buffer.substring(0, start))
                     buffer.delete(0, start + OPEN.length)
@@ -126,8 +142,10 @@ internal class ToolCallScanner {
     }
 
     private fun partialTagSuffix(): Int {
-        for (len in minOf(OPEN.length - 1, buffer.length) downTo 1) {
-            if (OPEN.startsWith(buffer.substring(buffer.length - len))) return len
+        val tags = if (callCount > 0) listOf(OPEN, RESULT) else listOf(OPEN)
+        for (len in minOf(maxOf(OPEN.length, RESULT.length) - 1, buffer.length) downTo 1) {
+            val tail = buffer.substring(buffer.length - len)
+            if (tags.any { it.length > len && it.startsWith(tail) }) return len
         }
         return 0
     }
@@ -143,5 +161,6 @@ internal class ToolCallScanner {
     private companion object {
         const val OPEN = "<tool_call>"
         const val CLOSE = "</tool_call>"
+        const val RESULT = "<tool_result"
     }
 }

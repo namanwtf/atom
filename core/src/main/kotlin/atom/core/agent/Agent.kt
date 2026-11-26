@@ -58,6 +58,17 @@ data class AgentConfig(
     val packing: ContextPolicy
         get() = if (context.budgetTokens != null) context else context.copy(budgetTokens = usableWindow ?: ContextPolicy.UNKNOWN_WINDOW_BUDGET)
 
+    /**
+     * The packing policy for one request that offers tools worth [toolTokens]: with a [ContextPolicy.sharedWindow]
+     * the messages get what the tools and the answer leave of it, otherwise [packing].
+     */
+    fun packingFor(toolTokens: Int): ContextPolicy {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return packing
+        val cap = maxOf(context.budgetTokens ?: shared, ContextPolicy.SHARED_MIN_BUDGET)
+        val left = shared - maxOutputTokens - toolTokens - ContextPolicy.SHARED_MARGIN
+        return context.copy(budgetTokens = left.coerceIn(ContextPolicy.SHARED_MIN_BUDGET, cap))
+    }
+
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
 }
 
@@ -185,7 +196,7 @@ class Agent(
 
             val request = LlmRequest(
                 model = config.model,
-                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packing),
+                messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packingFor(state.toolTokens)),
                 tools = specs,
                 maxOutputTokens = config.maxOutputTokens,
                 reasoning = config.reasoning,

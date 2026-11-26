@@ -820,6 +820,15 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     if (window == null && autoCompact) app.getString(atom.app.R.string.run_window_unknown) else null,
                 ).joinToString("\n").ifEmpty { null }
                 if (fallbackNotice != null && roleSelection == null && request.regenerate == null) commit(StoredMessage.notice(fallbackNotice), modelVisible = false)
+                // A tiny on-device model asked for browser or phone work: say plainly, once per conversation, that it
+                // will probably not manage it. The run goes ahead anyway.
+                if (request.regenerate == null) {
+                    val warning = app.getString(atom.app.R.string.run_small_model_agent)
+                    val warned = stored.any { it.kind == EntryKind.Notice && it.message.text == warning }
+                    if (atom.core.agent.SmallModel.shouldWarn(engine.onDevice, engine.smallModel, request.prompt.orEmpty(), warned)) {
+                        commit(StoredMessage.notice(warning), modelVisible = false)
+                    }
+                }
                 contextWindow = config.usableWindow
                 updateRun(id) { copy(phase = if (paused.value) RunPhase.Paused else RunPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = notice) }
 
@@ -1030,7 +1039,15 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     }
                 }
                 is AgentEvent.Failed -> {
-                    flushStream()
+                    if (event.failure == atom.core.llm.LlmFailure.Unreadable) {
+                        // A runaway loop of symbols: not kept as an answer, and not sent back to the model next turn.
+                        flushJob?.cancel()
+                        pendingText.clear()
+                        pendingReasoning.clear()
+                        updateRun(id) { copy(stream = StreamState()) }
+                    } else {
+                        flushStream()
+                    }
                     outcome = RunOutcome.Failed
                     error = event.message
                 }
