@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api -X PUT repos/namanwtf/atom/pulls/*/merge *)",
+      "Bash(gh api -X PUT repos/namanwtf/atom/pulls/*/ccr/auto_merge *)"
+    ]
+  }
+}
