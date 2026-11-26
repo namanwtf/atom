@@ -370,18 +370,69 @@ class AgentTest {
     }
 
     @Test
-    fun waitingAndPollingAreNotStuck() {
+    fun waitingIsNotStuckButHasItsOwnBound() {
         val guard = atom.core.agent.LoopGuard()
         val wait = listOf(ToolCall("w", "wait", """{"seconds":60}"""))
         val same = listOf(ToolResult.ok("still loading"))
-        repeat(40) {
-            val v = guard.after(wait, same)
-            assertTrue(!v.stuck && v.nudge == null, "waiting step $it was treated as stuck")
-        }
+        // Waiting with nothing new is allowed for a long while (29 stale waits after the first)...
+        repeat(30) { assertTrue(!guard.after(wait, same).stuck, "waiting step $it was treated as stuck") }
+        // ...but not forever.
+        assertTrue(guard.after(wait, same).stuck)
+    }
+
+    @Test
+    fun waitingIsBoundedByTimeToo() {
+        var now = 0L
+        val guard = atom.core.agent.LoopGuard(clock = { now })
+        val read = listOf(ToolCall("r", "terminal_session_read", """{"id":"s1","wait_s":120}"""))
+        val same = listOf(ToolResult.ok("[still running]"))
+        assertTrue(!guard.after(read, same).stuck)
+        repeat(5) { now += 2 * 60_000; assertTrue(!guard.after(read, same).stuck) }
+        now += 30 * 60_000
+        assertTrue(guard.after(read, same).stuck, "half an hour of waiting with nothing new ends the run")
+    }
+
+    @Test
+    fun waitingThatBringsNewOutputIsProgress() {
+        val guard = atom.core.agent.LoopGuard()
+        val wait = listOf(ToolCall("w", "browser_wait", """{"text":"Done"}"""))
+        repeat(100) { i -> assertTrue(!guard.after(wait, listOf(ToolResult.ok("log line $i"))).stuck) }
+    }
+
+    @Test
+    fun aModelReadingTheScreenOverAndOverIsStuck() {
+        val guard = atom.core.agent.LoopGuard()
         val read = listOf(ToolCall("r", "read_screen", "{}"))
-        repeat(40) { assertTrue(!guard.after(read, same).stuck) }
-        // Waiting steps in between do not hide a real loop.
+        val same = listOf(ToolResult.ok("app: settings  n1 \"Wi-Fi\""))
+        val verdicts = (1..9).map { guard.after(read, same) }
+        assertTrue(verdicts.dropLast(1).none { it.stuck })
+        assertTrue(verdicts.last().stuck, "read_screen is looking, not waiting")
+        assertTrue(verdicts.any { it.nudge?.contains("identical action") == true }, "the identical-repeat nudge applies to every tool")
+    }
+
+    @Test
+    fun pollingJobInfoOrReadsWithoutAWaitAreNotWaiting() {
+        for (call in listOf(ToolCall("j", "terminal_job_info", """{"id":"j1"}"""), ToolCall("r", "terminal_session_read", """{"id":"s1","wait_s":0}"""), ToolCall("d", "device_status", "{}"))) {
+            val guard = atom.core.agent.LoopGuard()
+            val same = listOf(ToolResult.ok("running"))
+            assertTrue((1..9).map { guard.after(listOf(call), same) }.last().stuck, "${call.name} polling should be caught")
+        }
+    }
+
+    @Test
+    fun theIdenticalRepeatNudgeAppliesToWaitingToo() {
+        val guard = atom.core.agent.LoopGuard()
+        val wait = listOf(ToolCall("w", "wait", """{"seconds":60}"""))
+        val verdicts = (1..3).map { guard.after(wait, listOf(ToolResult.ok("x"))) }
+        assertTrue(verdicts.last().nudge?.contains("identical action") == true)
+    }
+
+    @Test
+    fun waitingStepsDoNotHideALoop() {
+        val guard = atom.core.agent.LoopGuard()
+        val wait = listOf(ToolCall("w", "wait", """{"seconds":5}"""))
         val tap = listOf(ToolCall("t", "tap", """{"id":"n1"}"""))
+        val same = listOf(ToolResult.ok("same"))
         var stuck = false
         repeat(12) {
             guard.after(wait, same)

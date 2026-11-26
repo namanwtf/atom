@@ -648,6 +648,11 @@ internal class LoopGuard(
     private val staleNudgeAt: Int = 4,
     private val staleStopAt: Int = 8,
     private val window: Int = 24,
+    /** Waiting steps in a row that bring nothing new before the run counts as stuck... */
+    private val waitStopAt: Int = 30,
+    /** ...or how long such waiting may last, whichever comes first. */
+    private val waitStopMs: Long = 30 * 60_000L,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     data class Verdict(val nudge: String? = null, val stuck: Boolean = false)
 
@@ -655,15 +660,27 @@ internal class LoopGuard(
     private var repeats = 0
     private var staleStreak = 0
     private val seen = ArrayDeque<Set<String>>()
+    private var waitStreak = 0
+    private var waitSince = 0L
 
     fun after(calls: List<ToolCall>, results: List<ToolResult>): Verdict {
-        // Waiting and polling (wait, read the screen or a terminal until something changes) is how long tasks pass
-        // time: such steps neither count as stale nor reset the count, and repeating them is not nagged about.
-        if (calls.isNotEmpty() && calls.all { it.name in WAITING_TOOLS }) return Verdict()
         val keys = calls.mapIndexed { i, c -> callKey(c) + "=>" + digest(results.getOrNull(i)) }.toSet()
         val stale = keys.isNotEmpty() && keys.all { k -> seen.any { k in it } }
         seen.addLast(keys)
         while (seen.size > window) seen.removeFirst()
+        if (calls.isNotEmpty() && calls.all(::isWaiting)) {
+            // Waiting (wait, or a terminal read that blocks until output arrives) is how long tasks pass time: it does
+            // not count towards the stale streak, but it has its own, much longer bound.
+            if (stale) {
+                if (waitStreak == 0) waitSince = clock()
+                waitStreak++
+                if (waitStreak >= waitStopAt || clock() - waitSince >= waitStopMs) return Verdict(stuck = true)
+            } else {
+                waitStreak = 0
+            }
+            return nudgeFor(calls)?.let { Verdict(nudge = it) } ?: Verdict()
+        }
+        waitStreak = 0
         staleStreak = if (stale) staleStreak + 1 else 0
         if (staleStreak >= staleStopAt) return Verdict(stuck = true)
         nudgeFor(calls)?.let { return Verdict(nudge = it) }
@@ -674,6 +691,16 @@ internal class LoopGuard(
             )
         }
         return Verdict()
+    }
+
+    /**
+     * A call that waits for something to change rather than looking: wait and browser_wait, and terminal reads that
+     * block for a while (wait_s above 0). Reading the screen or polling job info again and again is not waiting.
+     */
+    private fun isWaiting(c: ToolCall): Boolean = when (c.name) {
+        "wait", "browser_wait" -> true
+        "terminal_session_read" -> Regex(""""wait_s"\s*:\s*([0-9]+)""").find(c.argumentsJson)?.groupValues?.get(1)?.toLongOrNull()?.let { it > 0 } == true
+        else -> false
     }
 
     fun nudgeFor(calls: List<ToolCall>): String? {
@@ -688,12 +715,6 @@ internal class LoopGuard(
 
     private fun callKey(c: ToolCall) = c.name + ":" + c.argumentsJson.filterNot(Char::isWhitespace)
 
-    companion object {
-        /** Tools whose repeated calls with the same result mean "still waiting", not "stuck". */
-        val WAITING_TOOLS = setOf(
-            "wait", "browser_wait", "read_screen", "terminal_session_read", "terminal_job_info", "device_status",
-        )
-    }
 
     /** What a result said, ignoring per-call noise (the browser card's preview file name). */
     private fun digest(r: ToolResult?): String {

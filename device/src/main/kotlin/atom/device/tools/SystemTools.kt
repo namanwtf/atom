@@ -178,8 +178,8 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
         return object : SimpleTool(
             name = "shell",
             description = "Run a shell command on the phone. $where Each call is a fresh subshell (cd does not " +
-                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see. Read-only " +
-                "commands run at once; anything that changes files or the system asks the user first.",
+                "persist). Returns exit code, stdout, stderr. Prefer UI tools for anything the user should see. Each " +
+                "command asks the user first unless they allowed all commands for this task.",
             risk = Risk.Sensitive,
             parameters = schema {
                 string("command", "The sh command line.", required = true)
@@ -206,8 +206,8 @@ internal class SystemTools(context: Context, private val shell: ShellExecutor) {
                 privileged = shell.tier != ShellTier.App,
             )
 
-            // Commands proven read-only run without asking; everything else asks (or runs under the task's grant).
-            override fun riskFor(args: JsonObject): Risk = ShellRisk.classify(args.optString("command").orEmpty(), scope())
+            // Every command asks unless the task's grant covers it (ShellRisk.AUTO_RUN_PROVEN is off).
+            override fun riskFor(args: JsonObject): Risk = ShellRisk.approvalRisk(args.optString("command").orEmpty(), scope())
 
             override fun approvalRequest(args: JsonObject): ApprovalRequest =
                 ShellRisk.approval(args.optString("command").orEmpty(), scope(), if (shell.tier == ShellTier.Root) "a root shell" else "the phone's shell")

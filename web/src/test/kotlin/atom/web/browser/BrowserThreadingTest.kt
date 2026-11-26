@@ -61,6 +61,7 @@ class BrowserThreadingTest {
         assertTrue(src.contains("override fun onRenderProcessGone"), "a renderer death must not kill the app")
         assertTrue(src.contains("WebViewCompat.setProfile"), "keyless search runs in its own WebView profile")
         assertTrue(src.contains("removeAllCookies"), "the search profile is wiped after use")
+        assertTrue(src.indexOf("clearCache(true)") in 0 until src.indexOf("view.destroy()"), "its HTTP cache is cleared before the view goes")
         assertTrue(src.contains("returnTimers"), "the global WebView timers go back to how they were")
         assertTrue(Regex("""withTimeoutOrNull\(READ_TIMEOUT_MS\)""").containsMatchIn(src), "reading the page has its own timeout")
     }

