@@ -105,12 +105,19 @@ Installing over the earlier app is a normal Android update, so Android keeps:
   on again once in Android's settings. Launcher shortcuts that point at an activity Atom 4 does not have
   disappear.
 
-Atom 4 does **not** read the earlier app's private data formats. Earlier conversations, provider API keys and
-settings are not migrated, and the user adds provider keys again in Atom 4. Every file and folder Atom 4's own
+Atom 4 imports the earlier app's providers, API keys, ChatGPT and Grok sign-ins (when still valid), default model
+and conversations once, in the background, on the first start that finds `databases/atom.db`; the user can run it
+again from Settings > General > Data backup. The importer only reads: it copies `atom.db` with its `-wal` and `-shm`
+files into `cache/atom4_import/`, opens the copy with plain SQLite (never Room), reads
+`files/datastore/atom_settings.preferences_pb` and the sign-in files in `no_backup/provider_credentials/` (decrypted
+with the earlier app's Keystore key, which the update keeps), writes through Atom 4's own stores, records what it
+brought over in `files/atom4_legacy_import.json` and deletes the copy. MCP servers, skills, scheduled tasks and
+other settings are not imported. Details: [IMPORT.md](IMPORT.md). Every file and folder Atom 4's own
 code creates in `files/` (apart from the DataStore library's `datastore/` folder), `files/datastore/`,
 `databases/` and `shared_prefs/`, and every Android Keystore alias it uses, has a name starting with `atom4`
 (table below), a prefix new in Atom 4. Atom 4 never opens, changes or
-deletes any other name there, so the earlier app's files in those places are left untouched on disk. They take up
+deletes any other name there (the importer above only reads the earlier app's files), so the earlier app's files in
+those places are left untouched on disk. They take up
 space until the user clears the app's storage (Android Settings > Apps > Atom > Storage > Clear storage, which
 also clears Atom 4's own data). Keys the earlier app sealed in the Android Keystore stay there too.
 
@@ -120,7 +127,7 @@ also clears Atom 4's own data). Keys the earlier app sealed in the Android Keyst
 | SQLite (`databases/`) | `atom4_notification_history.db` |
 | SharedPreferences (`shared_prefs/<name>.xml`) | `atom4_overlay`, `atom4_web`, `atom4_speech`, `atom4_litert_backend`, `atom4_root`, `atom4_charge_limit`, `atom4_tool_switches`, `atom4_system`, `atom4_clock`, `atom4_automation_places`, `atom4_extend_secrets` |
 | Android Keystore aliases | `atom4.vault`, `atom4_extend_secrets` |
-| Folders and files in `files/` | `atom4_conversations/`, `atom4_run-journal/`, `atom4_models/`, `atom4_characters/`, `atom4_linux/`, `atom4_workspace/`, `atom4_extend/`, `atom4_attachments/`, `atom4_shared/`, `atom4_generated_images/`, `atom4_automation/state.json`, `atom4_undo_journal.json`, `atom4_firewall_rules.json` |
+| Folders and files in `files/` | `atom4_conversations/`, `atom4_run-journal/`, `atom4_models/`, `atom4_characters/`, `atom4_linux/`, `atom4_workspace/`, `atom4_extend/`, `atom4_attachments/`, `atom4_shared/`, `atom4_generated_images/`, `atom4_automation/state.json`, `atom4_undo_journal.json`, `atom4_firewall_rules.json`, `atom4_legacy_import.json` |
 
 These distinct names are also why old files cannot crash Atom 4 at startup: a file of another format with the same
 name would otherwise be read (a DataStore or SharedPreferences type mismatch throws, an SQLite database with a
@@ -137,6 +144,7 @@ What the promise does not cover:
   (`app_webview/`), and androidx ProfileInstaller writes its `files/profileinstaller_*` markers.
 - **`cache/`.** Android may clear it at any time, and Atom 4 and its libraries keep temporary files there (the
   built-in browser also clears the WebView cache). Atom 4's own cache files still use the prefix
-  (`atom4_updates/`, `atom4_models_dev_catalog.json`), so a cached file the earlier app left is never read.
+  (`atom4_updates/`, `atom4_models_dev_catalog.json`, `atom4_import/`), so a cached file the earlier app left is
+  never read.
 - **Commands the user runs.** The Android shell tool starts in `files/` with `HOME` set to it, so a command the user
   or the agent runs there can read or change any file, including the earlier app's.

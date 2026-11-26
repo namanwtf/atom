@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,6 +63,8 @@ internal fun BackupScreen(nav: FeatureNav) {
     val contributors = remember { Backups.all }
     var working by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<BackupDialog?>(null) }
+    val legacy = GeneralHooks.legacyImport
+    val legacyAvailable by produceState(false, legacy) { value = withContext(Dispatchers.IO) { legacy?.available() == true } }
 
     fun labels(keys: List<String>): String {
         val byKey = contributors.associateBy { it.key }
@@ -194,6 +197,28 @@ internal fun BackupScreen(nav: FeatureNav) {
                     onClick = { importLauncher.launch(arrayOf(BackupEngine.MIME, "text/plain", "application/octet-stream")) },
                     trailing = { RowChevron() },
                 )
+                if (legacy != null && legacyAvailable) {
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_import),
+                        subtitle = stringResource(R.string.backup_legacy_import_sub),
+                        icon = AtomIcons.Download,
+                        enabled = !working,
+                        onClick = {
+                            scope.launch {
+                                working = true
+                                val text = try {
+                                    legacy.run()
+                                } catch (e: Exception) {
+                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                    e.message ?: e::class.simpleName ?: "error"
+                                }
+                                working = false
+                                dialog = BackupDialog.Message(context.getString(R.string.backup_legacy_import), text)
+                            }
+                        },
+                        trailing = { RowChevron() },
+                    )
+                }
             }
         }
         if (working) {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- One-time import from the previous Atom app (docs/IMPORT.md). -->
+    <string name="import_summary">Imported from the previous Atom: %1$d conversations, %2$d providers (%3$d API keys, %4$d sign-ins).</string>
+    <string name="import_selection">Your default model was carried over.</string>
+    <string name="import_sign_in_again">Sign in again: %1$s.</string>
+    <string name="import_failed_providers">%1$d providers could not be read.</string>
+    <string name="import_failed_conversations">%1$d conversations could not be read; importing again retries them.</string>
+    <string name="import_damaged">%1$d damaged messages were imported empty.</string>
+    <string name="import_images_skipped">%1$d images could not be kept and are marked [image].</string>
+    <string name="import_characters">%1$d character chats were imported as normal chats.</string>
+    <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old files are left untouched.</string>
+    <string name="import_nothing">No data from the previous Atom was found on this phone.</string>
+    <string name="import_error">The import stopped early (%1$s). What was imported is kept; importing again continues.</string>
+    <string name="import_busy">An import is already running.</string>
+    <string name="import_notice_interrupted">Interrupted</string>
+    <string name="import_notice_retry">The model request was retried</string>
+    <string name="import_notice_compaction">Earlier messages were summarized here</string>
+    <string name="import_notice_detail">%1$s: %2$s</string>
+</resources>

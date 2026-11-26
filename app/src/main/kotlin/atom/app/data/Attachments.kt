@@ -66,6 +66,16 @@ object Attachments {
         return Outcome.Added(Attachment(AttachmentKind.Image, file.absolutePath, name ?: file.name, file.length()))
     }
 
+    /**
+     * Keeps encoded image [bytes] (PNG, JPEG, WebP...) as a downscaled JPEG attachment, as for a picked image. Used by
+     * the importer for inline images of the previous app. Call off the main thread; null when the bytes do not decode.
+     */
+    fun saveImageBytes(context: Context, bytes: ByteArray, name: String? = null): Attachment? {
+        if (bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return null
+        val outcome = saveDownscaled(context, ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)), name)
+        return (outcome as? Outcome.Added)?.attachment
+    }
+
     /** True for a JPEG or PNG file path (by extension). */
     fun isImagePath(path: String): Boolean = path.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
 
