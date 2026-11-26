@@ -122,11 +122,13 @@ fixed list of the earlier app's files below.
 **The earlier app's files are kept for 7 days after a successful import, then removed.** The earlier app stored API
 keys unencrypted (`model_providers.api_key` in `databases/atom.db`); Atom 4 keeps the imported keys in its vault,
 encrypted with an Android Keystore key, so the plaintext copy should not stay on the phone. Once an import run
-finishes with no error and no failed provider, conversation, sign-in or memory, the next start at least 7 days later
+finishes with no error and no failed provider, conversation or sign-in, the next start at least 7 days later
 deletes `databases/atom.db` with its `-wal`, `-shm` and `-journal` files, the `no_backup/provider_credentials/` folder,
 `files/datastore/atom_settings.preferences_pb` (and its `.tmp`), `shared_prefs/atom_mcp_secrets.xml`,
 `atom_speech_secrets.xml`, `atom_image_gen_secrets.xml` and `atom_web_tools_secrets.xml` (each with its `.xml.bak`),
-`files/memory/MEMORY.md` (with `.bak` and `.new`, and only once the memory was imported), and then the earlier
+`files/memory/MEMORY.md` (with `.bak` and `.new`, and only once the memory was imported: memory never holds the
+removal up, is retried at each start, and a file that cannot be merged is kept until the user deletes it separately
+in Data backup), and then the earlier
 app's Keystore aliases `atom_provider_credentials_v1`, `atom_mcp_credentials_v1`, `atom_speech_credentials_v1`,
 `atom_image_gen_credentials_v1` and `atom_web_tools_credentials_v1`. The week leaves time to run the import again. The user can remove them sooner from Settings > General > Data backup > Remove previous
 Atom's data. Without a successful import nothing is removed automatically; that row stays, with a warning that

@@ -27,8 +27,15 @@ data class LegacyImportState(
     /** Old conversation id to Atom 4 conversation id. */
     val conversations: Map<String, String> = emptyMap(),
     val selectionApplied: Boolean = false,
-    /** The old long-term memory was brought over (or there was none). Its file is removed only after that. */
+    /**
+     * The old long-term memory was brought over (or there was none). Its file is removed only after that. Until then
+     * it is tried again at each start, also after the database is gone; it never holds up [completedAt].
+     */
     val memoryImported: Boolean = false,
+    /** The "previous memory is too large to merge" notice was shown once. */
+    val memoryNoticeShown: Boolean = false,
+    /** Old provider id to the runs whose sign-in file could not be read (see [LegacyImportPlan.signInFailureIsFinal]). */
+    val signInFailures: Map<String, Int> = emptyMap(),
     val report: LegacyImportReport? = null,
     /** False while the result of the last run still waits to be shown once. */
     val noticeShown: Boolean = true,
@@ -64,8 +71,10 @@ data class LegacyImportReport(
     val failedSignIns: Int = 0,
     /** The old long-term memory was copied into Atom 4's memory in this run. */
     val memory: Boolean = false,
-    /** The old long-term memory could not be brought over (unreadable, or too large together with Atom 4's). */
+    /** The old long-term memory could not be brought over this time; it is tried again at the next start. */
     val failedMemory: Boolean = false,
+    /** ...because together with Atom 4's memory it is over the size limit: the user shortens Atom 4's memory. */
+    val memoryTooLarge: Boolean = false,
     val damagedMessages: Int = 0,
     /** Messages cut to the size limit, with a note. */
     val truncatedMessages: Int = 0,
@@ -91,10 +100,26 @@ object LegacyImportPlan {
     fun shouldAutoRun(databaseExists: Boolean, state: LegacyImportState?): Boolean =
         databaseExists && state?.completedAt == null && (state?.attempts ?: 0) < MAX_AUTO_ATTEMPTS
 
-    /** Whether a run with this report counts as finished: no error and nothing left to retry. */
+    /**
+     * Whether a run with this report counts as finished: no error and nothing left to retry. Memory is not part of
+     * it: its files are kept until it is imported ([LegacyImportState.memoryImported]) and it is retried on its own,
+     * so it never holds up the removal of the old database and keys.
+     */
     fun isComplete(report: LegacyImportReport): Boolean =
-        report.error == null && report.failedConversations == 0 && report.failedProviders == 0 &&
-            report.failedSignIns == 0 && !report.failedMemory
+        report.error == null && report.failedConversations == 0 && report.failedProviders == 0 && report.failedSignIns == 0
+
+    /**
+     * Whether to try the old memory again by itself at start: while it is not imported and its file exists, unless a
+     * full import is about to run anyway ([autoRunPending]). Independent of the database and of [LegacyImportState.completedAt].
+     */
+    fun shouldRetryMemory(state: LegacyImportState?, oldMemoryExists: Boolean, autoRunPending: Boolean): Boolean =
+        oldMemoryExists && state?.memoryImported != true && !autoRunPending
+
+    /**
+     * Whether a sign-in file that could not be read ([previousFailures] earlier runs failed the same way) is given up
+     * on in this run and reported as "sign in again", so a lasting Keystore error cannot hold up completion forever.
+     */
+    fun signInFailureIsFinal(previousFailures: Int): Boolean = previousFailures + 1 >= MAX_AUTO_ATTEMPTS
 
     /** The heading old memory goes under when Atom 4 already has memory of its own. */
     const val MEMORY_HEADING = "Imported from the previous Atom"

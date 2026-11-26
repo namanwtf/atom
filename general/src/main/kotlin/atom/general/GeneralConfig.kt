@@ -53,8 +53,11 @@ object GeneralHooks {
         /** Whether and how the backup screen offers to remove the previous app's files (cheap file checks). */
         fun cleanupOffer(): LegacyCleanup.Offer = LegacyCleanup.Offer.Hidden
 
-        /** Removes the previous app's files and Keystore keys. */
+        /** Removes the previous app's files and Keystore keys (its memory only once imported). */
         suspend fun removeOldData(): LegacyCleanup.Removal = LegacyCleanup.Removal.Partial
+
+        /** Deletes the previous app's memory file that could not be imported; true when it is gone. */
+        suspend fun removeOldMemory(): Boolean = false
 
         /** Changes after every import run and removal (including automatic ones), so the rows are checked again. */
         fun changes(): Flow<Int> = flowOf(0)
