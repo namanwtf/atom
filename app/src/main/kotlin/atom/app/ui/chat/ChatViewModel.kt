@@ -77,12 +77,18 @@ data class EngineInfo(
     val reason: NotReady? = null,
     /** The provider's display name, for "sign in to …" and "enter the key for … again". */
     val providerName: String? = null,
-)
+) {
+    /** What the capsule and the drawer say; Settings derives the same from [modelStatus]. */
+    val status: ModelStatus get() = if (live && name != null) ModelStatus.Ready(name) else ModelStatus.of(name, if (ready) null else reason, providerName)
+}
 
 /** Why a model selection cannot be used yet. */
 enum class NotReady {
-    /** No usable selection at all, or the provider has no key. */
+    /** No usable selection at all (none, model removed, provider off). */
     Configure,
+
+    /** A key-based provider with everything set except its API key. */
+    NeedsKey,
 
     /** An account provider (ChatGPT, Grok) that is not signed in. */
     SignIn,

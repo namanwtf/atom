@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Home top bar and model capsule -->
-    <string name="home_not_selected">Not selected</string>
     <string name="home_not_set">Not set</string>
+    <string name="home_model_needs_key">%1$s · add key</string>
+    <string name="home_model_key_unreadable">%1$s · enter key again</string>
+    <string name="home_model_needs_pack">%1$s · needs on-device AI</string>
     <string name="home_choose_model">Choose model</string>
     <string name="home_open_character">Open character</string>
     <string name="home_sign_in_capsule">Sign in to %1$s</string>

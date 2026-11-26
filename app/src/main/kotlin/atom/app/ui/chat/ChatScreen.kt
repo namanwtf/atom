@@ -364,7 +364,7 @@ fun ChatScreen(
             query = query,
             onQuery = { vm.search.value = it },
             permissionsNeedAttention = permissionsNeedAttention,
-            activeModel = state.engine.name?.takeIf { state.engine.ready || state.engine.live },
+            activeModel = engineLabel(state.engine),
             open = drawer.target,
             callbacks = drawerCallbacks,
         )
@@ -910,11 +910,12 @@ private fun ModelCapsule(info: EngineInfo, enabled: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun capsuleLabel(info: EngineInfo): String = when {
-    info.live || (info.ready && info.name != null) -> info.name.orEmpty()
-    info.reason == NotReady.SignIn && info.providerName != null -> stringResource(R.string.home_sign_in_capsule, info.providerName)
-    else -> stringResource(R.string.home_not_selected)
-}
+private fun capsuleLabel(info: EngineInfo): String = engineLabel(info)
+
+/** The capsule's and the drawer's model label: the same [ModelStatus] that Settings shows. */
+@Composable
+internal fun engineLabel(info: EngineInfo): String =
+    if (info.live) info.name.orEmpty() else info.status.label(LocalContext.current)
 
 /** The send-blocked banner: the specific reason when there is one. */
 @Composable
