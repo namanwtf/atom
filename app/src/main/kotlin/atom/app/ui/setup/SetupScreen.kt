@@ -70,6 +70,8 @@ import atom.ui.theme.AtomMark
 import atom.ui.theme.extras
 import atom.device.Accessibility
 import atom.device.ShellTier
+import atom.device.root.RootAccess
+import atom.device.root.RootStatus
 import atom.voice.AssistantRole
 import atom.voice.Wake
 import atom.voice.WakePolicy
@@ -89,6 +91,7 @@ fun SetupScreen(
     val scope = rememberCoroutineScope()
     val connected by Accessibility.connected.collectAsStateWithLifecycle()
     val tier by graph.shellTier.collectAsStateWithLifecycle()
+    val rootStatus by RootAccess.status.collectAsStateWithLifecycle()
     var accessibilityEnabled by remember { mutableStateOf(Accessibility.isEnabled(context)) }
     var notificationsGranted by remember { mutableStateOf(notificationsGranted(context)) }
     var checkingShell by remember { mutableStateOf(false) }
@@ -199,7 +202,7 @@ fun SetupScreen(
         }
 
         item(key = "shell") {
-            val detecting = checkingShell || tier == null
+            val detecting = checkingShell || tier == null || rootStatus == RootStatus.Checking
             CapabilityGroup(
                 icon = AtomIcons.Terminal,
                 title = stringResource(R.string.setup_shell_title),

@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.device.Shells
 import atom.device.root.RootAccess
 import atom.device.root.RootStatus
+import atom.device.root.RootMonitor
 import atom.ui.components.CompactButton
 import atom.ui.components.Group
 import atom.ui.components.GroupDivider
@@ -70,7 +71,7 @@ internal fun SystemScreen(nav: FeatureNav) {
                     trailing = {
                         CompactButton(
                             stringResource(if (root == RootStatus.Granted) R.string.vd_check_again else R.string.vd_authorize),
-                            onClick = { scope.launch { RootAccess.authorize(context); Shells.detect(context) } },
+                            onClick = { scope.launch { RootMonitor.checkAgain(context) } },
                             primary = root != RootStatus.Granted,
                             enabled = root != RootStatus.Checking,
                         )

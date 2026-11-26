@@ -39,6 +39,7 @@ import atom.device.caps.Perms
 import atom.device.caps.StatusTone
 import atom.device.root.RootAccess
 import atom.device.root.RootStatus
+import atom.device.root.RootMonitor
 import atom.ui.components.AtomDialog
 import atom.ui.components.DialogButtons
 import atom.ui.components.CompactButton
@@ -211,10 +212,10 @@ fun PermissionsScreen(nav: FeatureNav) {
                                 RootStatus.Checking -> Unit
                                 RootStatus.Granted, RootStatus.NotDetected -> CompactButton(
                                     "Check again",
-                                    { scope.launch { RootAccess.authorize(context); Shells.detect(context); tick++ } },
+                                    { scope.launch { RootMonitor.checkAgain(context); tick++ } },
                                     primary = false,
                                 )
-                                else -> CompactButton("Authorize", { scope.launch { RootAccess.authorize(context); Shells.detect(context); tick++ } })
+                                else -> CompactButton("Authorize", { scope.launch { RootMonitor.checkAgain(context); tick++ } })
                             }
                         }
                     },

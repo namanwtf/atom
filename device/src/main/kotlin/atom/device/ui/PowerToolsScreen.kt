@@ -15,7 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,7 +62,9 @@ fun PowerToolsScreen(nav: FeatureNav) {
     var tick by remember { mutableIntStateOf(0) }
     var output by remember { mutableStateOf<Pair<String, String>?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val tier by produceState(initialValue = null as ShellTier?) { value = withContext(Dispatchers.IO) { Shells.detect(context).tier } }
+    // The shared tier: it changes here as soon as root is granted elsewhere (or Shizuku starts).
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { runCatching { Shells.detect(context) } } }
+    val tier by Shells.tier.collectAsState()
     val spoof by LocationSpoof.state.collectAsState()
     val rules = remember(tick) { firewall.rules() }
 
