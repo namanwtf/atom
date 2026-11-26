@@ -86,14 +86,14 @@ object AssistantVoiceNotice {
     fun build(context: Context, mode: Mode, stop: PendingIntent = stopIntent(context, mode)): Notification {
         ensureChannel(context)
         val title = context.getString(if (mode == Mode.Listening) R.string.assistant_voice_listening else R.string.speech_reading_title)
-        val icon = if (mode == Mode.Listening) android.R.drawable.ic_btn_speak_now else android.R.drawable.ic_lock_silent_mode_off
         val stopAction = Notification.Action.Builder(
             Icon.createWithResource(context, android.R.drawable.ic_media_pause),
             context.getString(R.string.speech_stop),
             stop,
         ).build()
         val builder = Notification.Builder(context, CHANNEL_ID)
-            .setSmallIcon(icon)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(title)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

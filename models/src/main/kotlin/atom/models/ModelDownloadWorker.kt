@@ -325,7 +325,8 @@ class ModelDownloadWorker(
             cancel,
         ).build()
         val builder = Notification.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle("Downloading ${spec.name}")
             .setContentText(text)
             .setProgress(max, value, indeterminate)
@@ -349,7 +350,8 @@ class ModelDownloadWorker(
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         ensureChannel()
         val n = Notification.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)

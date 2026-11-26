@@ -139,6 +139,7 @@ import atom.ui.components.glassPane
 import atom.ui.components.glassSource
 import atom.ui.components.rememberGlassChrome
 import atom.ui.components.rememberGlassState
+import atom.ui.theme.AtomEmblem
 import atom.ui.theme.AtomIcons
 import atom.ui.theme.extras
 import atom.voice.speech.Speech
@@ -1125,6 +1126,11 @@ private fun CharacterEmpty(character: Character) {
 private fun HomeEmpty(keyboardOpen: Boolean, accessibilityOff: Boolean, onSuggestion: (String) -> Unit, onOpenSetup: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // The emblem stays out of the way while typing, when vertical space is short.
+            if (!keyboardOpen) {
+                AtomEmblem(76.dp)
+                Spacer(Modifier.height(18.dp))
+            }
             Text(
                 stringResource(R.string.chat_empty_title),
                 fontSize = 22.sp,

@@ -76,7 +76,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
@@ -100,6 +99,7 @@ import atom.ui.components.ArrowRow
 import atom.ui.components.AtomMenu
 import atom.ui.components.Group
 import androidx.compose.material3.minimumInteractiveComponentSize
+import atom.ui.theme.AtomEmblem
 
 internal class DrawerCallbacks(
     val onNewChat: () -> Unit,
@@ -281,18 +281,10 @@ internal fun ConversationDrawer(
     }
 }
 
-/** A 26dp accent disc (primary, shading 12% towards white or black) holding the white orbit mark. */
+/** The Atom emblem, transparent, in the theme's ink. */
 @Composable
 private fun BrandBadge() {
-    val primary = MaterialTheme.colorScheme.primary
-    val ink = homeInk()
-    val end = (if (ink.dark) Color.White else Color.Black).copy(alpha = 0.12f).compositeOver(primary)
-    Box(
-        Modifier.size(26.dp).background(Brush.linearGradient(listOf(primary, end)), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(HomeGlyphs.Orbit, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
-    }
+    AtomEmblem(32.dp)
 }
 
 @Composable
@@ -343,8 +335,12 @@ private fun Workbench(activeModel: String?, callbacks: DrawerCallbacks) {
 private fun EmptyList(searching: Boolean) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(44.dp).background(colors.surfaceContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-            Icon(if (searching) ChatGlyphs.Search else HomeGlyphs.Orbit, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+        if (searching) {
+            Box(Modifier.size(44.dp).background(colors.surfaceContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(ChatGlyphs.Search, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+            }
+        } else {
+            AtomEmblem(56.dp, tint = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Text(

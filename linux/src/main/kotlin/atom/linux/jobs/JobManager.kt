@@ -289,7 +289,8 @@ class JobManager private constructor(context: Context) {
             PendingIntent.getActivity(app, r.id.hashCode(), it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
         val n = Notification.Builder(app, CHANNEL)
-            .setSmallIcon(if (r.state == JobState.Completed) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
+            .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setColor(android.graphics.Color.BLACK)
             .setContentTitle(JobRules.notificationTitle(r))
             .setContentText(JobRules.notificationText(r).substringBefore('\n'))
             .setStyle(Notification.BigTextStyle().bigText(JobRules.notificationText(r)))

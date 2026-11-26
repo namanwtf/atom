@@ -236,7 +236,8 @@ object UpdateInstaller {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val n = Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+                .setColor(android.graphics.Color.BLACK)
                 .setContentTitle(context.getString(R.string.update_ready_title))
                 .setContentText(context.getString(R.string.update_ready_text))
                 .setContentIntent(open)
