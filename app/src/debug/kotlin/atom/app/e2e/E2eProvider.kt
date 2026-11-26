@@ -188,6 +188,7 @@ class E2eProvider : ContentProvider() {
             put("runs", JSONArray().apply { runs.forEach { put(runJson(it)) } })
             put("scheduledTasks", scheduledTasks())
             put("wake", runCatching { atom.voice.Wake.state.value.toString() }.getOrDefault("unknown"))
+            put("screenWait", atom.ui.feature.ScreenWait.waiting.value)
             put("packReady", runCatching { atom.app.ondevice.OnDevicePack.ready.value }.getOrDefault(false))
             put("systemEventReceiver", componentState("atom.automation.system.SystemEventReceiver"))
             put("notificationHistory", notificationHistory())

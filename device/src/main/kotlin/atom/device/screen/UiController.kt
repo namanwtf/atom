@@ -70,8 +70,12 @@ internal object UiController {
         }
     }
 
-    suspend fun tool(block: suspend (AtomAccessibilityService) -> ToolResult): ToolResult =
-        withService(block).getOrElse { ToolResult.error(it.message ?: "UI action failed") }
+    /** The screen tools (read_screen, tap, type, scroll, swipe, global actions): they wait for an unlocked screen. */
+    suspend fun tool(block: suspend (AtomAccessibilityService) -> ToolResult): ToolResult {
+        val svc = Accessibility.service ?: return ToolResult.error(NOT_CONNECTED)
+        if (!ScreenGate.await(svc)) return ToolResult.error(ScreenGate.LOCKED_TOO_LONG)
+        return withService(block).getOrElse { ToolResult.error(it.message ?: "UI action failed") }
+    }
 
     // ---- reading -------------------------------------------------------------------------------------
 

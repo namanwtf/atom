@@ -493,6 +493,100 @@ def s_hey_atom_charging(res):
         log("  " + call("hey_atom", "off"))
 
 
+def screen_off():
+    sh("svc power stayon false")
+    sh("input keyevent KEYCODE_SLEEP")
+    time.sleep(2)
+
+
+def screen_on():
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+    sh("wm dismiss-keyguard")
+    sh("input keyevent 82")  # menu dismisses a swipe-only keyguard
+    time.sleep(2)
+    sh("svc power stayon true")
+
+
+def task_wake_lock():
+    return "atom:task" in sh("dumpsys power | grep -i 'atom:task'")
+
+
+def service_foreground():
+    out = sh(f"dumpsys activity services {PKG} | grep -iE 'AgentService|isForeground'")
+    return "AgentService" in out and "isForeground=true" in out
+
+
+def first_activity(w, name, timeout=480):
+    return w.wait(timeout, name, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
+
+
+def s_screen_off_background(res):
+    """m. Screen off mid-task, no screen needed: the run keeps going (foreground service, wake lock) and finishes."""
+    known = run_ids()
+    w = Watch(known)
+    send_prompt("Run the shell command 'sleep 20; echo screen-off-ok' and tell me exactly what it printed.")
+    run = first_activity(w, res.key)
+    if not res.check(run is not None and run["active"], "run started and is working"):
+        return
+    screen_off()
+    time.sleep(6)
+    held, fg = task_wake_lock(), service_foreground()
+    res.notes.append(f"screen off: wake lock atom:task held={held}, AgentService foreground={fg}")
+    run = w.wait(600, res.key)
+    off_end = not "Awake" in sh("dumpsys power | grep -E 'mWakefulness='")
+    res.notes.append(f"screen still off when the run ended: {off_end}")
+    time.sleep(3)
+    released = not task_wake_lock()
+    screen_on()
+    res.tools = names(run)
+    res.check(run["outcome"] == "Completed" or run["phase"] == "Completed", f"run completed with the screen off ({run['phase']}, {run.get('outcome')})")
+    res.check("screen-off-ok" in answer(run), "answer has the command's output")
+    res.check(held, "partial wake lock held while the screen was off")
+    res.check(fg, "foreground service running during the task")
+    res.check(released, "wake lock released after the run")
+
+
+def notification_texts():
+    out = sh("dumpsys notification --noredact")
+    return " ".join(re.findall(r"android\.(?:text|title)=(?:String|SpannableString) \(([^)]*)\)", out))
+
+
+def s_screen_off_ui(res):
+    """n. Screen off mid-task while operating apps: the run waits for an unlocked screen instead of failing or
+    spinning, says so in its notification, and carries on after unlocking."""
+    known = run_ids()
+    w = Watch(known)
+    send_prompt("Open the Settings app, read its first screen and tell me three of the items listed there.")
+    run = first_activity(w, res.key)
+    if not res.check(run is not None and run["active"], "run started and is working"):
+        return
+    calls_before = len(run.get("toolCalls", []))
+    screen_off()
+    waiting, note = False, ""
+    for _ in range(12):  # about a minute with the screen off
+        time.sleep(5)
+        st = state()
+        waiting = waiting or bool(st.get("screenWait"))
+        texts = notification_texts()
+        if "unlocked" in texts:
+            note = "Waiting for the screen to be unlocked"
+    run = w.poll() or run
+    calls_off = len(run.get("toolCalls", [])) - calls_before
+    phase_off = run["phase"]
+    res.notes.append(f"while off: phase {phase_off}, {calls_off} new tool calls, waiting={waiting}, notification: {note or '-'}")
+    screen_on()
+    launch(wait=2)
+    run = w.wait(600, res.key)
+    res.tools = names(run)
+    res.check(phase_off != "Failed", "did not fail while the screen was off")
+    res.check(calls_off <= 2, f"did not spin while the screen was off ({calls_off} calls)")
+    res.check(waiting, "waited for the screen to be unlocked")
+    res.check(bool(note), "notification said it is waiting for the screen to be unlocked")
+    res.check(run["outcome"] == "Completed" or run["phase"] == "Completed", f"carried on and completed after unlocking ({run['phase']})")
+    res.check(bool(answer(run)), "an answer")
+
+
 def package_components(section):
     """Component class names listed under enabledComponents: / disabledComponents: in dumpsys package."""
     out = sh(f"dumpsys package {PKG}")
@@ -538,6 +632,9 @@ SCENARIOS = [
     ("i", "Automations: boot receiver on while a task exists", s_receiver),
     ("j", "Notification history keeps ordinary notifications", s_notification_history),
     ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
+    # The owner's question: does a run survive the screen turning off mid-task?
+    ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
+    ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),
     ("l", "Reboot: receiver, boot start and alarm survive", s_reboot),
 ]
 

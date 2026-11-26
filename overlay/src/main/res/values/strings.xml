@@ -90,6 +90,7 @@
     <string name="overlay_capsule_cd">%1$s. Tap to show controls</string>
     <string name="overlay_phase_paused">Paused</string>
     <string name="overlay_phase_waiting_control">Waiting for the screen</string>
+    <string name="overlay_phase_waiting_unlock">Waiting for the screen to be unlocked</string>
     <string name="overlay_phase_approval">Needs your OK</string>
     <string name="overlay_paused_detail">You have control. Resume when you’re ready.</string>
     <string name="overlay_queued">Queued for the next step: %d</string>

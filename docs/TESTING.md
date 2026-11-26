@@ -61,6 +61,8 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | i | Battery fix: the boot / clock receiver, after e created a task | The receiver is enabled while an enabled task exists |
 | j | Battery fix: an ordinary notification is posted | It is in the searchable notification history (only progress updates are skipped) |
 | k | Battery fix: "Hey Atom" on (needs the on-device pack, which the job installs), screen off, then plugged in | Listening with the screen on, paused with the screen off on battery, listening again when plugged in |
+| m | Screen off mid-task: a shell command task, screen turned off after its first step | It completes with the screen off; the task wake lock and foreground service are held during it and the wake lock is released after |
+| n | Screen off mid-task: a task operating Settings, screen turned off after its first step | It neither fails nor spins (at most 2 tool calls while off), waits with "Waiting for the screen to be unlocked" in its notification, and completes after unlocking |
 | l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
 All of them are core: the job fails if any of them fails. Every scenario also fails on any entry in the crash buffer
