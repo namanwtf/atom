@@ -73,6 +73,21 @@ jobs:
             unzip -lv "$apk" | awk 'NR>3 && $8 != "" {print $3, $1, $8}' | sort -rn | head -n 12
           done
 
+      - name: Release readiness
+        # The weekly release PR (release/next into main) may auto-merge, so it must not go green until the
+        # combined release has passed the end-to-end tasks and the side-by-side comparison. That result is
+        # written to docs/RELEASE_SCORECARD.md, which every release PR must update, ending in "Result: ready".
+        if: github.event_name == 'pull_request' && github.head_ref == 'release/next'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch -q --depth=1 origin "$BASE_SHA"
+          if ! git diff --name-only "$BASE_SHA" HEAD | grep -qx 'docs/RELEASE_SCORECARD.md' \
+             || ! grep -qx 'Result: ready' docs/RELEASE_SCORECARD.md; then
+            echo "::error::Release still being assembled and tested. It merges once docs/RELEASE_SCORECARD.md is updated and ends in 'Result: ready'."
+            exit 1
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
