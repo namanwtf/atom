@@ -7,8 +7,6 @@
   <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0-2b2b2b?style=for-the-badge"></a>
   <img alt="Android 14+" src="https://img.shields.io/badge/Android-14%2B-2b2b2b?style=for-the-badge&logo=android&logoColor=white">
   <img alt="No telemetry" src="https://img.shields.io/badge/Telemetry-none-2b2b2b?style=for-the-badge">
-  <a href="https://github.com/namanwtf/atom/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/namanwtf/atom?style=for-the-badge&color=2b2b2b&logo=github"></a>
-  <a href="https://github.com/namanwtf/atom/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/namanwtf/atom/total?style=for-the-badge&color=2b2b2b"></a>
 </p>
 
 <p align="center"><b>Chat apps can tell you how to do something. Atom does it.</b><br>
@@ -174,10 +172,6 @@ Atom is built and tested only on GitHub's runners: every pull request runs the u
 ## Contributing
 
 Issues and pull requests are welcome. Every pull request is built, unit-tested and screenshotted on an Android emulator by CI, so you can see your change running without a phone.
-
-## Star history
-
-<p align="center"><a href="https://star-history.com/#namanwtf/atom&Date"><img src="https://api.star-history.com/svg?repos=namanwtf/atom&type=Date" alt="Star history" width="720"></a></p>
 
 ## License and credits
 
