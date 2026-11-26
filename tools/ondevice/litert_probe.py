@@ -180,14 +180,28 @@ def run_case(engine, name, messages, sampler, max_out=768, thinking=None):
     return text
 
 
-def near_limit(engine, system, target):
-    """Browser turns trimmed so the whole prompt is about [target] tokens."""
-    turns = browser_turns(pages=6)
-    msgs = [{"role": "system", "content": system}] + turns
-    while sum(len(engine.tokenize(m["content"])) for m in msgs) + 12 * len(msgs) > target and len(msgs) > 3:
-        # Drop the oldest assistant/tool-result pair after the task.
-        del msgs[2:4]
-    return msgs
+def filled(engine, system, target):
+    """The browser run (task, enable_tools, browser_open) with the page result sized so the prompt is ~[target] tokens."""
+    def build(page_chars):
+        return [{"role": "system", "content": system}] + [
+            {"role": "user", "content": TASK},
+            {"role": "assistant", "content": '\n<tool_call>{"name":"enable_tools","arguments":{"groups":["browser"]}}</tool_call>'},
+            {"role": "user", "content": '<tool_result name="enable_tools">\nLoaded browser tools.\n</tool_result>'},
+            {"role": "assistant", "content": '\n<tool_call>{"name":"browser_open","arguments":{"url":"https://news.google.com/topics/technology"}}</tool_call>'},
+            {"role": "user", "content": '<tool_result name="browser_open">\n' + (PAGE * 3)[:page_chars] + "\n</tool_result>"},
+        ]
+
+    def size(msgs):
+        return sum(len(engine.tokenize(m["content"])) + 5 for m in msgs)
+
+    lo, hi = 0, len(PAGE) * 3
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if size(build(mid)) <= target:
+            lo = mid
+        else:
+            hi = mid - 1
+    return build(lo)
 
 
 def main():
@@ -215,8 +229,8 @@ def main():
         app_first = [{"role": "system", "content": system_with_tools(CORE_TOOLS)}, {"role": "user", "content": TASK}]
         app_browser = [{"role": "system", "content": system_with_tools(CORE_TOOLS + BROWSER_TOOLS)}] + browser_turns()
         chat = [{"role": "system", "content": COMPACT}, {"role": "user", "content": "Hi! What is the capital of France?"}]
-        near = near_limit(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3700)
-        fits = near_limit(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3000)
+        near = filled(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3950)
+        fits = filled(engine, system_with_tools(CORE_TOOLS), 2900)
         for name, msgs in (("first", app_first), ("browser", app_browser), ("near", near), ("fits", fits)):
             print(f"{name} request: {sum(len(engine.tokenize(m['content'])) for m in msgs)} tokens in {len(msgs)} messages")
         no_think = interfaces.ThinkingConfig(enable_thinking=False)
@@ -228,6 +242,7 @@ def main():
             ("fits/app-sampler", fits, APP_SAMPLER, None),
             ("fits/qwen-no-think", fits, QWEN_NON_THINKING, no_think),
             ("near/app-sampler", near, APP_SAMPLER, None),
+            ("near/qwen-no-think", near, QWEN_NON_THINKING, no_think),
             ("browser/app-sampler", app_browser, APP_SAMPLER, None),
         ]
         for name, msgs, sampler, thinking in cases:
