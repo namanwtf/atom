@@ -1,5 +1,6 @@
 package atom.web.files
 
+import atom.core.io.deleteTreeNoFollow
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -46,5 +47,45 @@ class WriteGuardTest {
         free("app", "/sdcard/Download/report.md")
         free("app", "$files/atom4_workspace/profile.txt")
         free("root", "/data/local/tmp/out.txt")
+    }
+
+    /** How Android resolves the other spellings of the app's folder. */
+    private val android = { p: String -> p.replace("/data/data/io.github.namanwtf.atom/", "/data/user/0/io.github.namanwtf.atom/").replace(Regex("^/proc/self/root/"), "/") }
+
+    @Test
+    fun otherSpellingsOfTheAppFolderStillAsk() {
+        for (p in listOf(
+            "/data/data/io.github.namanwtf.atom/files/atom4_linux/debian/rootfs/etc/apt/apt.conf.d/99x",
+            "/proc/self/root/data/user/0/io.github.namanwtf.atom/files/atom4_linux/alpine/rootfs/usr/bin/which",
+            "/data/data/io.github.namanwtf.atom/no_backup/root-busybox/vi",
+        )) {
+            assertNotNull(WriteGuard.reason("app", p, files, noBackup, android), p)
+        }
+        assertNull(WriteGuard.reason("app", "/data/data/io.github.namanwtf.atom/files/atom4_workspace/a.py", files, noBackup, android))
+    }
+
+    @Test
+    fun aSymlinkedParentOrFileIsResolved() {
+        val tmp = java.nio.file.Files.createTempDirectory("guard").toFile()
+        try {
+            val appFiles = java.io.File(tmp, "files")
+            val bin = java.io.File(appFiles, "atom4_linux/alpine/rootfs/usr/bin").apply { mkdirs() }
+            java.io.File(bin, "which").writeText("#!/bin/sh\n")
+            val alias = java.io.File(tmp, "alias").toPath()
+            java.nio.file.Files.createSymbolicLink(alias, appFiles.toPath())
+            val nb = java.io.File(tmp, "no_backup").path
+            // Through a symlinked folder, for an existing file and for one that does not exist yet.
+            assertNotNull(WriteGuard.reason("app", "$alias/atom4_linux/alpine/rootfs/usr/bin/which", appFiles.path, nb))
+            assertNotNull(WriteGuard.reason("app", "$alias/atom4_linux/alpine/rootfs/etc/apt/apt.conf.d/99x", appFiles.path, nb))
+            // An innocent name that links into the distro tree, also when the target does not exist (a dangling link).
+            val work = java.io.File(appFiles, "atom4_workspace").apply { mkdirs() }
+            java.nio.file.Files.createSymbolicLink(java.io.File(work, "notes.txt").toPath(), java.io.File(bin, "which").toPath())
+            java.nio.file.Files.createSymbolicLink(java.io.File(work, "later.txt").toPath(), java.io.File(bin, "newtool").toPath())
+            assertNotNull(WriteGuard.reason("app", "${work.path}/notes.txt", appFiles.path, nb))
+            assertNotNull(WriteGuard.reason("app", "${work.path}/later.txt", appFiles.path, nb))
+            assertNull(WriteGuard.reason("app", "${work.path}/plain.txt", appFiles.path, nb))
+        } finally {
+            tmp.deleteTreeNoFollow()
+        }
     }
 }

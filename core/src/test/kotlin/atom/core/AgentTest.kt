@@ -420,11 +420,20 @@ class AgentTest {
     }
 
     @Test
-    fun theIdenticalRepeatNudgeAppliesToWaitingToo() {
+    fun repeatedWaitsAreNotNudged() {
+        for (call in listOf(
+            ToolCall("w", "wait", """{"seconds":60}"""),
+            ToolCall("b", "browser_wait", """{"text":"Done","timeout_seconds":30}"""),
+            ToolCall("r", "terminal_session_read", """{"id":"s1","wait_s":60}"""),
+        )) {
+            val guard = atom.core.agent.LoopGuard()
+            val verdicts = (1..20).map { guard.after(listOf(call), listOf(ToolResult.ok("x"))) }
+            assertTrue(verdicts.none { it.nudge != null || it.stuck }, "${call.name} waits should not be nudged")
+        }
+        // A terminal read that does not wait is looking, not waiting: it is nudged like any repeat.
         val guard = atom.core.agent.LoopGuard()
-        val wait = listOf(ToolCall("w", "wait", """{"seconds":60}"""))
-        val verdicts = (1..3).map { guard.after(wait, listOf(ToolResult.ok("x"))) }
-        assertTrue(verdicts.last().nudge?.contains("identical action") == true)
+        val read = listOf(ToolCall("r", "terminal_session_read", """{"id":"s1","wait_s":0}"""))
+        assertTrue((1..3).map { guard.after(read, listOf(ToolResult.ok("x"))) }.last().nudge?.contains("identical action") == true)
     }
 
     @Test
