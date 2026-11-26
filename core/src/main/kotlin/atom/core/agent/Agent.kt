@@ -81,10 +81,23 @@ data class AgentConfig(
      */
     fun packingFor(tools: List<ToolSpec>): ContextPolicy {
         val shared = context.sharedWindow?.takeIf { it > 0 } ?: return packing
-        val toolTokens = toolTokens(tools)
         val cap = maxOf(context.budgetTokens ?: shared, ContextPolicy.SHARED_MIN_BUDGET)
-        val left = shared - maxOutputTokens - toolTokens - ContextPolicy.SHARED_MARGIN
-        return context.copy(budgetTokens = left.coerceIn(ContextPolicy.SHARED_MIN_BUDGET, cap))
+        val left = messageRoom(tools)
+        if (left >= ContextPolicy.SHARED_MIN_BUDGET) return context.copy(budgetTokens = left.coerceAtMost(cap))
+        // Over-full (the agent already dropped what optional tools it could): the request must still fit, so the
+        // history shrinks instead: less budget, only the newest tool result in full, shorter results.
+        return context.copy(
+            budgetTokens = left.coerceAtLeast(ContextPolicy.SHARED_FLOOR),
+            keepFullToolResults = 1,
+            maxToolResultChars = minOf(context.maxToolResultChars, ContextPolicy.SHARED_FLOOR_RESULT_CHARS),
+            compactedToolResultChars = minOf(context.compactedToolResultChars, 80),
+        )
+    }
+
+    /** What a shared window leaves for the messages after the answer, [tools] and the margin; unbounded without one. */
+    fun messageRoom(tools: List<ToolSpec>): Int {
+        val shared = context.sharedWindow?.takeIf { it > 0 } ?: return Int.MAX_VALUE
+        return shared - maxOutputTokens - toolTokens(tools) - ContextPolicy.SHARED_MARGIN
     }
 
     /** What [tools] cost in the prompt: as [PromptedTools] writes them with a shared window, else as JSON schemas. */
@@ -115,7 +128,7 @@ data class MessageInfo(
     val isError: Boolean = false,
     /** Only for the current turn; persist [Scrubber.scrub] of it instead. */
     val sensitive: Boolean = false,
-    /** A loop-guard nudge: sent to the model, never shown as the user's words. */
+    /** Agent-internal (a loop-guard nudge, the run's tool preload): sent to the model, never shown to the user. */
     val internal: Boolean = false,
     /** A queued user message delivered to the running task. */
     val steering: Boolean = false,
@@ -217,15 +230,35 @@ class Agent(
      * Runs until the model answers without tool calls, the step budget runs out, or the flow is cancelled. At the step
      * limit the model gets one last call without tools to write its reply ([AgentConfig.wrapUpPrompt]).
      */
-    fun run(history: List<ChatMessage>, ctx: ToolContext, control: RunControl = RunControl.None): Flow<AgentEvent> = flow {
+    fun run(
+        history: List<ChatMessage>,
+        ctx: ToolContext,
+        control: RunControl = RunControl.None,
+        /**
+         * A tool call already made for the model before its first step, with its result (the tool groups the run
+         * preloaded, [atom.core.tool.ToolLoadout.Preloaded.asExchange]). It is added to the conversation, marked
+         * [MessageInfo.internal], so it persists with it and the system prompt stays the same, but it is no step of
+         * the run: no tool events, hidden from the transcript.
+         */
+        preloaded: Pair<ToolCall, ToolResult>? = null,
+    ): Flow<AgentEvent> = flow {
         val state = RunState(history)
         val guard = LoopGuard()
         var stuckAt: Int? = null
 
+        // Internal: kept for the model (and the prompt cache) but not a step the user sees, so no tool events.
+        preloaded?.let { (call, result) ->
+            append(state, ChatMessage.assistant("", listOf(call)), MessageInfo(internal = true))
+            append(state, ChatMessage.toolResult(call, result.toParts()), MessageInfo(durationMs = 0, internal = true))
+        }
+
         for (step in 1..config.maxSteps) {
             control.checkpoint()
             deliverSteering(state, control)
-            val specs = exposure.specs()
+            var specs = exposure.specs()
+            // A small shared window that the tools have overfilled (enable_tools, groups from history): the oldest
+            // optional groups go first, so the request still fits instead of being refused by the runtime.
+            while (config.messageRoom(specs) < ContextPolicy.SHARED_MIN_BUDGET && exposure.shrink()) specs = exposure.specs()
             state.toolTokens = config.toolTokens(specs)
             maybeCompact(state)
 

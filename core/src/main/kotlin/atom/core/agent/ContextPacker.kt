@@ -30,8 +30,17 @@ data class ContextPolicy(
         /** Room kept free in a [sharedWindow] for template tokens, the tool-format header and estimation error. */
         const val SHARED_MARGIN = 384
 
-        /** The messages always get at least this much of a [sharedWindow], even if the prompt then overflows. */
+        /**
+         * The messages should get at least this much of a [sharedWindow]; below it the agent first drops optional
+         * tool groups, then shrinks the history down to [SHARED_FLOOR].
+         */
         const val SHARED_MIN_BUDGET = 600
+
+        /** The least the messages get in an over-full [sharedWindow]: the task and the newest step, shortened. */
+        const val SHARED_FLOOR = 200
+
+        /** Tool results are cut to this many characters in an over-full [sharedWindow]. */
+        const val SHARED_FLOOR_RESULT_CHARS = 600
 
         /** Prompt budget when the model's window is unknown: generous enough for any current model, never tiny. */
         const val UNKNOWN_WINDOW_BUDGET = 64_000

@@ -1,6 +1,7 @@
 package atom.core.tool
 
 import atom.core.llm.ChatMessage
+import atom.core.llm.ToolCall
 import atom.core.llm.ToolSpec
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -12,6 +13,9 @@ interface ToolExposure {
 
     /** Called before a call to [name] runs, so a lazily loaded set can add a tool the model reached for directly. */
     fun onCall(name: String) {}
+
+    /** Offers fewer tools (the oldest optional group goes), for a request that would not fit; false when it cannot. */
+    fun shrink(): Boolean = false
 
     /** Every tool, every request: the behaviour without a [ToolLoadout]. */
     class All(private val registry: ToolRegistry) : ToolExposure {
@@ -42,7 +46,7 @@ class ToolLoadout(
     private val groupsByTool: Map<String, Set<String>> = this.tools.associate { it.spec.name to groupsOf(it) }
 
     /** Group -> its tool names, groups in order of first appearance. */
-    private val members: Map<String, List<String>> = LinkedHashMap<String, MutableList<String>>().also { map ->
+    internal val members: Map<String, List<String>> = LinkedHashMap<String, MutableList<String>>().also { map ->
         this.tools.forEach { t -> groupsByTool.getValue(t.spec.name).forEach { g -> map.getOrPut(g) { mutableListOf() } += t.spec.name } }
     }
 
@@ -63,6 +67,14 @@ class ToolLoadout(
     @Synchronized
     override fun specs(): List<ToolSpec> = tools.filter { visible(it.spec.name) }.map { it.spec } + listOfNotNull(loader?.spec)
 
+    /** Unloads the group loaded first; the model can load it again with [LOADER] or by calling one of its tools. */
+    @Synchronized
+    override fun shrink(): Boolean {
+        val oldest = loaded.firstOrNull() ?: return false
+        loaded -= oldest
+        return true
+    }
+
     @Synchronized
     override fun onCall(name: String) {
         if (!visible(name)) groupsByTool[name]?.firstOrNull()?.let { load(listOf(it)) }
@@ -75,6 +87,12 @@ class ToolLoadout(
     @Synchronized
     fun preload(history: List<ChatMessage>) {
         for (m in history) for (c in m.toolCalls) {
+            if (c.name == LOADER) {
+                // An earlier load (the model's, or a preload written into the history): its result, with the notes,
+                // is in the history too.
+                for (g in loaderGroups(c.argumentsJson)) if (g in members && loaded.add(g)) notes[g]?.let { sentNotes += it }
+                continue
+            }
             val gs = groupsByTool[c.name] ?: continue
             if (gs.isEmpty() || gs.any { it in loaded }) continue
             val g = gs.first()
@@ -102,7 +120,23 @@ class ToolLoadout(
     }
 
     /** What [preloadGroups] loaded, and the notes that go with those groups. */
-    data class Preloaded(val groups: List<String>, val notes: List<String>)
+    data class Preloaded(val groups: List<String>, val notes: List<String>) {
+        /**
+         * The preload written into the conversation as the [LOADER] call the model would have made, and its result
+         * (with the groups' notes). It stays in the conversation's history, where [preload] finds it next turn, and
+         * leaves the system prompt (the cached prefix) unchanged. Null when nothing was loaded.
+         */
+        fun asExchange(loadout: ToolLoadout): Pair<ToolCall, ToolResult>? {
+            if (groups.isEmpty()) return null
+            val args = JsonObject(mapOf("groups" to JsonPrimitive(groups.joinToString(","))))
+            val text = buildString {
+                append("Loaded for this task:")
+                groups.forEach { g -> append("\n- ").append(g).append(": ").append(loadout.members.getValue(g).joinToString()) }
+                notes.forEach { append("\n\n").append(it) }
+            }
+            return ToolCall(id = "preload_" + groups.joinToString("_"), name = LOADER, argumentsJson = args.toString()) to ToolResult.ok(text)
+        }
+    }
 
     /** Loads [requested] (group names, or tool names standing for their group) and says what was added. */
     @Synchronized
@@ -141,6 +175,13 @@ class ToolLoadout(
                 fresh.forEach { append("\n\n").append(it) }
             },
         )
+    }
+
+    private fun loaderGroups(argumentsJson: String): List<String> {
+        val args = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(argumentsJson) as? JsonObject }.getOrNull() ?: return emptyList()
+        val raw = args["groups"]
+        val names = if (raw is JsonArray) raw.mapNotNull { (it as? JsonPrimitive)?.content } else (raw as? JsonPrimitive)?.content.orEmpty().split(',', ' ', ';', '\n')
+        return names.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
     }
 
     private fun visible(name: String): Boolean {

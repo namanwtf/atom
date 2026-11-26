@@ -21,26 +21,30 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
     override fun stream(request: LlmRequest): Flow<LlmEvent> {
         if (request.tools.isEmpty()) {
             // A request without tools (the step-limit wrap-up) can still carry earlier calls the inner engine
-            // cannot read natively.
-            return inner.stream(if (hasToolTurns(request.messages)) request.copy(messages = asPlainText(request.messages)) else request)
+            // cannot read natively. A model that writes a <tool_call> anyway gets it dropped, never shown as text:
+            // nothing runs after the limit.
+            val plain = if (hasToolTurns(request.messages)) request.copy(messages = asPlainText(request.messages)) else request
+            return scanned(plain, keepCalls = false)
         }
-        val rewritten = request.copy(messages = rewrite(request.messages, request.tools), tools = emptyList())
-        return flow {
-            val scanner = ToolCallScanner()
-            var finish = FinishReason.Stop
-            // Small models often go on to write the tool's result themselves after a call; generation stops there,
-            // so the invented result is neither shown nor kept.
-            inner.stream(rewritten).transformWhile { event ->
-                when (event) {
-                    is LlmEvent.TextDelta -> scanner.feed(event.text).forEach { emit(it) }
-                    is LlmEvent.Finished -> finish = event.reason
-                    else -> emit(event)
-                }
-                !scanner.inventingResult
-            }.collect { emit(it) }
-            scanner.finish().forEach { emit(it) }
-            emit(LlmEvent.Finished(if (scanner.callCount > 0) FinishReason.ToolCalls else finish))
-        }
+        return scanned(request.copy(messages = rewrite(request.messages, request.tools), tools = emptyList()), keepCalls = true)
+    }
+
+    private fun scanned(request: LlmRequest, keepCalls: Boolean): Flow<LlmEvent> = flow {
+        val scanner = ToolCallScanner()
+        var finish = FinishReason.Stop
+        val pass = { e: LlmEvent -> keepCalls || e !is LlmEvent.ToolCallReady }
+        // Small models often go on to write the tool's result themselves after a call; generation stops there,
+        // so the invented result is neither shown nor kept.
+        inner.stream(request).transformWhile { event ->
+            when (event) {
+                is LlmEvent.TextDelta -> scanner.feed(event.text).filter(pass).forEach { emit(it) }
+                is LlmEvent.Finished -> finish = event.reason
+                else -> emit(event)
+            }
+            !scanner.inventingResult
+        }.collect { emit(it) }
+        scanner.finish().filter(pass).forEach { emit(it) }
+        emit(LlmEvent.Finished(if (keepCalls && scanner.callCount > 0) FinishReason.ToolCalls else finish))
     }
 
     private fun rewrite(messages: List<ChatMessage>, tools: List<ToolSpec>): List<ChatMessage> {

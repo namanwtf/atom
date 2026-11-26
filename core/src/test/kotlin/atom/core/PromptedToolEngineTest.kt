@@ -67,6 +67,17 @@ class PromptedToolEngineTest {
     }
 
     @Test
+    fun aCallInTheNoToolsWrapUpNeverShowsAsText() = runTest {
+        // The step-limit wrap-up offers no tools; a small model writes a call anyway.
+        val inner = chunked("I opened the page but ran out of steps. ", "<tool_call>{\"name\": \"tap\", ", "\"arguments\": {}}</tool", "_call>", " Sorry.")
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")))).toList()
+        val text = events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text }
+        assertEquals("I opened the page but ran out of steps.  Sorry.", text)
+        assertTrue(events.none { it is LlmEvent.ToolCallReady })
+        assertEquals(FinishReason.Stop, (events.last() as LlmEvent.Finished).reason)
+    }
+
+    @Test
     fun aToolResultTagBeforeAnyCallIsKept() = runTest {
         val inner = chunked("Atom sends results in <tool_result> blocks.")
         val events = PromptedToolEngine(inner).stream(LlmRequest("m", listOf(ChatMessage.user("x")), tools)).toList()
