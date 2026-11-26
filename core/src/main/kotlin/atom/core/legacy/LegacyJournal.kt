@@ -1,6 +1,12 @@
 package atom.core.legacy
 
 import atom.core.llm.ToolCall
+import java.io.InputStream
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.DecodeSequenceMode
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeToSequence
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -33,12 +39,16 @@ class LegacyJournal private constructor(
             .maxByOrNull { it.length }
     }
 
-    /** Reasoning of the model turn behind a visible assistant row (`assistant-<runId>-<round>[-result|-retry-n]`). */
+    /**
+     * Reasoning of the model turn behind a visible assistant row. Rows are `assistant-<runId>-<round>-<index>` (or
+     * `-result`, `-retry-<round>`); the transcript names the turn `assistant-<runId>-<round>`.
+     */
     fun reasoningFor(rowId: String): String? {
         val candidates = buildList {
             add(rowId)
             add(rowId.removeSuffix("-result"))
             RETRY.find(rowId)?.let { add(it.groupValues[1] + "-" + it.groupValues[2]) }
+            TRAILING_INDEX.find(rowId)?.let { add(it.groupValues[1]) }
         }
         return candidates.firstNotNullOfOrNull { reasoning[it] }
     }
@@ -48,33 +58,49 @@ class LegacyJournal private constructor(
 
         private val TOOL_ROW = Regex("-tool-\\d+-(.+)$")
         private val RETRY = Regex("^(.*)-retry-(\\d+)$")
+        private val TRAILING_INDEX = Regex("^(.*)-\\d+$")
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-        /** Reads a journal; anything unreadable gives [EMPTY] (the visible timeline is still imported). */
-        fun parse(text: String?): LegacyJournal {
-            if (text.isNullOrBlank()) return EMPTY
-            val root = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonArray ?: return EMPTY
+        /** Reads a journal held in memory; see [parse] for streams. */
+        fun parse(text: String?): LegacyJournal =
+            if (text.isNullOrBlank()) EMPTY else parse(text.byteInputStream(Charsets.UTF_8), Int.MAX_VALUE)
+
+        /**
+         * Reads a journal one element at a time, so a transcript of many megabytes never has to be in memory at once;
+         * only calls, results (each cut to [maxResultChars]) and reasoning are kept. A damaged journal keeps what was
+         * read before the damage; an unreadable one gives [EMPTY] (the visible timeline is still imported).
+         */
+        @OptIn(ExperimentalSerializationApi::class)
+        fun parse(input: InputStream, maxResultChars: Int): LegacyJournal {
             val calls = LinkedHashMap<String, ToolCall>()
             val results = LinkedHashMap<String, String>()
             val reasoning = LinkedHashMap<String, String>()
-            for (element in root) {
-                val o = element as? JsonObject ?: continue
-                if (o.bool("contextSummary") == true) continue
-                when (o.str("role")) {
-                    "assistant" -> {
-                        val messageId = o.str("messageId").orEmpty()
-                        val thought = o.str("reasoningContent").orEmpty()
-                        if (messageId.isNotEmpty() && thought.isNotBlank()) reasoning[messageId] = thought
-                        toolCalls(o.str("toolCallsJson")).forEach { calls[it.id] = it }
+            try {
+                json.decodeToSequence(input, JsonElement.serializer(), DecodeSequenceMode.ARRAY_WRAPPED).forEach { element ->
+                    val o = element as? JsonObject ?: return@forEach
+                    if (o.bool("contextSummary") == true) return@forEach
+                    when (o.str("role")) {
+                        "assistant" -> {
+                            val messageId = o.str("messageId").orEmpty()
+                            val thought = o.str("reasoningContent").orEmpty()
+                            if (messageId.isNotEmpty() && thought.isNotBlank()) reasoning[messageId] = thought.take(maxResultChars)
+                            toolCalls(o.str("toolCallsJson")).forEach { calls[it.id] = it }
+                        }
+                        "tool" -> {
+                            val id = o.str("toolCallId").orEmpty()
+                            if (id.isNotEmpty()) results[id] = o.str("content").orEmpty().let { if (it.length > maxResultChars) it.take(maxResultChars + 1) else it }
+                        }
+                        else -> Unit
                     }
-                    "tool" -> {
-                        val id = o.str("toolCallId").orEmpty()
-                        if (id.isNotEmpty()) results[id] = o.str("content").orEmpty()
-                    }
-                    else -> Unit
                 }
+            } catch (e: SerializationException) {
+                // Keep what was read.
+            } catch (e: IllegalArgumentException) {
+                // Not a JSON array, or damaged mid-way.
+            } catch (e: IllegalStateException) {
+                // The stream ended inside an element.
             }
-            return LegacyJournal(calls, results, reasoning)
+            return if (calls.isEmpty() && results.isEmpty() && reasoning.isEmpty()) EMPTY else LegacyJournal(calls, results, reasoning)
         }
 
         /** An OpenAI Chat Completions `tool_calls` array, encoded as a string. */

@@ -11,8 +11,13 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class LegacyImportState(
     val version: Int = 1,
-    /** Set when a run finished; until then the import runs again at the next start. */
+    /**
+     * Set when a run finished without an error or a failed item; until then the import runs again at the next start,
+     * at most [LegacyImportPlan.MAX_AUTO_ATTEMPTS] times.
+     */
     val completedAt: Long? = null,
+    /** Automatic runs started so far. */
+    val attempts: Int = 0,
     /** Old provider id to Atom 4 provider id. */
     val providers: Map<String, String> = emptyMap(),
     /** Old provider ids whose API key was handled (imported, or Atom 4 already had one). */
@@ -52,6 +57,10 @@ data class LegacyImportReport(
     val failedProviders: Int = 0,
     val failedConversations: Int = 0,
     val damagedMessages: Int = 0,
+    /** Messages cut to the size limit, with a note. */
+    val truncatedMessages: Int = 0,
+    /** Conversations whose tool steps kept only their short previews (no full arguments and results). */
+    val withoutToolDetails: Int = 0,
     val skippedImages: Int = 0,
     val selectionImported: Boolean = false,
     /** The old database was missing, empty or too old. */
@@ -62,9 +71,19 @@ data class LegacyImportReport(
 
 /** The importer's decisions, kept free of Android so they can be tested. */
 object LegacyImportPlan {
-    /** Runs automatically once: when the old database exists and no run has finished yet. */
+    /** Automatic runs before the import is left to the manual button. */
+    const val MAX_AUTO_ATTEMPTS = 3
+
+    /**
+     * Runs automatically while the old database exists and no run has finished cleanly, for at most
+     * [MAX_AUTO_ATTEMPTS] starts (so a persistent problem does not run the import on every start).
+     */
     fun shouldAutoRun(databaseExists: Boolean, state: LegacyImportState?): Boolean =
-        databaseExists && state?.completedAt == null
+        databaseExists && state?.completedAt == null && (state?.attempts ?: 0) < MAX_AUTO_ATTEMPTS
+
+    /** Whether a run with this report counts as finished: no error and nothing left to retry. */
+    fun isComplete(report: LegacyImportReport): Boolean =
+        report.error == null && report.failedConversations == 0 && report.failedProviders == 0
 
     enum class ConversationAction { Import, AlreadyImported, ExistsInAtom4 }
 

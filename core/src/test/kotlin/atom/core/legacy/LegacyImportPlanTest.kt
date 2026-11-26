@@ -17,6 +17,18 @@ class LegacyImportPlanTest {
         assertTrue(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(conversations = mapOf("a" to "a"))), "an interrupted run resumes")
         assertFalse(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(completedAt = 5)))
         assertFalse(LegacyImportPlan.shouldAutoRun(false, null))
+        // A run that keeps failing is retried on a few starts only.
+        assertTrue(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(attempts = LegacyImportPlan.MAX_AUTO_ATTEMPTS - 1)))
+        assertFalse(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(attempts = LegacyImportPlan.MAX_AUTO_ATTEMPTS)))
+    }
+
+    @Test
+    fun onlyACleanRunCountsAsFinished() {
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(conversations = 3)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(error = "disk")))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedConversations = 1)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedProviders = 1)))
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(signInAgain = listOf("xAI"))), "a sign-in to redo is not retried")
     }
 
     @Test

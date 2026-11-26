@@ -274,6 +274,11 @@ class LegacyProvidersTest {
         assertEquals(1000L, usable.tokens.expiresAtMillis, "expired but refreshable")
         assertEquals("plus", usable.tokens.plan)
 
+        // No stored expiry (0): the access token's own "exp" claim is used.
+        val withExp = jwt("""{"exp":1900000000}""")
+        val noExpiry = good.replace(access, withExp).replace("\"expiresAt\":1000", "\"expiresAt\":0")
+        assertEquals(1_900_000_000_000L, assertIs<SignIn.Usable>(LegacyProviders.signIn(noExpiry, chatgptRow, 0)).tokens.expiresAtMillis)
+
         assertIs<SignIn.SignInAgain>(LegacyProviders.signIn(good.replace("acct-9", ""), chatgptRow, 0))
         assertIs<SignIn.SignInAgain>(LegacyProviders.signIn(good.replace(ChatGptAuth.CLIENT_ID, "other"), chatgptRow, 0))
         assertIs<SignIn.SignInAgain>(LegacyProviders.signIn(good, grokRow, 0), "mode must match the row")

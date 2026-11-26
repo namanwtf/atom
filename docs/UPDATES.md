@@ -107,8 +107,8 @@ Installing over the earlier app is a normal Android update, so Android keeps:
 
 Atom 4 imports the earlier app's providers, API keys, ChatGPT and Grok sign-ins (when still valid), default model
 and conversations once, in the background, on the first start that finds `databases/atom.db`; the user can run it
-again from Settings > General > Data backup. The importer only reads: it copies `atom.db` with its `-wal` and `-shm`
-files into `cache/atom4_import/`, opens the copy with plain SQLite (never Room), reads
+again from Settings > General > Data backup. The importer only reads: it copies `atom.db` with its `-wal`, `-shm`
+and `-journal` files into `cache/atom4_import/`, opens the copy with plain SQLite (never Room), reads
 `files/datastore/atom_settings.preferences_pb` and the sign-in files in `no_backup/provider_credentials/` (decrypted
 with the earlier app's Keystore key, which the update keeps), writes through Atom 4's own stores, records what it
 brought over in `files/atom4_legacy_import.json` and deletes the copy. MCP servers, skills, scheduled tasks and

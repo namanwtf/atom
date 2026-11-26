@@ -240,7 +240,7 @@ object LegacyProviders {
             .filter { it != LegacyEffort.Off && it != LegacyEffort.Default }
             .mapNotNull { it.effort }
         val mandatory = o.bool("mandatory") == true
-        val canDisable = o.bool("canDisable") ?: !mandatory
+        val canDisable = o.bool("canDisable") ?: false
         val levels = (efforts + listOfNotNull(ReasoningEffort.Off.takeIf { canDisable && !mandatory })).distinct().sorted()
         val default = o.str("defaultEffort")?.let(LegacyEffort::parse)?.takeIf { it != LegacyEffort.Default }?.effort
         return ReasoningInfo(supported = true, levels = levels, serverDefault = default)
@@ -294,7 +294,8 @@ object LegacyProviders {
         val access = o.str("accessToken")?.takeIf { it.isNotBlank() } ?: return SignIn.SignInAgain("signed out")
         val refresh = o.str("refreshToken")?.takeIf { it.isNotBlank() }
         val idToken = o.str("idToken")?.takeIf { it.isNotBlank() }
-        val expires = (o["expiresAt"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
+        // 0 is the "unknown" default; the access token's own expiry claim is used then, so Atom 4 still refreshes.
+        val expires = (o["expiresAt"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 } ?: Jwt.expiryMillis(access)
         if (expires != null && expires <= nowMillis && refresh == null) return SignIn.SignInAgain("expired")
         val email = o.str("email")?.takeIf { it.isNotBlank() }
         val clientId = o.str("clientId")
