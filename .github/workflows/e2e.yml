@@ -34,10 +34,11 @@ env:
 
 jobs:
   e2e:
-    # Normal pull requests stay fast: only those labelled "e2e" or aimed at a release branch run this.
+    # Normal pull requests stay fast: only those labelled "e2e", aimed at a release branch, or the release PR itself
+    # (release/next into main) run this.
     if: >-
       github.event_name != 'pull_request' ||
-      (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'e2e') || startsWith(github.base_ref, 'release/'))) ||
+      (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'e2e') || startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/'))) ||
       (github.event.action == 'labeled' && github.event.label.name == 'e2e')
     runs-on: ubuntu-latest
     timeout-minutes: 100

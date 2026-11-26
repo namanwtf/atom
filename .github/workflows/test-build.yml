@@ -73,8 +73,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Build release APK
-        run: ./gradlew :app:assembleRelease --stacktrace
+      # The app and the optional on-device AI pack (#22); both are signed and checked below.
+      - name: Build release APKs
+        run: ./gradlew :app:assembleRelease :ondevice-pack:assembleRelease --stacktrace
 
       - name: Sign and verify
         env:
@@ -144,6 +145,7 @@ jobs:
             --jq '.[] | select(.draft and (.name | startswith("Test build"))) | .id' |
             while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"; done
           gh release create "v$VERSION" "dist/atom-$VERSION.apk" "dist/atom-$VERSION.apk.sha256" \
+            "dist/atom-ondevice-$VERSION.apk" "dist/atom-ondevice-$VERSION.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
             --title "Test build $VERSION" \
             --notes "Test copy of release/next at $GITHUB_SHA, for trying before the release. Draft: only repository members can see it, and no installed Atom is offered it as an update."
