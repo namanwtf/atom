@@ -93,6 +93,28 @@ def tool_instructions(tools):
     return out.getvalue()
 
 
+def compact_arguments(params):
+    """PromptedTools.compactArguments."""
+    o = json.loads(params)
+    props = o.get("properties") or {}
+    if not props:
+        return "none"
+    req = set(o.get("required") or [])
+    out = []
+    for name, v in props.items():
+        notes = ["one of: " + ", ".join(v["enum"]) if v.get("enum") else v.get("type", "any")]
+        if name in req:
+            notes.append("required")
+        out.append(f"{name} ({', '.join(notes)})")
+    return ", ".join(out)
+
+
+def tool_instructions_compact(tools):
+    """PromptedTools.instructions(compact = true): what the fixed app sends to a model with a 4096-token window."""
+    head = tool_instructions([]).rstrip("\n") + "\n\n"
+    return head + "".join(f"## {n}\n{d}\nArguments: {compact_arguments(a)}\n\n" for n, d, a in tools)
+
+
 TASK = ("In Atom's built-in agent browser (not an external browser app), search for today's top technology news and "
         "summarize it\n\n[Current time: 18:42]")
 
@@ -180,75 +202,59 @@ def run_case(engine, name, messages, sampler, max_out=768, thinking=None):
     return text
 
 
-def filled(engine, system, target):
-    """The browser run (task, enable_tools, browser_open) with the page result sized so the prompt is ~[target] tokens."""
-    def build(page_chars):
-        return [{"role": "system", "content": system}] + [
+def browser_step(system, page_chars):
+    """Step 3 of the task: the model loaded the browser group and opened a news page; it now has to summarize."""
+    return [{"role": "system", "content": system},
             {"role": "user", "content": TASK},
             {"role": "assistant", "content": '\n<tool_call>{"name":"enable_tools","arguments":{"groups":["browser"]}}</tool_call>'},
-            {"role": "user", "content": '<tool_result name="enable_tools">\nLoaded browser tools.\n</tool_result>'},
+            {"role": "user", "content": '<tool_result name="enable_tools">\nLoaded browser: ' +
+                                        ", ".join(n for n, _, _ in BROWSER_TOOLS) + "\n</tool_result>"},
             {"role": "assistant", "content": '\n<tool_call>{"name":"browser_open","arguments":{"url":"https://news.google.com/topics/technology"}}</tool_call>'},
-            {"role": "user", "content": '<tool_result name="browser_open">\n' + (PAGE * 3)[:page_chars] + "\n</tool_result>"},
-        ]
+            {"role": "user", "content": '<tool_result name="browser_open">\n' + PAGE[:page_chars] + "\n</tool_result>"}]
 
-    def size(msgs):
-        return sum(len(engine.tokenize(m["content"])) + 5 for m in msgs)
 
-    lo, hi = 0, len(PAGE) * 3
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if size(build(mid)) <= target:
-            lo = mid
-        else:
-            hi = mid - 1
-    return build(lo)
+def tokens(engine, msgs):
+    return sum(len(engine.tokenize(m["content"])) + 5 for m in msgs)
 
 
 def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("model")
-    ap.add_argument("--backend", default="cpu", choices=["cpu", "gpu"])
+    ap.add_argument("--config", default="before", choices=["before", "after"])
     ap.add_argument("--activation", default=None, choices=[None, "fp32", "fp16"])
-    ap.add_argument("--max-tokens", type=int, default=8192, help="EngineConfig.maxNumTokens; 0 = the model's own")
     ap.add_argument("--peek", action="store_true")
-    ap.add_argument("cases", nargs="*")
     a = ap.parse_args()
-    path = a.model
-    wanted = set(a.cases)
     if a.peek:
-        peek(path)
+        peek(a.model)
 
     from litert_lm._ffi import ActivationDataType
-    backend = interfaces.Backend.GPU() if a.backend == "gpu" else interfaces.Backend.CPU()
     act = {"fp32": ActivationDataType.FLOAT32, "fp16": ActivationDataType.FLOAT16}.get(a.activation)
-    label = f"{a.backend} act={a.activation or 'default'} maxNumTokens={a.max_tokens or 'model'}"
-    print(f"\n##### engine: {label} #####", flush=True)
-    engine = litert_lm.Engine(path, backend=backend, max_num_tokens=a.max_tokens or None, activation_data_type=act)
+    if a.config == "before":
+        # Atom 4.0.4: maxNumTokens 8192 (LOCAL_CONTEXT_WINDOW), the model's default sampler and thinking, the full
+        # JSON schema of every tool, tool results up to 3000 characters.
+        max_tokens, sampler, thinking, render, page = 8192, APP_SAMPLER, None, tool_instructions, 3000
+    else:
+        # The fix: the model's own window, thinking off with Qwen's non-thinking sampler (top-k 20, top-p 0.8,
+        # temperature 0.7), the compact tool list, tool results up to 1500 characters.
+        max_tokens, sampler, thinking, render, page = None, QWEN_NON_THINKING, interfaces.ThinkingConfig(enable_thinking=False), tool_instructions_compact, 1500
+    label = f"{a.config}: maxNumTokens={max_tokens or 'model'} activation={a.activation or 'default'}"
+    print(f"\n##### {label} #####", flush=True)
+    engine = litert_lm.Engine(a.model, backend=interfaces.Backend.CPU(), max_num_tokens=max_tokens, activation_data_type=act)
     try:
-        app_first = [{"role": "system", "content": system_with_tools(CORE_TOOLS)}, {"role": "user", "content": TASK}]
-        app_browser = [{"role": "system", "content": system_with_tools(CORE_TOOLS + BROWSER_TOOLS)}] + browser_turns()
-        chat = [{"role": "system", "content": COMPACT}, {"role": "user", "content": "Hi! What is the capital of France?"}]
-        near = filled(engine, system_with_tools(CORE_TOOLS + BROWSER_TOOLS), 3950)
-        fits = filled(engine, system_with_tools(CORE_TOOLS), 2900)
-        for name, msgs in (("first", app_first), ("browser", app_browser), ("near", near), ("fits", fits)):
-            print(f"{name} request: {sum(len(engine.tokenize(m['content'])) for m in msgs)} tokens in {len(msgs)} messages")
-        no_think = interfaces.ThinkingConfig(enable_thinking=False)
+        for tok in ("<|im_start|>", "<|im_end|>", "<think>", "</think>", "<tool_call>"):
+            print(f"tokenize({tok!r}) = {engine.tokenize(tok)}")
+        core = COMPACT + "\n\n" + render(CORE_TOOLS)
+        browser = COMPACT + "\n\n" + render(CORE_TOOLS + BROWSER_TOOLS)
         cases = [
-            ("chat/app-sampler", chat, APP_SAMPLER, None),
-            ("chat/qwen-no-think", chat, QWEN_NON_THINKING, no_think),
-            ("first/app-sampler", app_first, APP_SAMPLER, None),
-            ("first/qwen-no-think", app_first, QWEN_NON_THINKING, no_think),
-            ("fits/app-sampler", fits, APP_SAMPLER, None),
-            ("fits/qwen-no-think", fits, QWEN_NON_THINKING, no_think),
-            ("near/app-sampler", near, APP_SAMPLER, None),
-            ("near/qwen-no-think", near, QWEN_NON_THINKING, no_think),
-            ("browser/app-sampler", app_browser, APP_SAMPLER, None),
+            ("chat", [{"role": "system", "content": COMPACT}, {"role": "user", "content": "Hi! What is the capital of France?"}]),
+            ("step 1: the task", [{"role": "system", "content": core}, {"role": "user", "content": TASK}]),
+            ("step 3: summarize the opened page", browser_step(browser, page)),
         ]
-        for name, msgs, sampler, thinking in cases:
-            if wanted and name.split("/")[0] not in wanted and name not in wanted:
-                continue
-            run_case(engine, f"{label} {name}", msgs, sampler, thinking=thinking)
+        for name, msgs in cases:
+            print(f"{name}: {tokens(engine, msgs)} prompt tokens (system prompt with tools: {len(engine.tokenize(msgs[0]['content']))})")
+        for name, msgs in cases:
+            run_case(engine, f"{label} | {name}", msgs, sampler, max_out=768 if a.config == "before" else 512, thinking=thinking)
             sys.stdout.flush()
     finally:
         engine.close()

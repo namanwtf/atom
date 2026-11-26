@@ -112,7 +112,7 @@ class LiteRtEngine(
             val eng = withContext(worker) { ensureLoaded() }
             val plan = toConversationPlan(request.messages, visionLoaded)
             val maxOut = request.maxOutputTokens.coerceAtLeast(1)
-            val thinking = request.reasoning != ReasoningEffort.Off
+            val thinking = thinkingFor(request.reasoning, effectiveContext)
 
             val conversation = withContext(worker) {
                 try {
@@ -372,6 +372,20 @@ class LiteRtEngine(
         }
 
         const val THOUGHT_CHANNEL = "thought"
+
+        /** Windows this small leave no room for a thinking model to think and still answer. */
+        const val THINKING_MIN_CONTEXT = 8_192
+
+        /**
+         * Whether a thinking model (Qwen3) may think. Asked for explicitly: as asked. By default only with a window
+         * of [THINKING_MIN_CONTEXT] or more: in Qwen3 0.6B's 4096 tokens, a prompt near the limit was thought away
+         * entirely on the runner (no answer at all), and a first agent step took 75 s instead of 27 s.
+         */
+        fun thinkingFor(reasoning: ReasoningEffort?, context: Int): Boolean = when (reasoning) {
+            null -> context >= THINKING_MIN_CONTEXT
+            ReasoningEffort.Off -> false
+            else -> true
+        }
 
         /**
          * No temperature: the model's own defaults (for Qwen3 its thinking-mode settings: top-k 20, top-p 0.95,

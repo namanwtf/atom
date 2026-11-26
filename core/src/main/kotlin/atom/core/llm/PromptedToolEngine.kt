@@ -4,8 +4,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -67,7 +69,23 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         return JsonObject(mapOf("name" to JsonPrimitive(call.name), "arguments" to args)).toString()
     }
 
-    private fun toolInstructions(tools: List<ToolSpec>): String = buildString {
+    private fun toolInstructions(tools: List<ToolSpec>): String =
+        PromptedTools.instructions(tools, PromptedTools.compact(inner.capabilities.contextWindow))
+}
+
+/** How [PromptedToolEngine] writes the tools into the prompt; the agent measures the same text for its budget. */
+object PromptedTools {
+    /** Windows up to this size get the compact tool list. */
+    const val COMPACT_WINDOW = 4_096
+
+    /**
+     * A model with a small window (Qwen3 0.6B: 4096 tokens) gets each tool's arguments as one short line instead of
+     * the full JSON schema with every argument's description: the core tools plus the browser group otherwise take
+     * about 3000 of its 4096 tokens before the task, the history or a page are in the prompt.
+     */
+    fun compact(contextWindow: Int): Boolean = contextWindow in 1..COMPACT_WINDOW
+
+    fun instructions(tools: List<ToolSpec>, compact: Boolean): String = buildString {
         appendLine("# Tools")
         appendLine("To use a tool, reply with one or more blocks exactly like:")
         appendLine("<tool_call>{\"name\": \"tool_name\", \"arguments\": {\"arg\": \"value\"}}</tool_call>")
@@ -77,8 +95,25 @@ class PromptedToolEngine(private val inner: LlmEngine) : LlmEngine {
         for (tool in tools) {
             appendLine("## ${tool.name}")
             appendLine(tool.description)
-            appendLine("Arguments schema: ${tool.parameters}")
+            if (compact) appendLine("Arguments: ${compactArguments(tool.parameters)}") else appendLine("Arguments schema: ${tool.parameters}")
             appendLine()
+        }
+    }
+
+    /** `query (string, required), count (integer), mode (one of: a, b)`; "none" for a tool without arguments. */
+    fun compactArguments(schema: JsonObject): String {
+        val props = schema["properties"] as? JsonObject ?: return "none"
+        if (props.isEmpty()) return "none"
+        val required = (schema["required"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty().toSet()
+        return props.entries.joinToString(", ") { (name, value) ->
+            val prop = value as? JsonObject
+            val type = (prop?.get("type") as? JsonPrimitive)?.contentOrNull ?: "any"
+            val choices = (prop?.get("enum") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            val notes = listOfNotNull(
+                choices?.takeIf { it.isNotEmpty() }?.let { "one of: " + it.joinToString(", ") } ?: type,
+                "required".takeIf { name in required },
+            )
+            "$name (${notes.joinToString(", ")})"
         }
     }
 }

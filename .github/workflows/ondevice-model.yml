@@ -42,12 +42,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: cpu
-            args: --backend cpu near fits browser
-          - name: cpu-fp32
-            args: --backend cpu --activation fp32 near fits
-          - name: gpu-software
-            args: --backend gpu --activation fp32 chat
+          - name: before
+            args: --peek --config before
+          - name: after
+            args: --config after
     name: probe (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v7
@@ -56,9 +54,6 @@ jobs:
           python-version: "3.12"
       - name: Install LiteRT-LM
         run: pip install "litert-lm==$LITERTLM_VERSION"
-      - name: Software Vulkan for the GPU backend
-        if: matrix.name == 'gpu-software'
-        run: sudo apt-get update -q && sudo apt-get install -y -q mesa-vulkan-drivers libvulkan1 vulkan-tools && (vulkaninfo --summary || true)
       - uses: actions/cache@v5
         with:
           path: ~/model

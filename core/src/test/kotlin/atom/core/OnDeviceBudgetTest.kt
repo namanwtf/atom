@@ -8,8 +8,12 @@ import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
 import atom.core.llm.FinishReason
 import atom.core.llm.LlmEvent
+import atom.core.llm.PromptedTools
 import atom.core.llm.ToolCall
+import atom.core.llm.ToolSpec
+import atom.core.tool.Tool
 import atom.core.tool.ToolRegistry
+import atom.core.tool.schema
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -18,33 +22,54 @@ import kotlin.test.assertTrue
 
 /** A 4096-token on-device model (Qwen3 0.6B) must get prompts that fit: messages + tool descriptions + answer. */
 class OnDeviceBudgetTest {
-    private val local = AgentConfig(
+    private fun local(window: Int = 4_096) = AgentConfig(
         model = "m",
         systemPrompt = "s",
         maxOutputTokens = 512,
-        context = ContextPolicy(budgetTokens = 3_200, sharedWindow = 4_096),
+        context = ContextPolicy(budgetTokens = 3_200, sharedWindow = window),
     )
+
+    private val tools = (1..30).map { i ->
+        ToolSpec(
+            "tool_$i",
+            "Does thing $i on the phone and reports what happened.",
+            schema {
+                string("query", "The text to look for; see the tool description for what is allowed.", required = true)
+                integer("count", "How many results to return; the default is five when it is left out.")
+            },
+        )
+    }
 
     @Test
     fun messagesGetWhatTheToolsAndTheAnswerLeave() {
-        assertEquals(4_096 - 512 - 2_400 - ContextPolicy.SHARED_MARGIN, local.packingFor(2_400).budgetTokens)
-        assertEquals(3_200, local.packingFor(0).budgetTokens) // never above the deliberate cap
-        assertEquals(ContextPolicy.SHARED_MIN_BUDGET, local.packingFor(5_000).budgetTokens)
+        val toolTokens = ContextPacker.estimate(PromptedTools.instructions(tools, compact = true))
+        assertEquals(4_096 - 512 - toolTokens - ContextPolicy.SHARED_MARGIN, local().packingFor(tools).budgetTokens)
+        assertEquals(3_200, local().packingFor(emptyList()).budgetTokens) // never above the deliberate cap
+        assertEquals(ContextPolicy.SHARED_MIN_BUDGET, local(window = 1_500).packingFor(tools).budgetTokens)
     }
 
     @Test
     fun withoutASharedWindowNothingChanges() {
         val cloud = AgentConfig(model = "m", systemPrompt = "s", contextWindow = 200_000)
-        assertEquals(cloud.packing, cloud.packingFor(9_000))
+        assertEquals(cloud.packing, cloud.packingFor(tools))
+    }
+
+    @Test
+    fun smallWindowsGetTheCompactToolList() {
+        val full = PromptedTools.instructions(tools, compact = false)
+        val compact = PromptedTools.instructions(tools, compact = true)
+        assertTrue(compact.length * 2 < full.length, "compact ${compact.length} vs full ${full.length} chars")
+        assertTrue("Arguments: query (string, required), count (integer)" in compact, compact)
+        assertTrue(PromptedTools.compact(4_096))
+        assertTrue(!PromptedTools.compact(8_192) && !PromptedTools.compact(0))
+        val enumSchema = schema { string("mode", "m", required = true, enum = listOf("up", "down")) }
+        assertEquals("mode (one of: up, down, required)", PromptedTools.compactArguments(enumSchema))
+        assertEquals("none", PromptedTools.compactArguments(schema()))
     }
 
     @Test
     fun everyRequestFitsTheWindow() = runTest {
-        // Ten steps of a browser task, each with a 1500-character page, and 2400 tokens of tool descriptions.
-        val tools = (1..20).map { i ->
-            atom.core.llm.ToolSpec("tool_$i", "d".repeat(400), atom.core.tool.schema { string("x", "y".repeat(80)) })
-        }
-        val toolTokens = ContextPacker.estimateTools(tools)
+        // Ten steps of a browser task, each with a 1500-character page result.
         val history = buildList {
             add(ChatMessage.user("search the news and summarize it"))
             repeat(10) { i ->
@@ -54,11 +79,13 @@ class OnDeviceBudgetTest {
             }
         }
         val engine = ScriptedEngine(listOf(listOf(LlmEvent.TextDelta("done"), LlmEvent.Finished(FinishReason.Stop))))
-        val registry = ToolRegistry(tools.map { s -> object : atom.core.tool.Tool by EchoTool() { override val spec = s } })
-        Agent(engine, registry, local).run(history, FixedContext()).toList()
+        val registry = ToolRegistry(tools.map { s -> object : Tool by EchoTool() { override val spec = s } })
+        val config = local()
+        Agent(engine, registry, config).run(history, FixedContext()).toList()
         val sent = engine.requests.single()
-        val prompt = sent.messages.sumOf(ContextPacker::estimate) + toolTokens + local.maxOutputTokens
-        assertTrue(prompt <= 4_096 - ContextPolicy.SHARED_MARGIN + 200, "prompt + tools + answer = $prompt tokens")
+        val toolTokens = ContextPacker.estimate(PromptedTools.instructions(tools, compact = true))
+        val total = sent.messages.sumOf(ContextPacker::estimate) + toolTokens + config.maxOutputTokens
+        assertTrue(total <= 4_096 - ContextPolicy.SHARED_MARGIN + 100, "messages + tools + answer = $total tokens")
         assertEquals("search the news and summarize it", sent.messages[1].text)
     }
 }
