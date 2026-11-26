@@ -19,6 +19,10 @@ plus a small AI model running on the same machine), never on a personal computer
   the app now plans for the model's real memory size, keeps each step within budget, gives small models a shorter
   tool list, shows their "thinking" separately, stops made-up tool results and runaway output, and warns that tiny
   models are weak at phone tasks.
+- **Tasks finish properly.** Long tasks are no longer cut off at 30 steps; a run that stops early always ends with a
+  written reply. The right tools are loaded for each request, so small models find them. Shell commands that could
+  change things ask first, with "Allow all commands for this task" for long jobs. Built-in web search falls back to
+  other search pages before giving up, and the agent browser no longer crashes from background threads.
 - **Release safety.** Every release pull request (not only the first one) now waits for this scorecard to be
   approved before it can merge.
 
@@ -47,13 +51,20 @@ the next comparison run fills these lines. Nothing in this table is estimated.
 | f | Stop a task halfway | pass | ended as stopped, history kept, app alive |
 | j | Normal notifications still saved after the battery fix | pass | "Parcel" and "Dinner" both in the history |
 | n | Screen off while operating Settings | passes every check that matters | 0 actions while the screen was off, the notification said "Waiting for the screen to be unlocked", it finished after unlocking (the test counted "Done" as unfinished; fixed) |
-| m | Screen off during a command task | the task kept running and finished with the screen off; wake lock and foreground service were on | the small model never actually ran the command, so the answer check failed |
-| c, d, e, b, a | Do Not Disturb, last notification, daily reminder, web page, terminal | fail | the 3-billion-parameter test model mostly tapped around instead of loading the right tools; see "Found tonight" |
+| m | Screen off during a command task | pass in substance | the command's output came back with the screen off, the run finished, and the wake lock and foreground service were on during it (the test counted "Done" as unfinished; fixed) |
+| c | Turn on Do Not Disturb | pass (with the new tool routing) | used the Do Not Disturb tool; Do Not Disturb was on afterwards |
+| d | What was my last notification about? | pass (with the new tool routing) | "Your last notification was about dinner plans... Pizza at 8" |
+| e | Remind me every day at 9am to drink water | pass (with the new tool routing) | a daily 09:00 scheduled task was created |
+| o | Read a web page in the agent browser | pass | the page text reached the model and the answer summarized it; no browser threading errors |
+| b | Summarize the "top story" on example.com in the agent browser | fail | opened the agent browser correctly but then tapped around a page that has no top story, and ran out of time |
+| a | Write and run a small script in the terminal | fail | the Linux install never finishes on this emulator (see below), so the terminal was not ready |
 | h | Floating bubble mini chat | fail | the mini chat did not open in the test |
 | k | "Hey Atom" pauses on battery and listens when charging | could not test | the wake-word model does not load on this emulator (it runs the app through ARM translation) |
 | i, l | Automation start-up switch, and after a reboot | not yet conclusive | no task existed because the model did not create one; the test now creates it directly |
 
-Run: [E2E on release/next-2](https://github.com/namanwtf/atom/actions/runs/45860990063). The 4.0.4 run
+Runs: [before tool routing](https://github.com/namanwtf/atom/actions/runs/45860990063) (Do Not Disturb, notification,
+reminder and web failed: the small test model never loaded the right tools), [with tool routing](https://github.com/namanwtf/atom/actions/runs/45876766521)
+(c, d, e, o now pass; that run was stopped after the terminal task by a newer push). The 4.0.4 run
 ([45849080166](https://github.com/namanwtf/atom/actions/runs/45849080166)) passed 1 of 8 because the model ran at
 0.4 words per second next to the emulator and leftover tasks blocked later ones; both are fixed in the test.
 
@@ -91,10 +102,11 @@ Run: [E2E on release/next-2](https://github.com/namanwtf/atom/actions/runs/45860
 
 Bugs:
 - Small models rarely load hidden tool groups. Since 4.0.4 most tools are loaded on demand, and the test model never
-  asked for the "settings" or "messages" tools, so it tapped around instead. Idea: always include the most common
-  groups for small or local models.
+  asked for the "settings" or "messages" tools, so it tapped around instead (fixed in this release: the likely tool
+  groups are now loaded for each request; Do Not Disturb, notification and reminder tasks pass since).
 - A runaway loop: in one task the model saved the same memory note dozens of times, and nothing stopped it before the
-  step limit. Idea: stop or warn when the same tool call repeats three times.
+  step limit (addressed in this release: a loop guard ends runs that repeat themselves without new information, and
+  every run that stops early ends with a written reply).
 - The model locked the screen by itself ("lock screen") in four different tasks. Idea: ask before locking.
 - On a fresh install, home said "Not selected" while Settings showed a model (fixed in this release).
 - The side menu flashed when opening and closing (fixed in this release).
