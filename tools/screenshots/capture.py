@@ -11,8 +11,10 @@ checked without opening the image.
 
 import base64
 import io
+import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -367,6 +369,94 @@ def pack_missing():
     back()
 
 
+SITE_ID = "atom-demo"
+
+# A small hand-written site for the preview shots (no model on the CI emulator). It follows the phone's dark or
+# light mode, like the pages the agent is told to write.
+SITE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Water tracker</h1>
+<p class="count">{count} of 8 glasses today</p>
+<div class="glasses">{glasses}</div>
+<button>Add a glass</button>
+<p class="note">Debug sample site, written by the screenshot script.</p>
+</main>
+</body>
+</html>
+"""
+
+SITE_CSS = """:root { color-scheme: light dark; --accent: #1e88e5; }
+body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #f4f8fc; color: #12202e; }
+@media (prefers-color-scheme: dark) { body { background: #0f1720; color: #e3edf7; } }
+h1 { font-size: 28px; margin: 8px 0; }
+.count { font-size: 20px; color: var(--accent); }
+.glasses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0; }
+.glass { height: 64px; border-radius: 12px; border: 2px solid var(--accent); }
+.glass.full { background: var(--accent); }
+button { font-size: 18px; padding: 12px 20px; border-radius: 24px; border: 0; background: var(--accent); color: white; }
+.note { opacity: .6; font-size: 13px; margin-top: 24px; }
+"""
+
+
+def site_page(count):
+    glasses = "".join(f'<div class="glass{" full" if i < count else ""}"></div>' for i in range(8))
+    return SITE_PAGE.replace("{count}", str(count)).replace("{glasses}", glasses)
+
+
+def run_tool(name, args):
+    """Debug builds only: runs one of the app's tools the way the agent would (E2eProvider's run_tool)."""
+    spec = json.dumps({"name": name, "args": args}, separators=(",", ":"))
+    out = sh(f"content call --uri content://{PKG}.e2e --method run_tool --arg {shlex.quote(spec)}", timeout=90).strip()
+    m = re.search(r"result=(.*)\}\]\s*$", out, re.S)
+    text = (m.group(1) if m else out).strip()
+    print(f"[capture] {name}: {text[:300]}")
+    return text
+
+
+def site_preview(p):
+    """The website feature: a site made through the agent's own tools, its live preview, and the reload after an edit."""
+    run_tool("site_create", {"name": "Atom demo"})
+    run_tool("site_write", {"site": SITE_ID, "path": "style.css", "content": SITE_CSS})
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
+    launch(wait=3)
+    # site_preview opens the preview itself while the app is in front, as it does for the agent.
+    result = run_tool("site_preview", {"name": SITE_ID})
+    url = re.search(r"URL: (http://127\.0\.0\.1:\d+/)", result)
+    print(f"[capture] preview URL from site_preview: {url.group(1) if url else '(none)'}")
+    time.sleep(5)
+    if not find("^Close preview$"):
+        print("[capture] site_preview did not open the preview; opening its route")
+        launch(f"web/sites/preview/{SITE_ID}", wait=5)
+    time.sleep(2)
+    shot(p + "16c_site_preview")
+    print(f"[capture] preview shows the page: {find('1 of 8 glasses') is not None}")
+    # Edit a file the way the agent does: the open preview reloads by itself.
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(5)})
+    time.sleep(6)
+    shot(p + "16d_site_preview_reloaded")
+    print(f"[capture] reloaded preview shows the edit: {find('5 of 8 glasses') is not None}")
+    back(wait=2)
+    # The chat card a site_preview call leaves, and opening the preview from it.
+    if demo("site", wait=5):
+        shot(p + "16e_site_chat_card")
+        if tap("^Open preview$", wait=5):
+            shot(p + "16f_site_preview_from_card")
+            back(wait=2)
+        if tap("^More options$", wait=1.2):
+            tap("^New conversation$", wait=1.5)
+        demo("site_clear", wait=2)
+    # Back to the first version, so the next pass shows the edit again.
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
@@ -429,6 +519,12 @@ def main():
             tap("^New conversation$", wait=1.5)
         demo("clear", wait=2)
 
+    try:
+        site_preview(p)
+    except Exception as e:  # a failure here must not lose the other screenshots
+        print(f"[capture] site preview pass failed: {e}")
+    crash_log()
+
     routes = [
         ("10_settings", "settings"),
         ("11_models", "models"),
@@ -439,6 +535,7 @@ def main():
         ("14_voice_settings", "voice/settings"),
         ("15_permissions", "device/permissions"),
         ("16_tools", "device/tools"),
+        ("16b_sites", "web/sites"),
         ("17_memory", "extend/memory"),
         ("18_skills", "extend/skills"),
         ("19_mcp", "extend/mcp"),

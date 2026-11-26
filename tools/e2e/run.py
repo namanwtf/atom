@@ -296,6 +296,47 @@ def s_browser_read(res):
     res.check(re.search(r"example|illustrative|domain", answer(run), re.I) is not None, "the answer summarizes the page")
 
 
+def s_site(res):
+    """p (optional). Make a website: a file is written through the site tools and its live preview loads."""
+    run = agent_task(res, "Make a one-page site that says hello.", 900)
+    if run is None:
+        return
+    calls = run.get("toolCalls", [])
+    site_calls = [c["name"] for c in calls if c["name"].startswith("site_")]
+    res.check(bool(site_calls), f"site tools called: {site_calls or 'none'}")
+    wrote = [c for c in calls if c["name"] == "site_write" and not c.get("isError")]
+    created = [c for c in calls if c["name"] == "site_create" and not c.get("isError")]
+    res.check(bool(wrote or created), "a site file was written")
+    # The files themselves, read from the app's private storage (debug builds allow run-as).
+    listing = sh(f"run-as {PKG} sh -c 'ls -R files/sites 2>/dev/null'").strip()
+    log(f"  files/sites: {listing[:400]!r}")
+    pages = sh(f"run-as {PKG} sh -c 'cat files/sites/*/index.html 2>/dev/null'")
+    res.check("index.html" in listing, "files/sites/<site>/index.html exists")
+    res.check(re.search(r"hello", pages, re.I) is not None, "a page says hello")
+    previews = [c for c in calls if c["name"] == "site_preview" and not c.get("isError")]
+    res.check(bool(previews), "site_preview succeeded")
+    url = None
+    for c in previews:
+        m = re.search(r"URL: http://127\.0\.0\.1:(\d+)/", c.get("result") or "")
+        if m:
+            url = m
+    if url is None:
+        res.check(False, "the preview URL was returned")
+        return
+    port = url.group(1)
+    adb("forward", "tcp:18555", f"tcp:{port}")
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:18555/", timeout=15) as r:
+            body = r.read().decode(errors="replace")
+            res.check(r.status == 200 and re.search(r"hello", body, re.I) is not None, "the preview server serves the page")
+            res.check("__atom_reload" in body, "the page carries the live reload script")
+    except Exception as e:
+        res.check(False, f"the preview server answered ({e})")
+    finally:
+        adb("forward", "--remove", "tcp:18555")
+    shot("e2e_p_preview")
+
+
 def zen_mode():
     return sh("settings get global zen_mode").strip()
 
@@ -679,6 +720,8 @@ SCENARIOS = [
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
     ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),
+    # Optional: a small model may not manage a whole site; a failure is reported but does not fail the job.
+    ("p", "Make a website: one page that says hello", s_site, False),
     ("l", "Reboot: receiver, boot start and alarm survive", s_reboot),
 ]
 
@@ -735,10 +778,10 @@ def main():
     only = set(a.lower() for a in sys.argv[1:]) or set(filter(None, os.environ.get("E2E_ONLY", "").lower().split(",")))
     setup()
     results = []
-    for key, title, fn in SCENARIOS:
+    for key, title, fn, *flags in SCENARIOS:
         if only and key not in only:
             continue
-        res = Result(key, title)
+        res = Result(key, title, core=flags[0] if flags else True)
         log(f"===== {key}. {title} =====")
         # A run the previous scenario left going (it timed out) would hold phone control and make this one wait.
         leftover = [r for r in state().get("runs", []) if r.get("active")]
@@ -786,7 +829,8 @@ def scorecard(results):
     rows = [("", "Scenario", "Result", "Tool calls", "Time", "Model speed")]
     for r in results:
         tools = ", ".join(r.tools) if r.tools else "-"
-        rows.append((r.key, r.title, "PASS" if r.passed else "FAIL", tools[:70], f"{r.duration:.0f}s", r.speed or "-"))
+        verdict = "PASS" if r.passed else ("FAIL" if r.core else "FAIL (optional)")
+        rows.append((r.key, r.title, verdict, tools[:70], f"{r.duration:.0f}s", r.speed or "-"))
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     line = "+".join("-" * (w + 2) for w in widths)
     print("=====SCORECARD=====")

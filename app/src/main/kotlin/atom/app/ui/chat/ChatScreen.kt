@@ -324,6 +324,7 @@ fun ChatScreen(
         editingIndex = editing?.index,
         onContinueEditing = { path -> vm.reattachImage(context, path) },
         conversationId = state.conversationId,
+        onOpenRoute = onOpenRoute,
     )
 
     val mic: @Composable () -> Unit = micSlot ?: {

@@ -9,6 +9,8 @@ import atom.app.data.StoredMessage
 import atom.app.data.TitleSource
 import atom.app.graph
 import atom.core.llm.ChatMessage
+import atom.core.llm.ContentPart
+import atom.core.llm.ToolCall
 import kotlinx.coroutines.launch
 
 /**
@@ -19,10 +21,13 @@ import kotlinx.coroutines.launch
  *     am start -n <pkg>/atom.app.ui.MainActivity --es atom.app.debug.EXTRA_DEMO_TRANSCRIPT open
  *
  * "open" saves a clearly fake sample conversation under a fixed id and opens it; "clear" deletes it again.
+ * "site" saves and opens a sample run that made the website "atom-demo" (its tool calls end in the site's preview
+ * card; tools/screenshots/capture.py creates the site itself first); "site_clear" deletes that conversation.
  */
 internal object DebugLaunch {
     private const val EXTRA_DEMO = "atom.app.debug.EXTRA_DEMO_TRANSCRIPT"
     private const val DEMO_ID = "debug-demo-transcript"
+    private const val SITE_DEMO_ID = "debug-demo-site"
 
     fun handle(activity: ComponentActivity, intent: Intent) {
         val action = intent.getStringExtra(EXTRA_DEMO) ?: return
@@ -38,6 +43,15 @@ internal object DebugLaunch {
                 "clear" -> {
                     graph.conversations.delete(DEMO_ID)
                     graph.runtimePrefs.setReadingPosition(DEMO_ID, null)
+                }
+                "site" -> {
+                    graph.conversations.save(siteDemo())
+                    graph.runtimePrefs.setReadingPosition(SITE_DEMO_ID, null)
+                    graph.postChatRequest(ChatRequest.Open(SITE_DEMO_ID))
+                }
+                "site_clear" -> {
+                    graph.conversations.delete(SITE_DEMO_ID)
+                    graph.runtimePrefs.setReadingPosition(SITE_DEMO_ID, null)
                 }
             }
         }
@@ -57,6 +71,43 @@ internal object DebugLaunch {
             title = "Demo transcript (debug sample)",
             createdAt = start,
             updatedAt = start + SAMPLE.size * 120_000L,
+            messages = messages,
+            titleSource = TitleSource.User,
+        )
+    }
+
+    /** A hand-written run that made the debug site "atom-demo": three tool calls, then a short answer. */
+    private fun siteDemo(): Conversation {
+        val start = System.currentTimeMillis() - 10 * 60 * 1000L
+        val calls = listOf(
+            ToolCall("demo-1", "site_create", "{\"name\":\"Atom demo\"}") to
+                "Created site atom-demo with a placeholder index.html. Write its files with site_write, then show it with site_preview.",
+            ToolCall("demo-2", "site_write", "{\"path\":\"index.html\",\"content\":\"(debug sample)\"}") to
+                "Wrote index.html (1.2 KB) in site atom-demo. Show it with site_preview.",
+            ToolCall("demo-3", "site_preview", "{\"name\":\"atom-demo\"}") to
+                "The live preview of \"Water tracker\" is open on the phone.\nURL: http://127.0.0.1:0/ (debug sample)\n" +
+                "Site preview: atom-demo",
+        )
+        val messages = buildList {
+            add(StoredMessage(ChatMessage.user("Sample request: make me a small website that tracks my water intake."), createdAt = start))
+            calls.forEachIndexed { i, (call, result) ->
+                val at = start + 10_000L * (i + 1)
+                add(StoredMessage(ChatMessage.assistant("", listOf(call)), createdAt = at))
+                add(StoredMessage(ChatMessage.toolResult(call, listOf(ContentPart.Text(result))), durationMs = 400L, createdAt = at + 400L))
+            }
+            add(
+                StoredMessage(
+                    ChatMessage.assistant("This is a **debug sample**: the water tracker site is ready. Tap Open preview to try it."),
+                    createdAt = start + 60_000L,
+                    durationMs = 1_800L,
+                ),
+            )
+        }
+        return Conversation(
+            id = SITE_DEMO_ID,
+            title = "Site demo (debug sample)",
+            createdAt = start,
+            updatedAt = start + 60_000L,
             messages = messages,
             titleSource = TitleSource.User,
         )

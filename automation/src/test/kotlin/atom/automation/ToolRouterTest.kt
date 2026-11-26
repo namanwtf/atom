@@ -87,6 +87,30 @@ class ToolRouterTest {
     }
 
     @Test
+    fun makingAWebsiteLoadsTheSiteTools() {
+        for (r in listOf(
+            "make me a small website that tracks my water intake", "Make a one-page site that says hello",
+            "build me a snake game", "create a todo app", "make a landing page for my bakery", "write an html page with a clock",
+            "erstelle mir eine Webseite für meinen Verein", "hazme una página web para mi tienda", "fais-moi un site pour mon club",
+        )) {
+            assertEquals("sites", top(r), r)
+            // Small models get it too: one strong match is enough.
+            assertTrue("sites" in groups(r, minScore = ToolRouter.STRONG - 1), r)
+        }
+        // The agent browser comes along to check the page.
+        assertEquals(listOf("sites", "browser"), groups("make me a small website that tracks my water intake").take(2))
+        assertEquals(setOf("sites"), ToolGroups.groupsOf("site_preview"))
+    }
+
+    @Test
+    fun otherThingsMadeAreNotWebsites() {
+        for (r in listOf(
+            "write a message in the app to Sam", "make the app louder", "generate an image of a red fox", "create a calendar event",
+            "write a python script that sorts a list", "make a call to mom", "set an alarm for 7",
+        )) assertTrue("sites" !in groups(r), r)
+    }
+
+    @Test
     fun plainChatAndScreenWorkLoadNothing() {
         // Chat needs no tools; screen work, opening apps and web search are in the core set that is always sent.
         for (r in listOf(

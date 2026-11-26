@@ -151,6 +151,11 @@ object ToolCatalog {
                 listOf("generate_image", "edit_image"), Needs.Nothing, emptySet(), 27,
             ),
             ToolGroupInfo(
+                "sites", "Websites", "Make small websites, web apps and games with a live preview on this phone (Settings > Sites).",
+                listOf("site_create", "site_write", "site_read", "site_list", "site_delete_file", "site_preview"),
+                Needs.Nothing, emptySet(), 28,
+            ),
+            ToolGroupInfo(
                 "vision", "Document vision", "Look at local images, screenshots and scanned documents.",
                 listOf("view_image"), Needs.Nothing, emptySet(), 80,
             ),

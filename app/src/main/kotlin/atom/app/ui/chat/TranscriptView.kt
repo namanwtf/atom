@@ -81,6 +81,7 @@ import atom.app.agent.StepCall
 import atom.app.agent.StepCard
 import atom.characters.model.CandidateSet
 import atom.web.ui.BrowserPreviewCard
+import atom.web.ui.SitePreviewCard
 import atom.web.ui.ImageResultCard
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -143,6 +144,8 @@ internal class MessageActions(
     val onContinueEditing: ((String) -> Unit)? = null,
     /** Conversation whose live browser the "Open current browser" step action opens. */
     val conversationId: String? = null,
+    /** Opens an app screen by route (the site preview from its chat card); null hides that action. */
+    val onOpenRoute: ((String) -> Unit)? = null,
 )
 
 private const val PAGE = 40
@@ -449,7 +452,7 @@ internal fun AttachmentChip(a: Attachment, onRemove: (() -> Unit)?) {
 private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Boolean, showStats: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp)) {
         if (turn.work.isNotEmpty()) Timeline(turn, actions)
-        TurnCards(turn, actions.onTakeOverBrowser)
+        TurnCards(turn, actions.onTakeOverBrowser, actions.onOpenRoute)
         turn.answerReasoning?.let { ReasoningBlock(it) }
         val answer = turn.answer
         if (answer != null) {
@@ -475,12 +478,13 @@ private fun TurnView(turn: ChatItem.Turn, actions: MessageActions, canEdit: Bool
  * results stay visible.
  */
 @Composable
-private fun TurnCards(turn: ChatItem.Turn, onTakeOver: (() -> Unit)?) {
+private fun TurnCards(turn: ChatItem.Turn, onTakeOver: (() -> Unit)?, onOpenRoute: ((String) -> Unit)?) {
     val cards = remember(turn.work) {
         val all = turn.work.filterIsInstance<WorkEntry.Steps>().flatMap { g -> g.calls.mapNotNull { c -> c.card?.let { c.key to it } } }
         val images = all.filter { it.second is StepCard.Image }
+        val site = all.lastOrNull { it.second is StepCard.Site }
         val browser = all.lastOrNull { it.second is StepCard.Browser }
-        images + listOfNotNull(browser)
+        images + listOfNotNull(site, browser)
     }
     if (cards.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -489,6 +493,7 @@ private fun TurnCards(turn: ChatItem.Turn, onTakeOver: (() -> Unit)?) {
                 when (card) {
                     is StepCard.Image -> ImageResultCard(card.text, Modifier.widthIn(max = 420.dp))
                     is StepCard.Browser -> BrowserPreviewCard(card.text, onTakeOver = if (turn.live) onTakeOver else null, modifier = Modifier.widthIn(max = 280.dp))
+                    is StepCard.Site -> SitePreviewCard(card.text, onOpen = onOpenRoute, modifier = Modifier.widthIn(max = 420.dp))
                 }
             }
         }

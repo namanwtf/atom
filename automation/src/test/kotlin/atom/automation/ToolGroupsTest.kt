@@ -41,6 +41,7 @@ class ToolGroupsTest {
         "automation_list", "automation_set_enabled", "automation_delete", "memory_read", "memory_append", "memory_update",
         "memory_clear", "skill_read", "skill_install_github", "skill_write", "spawn_subagent", "spawn_subagents_parallel",
         "subagent_save", "subagent_delete", "search_history", "release_phone_control",
+        "site_create", "site_write", "site_read", "site_list", "site_delete_file", "site_preview",
     )
 
     @Test
@@ -52,6 +53,7 @@ class ToolGroupsTest {
         assertEquals(setOf("terminal"), ToolGroups.groupsOf("shell"))
         assertEquals(setOf("terminal"), ToolGroups.groupsOf("terminal_job_start"))
         assertEquals(setOf("files"), ToolGroups.groupsOf("file_grep"))
+        assertEquals(setOf("sites"), ToolGroups.groupsOf("site_write"))
         assertEquals(setOf("automation"), ToolGroups.groupsOf("scheduled_task_create"))
         assertEquals(setOf("messages", "personal"), ToolGroups.groupsOf("read_item"))
     }

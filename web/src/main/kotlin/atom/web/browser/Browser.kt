@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -109,6 +110,8 @@ internal object WebViewSecurity {
     }
 }
 
+private const val MAX_CONSOLE_NOTES = 5
+
 /** One conversation's off-screen browser. All members must be used on the main thread. */
 class BrowserSession internal constructor(val key: String, context: Context, private val owner: BrowserSessions) {
     internal val contextWrapper = MutableContextWrapper(context.applicationContext)
@@ -119,6 +122,7 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
     internal var navigations = 0
     internal var lastError: String? = null
     internal val notices = ArrayList<String>()
+    private var consoleErrors = 0
     private var waiter: CompletableDeferred<Unit>? = null
     private var previewSeq = 0
     internal var lastUsed = System.currentTimeMillis()
@@ -174,6 +178,22 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
 
             override fun onReceivedTitle(view: WebView, title: String?) {
                 state.update { it.copy(title = title.orEmpty()) }
+            }
+
+            // The page's JavaScript errors reach the agent as notes on its next step (a few per step), so it can
+            // check pages it made itself.
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    consoleErrors++
+                    if (consoleErrors <= MAX_CONSOLE_NOTES) {
+                        val source = message.sourceId().orEmpty().substringAfterLast('/').substringBefore('?').take(60)
+                        notices += "Console error: ${message.message().orEmpty().take(300)}" +
+                            (if (source.isNotEmpty()) " ($source:${message.lineNumber()})" else "")
+                    } else if (consoleErrors == MAX_CONSOLE_NOTES + 1) {
+                        notices += "More console errors were left out."
+                    }
+                }
+                return false
             }
 
             override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
@@ -234,7 +254,10 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
         webView.layout(0, 0, w, h)
     }
 
-    fun takeNotices(): List<String> = notices.toList().also { notices.clear() }
+    fun takeNotices(): List<String> = notices.toList().also {
+        notices.clear()
+        consoleErrors = 0
+    }
 
     suspend fun load(url: String, timeoutMs: Long = 25_000) = onMain { view ->
         waiter = CompletableDeferred()
