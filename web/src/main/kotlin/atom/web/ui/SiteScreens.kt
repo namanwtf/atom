@@ -3,6 +3,7 @@ package atom.web.ui
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.text.format.DateUtils
+import android.view.ContextThemeWrapper
 import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +69,7 @@ import atom.ui.components.Group
 import atom.ui.components.LargeTitleScreen
 import atom.ui.components.PrimaryButton
 import atom.ui.feature.FeatureNav
+import atom.web.R
 import atom.web.WebFeature
 import atom.web.browser.BrowserSessions
 import atom.web.browser.WebViewSecurity
@@ -258,9 +261,12 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
 
     fun keepServerWarm() = Sites.running(id)?.touch()
 
-    val destroyed = remember(generation) { booleanArrayOf(false) }
-    val web = remember(generation) {
-        WebView(context).apply {
+    // The page's prefers-color-scheme follows Atom's look, not the system's: a new WebView when it changes.
+    val dark = c.background.luminance() < 0.5f
+    val destroyed = remember(generation, dark) { booleanArrayOf(false) }
+    val web = remember(generation, dark) {
+        val themed = ContextThemeWrapper(context, if (dark) R.style.AtomSitePreviewDark else R.style.AtomSitePreviewLight)
+        WebView(themed).apply {
             WebViewSecurity.apply(this)
             settings.cacheMode = WebSettings.LOAD_NO_CACHE
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -412,7 +418,7 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
                     }, modifier = Modifier.padding(top = 20.dp))
                 }
             } else {
-                key(generation) { AndroidView(factory = { web }, modifier = Modifier.fillMaxSize()) }
+                key(generation, dark) { AndroidView(factory = { web }, modifier = Modifier.fillMaxSize()) }
             }
         }
     }
