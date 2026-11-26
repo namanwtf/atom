@@ -513,6 +513,9 @@ internal class PushDrawerState {
 
     val progress: Float get() = if (width <= 0f) 0f else (offset / width).coerceIn(0f, 1f)
 
+    /** Fully open and not moving. */
+    val settledOpen: Boolean get() = target && width > 0f && offset >= width - 0.5f
+
     /** Settles with a critically damped spring, as the old pane did. */
     suspend fun animateTo(open: Boolean, velocity: Float = 0f) {
         target = open
@@ -553,7 +556,8 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     // With blur on, the pane is frosted glass over the chat: the chat moves only part of the way and shows through,
-    // blurred. Without blur the pane is solid and pushes the chat all the way, as before.
+    // blurred. Without blur the pane is solid and pushes the chat all the way, as before. The blur itself is drawn
+    // only once the pane has settled open: while it slides the pane is solid, so nothing re-blurs every frame.
     val glass = rememberGlassChrome().blur
     val chatGlass = rememberGlassState()
     val push = if (glass) GLASS_PUSH else 1f
@@ -614,7 +618,7 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
                     .width(paneWidth)
                     .fillMaxHeight()
                     .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
-                    .glassPane(chatGlass, paneColor(), glass)
+                    .glassPane(chatGlass, paneColor(), glass && state.settledOpen)
                     .edgeLine(),
             ) { pane() }
         }

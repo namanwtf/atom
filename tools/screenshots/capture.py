@@ -282,23 +282,7 @@ def main():
     # Exact labels first: the closed push drawer stays composed, so loose patterns can hit its own text.
     if tap("^Conversations$", wait=3.0) or tap("conversations|drawer|menu|sidebar", wait=3.0):
         shot(p + "03_drawer")
-        # TEMP diagnostics: when does the emulator go away?
-        logf = open("/tmp/logcat.txt", "w")
-        lc = subprocess.Popen(["adb", "logcat", "-v", "time", "*:W"], stdout=logf, stderr=subprocess.STDOUT)
-        time.sleep(1)
-        t0 = time.time()
-        sh("input keyevent KEYCODE_BACK")
-        for i in range(25):
-            r = subprocess.run(["adb", "shell", "echo", "alive"], capture_output=True, timeout=10)
-            print(f"[diag] t={time.time() - t0:.2f} rc={r.returncode} {(r.stdout + r.stderr).decode(errors='replace').strip()[:80]}")
-            sys.stdout.flush()
-            time.sleep(0.25)
-        lc.terminate()
-        logf.close()
-        print("=====LOGCAT TAIL=====")
-        print("".join(open("/tmp/logcat.txt", errors="replace").readlines()[-80:]))
-        print("=====END=====")
-        sys.stdout.flush()
+        back()
 
     # Overflow menu.
     if tap("^More options$", wait=1.2) or tap("more|overflow|options", wait=1.2):
