@@ -42,6 +42,8 @@ import atom.app.ui.settings.SettingsNav
 import atom.app.ui.settings.SettingsScreen
 import atom.app.ui.settings.SettingsViewModel
 import atom.app.ui.setup.SetupScreen
+import atom.app.ui.report.ReportRoutes
+import atom.app.ui.report.ReportScreen
 import atom.app.integration.NavRequests
 import atom.characters.ui.CharacterRoutes
 import atom.device.feature.DeviceFeature
@@ -220,7 +222,11 @@ fun AtomRoot(settings: AppSettings) {
                     },
                 )
                 Routes.LICENSES -> LicensesScreen(onBack = ::pop)
-                else -> Features.forRoute(route)?.Screen(route, nav) ?: pop()
+                else -> if (ReportRoutes.matches(route)) {
+                    ReportScreen(route, onBack = ::pop)
+                } else {
+                    Features.forRoute(route)?.Screen(route, nav) ?: pop()
+                }
             }
             }
         }

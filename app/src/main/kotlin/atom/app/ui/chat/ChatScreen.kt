@@ -2,6 +2,9 @@
 
 package atom.app.ui.chat
 
+import atom.app.report.ReportCollector
+import atom.app.report.findActivity
+import atom.app.ui.report.ReportRoutes
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -322,6 +325,15 @@ fun ChatScreen(
         editingIndex = editing?.index,
         onContinueEditing = { path -> vm.reattachImage(context, path) },
         conversationId = state.conversationId,
+        // Captures the chat as it looks now (the failed run), then opens the report with that run.
+        onReportProblem = onOpenRoute?.let { open ->
+            {
+                scope.launch {
+                    context.findActivity()?.let { runCatching { ReportCollector.captureScreen(it) } }
+                    open(ReportRoutes.forConversation(state.conversationId))
+                }
+            }
+        },
     )
 
     val mic: @Composable () -> Unit = micSlot ?: {

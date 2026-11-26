@@ -9,6 +9,8 @@ import atom.app.data.StoredMessage
 import atom.app.data.TitleSource
 import atom.app.graph
 import atom.core.llm.ChatMessage
+import atom.core.llm.ContentPart
+import atom.core.llm.ToolCall
 import kotlinx.coroutines.launch
 
 /**
@@ -18,11 +20,13 @@ import kotlinx.coroutines.launch
  *
  *     am start -n <pkg>/atom.app.ui.MainActivity --es atom.app.debug.EXTRA_DEMO_TRANSCRIPT open
  *
- * "open" saves a clearly fake sample conversation under a fixed id and opens it; "clear" deletes it again.
+ * "open" saves a clearly fake sample conversation under a fixed id and opens it; "failed" does the same with a short
+ * sample whose run failed (for the "Report a problem" action under it); "clear" deletes both again.
  */
 internal object DebugLaunch {
     private const val EXTRA_DEMO = "atom.app.debug.EXTRA_DEMO_TRANSCRIPT"
     private const val DEMO_ID = "debug-demo-transcript"
+    private const val FAILED_ID = "debug-demo-failed"
 
     fun handle(activity: ComponentActivity, intent: Intent) {
         val action = intent.getStringExtra(EXTRA_DEMO) ?: return
@@ -35,9 +39,16 @@ internal object DebugLaunch {
                     graph.runtimePrefs.setReadingPosition(DEMO_ID, null)
                     graph.postChatRequest(ChatRequest.Open(DEMO_ID))
                 }
+                "failed" -> {
+                    graph.conversations.save(failed())
+                    graph.runtimePrefs.setReadingPosition(FAILED_ID, null)
+                    graph.postChatRequest(ChatRequest.Open(FAILED_ID))
+                }
                 "clear" -> {
                     graph.conversations.delete(DEMO_ID)
                     graph.runtimePrefs.setReadingPosition(DEMO_ID, null)
+                    graph.conversations.delete(FAILED_ID)
+                    graph.runtimePrefs.setReadingPosition(FAILED_ID, null)
                 }
             }
         }
@@ -58,6 +69,30 @@ internal object DebugLaunch {
             createdAt = start,
             updatedAt = start + SAMPLE.size * 120_000L,
             messages = messages,
+            titleSource = TitleSource.User,
+        )
+    }
+
+    /** A made-up run that failed: one failed tool step, then the run's error notice. */
+    private fun failed(): Conversation {
+        val at = System.currentTimeMillis() - 5 * 60 * 1000L
+        val call = ToolCall("debug-call-1", "set_do_not_disturb", """{"enabled":true}""")
+        return Conversation(
+            id = FAILED_ID,
+            title = "Failed run (debug sample)",
+            createdAt = at,
+            updatedAt = at + 20_000L,
+            messages = listOf(
+                StoredMessage(ChatMessage.user("Sample request: turn on Do Not Disturb."), createdAt = at),
+                StoredMessage(ChatMessage.assistant("", listOf(call)), createdAt = at + 8_000L),
+                StoredMessage(
+                    ChatMessage.toolResult(call, listOf(ContentPart.Text("Sample error: Do Not Disturb access is not allowed for this debug sample."))),
+                    isError = true,
+                    durationMs = 320L,
+                    createdAt = at + 9_000L,
+                ),
+                StoredMessage.notice("Sample failure for screenshots: the provider stopped answering.", at + 20_000L).copy(isError = true),
+            ),
             titleSource = TitleSource.User,
         )
     }

@@ -59,6 +59,9 @@ import atom.automation.system.HealthItem
 import atom.automation.task.Destination
 import atom.automation.task.NotifyMode
 import atom.automation.task.Presets
+import atom.automation.task.Routine
+import atom.automation.R
+import androidx.compose.ui.res.stringResource
 import atom.automation.task.RunStatus
 import atom.automation.task.ScheduledTask
 import atom.automation.task.TaskRun
@@ -151,6 +154,12 @@ internal fun TasksScreen(nav: FeatureNav) {
     val snap by rt.state.flow.collectAsState()
     val health = rememberOnResume { Health.scheduled(it) }
     val now = Instant.now()
+    var asking by remember { mutableStateOf(false) }
+    val routines = remember(nav) { RoutineLauncher(ask = { asking = true }, onOpen = { nav.open(R_TASK + it) }) }
+    PriceWatchDialog(asking, onDismiss = { asking = false }) { what, where ->
+        asking = false
+        nav.open(R_TASK + atom.automation.task.Routine.PriceWatch.route(what, where))
+    }
     LargeTitleScreen(
         "Scheduled Tasks",
         onBack = nav::back,
@@ -161,6 +170,12 @@ internal fun TasksScreen(nav: FeatureNav) {
         },
     ) {
         item { HealthCard(health) }
+        if (snap.tasks.isEmpty()) {
+            item(key = "routines-empty") { RoutinesEmptyCard(routines) }
+        } else {
+            item(key = "routines-label") { SectionLabel(stringResource(R.string.routines_section)) }
+            item(key = "routines") { RoutineCards(routines) }
+        }
         item { SectionLabel("Quick start") }
         item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -238,13 +253,14 @@ private val INTERVALS = listOf(15, 30, 60, 120, 180, 360, 720, 1440, 2880, 10080
 private val DELAYS = listOf(15, 30, 60, 120, 240, 480, 1440)
 
 @Composable
-internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNav) {
+internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNav, routine: Triple<Routine, String, String>? = null) {
     val rt = rememberRuntime()
     val context = LocalContext.current
     val initial = remember {
         val now = System.currentTimeMillis()
         taskId?.let { rt.state.task(it) }
             ?: presetIndex?.let { Presets.all.getOrNull(it)?.build?.invoke(now) }
+            ?: routine?.let { (r, what, where) -> routineDraft(context, r, what, where, now) }
             ?: ScheduledTask("", "", "", Schedule.Daily(9 * 60), createdAt = now)
     }
     var t by remember { mutableStateOf(initial) }

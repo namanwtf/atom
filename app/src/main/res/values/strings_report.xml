@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Report a problem: a text file the person previews and shares themselves. -->
+    <string name="report_title">Report a problem</string>
+    <string name="report_intro">Atom puts what it knows about the problem into one text file: versions, the last run\'s steps and errors, recent crashes and its own log. Keys, tokens and personal data are left out. Look it over, then share it with whoever is helping you. Nothing is sent automatically.</string>
+    <string name="report_note_label">What happened? (optional)</string>
+    <string name="report_section_include">Include</string>
+    <string name="report_include_screenshot">Screenshot</string>
+    <string name="report_include_screenshot_captured">The screen you reported from</string>
+    <string name="report_include_screenshot_picked">The image you chose</string>
+    <string name="report_include_screenshot_none">Choose an image, for example a screenshot you took</string>
+    <string name="report_choose_image">Choose another image</string>
+    <string name="report_include_conversation">This conversation</string>
+    <string name="report_include_conversation_sub">Your messages and Atom\'s replies, with keys and tokens removed</string>
+    <string name="report_include_conversation_none">No conversation to include</string>
+    <string name="report_section_preview">Preview</string>
+    <string name="report_preparing">Preparing the report…</string>
+    <string name="report_failed">The report could not be prepared: %1$s</string>
+    <string name="report_share">Share report</string>
+    <string name="report_share_title">Share the problem report</string>
+    <string name="report_share_subject">Atom %1$s problem report</string>
+    <string name="report_share_failed">No app can receive the report.</string>
+    <string name="report_screenshot_cd">Screenshot to attach</string>
+    <!-- The small action under a failed run in the chat. -->
+    <string name="chat_report_problem">Report a problem</string>
+</resources>
