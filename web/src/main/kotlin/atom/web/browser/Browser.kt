@@ -313,9 +313,17 @@ object BrowserSessions {
 
     fun get(key: String): BrowserSession? = sessions[key]
 
+    /** The live session of [key], or null when there is none or it has been torn down. Key UI on [active]. */
+    fun live(key: String): BrowserSession? = sessions[key]?.takeIf { !it.dead }
+
     internal fun obtain(context: Context, key: String): BrowserSession {
         check(Looper.myLooper() == Looper.getMainLooper())
-        val s = sessions[key]?.takeIf { !it.dead } ?: BrowserSession(key, context, this).also {
+        if (sessions[key]?.dead == true) {
+            // Drop the dead one first, so [active] changes and UI holding it looks the new session up.
+            sessions.remove(key)
+            _active.value = sessions.keys.toSet()
+        }
+        val s = sessions[key] ?: BrowserSession(key, context, this).also {
             sessions[key] = it
             _active.value = sessions.keys.toSet()
             while (sessions.size > MAX_SESSIONS) closeNow(sessions.keys.first { k -> k != key })

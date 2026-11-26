@@ -11,16 +11,16 @@
     <string name="mdl_follow_conversation">Follows the conversation</string>
     <string name="mdl_tab_providers">Providers</string>
     <string name="mdl_search_providers">Search providers</string>
-    <string name="mdl_search_models">Search models</string>
+    <string name="mdl_search_models">Search model</string>
     <string name="mdl_add_provider">Add new provider</string>
-    <string name="mdl_add_openai">OpenAI-compatible</string>
-    <string name="mdl_add_openai_sub">ChatGPT, DeepSeek, Kimi, GLM, Qwen, Ollama, LM Studio and others</string>
-    <string name="mdl_add_anthropic">Anthropic</string>
-    <string name="mdl_add_anthropic_sub">Official or compatible Messages API</string>
-    <string name="mdl_add_gemini">Gemini</string>
-    <string name="mdl_add_gemini_sub">Google AI Studio or Vertex AI</string>
-    <string name="mdl_add_catalog">From the models.dev catalog</string>
-    <string name="mdl_add_catalog_sub">Hundreds of providers, imported with their models</string>
+    <string name="mdl_add_openai">Add OpenAI-compatible provider</string>
+    <string name="mdl_add_openai_sub">Support ChatGPT, DeepSeek, Kimi, GLM, Qwen, etc.</string>
+    <string name="mdl_add_anthropic">Add Anthropic provider</string>
+    <string name="mdl_add_anthropic_sub">Support Anthropic Claude official or compatible API</string>
+    <string name="mdl_add_gemini">Add Gemini</string>
+    <string name="mdl_add_gemini_sub">Supports Google AI Studio and Vertex AI</string>
+    <string name="mdl_add_catalog">Add from models.dev</string>
+    <string name="mdl_add_catalog_sub">Browse the models.dev community catalog and pick models</string>
     <string name="mdl_configured">Configured providers (%1$d)</string>
     <string name="mdl_no_match">Nothing matches</string>
     <string name="mdl_no_base_url">No base URL</string>
@@ -77,8 +77,8 @@
     <string name="mdl_wire_vertex">Vertex AI</string>
 
     <!-- Provider detail -->
-    <string name="mdl_tab_settings">Settings</string>
-    <string name="mdl_tab_models">Models</string>
+    <string name="mdl_tab_settings">Configuration</string>
+    <string name="mdl_tab_models">Model</string>
     <string name="mdl_more">More</string>
     <string name="mdl_duplicate">Duplicate</string>
     <string name="mdl_copy_suffix">Copy</string>
@@ -111,7 +111,7 @@
     <string name="mdl_hosted_tools">Provider tools</string>
     <string name="mdl_hosted_search">Provider-hosted web search</string>
     <string name="mdl_hosted_search_sub">The model searches the web on the provider\'s side and cites its sources</string>
-    <string name="mdl_google_search">Google Search grounding</string>
+    <string name="mdl_google_search">Google Search</string>
     <string name="mdl_google_search_sub">Gemini grounds answers in Google Search and cites its sources</string>
     <string name="mdl_system_prompt">System prompt</string>
     <string name="mdl_system_prompt_hint">Instructions sent before every conversation with this provider</string>
@@ -156,7 +156,7 @@
     <string name="mdl_pull_models">Fetch models</string>
     <string name="mdl_pull_models_sub">Read the provider\'s model list</string>
     <string name="mdl_pull_none">No new models</string>
-    <string name="mdl_add_custom_model">Add a model by ID</string>
+    <string name="mdl_add_custom_model">Add custom model</string>
     <string name="mdl_model_id">Model ID</string>
     <string name="mdl_add">Add</string>
     <string name="mdl_no_models">No models yet. Fetch them or add one by ID.</string>
@@ -198,6 +198,10 @@
     <string name="mdl_reasoning_detected_forced">Detected automatically: always reasons, effort fixed (%1$s).</string>
     <string name="mdl_reasoning_detected_levels">Detected automatically: %1$s (%2$s).</string>
     <string name="mdl_reasoning_levels">Reasoning levels</string>
+    <string name="mdl_restore_automatic">Restore automatic</string>
+    <string name="mdl_restore_automatic_sub">Manual settings cover this model\'s automatic capabilities. Tap to use the detected context window and reasoning again.</string>
+    <string name="mdl_restore_automatic_none">Context window and reasoning follow the automatically detected capabilities.</string>
+    <string name="mdl_gemini_levels_note">Gemini and Vertex AI send the level as the model\'s thinking level. Default leaves it to the model (High on Gemini 4 Neon and Hydrogen, Medium on Carbon); Gemini 4 models cannot turn reasoning off, so Off is not offered for them.</string>
     <string name="mdl_levels_note">Tick the levels this model accepts. Model default is always available. A saved level the model does not accept moves to the nearest one.</string>
     <string name="mdl_delete_model">Delete model</string>
     <string name="mdl_source_catalog">built-in catalog</string>
@@ -211,23 +215,30 @@
 
     <!-- models.dev -->
     <string name="mdl_catalog_title">models.dev catalog</string>
-    <string name="mdl_catalog_intro">A community catalog of providers and models. It is downloaded only now, cached for a day, and your keys are never sent.</string>
+    <string name="mdl_catalog_intro">A community catalog of providers and models. It ships with Atom, refreshes online once a day, and your keys are never sent.</string>
     <string name="mdl_catalog_loading">Loading the catalog…</string>
-    <string name="mdl_catalog_failed">Could not load the catalog: %1$s</string>
     <string name="mdl_catalog_import_note">The provider is added turned off and without a key. Add your key, then turn it on.</string>
     <string name="mdl_catalog_no_url">This provider has no public endpoint in the catalog. Add its base URL after importing.</string>
     <string name="mdl_refresh">Refresh</string>
     <string name="mdl_no_tools">no tool calling</string>
     <string name="mdl_filter_all">All</string>
-
-    <plurals name="mdl_catalog_count">
-        <item quantity="one">%1$d provider</item>
-        <item quantity="other">%1$d providers</item>
-    </plurals>
-    <plurals name="mdl_import_n">
-        <item quantity="one">Import %1$d model</item>
-        <item quantity="other">Import %1$d models</item>
-    </plurals>
+    <string name="mdl_catalog_status">Catalog status</string>
+    <string name="mdl_catalog_source_bundled">Built-in catalog snapshot</string>
+    <string name="mdl_catalog_source_cached">Local cached catalog</string>
+    <string name="mdl_catalog_source_online">Online catalog</string>
+    <string name="mdl_catalog_updated">Updated %1$s</string>
+    <string name="mdl_catalog_refreshing">Refreshing from models.dev…</string>
+    <string name="mdl_catalog_refresh_failed">Refresh failed: %1$s The list below is the older copy.</string>
+    <string name="mdl_catalog_unavailable">The catalog is not available: %1$s</string>
+    <string name="mdl_catalog_err_http">models.dev answered with HTTP %1$d.</string>
+    <string name="mdl_catalog_err_timeout">models.dev took too long to answer.</string>
+    <string name="mdl_catalog_err_dns">models.dev could not be found. Check the connection or private DNS.</string>
+    <string name="mdl_catalog_err_ssl">The secure connection to models.dev failed.</string>
+    <string name="mdl_catalog_err_size">The catalog download was larger than allowed.</string>
+    <string name="mdl_catalog_err_format">The downloaded catalog could not be read.</string>
+    <string name="mdl_catalog_err_network">No connection to models.dev.</string>
+    <string name="mdl_catalog_importable">Importable providers (%1$d)</string>
+    <string name="mdl_catalog_import">Import (%1$d)</string>
 
     <!-- Routing -->
     <string name="mdl_route_disabled">%1$s is turned off. Turn it on in Models.</string>

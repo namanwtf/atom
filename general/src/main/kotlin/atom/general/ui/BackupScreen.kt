@@ -13,8 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import atom.core.legacy.LegacyCleanup
 import atom.general.GeneralHooks
 import atom.general.R
 import atom.general.backup.BackupEngine
@@ -37,10 +40,12 @@ import atom.ui.components.GroupRow
 import atom.ui.components.LargeTitleScreen
 import atom.ui.components.RowChevron
 import atom.ui.components.ScreenIcons
+import atom.ui.components.SectionLabel
 import atom.ui.feature.Backups
 import atom.ui.feature.FeatureNav
 import atom.ui.theme.AtomIcons
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -51,16 +56,29 @@ private sealed interface BackupDialog {
     data class Message(val title: String, val body: String) : BackupDialog
     data class Confirm(val plan: ImportPlan) : BackupDialog
     data class Busy(val file: BackupFile) : BackupDialog
+
+    /** Confirm removing the previous app's files; [unimported] adds the warning that unimported data is lost. */
+    data class RemoveOld(val unimported: Boolean) : BackupDialog
+
+    /** Confirm deleting the previous app's memory, which could not be imported. */
+    data object RemoveOldMemory : BackupDialog
 }
 
 @Composable
 internal fun BackupScreen(nav: FeatureNav) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val engine = remember { BackupEngine(appVersion = appVersion(context)) }
+    val engine = remember { BackupEngine(appVersion = appVersion(context), saving = { GeneralHooks.conversationsSaving() }) }
     val contributors = remember { Backups.all }
     var working by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<BackupDialog?>(null) }
+    val legacy = GeneralHooks.legacyImport
+    // Changes after every import run and removal, also the automatic ones, so both legacy rows check the files again.
+    val legacyChecks by remember(legacy) { legacy?.changes() ?: flowOf(0) }.collectAsState(0)
+    val legacyAvailable by produceState(false, legacy, legacyChecks) { value = withContext(Dispatchers.IO) { legacy?.available() == true } }
+    val cleanupOffer by produceState(LegacyCleanup.Offer.Hidden, legacy, legacyChecks, working) {
+        value = withContext(Dispatchers.IO) { legacy?.cleanupOffer() ?: LegacyCleanup.Offer.Hidden }
+    }
 
     fun labels(keys: List<String>): String {
         val byKey = contributors.associateBy { it.key }
@@ -74,6 +92,10 @@ internal fun BackupScreen(nav: FeatureNav) {
             working = false
             dialog = when (result) {
                 ImportResult.Busy -> BackupDialog.Busy(file)
+                ImportResult.Saving -> BackupDialog.Message(
+                    context.getString(R.string.backup_saving_title),
+                    context.getString(R.string.backup_saving_body),
+                )
                 is ImportResult.Invalid -> BackupDialog.Message(
                     context.getString(R.string.backup_invalid_title),
                     result.problems.joinToString("\n") { problemText(context, it, ::labels) },
@@ -155,22 +177,21 @@ internal fun BackupScreen(nav: FeatureNav) {
     }
 
     LargeTitleScreen(title = stringResource(R.string.backup_title), onBack = nav::back) {
-        item(key = "intro") {
-            FootNote(
-                if (contributors.isEmpty()) {
-                    stringResource(R.string.backup_nothing_registered)
-                } else {
-                    stringResource(R.string.backup_intro) + "\n" +
-                        stringResource(R.string.backup_includes, labels(contributors.map { it.key }))
-                },
-                Modifier.padding(bottom = 14.dp),
-            )
+        item(key = "warning") {
+            Group(Modifier.padding(top = 12.dp)) {
+                GroupRow(
+                    title = stringResource(R.string.backup_keep_safe),
+                    subtitle = if (contributors.isEmpty()) stringResource(R.string.backup_nothing_registered) else stringResource(R.string.backup_intro),
+                    titleColor = MaterialTheme.colorScheme.error,
+                )
+            }
         }
+        item(key = "label") { SectionLabel(stringResource(R.string.backup_group)) }
         item(key = "actions") {
             Group {
                 GroupRow(
                     title = stringResource(R.string.backup_export),
-                    subtitle = stringResource(R.string.backup_export_sub),
+                    subtitle = stringResource(R.string.backup_export_sub, labels(contributors.map { it.key })),
                     icon = AtomIcons.Download,
                     enabled = contributors.isNotEmpty() && !working,
                     onClick = {
@@ -182,7 +203,6 @@ internal fun BackupScreen(nav: FeatureNav) {
                     },
                     trailing = { RowChevron() },
                 )
-                GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.backup_import),
                     subtitle = stringResource(R.string.backup_import_sub),
@@ -191,6 +211,54 @@ internal fun BackupScreen(nav: FeatureNav) {
                     onClick = { importLauncher.launch(arrayOf(BackupEngine.MIME, "text/plain", "application/octet-stream")) },
                     trailing = { RowChevron() },
                 )
+                if (legacy != null && legacyAvailable) {
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_import),
+                        subtitle = stringResource(R.string.backup_legacy_import_sub),
+                        icon = AtomIcons.Download,
+                        enabled = !working,
+                        onClick = {
+                            scope.launch {
+                                working = true
+                                val text = try {
+                                    legacy.run()
+                                } catch (e: Exception) {
+                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                    e.message ?: e::class.simpleName ?: "error"
+                                }
+                                working = false
+                                dialog = BackupDialog.Message(context.getString(R.string.backup_legacy_import), text)
+                            }
+                        },
+                        trailing = { RowChevron() },
+                    )
+                }
+                if (legacy != null && cleanupOffer == LegacyCleanup.Offer.MemoryOnly) {
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_memory),
+                        subtitle = stringResource(R.string.backup_legacy_memory_sub),
+                        icon = ScreenIcons.Shield,
+                        enabled = !working,
+                        onClick = { dialog = BackupDialog.RemoveOldMemory },
+                        trailing = { RowChevron() },
+                    )
+                } else if (legacy != null && cleanupOffer != LegacyCleanup.Offer.Hidden) {
+                    val unimported = cleanupOffer == LegacyCleanup.Offer.Unimported
+                    GroupRow(
+                        title = stringResource(R.string.backup_legacy_remove),
+                        subtitle = stringResource(
+                            when (cleanupOffer) {
+                                LegacyCleanup.Offer.ImportFirst -> R.string.backup_legacy_remove_import_first
+                                LegacyCleanup.Offer.Unimported -> R.string.backup_legacy_remove_unimported
+                                else -> R.string.backup_legacy_remove_sub
+                            },
+                        ),
+                        icon = ScreenIcons.Shield,
+                        enabled = !working && cleanupOffer != LegacyCleanup.Offer.ImportFirst,
+                        onClick = { dialog = BackupDialog.RemoveOld(unimported) },
+                        trailing = { RowChevron() },
+                    )
+                }
             }
         }
         if (working) {
@@ -202,7 +270,7 @@ internal fun BackupScreen(nav: FeatureNav) {
                 )
             }
         }
-        item(key = "never") { FootNote(stringResource(R.string.backup_never_included), Modifier.padding(top = 6.dp)) }
+        item(key = "never") { FootNote(stringResource(R.string.backup_never_included), Modifier.padding(top = 12.dp)) }
     }
 
     when (val d = dialog) {
@@ -247,6 +315,67 @@ internal fun BackupScreen(nav: FeatureNav) {
                 onDismiss = { dialog = null },
             )
         }
+        is BackupDialog.RemoveOld -> {
+            var body = stringResource(R.string.backup_legacy_remove_body)
+            if (d.unimported) body += stringResource(R.string.backup_legacy_remove_body_unimported)
+            AtomDialog(
+                title = stringResource(R.string.backup_legacy_remove_title),
+                body = body,
+                confirm = stringResource(R.string.backup_legacy_remove_confirm),
+                onConfirm = {
+                    dialog = null
+                    val hook = legacy
+                    if (hook != null) scope.launch {
+                        working = true
+                        val result = try {
+                            hook.removeOldData()
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            LegacyCleanup.Removal.Partial
+                        }
+                        working = false
+                        dialog = BackupDialog.Message(
+                            context.getString(R.string.backup_legacy_remove),
+                            context.getString(
+                                when (result) {
+                                    LegacyCleanup.Removal.Done -> R.string.backup_legacy_removed
+                                    LegacyCleanup.Removal.DoneWithMemory -> R.string.backup_legacy_removed_memory
+                                    LegacyCleanup.Removal.DoneMemoryKept -> R.string.backup_legacy_removed_memory_kept
+                                    LegacyCleanup.Removal.Partial -> R.string.backup_legacy_remove_partial
+                                },
+                            ),
+                        )
+                    }
+                },
+                onDismiss = { dialog = null },
+                destructive = true,
+            )
+        }
+        BackupDialog.RemoveOldMemory -> AtomDialog(
+            title = stringResource(R.string.backup_legacy_memory_title),
+            body = stringResource(R.string.backup_legacy_memory_body),
+            confirm = stringResource(R.string.backup_legacy_memory_confirm),
+            onConfirm = {
+                dialog = null
+                val hook = legacy
+                if (hook != null) scope.launch {
+                    working = true
+                    val done = try {
+                        hook.removeOldMemory()
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        false
+                    }
+                    working = false
+                    dialog = BackupDialog.Message(
+                        context.getString(R.string.backup_legacy_memory),
+                        context.getString(if (done) R.string.backup_legacy_memory_removed else R.string.backup_legacy_remove_partial),
+                    )
+                }
+            },
+            onDismiss = { dialog = null },
+            destructive = true,
+        )
         is BackupDialog.Busy -> {
             val stop = GeneralHooks.stopTasks
             AtomDialog(
@@ -263,21 +392,29 @@ internal fun BackupScreen(nav: FeatureNav) {
     }
 }
 
+/** The Miuix dialog with one confirm button, plus Cancel when [onDismiss] is set. */
 @Composable
-private fun AtomDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: (() -> Unit)?) {
-    val c = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = { (onDismiss ?: onConfirm)() },
-        containerColor = c.surfaceContainerHigh,
-        titleContentColor = c.onSurface,
-        textContentColor = c.onSurfaceVariant,
-        title = { Text(title) },
-        text = { Text(body, style = MaterialTheme.typography.bodyMedium) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirm, color = c.onSurface) } },
-        dismissButton = onDismiss?.let { d ->
-            { TextButton(onClick = d) { Text(stringResource(R.string.backup_cancel), color = c.onSurfaceVariant) } }
-        },
-    )
+private fun AtomDialog(
+    title: String,
+    body: String,
+    confirm: String,
+    onConfirm: () -> Unit,
+    onDismiss: (() -> Unit)?,
+    destructive: Boolean = false,
+) {
+    atom.ui.components.AtomDialog(show = true, onDismiss = { (onDismiss ?: onConfirm)() }, title = title, summary = body) {
+        if (onDismiss != null) {
+            atom.ui.components.DialogButtons(
+                confirmText = confirm,
+                onConfirm = onConfirm,
+                dismissText = stringResource(R.string.backup_cancel),
+                onDismiss = onDismiss,
+                destructive = destructive,
+            )
+        } else {
+            atom.ui.components.AtomTextButton(confirm, onConfirm, Modifier.fillMaxWidth().padding(top = 12.dp), primary = true)
+        }
+    }
 }
 
 private sealed interface ReadResult {

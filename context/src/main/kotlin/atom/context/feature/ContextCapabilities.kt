@@ -113,7 +113,7 @@ internal object ContextCapabilities {
             ),
             ToolGroupInfo(
                 "apps_ops", "System and built-in apps", "Calendar create/update/delete with read-back, alarms and timers, media controls.",
-                listOf("calendar_create", "calendar_update", "calendar_delete", "set_alarm", "set_timer", "media_control"),
+                listOf("calendar_create", "calendar_update", "calendar_delete", "set_alarm", "set_timer", "change_alarm", "media_control"),
                 Needs.Permission, setOf(ToolSwitch.DeviceDirect), 76,
             ),
         )

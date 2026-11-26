@@ -19,6 +19,8 @@ data class Rule(
     val trigger: Trigger,
     val conditions: List<Condition> = emptyList(),
     val actions: List<Action>,
+    /** What the direct tool steps may use (agent steps carry their own). Older rules get [Capability.STEP_DEFAULT]. */
+    @SerialName("step_capabilities") val stepCapabilities: Set<Capability> = Capability.STEP_DEFAULT,
     val createdAt: Long = 0,
     val lastFiredAt: Long? = null,
 )

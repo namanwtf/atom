@@ -82,10 +82,11 @@ internal object MiniChat {
             @Suppress("DEPRECATION")
             softInputMode = LayoutParams.SOFT_INPUT_ADJUST_RESIZE or LayoutParams.SOFT_INPUT_STATE_HIDDEN
             if (blur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                blurBehindRadius = (36 * slot.context.resources.displayMetrics.density).roundToInt()
+                blurBehindRadius = (16 * slot.context.resources.displayMetrics.density).roundToInt()
             }
         }
         val w = OverlayWindow(slot.context, params, onBack = {
+            android.util.Log.i("AtomOverlay", "Back closes the mini chat")
             close()
             true
         }) { MiniChatSheet() }
@@ -135,6 +136,12 @@ internal object MiniChat {
         if (running) {
             host.steer(id, prompt)
         } else {
+            // Same block as the home chat: no run starts on a model that is not set up.
+            val chip = Overlay.hooks.modelChip(RunSource.Bubble)?.value
+            if (chip != null && !chip.ready) {
+                notice = chip.blocked ?: OverlayRuntime.app.getString(R.string.overlay_not_ready)
+                return
+            }
             val started = host.start(prompt, id, RunSource.Bubble)
             when {
                 started == null && id != null -> host.steer(id, prompt)
@@ -250,7 +257,10 @@ internal object MiniChat {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 when (intent.getStringExtra("reason")) {
-                    "homekey", "recentapps", "lock" -> close()
+                    "homekey", "recentapps", "lock" -> {
+                        android.util.Log.i("AtomOverlay", "mini chat closed by system: ${intent.getStringExtra("reason")}")
+                        close()
+                    }
                 }
             }
         }

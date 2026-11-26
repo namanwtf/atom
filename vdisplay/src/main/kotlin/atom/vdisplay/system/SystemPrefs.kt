@@ -14,15 +14,35 @@ import kotlinx.coroutines.flow.asStateFlow
  * the Xposed framework's remote preferences whenever they change or the framework connects.
  */
 class SystemPrefs private constructor(context: Context) {
-    private val sp: SharedPreferences = context.getSharedPreferences("atom_system", Context.MODE_PRIVATE)
+    private val sp: SharedPreferences = context.getSharedPreferences("atom4_system", Context.MODE_PRIVATE)
 
-    private val _backgroundDisplay = MutableStateFlow(sp.getBoolean(K_BG_DISPLAY, false))
+    private val _backgroundDisplay = MutableStateFlow(
+        if (sp.contains(K_BG_DISPLAY)) {
+            sp.getBoolean(K_BG_DISPLAY, false)
+        } else {
+            // On for a new install, as in the original app; an install that already stored settings keeps it off.
+            val fresh = sp.all.isEmpty()
+            sp.edit().putBoolean(K_BG_DISPLAY, fresh).apply()
+            fresh
+        },
+    )
 
-    /** Off by default until it has been verified on the user's phone. */
+    /** On by default for new installs. It only acts with root (see [SystemFeature.tools]). */
     val backgroundDisplay: StateFlow<Boolean> = _backgroundDisplay.asStateFlow()
 
     private val _hooks = MutableStateFlow(HookConfig.fromMap(sp.all))
     val hooks: StateFlow<HookConfig> = _hooks.asStateFlow()
+
+    private val _frameworkSeen = MutableStateFlow(sp.getBoolean(K_FRAMEWORK_SEEN, false))
+
+    /** True once the Xposed framework has connected on this phone; the framework-only Settings rows show from then on. */
+    val frameworkSeen: StateFlow<Boolean> = _frameworkSeen.asStateFlow()
+
+    fun markFrameworkSeen() {
+        if (_frameworkSeen.value) return
+        sp.edit().putBoolean(K_FRAMEWORK_SEEN, true).apply()
+        _frameworkSeen.value = true
+    }
 
     fun setBackgroundDisplay(on: Boolean) {
         sp.edit().putBoolean(K_BG_DISPLAY, on).apply()
@@ -49,6 +69,7 @@ class SystemPrefs private constructor(context: Context) {
 
     companion object {
         private const val K_BG_DISPLAY = "background_virtual_display"
+        private const val K_FRAMEWORK_SEEN = "framework_seen"
 
         @Volatile
         private var instance: SystemPrefs? = null

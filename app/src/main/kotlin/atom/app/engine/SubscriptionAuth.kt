@@ -269,7 +269,6 @@ class SubscriptionAuth internal constructor(
         private const val REFRESH_MARGIN_MS = 5 * 60 * 1000L
 
         const val CHATGPT_USAGE_URL = "https://chatgpt.com/codex/settings/usage"
-        const val GROK_USAGE_URL = "https://accounts.x.ai"
 
         @Volatile
         private var instance: SubscriptionAuth? = null

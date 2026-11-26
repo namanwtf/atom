@@ -48,7 +48,7 @@ object LinuxFeature : AtomFeature {
     override fun Screen(route: String, nav: FeatureNav) {
         when {
             route == ROUTE_HOME -> LinuxHomeScreen(onBack = nav::back, open = nav::open)
-            route == ROUTE_TERMINAL -> TerminalScreen(onBack = nav::back)
+            route == ROUTE_TERMINAL -> TerminalScreen(onBack = nav::back, openRoute = nav::open)
             route == ROUTE_HEALTH -> HealthScreen(onBack = nav::back)
             route == ROUTE_FOLDERS -> FoldersScreen(onBack = nav::back)
             route == ROUTE_FILES -> FilesScreen(onBack = nav::back)

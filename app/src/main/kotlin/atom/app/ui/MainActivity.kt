@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
+import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,9 +38,14 @@ import atom.voice.speech.Speech
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    /** Set once the appearance and settings are loaded; until then the system launch splash stays up. */
+    @Volatile
+    private var uiReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        holdSplashUntilReady()
         if (savedInstanceState == null) handleIntent(intent)
         // One-time migration: the Appearance screen takes over the old theme setting.
         lifecycleScope.launch { AppearanceStore.get(this@MainActivity).seedModeIfUnset(graph.settings.current().theme) }
@@ -64,11 +73,30 @@ class MainActivity : ComponentActivity() {
                     if (loaded == null) {
                         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
                     } else {
+                        SideEffect { uiReady = true }
                         AtomRoot(loaded)
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Keeps the system launch splash on screen until the first frame can use the saved theme and UI style, so the
+     * app never flashes the wrong colours. A slow store gives up after [SPLASH_MAX_MS] and draws anyway.
+     */
+    private fun holdSplashUntilReady() {
+        val content = findViewById<View>(android.R.id.content) ?: return
+        val started = SystemClock.uptimeMillis()
+        content.viewTreeObserver.addOnPreDrawListener(
+            object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    val go = uiReady || SystemClock.uptimeMillis() - started > SPLASH_MAX_MS
+                    if (go) content.viewTreeObserver.removeOnPreDrawListener(this)
+                    return go
+                }
+            },
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -114,6 +142,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val SPLASH_MAX_MS = 1_500L
         private const val EXTRA_PROMPT = "atom.app.EXTRA_PROMPT"
         private const val EXTRA_ROUTE = "atom.app.EXTRA_ROUTE"
 

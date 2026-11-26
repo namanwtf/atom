@@ -33,9 +33,9 @@ object Attachments {
     enum class Reason { TooLarge, Unreadable }
 
     /** Where copies of shared files land; the agent can read them without extra permissions. */
-    fun sharedDir(context: Context): File = File(context.filesDir, "shared").apply { mkdirs() }
+    fun sharedDir(context: Context): File = File(context.filesDir, "atom4_shared").apply { mkdirs() }
 
-    private fun imageDir(context: Context): File = File(context.filesDir, "attachments").apply { mkdirs() }
+    private fun imageDir(context: Context): File = File(context.filesDir, "atom4_attachments").apply { mkdirs() }
 
     suspend fun importImage(context: Context, uri: Uri): Outcome = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
@@ -64,6 +64,16 @@ object Attachments {
             return Outcome.Rejected(Reason.Unreadable)
         }
         return Outcome.Added(Attachment(AttachmentKind.Image, file.absolutePath, name ?: file.name, file.length()))
+    }
+
+    /**
+     * Keeps encoded image [bytes] (PNG, JPEG, WebP...) as a downscaled JPEG attachment, as for a picked image. Used by
+     * the importer for inline images of the previous app. Call off the main thread; null when the bytes do not decode.
+     */
+    fun saveImageBytes(context: Context, bytes: ByteArray, name: String? = null): Attachment? {
+        if (bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return null
+        val outcome = saveDownscaled(context, ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes)), name)
+        return (outcome as? Outcome.Added)?.attachment
     }
 
     /** True for a JPEG or PNG file path (by extension). */
@@ -159,6 +169,21 @@ object Attachments {
 
     fun deleteImages(attachments: List<Attachment>) {
         attachments.filter { it.kind == AttachmentKind.Image }.forEach { runCatching { File(it.path).delete() } }
+    }
+
+    /**
+     * Deletes the private copies made for [attachments] that will not be sent: downscaled images and files copied
+     * into [sharedDir]. A file attached by its real path (the user's own file) is never touched.
+     */
+    fun discardCopies(context: Context, attachments: List<Attachment>) {
+        deleteImages(attachments)
+        val shared = runCatching { sharedDir(context).canonicalFile }.getOrNull() ?: return
+        attachments.filter { it.kind == AttachmentKind.File }.forEach { a ->
+            runCatching {
+                val file = File(a.path).canonicalFile
+                if (file.parentFile == shared && file.isFile) file.delete()
+            }
+        }
     }
 
     private fun documentPath(uri: Uri): String? {

@@ -23,6 +23,15 @@ enum class Capability(val tag: String, val label: String) {
 
     companion object {
         val DEFAULT: Set<Capability> = setOf(Web, DeviceRead)
+
+        /** A new scheduled task's capabilities: web, device reading, terminal and MCP on; device controls and app UI off. */
+        val TASK_DEFAULT: Set<Capability> = setOf(Web, DeviceRead, Terminal, Mcp)
+
+        /**
+         * What an automation's direct tool steps may use unless the rule says otherwise: every family a capability
+         * opens. The scheduled-task and automation tools stay closed, as for any capability-limited run.
+         */
+        val STEP_DEFAULT: Set<Capability> = entries.toSet()
         fun fromTag(tag: String): Capability? = entries.firstOrNull { it.tag == tag.trim().lowercase() || it.name.equals(tag.trim(), true) }
         fun describe(set: Set<Capability>): String = if (set.isEmpty()) "Chat only" else entries.filter { it in set }.joinToString(", ") { it.label }
     }
@@ -83,8 +92,14 @@ fun interface EngineProvider {
 
 /** Calls agent tools by name outside a chat run (device controls, settings, anything in the live registry). */
 interface ToolInvoker {
+    /** Tools a direct step may name: switched-on tools whose family [Capability.STEP_DEFAULT] opens. */
     fun available(): List<ToolSpec>
-    suspend fun invoke(name: String, args: JsonObject): ToolResult
+
+    /**
+     * Calls [name] when its Tool list switch is on and its family is open to [capabilities] (the automation's
+     * step capabilities); otherwise returns an error saying why.
+     */
+    suspend fun invoke(name: String, args: JsonObject, capabilities: Set<Capability>): ToolResult
 }
 
 /** Lets UI-automation tasks run while the phone is locked (virtual display). */

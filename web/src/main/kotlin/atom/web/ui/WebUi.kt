@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicTextField
@@ -138,14 +139,34 @@ internal fun <T> PickerRow(title: String, options: List<T>, selected: T, label: 
 
 @Composable
 internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title) },
-        text = { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(confirm, color = MaterialTheme.colorScheme.onSurface) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-    )
+    atom.ui.components.AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+        DangerButtons(
+            confirm,
+            onConfirm = {
+                onDismiss()
+                onConfirm()
+            },
+            onDismiss = onDismiss,
+        )
+    }
+}
+
+/** The Miuix dialog button pair with the confirm button in the error colour, for deletes and clears. */
+@Composable
+private fun DangerButtons(confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        top.yukonga.miuix.kmp.basic.TextButton(text = "Cancel", onClick = onDismiss, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
+        top.yukonga.miuix.kmp.basic.TextButton(
+            text = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColors(
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error,
+                textColor = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.onError,
+            ),
+        )
+    }
 }
 
 /** Decoded thumbnails, bounded to a few MB. */

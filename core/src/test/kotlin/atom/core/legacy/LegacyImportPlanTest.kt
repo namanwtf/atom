@@ -1,0 +1,150 @@
+package atom.core.legacy
+
+import atom.core.legacy.LegacyImportPlan.ConversationAction
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class LegacyImportPlanTest {
+    private val uuid = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    private val valid = { id: String -> id.all { it.isLetterOrDigit() || it == '-' } }
+
+    @Test
+    fun runsAutomaticallyOnlyUntilARunFinished() {
+        assertTrue(LegacyImportPlan.shouldAutoRun(databaseExists = true, state = null))
+        assertTrue(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(conversations = mapOf("a" to "a"))), "an interrupted run resumes")
+        assertFalse(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(completedAt = 5)))
+        assertFalse(LegacyImportPlan.shouldAutoRun(false, null))
+        // A run that keeps failing is retried on a few starts only.
+        assertTrue(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(attempts = LegacyImportPlan.MAX_AUTO_ATTEMPTS - 1)))
+        assertFalse(LegacyImportPlan.shouldAutoRun(true, LegacyImportState(attempts = LegacyImportPlan.MAX_AUTO_ATTEMPTS)))
+    }
+
+    @Test
+    fun onlyACleanRunCountsAsFinished() {
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(conversations = 3)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(error = "disk")))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedConversations = 1)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedProviders = 1)))
+        assertFalse(LegacyImportPlan.isComplete(LegacyImportReport(failedSignIns = 1)), "a sign-in that failed to read is retried")
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(failedMemory = true, memoryTooLarge = true)), "memory never blocks the rest")
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(memory = true)))
+        assertTrue(LegacyImportPlan.isComplete(LegacyImportReport(signInAgain = listOf("xAI"))), "a sign-in to redo is not retried")
+    }
+
+    @Test
+    fun oldMemoryIsRetriedOnItsOwn() {
+        assertTrue(LegacyImportPlan.shouldRetryMemory(LegacyImportState(completedAt = 5), oldMemoryExists = true, autoRunPending = false))
+        assertTrue(LegacyImportPlan.shouldRetryMemory(null, true, false), "also when the database is gone and nothing ran")
+        assertTrue(LegacyImportPlan.shouldRetryMemory(LegacyImportState(attempts = 3, legacyCleanedAt = 9), true, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(memoryImported = true), true, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(), false, false))
+        assertFalse(LegacyImportPlan.shouldRetryMemory(LegacyImportState(), true, autoRunPending = true), "the full import tries it")
+    }
+
+    @Test
+    fun anUnreadableSignInIsGivenUpAfterTheAutomaticAttempts() {
+        assertFalse(LegacyImportPlan.signInFailureIsFinal(0))
+        assertFalse(LegacyImportPlan.signInFailureIsFinal(LegacyImportPlan.MAX_AUTO_ATTEMPTS - 2))
+        assertTrue(LegacyImportPlan.signInFailureIsFinal(LegacyImportPlan.MAX_AUTO_ATTEMPTS - 1))
+        assertTrue(LegacyImportPlan.signInFailureIsFinal(10))
+    }
+
+    @Test
+    fun conversationsAreImportedOnceUnderTheirOldId() {
+        val store = HashSet<String>()
+        var state = LegacyImportState()
+        fun run(): Int {
+            var imported = 0
+            for (old in listOf(uuid, "weird id/../x")) {
+                val (action, target) = LegacyImportPlan.conversation(state, old, valid, { it in store }, { "new-$old".filter(Char::isLetterOrDigit) })
+                if (action == ConversationAction.Import) {
+                    store += target
+                    imported++
+                }
+                if (action != ConversationAction.AlreadyImported) state = state.copy(conversations = state.conversations + (old to target))
+            }
+            return imported
+        }
+        assertEquals(2, run())
+        assertEquals(setOf(uuid, "newweirdidx"), store)
+        assertEquals(0, run(), "a re-run duplicates nothing")
+        // Deleted in Atom 4 after the import: not brought back.
+        store.remove(uuid)
+        assertEquals(0, run())
+    }
+
+    @Test
+    fun aConversationSavedBeforeTheMarkerWasWrittenIsNotDuplicated() {
+        val (action, target) = LegacyImportPlan.conversation(LegacyImportState(), uuid, valid, { it == uuid }, { error("unused") })
+        assertEquals(ConversationAction.ExistsInAtom4, action)
+        assertEquals(uuid, target)
+    }
+
+    @Test
+    fun keysAreAddedOnlyWhenMissing() {
+        val s = LegacyImportState()
+        assertTrue(LegacyImportPlan.shouldImportKey(s, "p", "sk-1", atom4HasKey = false))
+        assertFalse(LegacyImportPlan.shouldImportKey(s, "p", "sk-1", atom4HasKey = true), "never overwrite an Atom 4 key")
+        assertFalse(LegacyImportPlan.shouldImportKey(s, "p", " ", atom4HasKey = false))
+        assertFalse(LegacyImportPlan.shouldImportKey(s, "p", null, atom4HasKey = false))
+        assertFalse(LegacyImportPlan.shouldImportKey(s.copy(keys = setOf("p")), "p", "sk-1", atom4HasKey = false))
+    }
+
+    @Test
+    fun signInsAreImportedOnceAndNeverOverAnAtom4SignIn() {
+        val oauth = LegacyProviderRow("builtin-openai", authMode = LegacyProviderRow.AUTH_CHATGPT)
+        val s = LegacyImportState()
+        assertTrue(LegacyImportPlan.shouldImportSignIn(s, oauth, atom4SignedIn = false))
+        assertFalse(LegacyImportPlan.shouldImportSignIn(s, oauth, atom4SignedIn = true))
+        assertFalse(LegacyImportPlan.shouldImportSignIn(s.copy(signIns = setOf("builtin-openai")), oauth, false))
+        assertFalse(LegacyImportPlan.shouldImportSignIn(s, oauth.copy(authMode = "api_key"), false))
+        // Gemini rows always behave as API-key rows.
+        assertFalse(LegacyImportPlan.shouldImportSignIn(s, oauth.copy(type = LegacyProviderRow.TYPE_GEMINI), false))
+    }
+
+    @Test
+    fun theSelectionIsAppliedOnceAndNotOverAnAtom4Choice() {
+        assertTrue(LegacyImportPlan.shouldApplySelection(LegacyImportState(), chosenInAtom4 = false))
+        assertFalse(LegacyImportPlan.shouldApplySelection(LegacyImportState(), chosenInAtom4 = true))
+        assertFalse(LegacyImportPlan.shouldApplySelection(LegacyImportState(selectionApplied = true), false))
+    }
+
+    @Test
+    fun theMarkerRoundTripsAndToleratesGarbage() {
+        val s = LegacyImportState(
+            completedAt = 7,
+            providers = mapOf("builtin-openai" to "openai"),
+            keys = setOf("builtin-openai"),
+            conversations = mapOf("a" to "a"),
+            report = LegacyImportReport(at = 7, conversations = 1, signInAgain = listOf("xAI")),
+            noticeShown = false,
+        )
+        assertEquals(s, LegacyImportState.decode(s.encode()))
+        assertNull(LegacyImportState.decode("{"))
+        assertNull(LegacyImportState.decode(""))
+        assertNull(LegacyImportState.decode(null))
+    }
+
+    @Test
+    fun theSeededPromptIsTheOneBuiltInsShare() {
+        val rows = listOf(
+            LegacyProviderRow("builtin-openai", builtIn = true, systemPrompt = "You are Atom."),
+            LegacyProviderRow("builtin-xai", builtIn = true, systemPrompt = "You are Atom."),
+            LegacyProviderRow("builtin-kimi", builtIn = true, systemPrompt = "Custom"),
+            LegacyProviderRow("x", builtIn = false, systemPrompt = "Custom"),
+        )
+        assertEquals("You are Atom.", LegacyImportPlan.seededPrompt(rows))
+        assertNull(LegacyImportPlan.seededPrompt(rows.take(1)))
+    }
+
+    @Test
+    fun apiKeysOfOAuthRowsAreNeverUsed() {
+        assertEquals("sk", LegacyProviderRow("a", apiKey = "sk").usableApiKey)
+        assertNull(LegacyProviderRow("a", apiKey = "sk", authMode = LegacyProviderRow.AUTH_GROK).usableApiKey)
+        assertEquals("g", LegacyProviderRow("a", apiKey = "g", type = LegacyProviderRow.TYPE_GEMINI, authMode = LegacyProviderRow.AUTH_GROK).usableApiKey)
+        assertNull(LegacyProviderRow("a", apiKey = "  ").usableApiKey)
+    }
+}

@@ -16,6 +16,7 @@
     <string name="action_done">Done</string>
     <string name="action_save">Save</string>
     <string name="action_remove">Remove</string>
+    <string name="action_close">Close</string>
     <string name="action_replace">Replace</string>
     <string name="action_retry">Retry download</string>
     <string name="action_download">Download</string>
@@ -27,13 +28,13 @@
 
     <!-- Content descriptions -->
     <string name="cd_back">Back</string>
-    <string name="cd_open_drawer">Open conversations</string>
+    <string name="cd_open_drawer">Conversations</string>
     <string name="cd_delete_conversation">Delete conversation</string>
     <string name="cd_dismiss">Dismiss</string>
     <string name="cd_show_secret">Show</string>
     <string name="cd_hide_secret">Hide</string>
     <string name="cd_pick_model">Pick a model</string>
-    <string name="cd_step_ok">Succeeded</string>
+    <string name="cd_step_ok">Completed</string>
     <string name="cd_step_error">Failed</string>
 
     <!-- Chat -->
@@ -59,8 +60,8 @@
     <string name="step_result">Result</string>
     <string name="step_awaiting">Approve?</string>
     <string name="banner_busy_elsewhere">A task is running in another conversation.</string>
-    <string name="drawer_new_chat">New chat</string>
-    <string name="drawer_empty">No conversations yet.</string>
+    <string name="drawer_new_chat">New conversation</string>
+    <string name="drawer_empty">No conversations yet</string>
     <string name="drawer_untitled">Untitled</string>
     <string name="delete_conversation_title">Delete conversation?</string>
     <string name="delete_conversation_text">“%1$s” will be removed from this phone.</string>
@@ -98,11 +99,16 @@
     <string name="channel_approval_desc">Atom asks before sensitive actions.</string>
     <string name="channel_result">Task results</string>
     <string name="channel_result_desc">When a task finishes while Atom is in the background.</string>
-    <string name="notif_working_title">Atom is working</string>
+    <string name="notif_working_title">Atom is running</string>
     <string name="notif_waiting_title">Atom needs your approval</string>
     <string name="notif_waiting_text">Tap Allow or Deny</string>
+    <string name="notif_unlock_to_answer">Unlock to answer</string>
+    <string name="notif_unlock_to_see">Unlock to see it</string>
     <string name="notif_starting">Starting…</string>
     <string name="notif_thinking">Thinking…</string>
+    <!-- Live Update status-bar chip (keep very short). -->
+    <string name="live_working">Working</string>
+    <string name="live_waiting">Approve</string>
     <string name="notif_done">Task done</string>
     <string name="notif_failed">Task failed</string>
     <string name="notif_step_limit">Stopped at the step limit</string>
@@ -240,7 +246,7 @@
     <string name="legal_gpl">GNU General Public License v3.0</string>
     <string name="legal_gpl_desc">Atom\'s own license (version 3 or any later version).</string>
     <string name="legal_apache">Apache License 2.0</string>
-    <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API.</string>
+    <string name="legal_apache_desc">LiteRT-LM, LiteRT, OkHttp, Kotlin, AndroidX, Compose, Shizuku API, libxposed service, Miuix, MaterialKolor, Haze, the Google speech_embedding model and openWakeWord (wake word).</string>
     <string name="legal_mit">MIT License</string>
     <string name="legal_mit_desc">llama.cpp and ggml.</string>
     <string name="legal_gpl2">GNU General Public License v2.0</string>

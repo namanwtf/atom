@@ -85,7 +85,7 @@ object FirewallRules {
 /** Saved rules plus applying them through the root shell. */
 class Firewall(context: Context) {
     private val app = context.applicationContext
-    private val file = File(app.filesDir, "firewall_rules.json")
+    private val file = File(app.filesDir, "atom4_firewall_rules.json")
     private val json = Json { ignoreUnknownKeys = true }
 
     fun rules(): List<FirewallRule> = try {

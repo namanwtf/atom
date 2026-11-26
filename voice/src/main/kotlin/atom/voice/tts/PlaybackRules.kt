@@ -54,4 +54,10 @@ object PlaybackRules {
 
     /** Background playback (media FGS + notification) is only for chat answers. */
     fun needsForegroundService(source: ReadAloudSource): Boolean = source == ReadAloudSource.Chat
+
+    /**
+     * The assistant overlay speaks over other apps: it posts the "Assistant voice" notification (with Stop) while
+     * speaking. Chat answers get theirs from the media service; audio chat and previews run inside Atom's screens.
+     */
+    fun showsAssistantVoiceNotice(source: ReadAloudSource): Boolean = source == ReadAloudSource.Overlay
 }

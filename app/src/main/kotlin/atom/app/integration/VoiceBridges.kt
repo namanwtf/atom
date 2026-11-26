@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Looper
 import atom.app.AppGraph
 import atom.app.data.EngineSelection
-import atom.app.data.ModelRole
 import atom.core.llm.ChatMessage
 import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
@@ -15,6 +14,7 @@ import atom.voice.R as VoiceR
 import atom.voice.asr.VoiceInput
 import atom.voice.asr.VoiceInputOptions
 import atom.voice.asr.VoiceInputState
+import atom.voice.notify.AssistantVoiceNotice
 import atom.voice.speech.Speech
 import atom.voice.speech.SpeechError
 import atom.voice.speech.SpeechProofreader
@@ -51,9 +51,11 @@ class ModuleVoiceBridge : VoiceBridge {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val input = VoiceInput(app, scope)
         var done = false
+        var notice = 0L
         fun end() {
             done = true
             scope.cancel()
+            AssistantVoiceNotice.hideListening(app, notice)
         }
         val started = input.start(VoiceInputOptions.assistant(app)) { result ->
             if (done) return@start
@@ -66,6 +68,9 @@ class ModuleVoiceBridge : VoiceBridge {
             listener.onError(app.getString(errorText(error)))
             return VoiceBridge.NoSession
         }
+        // Outside Atom's screens: "Atom is listening" with Stop, which ends capture and delivers what was heard.
+        // Posted before the state collector runs, so an immediate failure takes it down again.
+        if (!done) notice = AssistantVoiceNotice.showListening(app) { if (!done) input.finish() }
         scope.launch {
             input.state.collect { s ->
                 if (done) return@collect
@@ -143,14 +148,16 @@ class AppWakePreferences(private val graph: AppGraph) : WakePreferences {
 }
 
 /**
- * Smart correction on the title model (light reasoning). Skipped when that is an on-device model: loading
- * gigabytes for one correction costs more than it is worth, and the raw text is kept instead.
+ * Smart correction on the current chat's model (light reasoning): the conversation the chat shows, else the
+ * conversation running most recently, else the global default model a new chat would use. The raw text is kept
+ * when that model fails or takes too long (VoiceInput caps the call). Skipped when that model is on-device: loading
+ * gigabytes for one dictation costs more than it is worth.
  */
 class ChatProofreader(private val graph: AppGraph) : SpeechProofreader {
     override suspend fun proofread(instructions: String, text: String): String? {
-        val selection = graph.modelRoles.resolve(ModelRole.Title, null) ?: return null
+        val selection = currentChatModel() ?: return null
         if (selection is EngineSelection.Local) return null
-        val routed = graph.router.acquire(selection)
+        val routed = graph.router.acquire(selection, hostedSearch = false)
         try {
             val reasoning = if (routed.reasoning.supported) routed.reasoning.levels.firstOrNull() else null
             val request = LlmRequest(
@@ -166,5 +173,19 @@ class ChatProofreader(private val graph: AppGraph) : SpeechProofreader {
         } finally {
             graph.router.release(routed)
         }
+    }
+
+    private suspend fun currentChatModel(): EngineSelection? {
+        val global = graph.settings.current().selection
+        val runs = graph.tasks.liveRuns.value
+        val focused = graph.focusedConversationId
+        if (focused != null) {
+            runs[focused]?.takeIf { it.active }?.let { run -> graph.tasks.selectionOf(run.runId)?.let { return it } }
+            val conversation = runCatching { graph.conversations.load(focused) }.getOrNull()
+            return conversation?.selection ?: global
+        }
+        val latest = runs.values.filter { it.active }.maxByOrNull { it.startedAt }
+        latest?.let { run -> graph.tasks.selectionOf(run.runId) ?: run.conversation.selection }?.let { return it }
+        return global
     }
 }

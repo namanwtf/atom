@@ -57,7 +57,10 @@ internal object AssistantController {
     var entry by mutableStateOf(0)
         private set
 
-    val voice = VoiceInput { send(it) }
+    val voice = VoiceInput { send(it, spoken = true) }
+
+    /** True while the latest question was spoken; only answers to spoken questions are read out automatically. */
+    private var spokenQuestion = false
 
     private var handle: AssistSessionHandle? = null
     private var visible = false
@@ -141,10 +144,11 @@ internal object AssistantController {
 
     // ------------------------------------------------------------------ Conversation
 
-    fun send(text: String) {
+    fun send(text: String, spoken: Boolean = false) {
         val question = text.trim()
         if (question.isEmpty()) return
         voice.cancel()
+        spokenQuestion = spoken
         if (awaitingStructure || awaitingScreenshot) {
             queued = question
             draft = ""
@@ -270,7 +274,15 @@ internal object AssistantController {
             false
         }
         val shown = visible || reshown
-        if (shown && run.phase == RunPhase.Done && answer.isNotEmpty() && OverlayRuntime.prefs.autoSpeak.value && Overlay.readAloud.available) {
+        if (AutoSpeak.should(
+                enabled = OverlayRuntime.prefs.autoSpeak.value,
+                shown = shown,
+                done = run.phase == RunPhase.Done,
+                spokenQuestion = spokenQuestion,
+                answer = answer,
+                canSpeak = Overlay.readAloud.available,
+            )
+        ) {
             Overlay.readAloud.speak(Markdown.plain(answer))
         }
         return shown
@@ -282,6 +294,7 @@ internal object AssistantController {
         captureJob?.cancel()
         queueTimer?.cancel()
         conversationId = null
+        spokenQuestion = false
         messages.clear()
         screen = null
         screenshot = null
@@ -305,4 +318,10 @@ internal object AssistantController {
 
     private const val CAPTURE_WAIT_MS = 1_500L
     private const val KEEP_SCREENSHOTS = 3
+}
+
+/** "Speak answers automatically": only a finished answer to a spoken question, while the overlay is on screen. */
+internal object AutoSpeak {
+    fun should(enabled: Boolean, shown: Boolean, done: Boolean, spokenQuestion: Boolean, answer: String, canSpeak: Boolean): Boolean =
+        enabled && shown && done && spokenQuestion && answer.isNotBlank() && canSpeak
 }

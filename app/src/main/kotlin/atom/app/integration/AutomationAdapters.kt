@@ -1,5 +1,6 @@
 package atom.app.integration
 
+import atom.device.switches.ToolSwitches
 import android.content.Context
 import atom.app.AppGraph
 import atom.app.data.Conversation
@@ -8,13 +9,16 @@ import atom.app.data.ModelRole
 import atom.app.data.ProviderStore
 import atom.app.data.TitleSource
 import atom.app.feature.Features
+import atom.app.agent.ToolFamilies
 import atom.automation.Capability
+import atom.automation.CapabilityTools
 import atom.automation.EngineProvider
 import atom.automation.ModelChoice
 import atom.automation.ModelChoiceProvider
 import atom.automation.RunLauncher
 import atom.automation.RunRequest
 import atom.automation.ToolInvoker
+import atom.automation.ToolOrigin
 import atom.automation.EngineSelection as CompileEngine
 import atom.core.llm.ToolSpec
 import atom.core.tool.Tool
@@ -50,15 +54,15 @@ internal object ModelIds {
 /**
  * Starts unattended runs through the task runner. What the AgentHost API allows is applied for real: the model
  * (the task's pin, else the "Scheduled tasks" role), the reasoning effort and the title are written into the
- * conversation before the run starts, so the runner picks them up. Capability limits can only be stated in the
- * prompt until the runner accepts a per-run tool filter; [RunRequest.showProgress] cannot be honoured yet.
+ * conversation before the run starts, so the runner picks them up. The capability set filters the run's tool set
+ * for real ("Chat only" runs get no tools); [RunRequest.showProgress] cannot be honoured yet.
  */
 class AppRunLauncher(private val graph: AppGraph) : RunLauncher {
     override fun start(request: RunRequest): String? {
         val id = request.conversationId ?: Conversation.newId()
         if (graph.tasks.isRunning(id)) return null
         runCatching { runBlocking(Dispatchers.IO) { prepare(id, request) } }
-        return graph.tasks.start(header(request) + request.prompt, id, request.source)
+        return graph.tasks.start(header(request) + request.prompt, id, request.source, emptyList(), request.capabilities)
     }
 
     private suspend fun prepare(id: String, request: RunRequest) {
@@ -80,7 +84,8 @@ class AppRunLauncher(private val graph: AppGraph) : RunLauncher {
 
     private fun header(request: RunRequest): String {
         val allowed = Capability.describe(request.capabilities)
-        return "[${request.title} · unattended run · allowed tools: $allowed. Do not use tools outside these families.]\n"
+        // The tool set itself is filtered by the runner; this line only tells the model why some tools are absent.
+        return "[${request.title} · unattended run · allowed tools: $allowed.]\n"
     }
 }
 
@@ -117,17 +122,28 @@ class AppCompileEngine(private val graph: AppGraph) : EngineProvider {
 }
 
 /**
- * Calls agent tools by name outside a chat run, with the same tool set a run gets. Phone-UI tools take the
- * phone-control lease like a run would; tools that ask for approval are declined (nobody is there to answer).
+ * Calls agent tools by name outside a chat run, with the same tool set a run gets, limited like a run: a tool
+ * switched off on the Tool list, or outside the automation's step capabilities, is refused (the scheduled-task and
+ * automation tools are never open to a step). Phone-UI tools take the phone-control lease like a run would; tools
+ * that ask for approval are declined (nobody is there to answer).
  */
 class AppToolInvoker(private val context: Context, private val graph: AppGraph) : ToolInvoker {
     @Volatile
     private var lastFull: List<Tool>? = null
 
-    override fun available(): List<ToolSpec> = (lastFull ?: quickTools()).map { it.spec }
+    override fun available(): List<ToolSpec> =
+        (lastFull ?: allowed(quickTools(), Capability.STEP_DEFAULT)).map { it.spec }
 
-    override suspend fun invoke(name: String, args: JsonObject): ToolResult {
-        val tool = fullTools().firstOrNull { it.spec.name == name } ?: return ToolResult.error("Unknown tool: $name")
+    override suspend fun invoke(name: String, args: JsonObject, capabilities: Set<Capability>): ToolResult {
+        val all = fullTools()
+        val tool = allowed(all, capabilities).firstOrNull { it.spec.name == name }
+        if (tool == null) {
+            return if (all.any { it.tool.spec.name == name }) {
+                ToolResult.error("$name is not allowed for this automation's steps (allowed: ${Capability.describe(capabilities)}).")
+            } else {
+                ToolResult.error("Unknown tool: $name")
+            }
+        }
         val runId = "automation-" + UUID.randomUUID()
         val ctx = object : ToolContext {
             override val taskId: String = runId
@@ -147,15 +163,28 @@ class AppToolInvoker(private val context: Context, private val graph: AppGraph) 
         }
     }
 
-    private fun featureTools(): List<Tool> = Features.all.flatMap { f -> runCatching { f.tools(context) }.getOrDefault(emptyList()) }
+    /** A tool with the module it came from, for the capability classifier. */
+    private class Sourced(val tool: Tool, val origin: ToolOrigin)
+
+    private fun allowed(tools: List<Sourced>, capabilities: Set<Capability>): List<Tool> =
+        CapabilityTools.filter(tools, capabilities) { ToolFamilies.familyOf(it.tool, it.origin) }.map { it.tool }
+
+    private fun featureTools(): List<Sourced> = Features.all.flatMap { f ->
+        val origin = ToolFamilies.originOf(f.id)
+        runCatching { f.tools(context) }.getOrDefault(emptyList()).map { Sourced(it, origin) }
+    }
+
+    private fun linuxTools(): List<Sourced> = LinuxTools.create(context).map { Sourced(it, ToolOrigin.Linux) }
 
     /** Without probing the shell (that is not free): enough for listing in the rule editor. */
-    private fun quickTools(): List<Tool> = (LinuxTools.create(context) + featureTools()).distinctBy { it.spec.name }
+    private fun quickTools(): List<Sourced> = switchedOn(linuxTools() + featureTools())
 
-    private suspend fun fullTools(): List<Tool> =
-        (DeviceTools.create(context, graph.shell()) + LinuxTools.create(context) + featureTools())
-            .distinctBy { it.spec.name }
-            .also { lastFull = it }
+    private suspend fun fullTools(): List<Sourced> =
+        switchedOn(DeviceTools.create(context, graph.shell()).map { Sourced(it, ToolOrigin.Device) } + linuxTools() + featureTools())
+            .also { lastFull = allowed(it, Capability.STEP_DEFAULT) }
+
+    private fun switchedOn(tools: List<Sourced>): List<Sourced> =
+        tools.filter { ToolSwitches.isToolOn(it.tool.spec.name) }.distinctBy { it.tool.spec.name }
 
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 60_000L

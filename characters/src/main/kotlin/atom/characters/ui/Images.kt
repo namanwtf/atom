@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +125,13 @@ internal object CharacterImages {
 }
 
 /**
+ * A round avatar of the character for other screens (the home chat header, empty state and conversation list):
+ * the same art as the library cards, clipped to a circle.
+ */
+@Composable
+fun CharacterAvatar(character: Character, modifier: Modifier = Modifier) = CharacterArt(character, modifier, corner = 999.dp)
+
+/**
  * The character's art in a rounded card: the stored image (decoded off the main thread at display size), the orb
  * for the built-in companion, or a monogram. Static: nothing animates.
  */
@@ -131,7 +139,12 @@ internal object CharacterImages {
 internal fun CharacterArt(c: Character, modifier: Modifier = Modifier, corner: Dp = 22.dp) {
     val file = remember(c.image, c.imageVersion) { CharacterSession.store.imageFile(c) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(corner)
-    BoxWithConstraints(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    val colors = MaterialTheme.colorScheme
+    // The built-in companion's orb is a white glow: in the light theme it sits on the inverse (graphite) surface,
+    // as on its exported card, so it does not vanish into the light grey.
+    val orbOnDark = file == null && c.origin == CharacterOrigin.BuiltIn && colors.surface.luminance() > 0.5f
+    val background = if (orbOnDark) colors.inverseSurface else colors.surfaceContainerHigh
+    BoxWithConstraints(modifier.clip(shape).background(background)) {
         val boxWidth = maxWidth
         val widthPx = with(LocalDensity.current) { boxWidth.toPx() }.roundToInt().coerceIn(64, 1440)
         val key = "${c.id}:${c.imageVersion}:$widthPx"

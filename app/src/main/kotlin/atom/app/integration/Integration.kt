@@ -33,6 +33,9 @@ internal object Integration {
     fun install(app: AtomApp) {
         val graph = app.graph
 
+        // Tool list: web, browser and image tools follow their own settings pages.
+        atom.device.caps.ToolCatalog.featureOff = { id -> atom.web.WebFeature.toolsOffReason(app, id) }
+
         // Extend: subagents run on the parent's tools, lease and model. Its secrets keep their own Keystore store.
         SubagentBridge(graph).let { Extend.install(contextWindow = it, engines = it, toolScope = it) }
 
@@ -45,7 +48,7 @@ internal object Integration {
         )
 
         // Overlay: deep links, model chip, the real phone-control lease, the voice module's dictation and voice.
-        Overlay.hooks = AppOverlayHooks(graph)
+        Overlay.hooks = AppOverlayHooks(app, graph)
         Overlay.voice = ModuleVoiceBridge()
         Overlay.readAloud = ModuleReadAloudBridge(graph.appScope)
         Accessibility.serviceHook = object : Accessibility.ServiceHook {
@@ -82,6 +85,20 @@ internal object Integration {
         AppBackups.register(app, graph)
         GeneralHooks.tasksRunning = { graph.tasks.isRunning }
         GeneralHooks.stopTasks = { graph.tasks.stopAll() }
+        GeneralHooks.conversationsSaving = { graph.conversations.isSaving }
+        GeneralHooks.legacyImport = object : GeneralHooks.LegacyImportHook {
+            override fun available(): Boolean = atom.app.data.legacy.LegacyImport.available(app)
+
+            override suspend fun run(): String = atom.app.data.legacy.LegacyImport.runManually(app, graph)
+
+            override fun cleanupOffer() = atom.app.data.legacy.LegacyImport.cleanupOffer(app)
+
+            override suspend fun removeOldData() = atom.app.data.legacy.LegacyImport.removeOldData(app)
+
+            override suspend fun removeOldMemory() = atom.app.data.legacy.LegacyImport.removeOldMemory(app)
+
+            override fun changes() = atom.app.data.legacy.LegacyImport.changes
+        }
         GeneralHooks.onImported = {
             // Settings flows refresh themselves; Hey Atom must be re-applied by hand (it owns a service).
             graph.appScope.launch {

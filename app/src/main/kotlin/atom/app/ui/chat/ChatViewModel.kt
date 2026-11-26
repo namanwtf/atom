@@ -31,6 +31,8 @@ import atom.core.runtime.QueuedMessage
 import atom.ui.feature.RunPhase
 import atom.app.data.StoredMessage
 import atom.characters.model.CandidateSet
+import atom.characters.model.Character
+import atom.llm.cloud.ProviderBrands
 import atom.characters.model.ChatBinding
 import atom.characters.session.CharacterSession
 import atom.core.llm.Role
@@ -54,9 +56,38 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-/** What the model pill shows. */
-data class EngineInfo(val name: String?, val onDevice: Boolean, val missing: Boolean, val live: Boolean = false)
+/**
+ * What the model capsule shows. [ready] is false when the selection cannot be used (no key, no sign-in, provider
+ * off, model removed): the capsule then reads "Not selected" and sending is blocked. [logo] is a brand key for
+ * the provider logo, or null for the fallback mark.
+ */
+data class EngineInfo(
+    val name: String?,
+    val onDevice: Boolean,
+    val missing: Boolean,
+    val live: Boolean = false,
+    val ready: Boolean = true,
+    val logo: String? = null,
+    /** Why the selection is not usable, when it is not. */
+    val reason: NotReady? = null,
+    /** The provider's display name, for "sign in to …" and "enter the key for … again". */
+    val providerName: String? = null,
+)
+
+/** Why a model selection cannot be used yet. */
+enum class NotReady {
+    /** No usable selection at all, or the provider has no key. */
+    Configure,
+
+    /** An account provider (ChatGPT, Grok) that is not signed in. */
+    SignIn,
+
+    /** The stored key could not be decrypted (for example after a restore to another phone). */
+    KeyUnreadable,
+}
 
 /** The reasoning chip and effort picker for the current conversation's model. */
 data class ReasoningUi(val support: ReasoningSupport, val enabled: Boolean, val effort: ReasoningEffort?)
@@ -80,6 +111,8 @@ data class ChatUiState(
     val notice: String? = null,
     val compacting: Boolean = false,
     val currentTool: String? = null,
+    /** A provider-hosted tool running right now ("Running Web search"). */
+    val hostedTool: atom.core.llm.HostedToolKind? = null,
     val engine: EngineInfo = EngineInfo(null, onDevice = false, missing = false),
     val reasoning: ReasoningUi = ReasoningUi(ReasoningSupport.None, enabled = false, effort = null),
     val queued: List<QueuedMessage> = emptyList(),
@@ -96,10 +129,23 @@ data class ChatUiState(
     val replyingLabel: String? = null,
     /** Reply candidates by stored message index (character chats). */
     val candidates: Map<Int, CandidateSet> = emptyMap(),
+    /** The character of a character chat (its avatar and name on the empty state and in the composer). */
+    val character: Character? = null,
+    /** The saved conversation could not be read; the chat offers a retry. */
+    val loadFailed: Boolean = false,
+    /** The model capsule can open the picker: some provider or on-device model exists. */
+    val hasProviders: Boolean = true,
 )
 
 /** A drawer row: the stored summary plus what a live run is doing right now. */
-data class DrawerRow(val summary: ConversationSummary, val running: Boolean, val activity: DrawerActivity?, val snippet: String? = null)
+data class DrawerRow(
+    val summary: ConversationSummary,
+    val running: Boolean,
+    val activity: DrawerActivity?,
+    val snippet: String? = null,
+    /** Character chats: the character, for the row's avatar and second line. */
+    val character: Character? = null,
+)
 
 sealed interface DrawerActivity {
     data object Reasoning : DrawerActivity
@@ -109,17 +155,27 @@ sealed interface DrawerActivity {
 }
 
 sealed interface ChatEvent {
-    data class Toast(val message: Int, val arg: String? = null) : ChatEvent
+    data class Toast(val message: Int, val arg: String? = null, val arg2: String? = null) : ChatEvent
+
+    /** Sending was blocked because no usable model is selected. */
+    data object NeedsModel : ChatEvent
     data class Compacted(val result: CompactResult) : ChatEvent
 }
 
-private data class Selected(val id: String?, val stored: Conversation?, val draft: Conversation, val bindings: Map<String, ChatBinding>)
+private data class Selected(
+    val id: String?,
+    val stored: Conversation?,
+    val draft: Conversation,
+    val bindings: Map<String, ChatBinding>,
+    val loadFailed: String?,
+)
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     private val runner = graph.tasks
     private val selectedId = MutableStateFlow<String?>(null)
     private val loaded = MutableStateFlow<Conversation?>(null)
+    private val loadFailed = MutableStateFlow<String?>(null)
 
     /** Model and reasoning chosen before the first message of a new conversation. */
     private val draft = MutableStateFlow(Conversation.empty())
@@ -153,12 +209,15 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         .mapLatest { q -> if (q.isEmpty()) null else graph.conversations.search(q) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val drawer: StateFlow<List<DrawerRow>> = combine(summaries, runner.liveRuns, matches) { list, runs, found ->
-        val rows = list.map { s -> rowFor(s, runs[s.id]) }
+    private val bindings: StateFlow<Map<String, ChatBinding>> =
+        runCatching { CharacterSession.bindings }.getOrElse { MutableStateFlow(emptyMap()) }
+
+    val drawer: StateFlow<List<DrawerRow>> = combine(summaries, runner.liveRuns, matches, bindings) { list, runs, found, b ->
+        val rows = list.map { s -> rowFor(s, runs[s.id], b[s.id]?.snapshot) }
         val known = list.map { it.id }.toSet()
         // A brand-new conversation that has not been saved into the index yet.
         val extra = runs.values.filter { it.conversation.id !in known && it.active }.map { run ->
-            rowFor(ConversationSummary(run.conversation.id, run.conversation.title, run.startedAt), run)
+            rowFor(ConversationSummary(run.conversation.id, run.conversation.title, run.startedAt), run, b[run.conversation.id]?.snapshot)
         }
         val all = extra + rows
         if (found == null) all else {
@@ -171,8 +230,9 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
 
     private val settingsFlow = graph.settings.settings
 
-    private val bindings: StateFlow<Map<String, ChatBinding>> =
-        runCatching { CharacterSession.bindings }.getOrElse { MutableStateFlow(emptyMap()) }
+    /** Null until the provider list, key presence and installed models have loaded (treated as usable). */
+    private val readiness: StateFlow<Readiness?> = Readiness.of(graph)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Subagent runs of the selected conversation's current or last run (in memory only). */
     val subagents: StateFlow<List<SubagentRun>> = combine(selectedId, runner.liveRuns, SubagentRuns.runs) { id, runs, all ->
@@ -185,12 +245,12 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     private var memoItems: List<ChatItem> = emptyList()
 
     val state: StateFlow<ChatUiState> = combine(
-        combine(selectedId, loaded, draft, bindings) { id, stored, d, b -> Selected(id, stored, d, b) },
+        combine(selectedId, loaded, draft, bindings, loadFailed) { id, stored, d, b, failed -> Selected(id, stored, d, b, failed) },
         runner.liveRuns,
         settingsFlow,
         queue,
-        graph.models.installed,
-    ) { (id, stored, d, b), runs, settings, queued, _ ->
+        readiness,
+    ) { (id, stored, d, b, failed), runs, settings, queued, ready ->
         val live = id?.let { runs[it] }
         // A finished run's copy is newer than the file until the saved version has been read back.
         val conversation: Conversation = when {
@@ -219,7 +279,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             notice = live?.notice,
             compacting = live?.compacting == true,
             currentTool = live?.currentTool?.takeIf { running },
-            engine = engineInfo(selection, live),
+            hostedTool = live?.hostedTool?.takeIf { running },
+            engine = engineInfo(selection, live, ready),
             reasoning = ReasoningUi(support, enabled, effort),
             queued = queued,
             context = (conversation.contextTokens)?.let { ContextInfo(it, conversation.contextWindow) },
@@ -231,6 +292,9 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             characterChat = id != null && b.containsKey(id),
             replyingLabel = live?.replyingLabel?.takeIf { running },
             candidates = if (id != null) candidatesOf(conversation, b[id]) else emptyMap(),
+            character = id?.let { b[it]?.snapshot },
+            loadFailed = id != null && failed == id && stored?.id != id && live == null,
+            hasProviders = ready == null || ready.providers.any { it.enabled } || ready.installed.isNotEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -247,6 +311,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             graph.chatRequests.collect { requests -> requests.forEach { handle(it) } }
         }
         viewModelScope.launch { runCatching { CharacterSession.store.load() } }
+        // Voice smart correction and other helpers follow the conversation on screen (null for a new chat).
+        viewModelScope.launch { selectedId.collect { graph.focusedConversationId = it } }
     }
 
     /**
@@ -284,10 +350,24 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         leaveCurrent()
         selectedId.value = id
         loaded.value = null
+        load(id)
+    }
+
+    private fun load(id: String) {
+        loadFailed.value = null
         viewModelScope.launch {
-            loaded.value = graph.conversations.load(id) ?: startCharacterChat(id)
+            val c = runCatching { graph.conversations.load(id) }.getOrNull() ?: startCharacterChat(id)
+            if (selectedId.value != id) return@launch
+            loaded.value = c
+            // A conversation the index lists but whose file could not be read: offer a retry, not a blank chat.
+            if (c == null && !runner.isRunning(id) && summaries.value.any { it.id == id }) loadFailed.value = id
             graph.runtimePrefs.readingPosition(id)?.let { _restore.value = id to it }
         }
+    }
+
+    /** "Load failed. Tap to retry". */
+    fun retryLoad() {
+        selectedId.value?.let(::load)
     }
 
     /** A character chat opened for the first time: "The story begins here", then the chosen greeting. */
@@ -347,8 +427,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         val atts = _attachments.value
         if (text.isBlank() && atts.isEmpty()) return false
         val engine = state.value.engine
-        if (!engine.live && (state.value.selection == null || engine.missing)) {
-            emit(ChatEvent.Toast(atom.app.R.string.chat_configure_model))
+        if (!engine.live && (state.value.selection == null || engine.missing || !engine.ready)) {
+            emit(ChatEvent.NeedsModel)
             return false
         }
         val edit = _editing.value
@@ -356,7 +436,12 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         if (edit != null && current != null) {
             if (runner.isRunning(current.id)) return false
             val original = current.messages.getOrNull(edit.index) ?: return false
-            val replaced = original.copy(message = ChatMessage.user(text.trim()), attachments = original.attachments + atts, createdAt = System.currentTimeMillis())
+            val replaced = original.copy(
+                message = ChatMessage.user(text.trim()),
+                attachments = original.attachments + atts,
+                createdAt = System.currentTimeMillis(),
+                edited = true,
+            )
             val truncated = current.copy(messages = current.messages.take(edit.index) + replaced)
             _editing.value = null
             _attachments.value = emptyList()
@@ -422,25 +507,63 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     }
 
     fun addFiles(context: Context, uris: List<Uri>) {
+        val startedIn = selectedId.value
         viewModelScope.launch {
+            val added = mutableListOf<Attachment>()
+            var failed = 0
             for (uri in uris) {
                 when (val r = Attachments.importFile(context, uri)) {
-                    is Attachments.Outcome.Added -> _attachments.update { it + r.attachment }
-                    is Attachments.Outcome.Rejected -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+                    is Attachments.Outcome.Added -> added += r.attachment
+                    is Attachments.Outcome.Rejected -> failed++
                 }
+            }
+            // The picker returns asynchronously; a reference picked for another conversation is not attached here.
+            if (selectedId.value != startedIn) {
+                // Nothing will send them, so the copies made for them go too.
+                withContext(Dispatchers.IO) { Attachments.discardCopies(context, added) }
+                if (added.isNotEmpty() || failed > 0) emit(ChatEvent.Toast(atom.app.R.string.attach_switched))
+                return@launch
+            }
+            _attachments.update { it + added }
+            when {
+                added.isEmpty() && failed > 0 -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+                failed > 0 -> emit(ChatEvent.Toast(atom.app.R.string.attach_partial, added.size.toString(), failed.toString()))
             }
         }
     }
 
     fun addFolder(uri: Uri) {
         val folder = Attachments.importFolder(uri)
-        if (folder == null) emit(ChatEvent.Toast(atom.app.R.string.attach_folder_unsupported)) else _attachments.update { it + folder }
+        if (folder == null) {
+            emit(ChatEvent.Toast(atom.app.R.string.attach_folder_unsupported))
+        } else {
+            _attachments.update { it + folder }
+            emit(ChatEvent.Toast(atom.app.R.string.attach_path_added))
+        }
     }
 
     fun addPath(path: String): Boolean {
         val a = Attachments.fromPath(path) ?: return false
         _attachments.update { it + a }
+        emit(ChatEvent.Toast(atom.app.R.string.attach_path_added))
         return true
+    }
+
+    /** "Continue editing" from the image viewer: the picture goes back into the composer as a new attachment. */
+    fun reattachImage(context: Context, path: String) {
+        viewModelScope.launch {
+            if (_attachments.value.count { it.kind == AttachmentKind.Image } >= Attachments.MAX_IMAGES) {
+                emit(ChatEvent.Toast(atom.app.R.string.attach_image_limit, Attachments.MAX_IMAGES.toString()))
+                return@launch
+            }
+            when (val r = Attachments.importImage(context, Uri.fromFile(java.io.File(path)))) {
+                is Attachments.Outcome.Added -> {
+                    _attachments.update { it + r.attachment }
+                    emit(ChatEvent.Toast(atom.app.R.string.image_reattached))
+                }
+                is Attachments.Outcome.Rejected -> emit(ChatEvent.Toast(atom.app.R.string.attach_unreadable))
+            }
+        }
     }
 
     fun removeAttachment(a: Attachment) {
@@ -628,16 +751,41 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         return out
     }
 
-    private fun engineInfo(selection: EngineSelection?, live: LiveRun?): EngineInfo {
-        if (live != null && live.active && live.engineLabel != null) return EngineInfo(live.engineLabel, live.onDevice, missing = false, live = true)
-        if (selection == null) return EngineInfo(null, onDevice = false, missing = false)
+    private fun engineInfo(selection: EngineSelection?, live: LiveRun?, ready: Readiness?): EngineInfo {
+        val logo = selection?.let { logoKey(it) }
+        if (live != null && live.active && live.engineLabel != null) {
+            return EngineInfo(live.engineLabel, live.onDevice, missing = false, live = true, ready = true, logo = logo)
+        }
+        if (selection == null) return EngineInfo(null, onDevice = false, missing = false, ready = false, reason = NotReady.Configure)
         val info = graph.modelInfo
         val name = runCatching { info.modelName(selection) }.getOrNull()
         val exists = runCatching { info.exists(selection) }.getOrDefault(true)
-        return EngineInfo(name, selection is EngineSelection.Local, missing = !exists)
+        val reason = notReadyReason(selection, ready, info)
+        val cloud = selection as? EngineSelection.Cloud
+        val provider = cloud?.let { runCatching { info.provider(it) }.getOrNull() }
+        return EngineInfo(
+            name,
+            selection is EngineSelection.Local,
+            missing = !exists,
+            ready = reason == null,
+            logo = logo,
+            reason = reason,
+            providerName = provider?.displayName,
+        )
     }
 
-    private fun rowFor(s: ConversationSummary, run: LiveRun?): DrawerRow {
+    private fun logoKey(selection: EngineSelection): String? = runCatching {
+        when (selection) {
+            is EngineSelection.Cloud -> {
+                val provider = graph.modelInfo.provider(selection)
+                val modelName = provider?.model(selection.model)?.displayName
+                ProviderBrands.key(provider?.presetId, selection.model) ?: modelName?.let { ProviderBrands.modelKey(it) }
+            }
+            is EngineSelection.Local -> ProviderBrands.key(null, model = graph.modelInfo.modelName(selection))
+        }
+    }.getOrNull()
+
+    private fun rowFor(s: ConversationSummary, run: LiveRun?, character: Character? = null): DrawerRow {
         val active = run?.active == true
         val activity = when {
             !active -> null
@@ -647,10 +795,11 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             else -> DrawerActivity.Reasoning
         }
         val title = run?.conversation?.title?.takeIf { it.isNotBlank() } ?: s.title
-        return DrawerRow(s.copy(title = title), active, activity)
+        return DrawerRow(s.copy(title = title), active, activity, character = character)
     }
 
     override fun onCleared() {
+        if (graph.focusedConversationId == selectedId.value) graph.focusedConversationId = null
         selectedId.value?.let { runner.clearFinished(it) }
         super.onCleared()
     }

@@ -47,6 +47,7 @@ class RuleEngineTest {
     private val zone = ZoneOffset.UTC
     private var device: DeviceState = StaticDeviceState(Instant.parse("2026-11-25T23:30:00Z"), zone, batteryPercent = 50, charging = false, wifiSsid = "Home")
     private val calls = mutableListOf<Pair<String, JsonObject>>()
+    private val stepCaps = mutableListOf<Set<Capability>>()
     private val prompts = mutableListOf<RunRequest>()
     private val deferred = mutableListOf<Pair<Int, WaitFor>>()
     private val notes = mutableListOf<String>()
@@ -54,8 +55,9 @@ class RuleEngineTest {
 
     private val invoker = object : ToolInvoker {
         override fun available() = listOf(ToolSpec("set_charge_limit", "", schema { integer("percent", "", true) }), ToolSpec("set_network_mode", "", schema()))
-        override suspend fun invoke(name: String, args: JsonObject): ToolResult {
+        override suspend fun invoke(name: String, args: JsonObject, capabilities: Set<Capability>): ToolResult {
             calls += name to args
+            stepCaps += capabilities
             return if (name == "broken") ToolResult.error("nope") else ToolResult.ok("ok")
         }
     }
@@ -89,6 +91,8 @@ class RuleEngineTest {
         e.onEvent(TriggerEvent.ChargerConnected)
         runCurrent()
         assertEquals(listOf("set_charge_limit", "set_network_mode"), calls.map { it.first })
+        // Direct steps are limited to the rule's step capabilities.
+        assertEquals(listOf(Capability.STEP_DEFAULT, Capability.STEP_DEFAULT), stepCaps)
         assertEquals(listOf(2 to WaitFor.Charging), deferred)
         assertEquals(RuleOutcome.Deferred, state.historyOf(saved.id).single().outcome)
         e.resume(saved.id, 2, emptyMap())

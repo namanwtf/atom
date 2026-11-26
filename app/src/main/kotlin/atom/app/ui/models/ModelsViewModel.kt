@@ -22,7 +22,9 @@ import atom.core.llm.LlmEvent
 import atom.core.llm.LlmRequest
 import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.AuthMethod
+import atom.llm.cloud.CatalogError
 import atom.llm.cloud.CatalogProvider
+import atom.llm.cloud.CatalogSource
 import atom.llm.cloud.CloudEngines
 import atom.llm.cloud.EngineOptions
 import atom.llm.cloud.HeaderEntry
@@ -69,8 +71,21 @@ data class PullState(
 sealed interface CatalogState {
     data object Idle : CatalogState
     data object Loading : CatalogState
-    data class Ready(val providers: List<CatalogProvider>, val fetchedAt: Long) : CatalogState
-    data class Failed(val message: String) : CatalogState
+
+    /**
+     * The catalog on screen: the bundled snapshot, the local cache or a fresh online copy ([source]), updated at
+     * [updatedAt]. [refreshing] while an online refresh runs; [error] when the last refresh failed (the list
+     * shown is then the older copy).
+     */
+    data class Ready(
+        val providers: List<CatalogProvider>,
+        val updatedAt: Long?,
+        val source: CatalogSource,
+        val refreshing: Boolean = false,
+        val error: CatalogError? = null,
+    ) : CatalogState
+
+    data class Failed(val error: CatalogError) : CatalogState
 }
 
 /** Which kind of provider "Add new provider" creates. */
@@ -245,6 +260,22 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
         }
     }
 
+    /**
+     * "Save configuration": stores the key being typed (edits to the other fields are saved as they are made), then
+     * makes this the current provider when it is on. Reports whether it was selected.
+     */
+    fun saveProvider(providerId: String, onDone: (selected: Boolean) -> Unit) {
+        viewModelScope.launch {
+            _keyDraft.value?.takeIf { it.first == providerId }?.let { (id, key) ->
+                if (key != graph.vault.apiKey(id).orEmpty()) graph.vault.setApiKey(id, key.ifBlank { null })
+            }
+            val config = providerStore.get(providerId)
+            val selected = config != null && config.enabled
+            if (config != null && selected) graph.settings.setSelection(EngineSelection.Cloud(config.id, config.primaryModel))
+            onDone(selected)
+        }
+    }
+
     fun setAuth(providerId: String, method: AuthMethod) = edit(providerId) { it.copy(auth = method) }
 
     fun signIn(providerId: String, method: AuthMethod, reauthorize: Boolean = false) = accounts.signIn(providerId, method, reauthorize)
@@ -318,7 +349,7 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
                     config.toProvider(),
                     key,
                     config.baseUrl,
-                    EngineOptions(headers = config.headers),
+                    EngineOptions(headers = config.headers, anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() }),
                 )
                 PullState(fresh = remote.filter { r -> config.models.none { it.id == r.id } })
             } catch (e: CancellationException) {
@@ -377,7 +408,14 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
     fun deleteModels(providerId: String, ids: Set<String>) {
         viewModelScope.launch {
             val config = providerStore.get(providerId) ?: return@launch
-            providerStore.setModels(providerId, config.models.filterNot { it.id in ids })
+            val remaining = config.models.filterNot { it.id in ids }
+            providerStore.setModels(providerId, remaining)
+            // The current model went away: use another model of this provider, or the default when none is left.
+            val current = graph.settings.current().selection as? EngineSelection.Cloud
+            if (current != null && current.providerId == providerId && current.model in ids) {
+                val next = remaining.firstOrNull()
+                graph.settings.setSelection(if (next != null) EngineSelection.Cloud(providerId, next.id) else AppSettings.DEFAULT_SELECTION)
+            }
         }
     }
 
@@ -421,34 +459,47 @@ class ModelsViewModel(context: Context, private val graph: AppGraph) : ViewModel
 
     // ------------------------------------------------------------ models.dev
 
-    private val catalogFile = File(app.cacheDir, "models_dev_catalog.json")
+    private val catalogFile = File(app.cacheDir, "atom4_models_dev_catalog.json")
 
-    /** Loads the community catalog from cache, fetching it when missing, stale or [force]d. Never sends keys. */
+    /**
+     * Shows the community catalog at once (the local cache, else the bundled snapshot), then refreshes it online
+     * when the copy is older than a day or [force]d. The request carries no keys. A failed refresh keeps the
+     * older copy on screen and reports why.
+     */
     fun loadCatalog(force: Boolean = false) {
-        if (_catalogState.value is CatalogState.Loading) return
-        _catalogState.value = CatalogState.Loading
+        val current = _catalogState.value
+        if (current is CatalogState.Loading || (current is CatalogState.Ready && current.refreshing)) return
         viewModelScope.launch {
-            val cached = if (!force) readCatalogCache() else null
-            if (cached != null && System.currentTimeMillis() - cached.fetchedAt < CATALOG_MAX_AGE_MS) {
-                _catalogState.value = cached
+            val shown = (current as? CatalogState.Ready)
+                ?: readCatalogCache()
+                ?: run {
+                    _catalogState.value = CatalogState.Loading
+                    withContext(Dispatchers.IO) { ModelsDev.bundled() }?.let { CatalogState.Ready(it.providers, it.fetchedAtMillis, CatalogSource.Bundled) }
+                }
+            val stale = shown == null || shown.source == CatalogSource.Bundled ||
+                shown.updatedAt == null || System.currentTimeMillis() - shown.updatedAt >= CATALOG_MAX_AGE_MS
+            if (!force && !stale && shown != null) {
+                _catalogState.value = shown.copy(refreshing = false, error = null)
                 return@launch
             }
+            _catalogState.value = shown?.copy(refreshing = true, error = null) ?: CatalogState.Loading
             _catalogState.value = try {
                 val fresh = withContext(Dispatchers.IO) { ModelsDev.fetch() }
                 withContext(Dispatchers.IO) { runCatching { catalogFile.writeText(ModelsDev.encodeCache(fresh)) } }
-                CatalogState.Ready(fresh, System.currentTimeMillis())
+                CatalogState.Ready(fresh, System.currentTimeMillis(), CatalogSource.Online)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                cached ?: CatalogState.Failed(e.message ?: e::class.simpleName.orEmpty())
+                val error = ModelsDev.classify(e)
+                shown?.copy(refreshing = false, error = error) ?: CatalogState.Failed(error)
             }
         }
     }
 
     private suspend fun readCatalogCache(): CatalogState.Ready? = withContext(Dispatchers.IO) {
         if (!catalogFile.exists()) return@withContext null
-        val list = ModelsDev.decodeCache(catalogFile.readText()) ?: return@withContext null
-        CatalogState.Ready(list, catalogFile.lastModified())
+        val list = ModelsDev.decodeCache(catalogFile.readText())?.takeIf { it.isNotEmpty() } ?: return@withContext null
+        CatalogState.Ready(list, catalogFile.lastModified(), CatalogSource.Cached)
     }
 
     fun importFromCatalog(provider: CatalogProvider, modelIds: Set<String>, onAdded: (String) -> Unit) {

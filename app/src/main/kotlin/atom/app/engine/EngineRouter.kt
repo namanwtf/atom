@@ -142,17 +142,26 @@ class EngineRouter(
     private val accounts: SubscriptionAuth by lazy { SubscriptionAuth.get(context) }
 
     /** The engine for a role (assistant overlay, subagent, titles, scheduled tasks), following the primary model when unset. */
-    suspend fun acquire(role: ModelRole, conversationSelection: EngineSelection?, override: EngineSelection? = null): RoutedEngine =
-        acquire(ModelRoles.get(context).resolve(role, conversationSelection, override))
+    suspend fun acquire(
+        role: ModelRole,
+        conversationSelection: EngineSelection?,
+        override: EngineSelection? = null,
+        hostedSearch: Boolean = false,
+    ): RoutedEngine = acquire(ModelRoles.get(context).resolve(role, conversationSelection, override), hostedSearch)
 
-    /** The engine for [selection] (a conversation's model), or the global default when null. */
-    suspend fun acquire(selection: EngineSelection? = null): RoutedEngine = mutex.withLock {
+    /**
+     * The engine for [selection] (a conversation's model), or the global default when null. Provider-hosted web
+     * search (Gemini Google Search, OpenAI web_search) is on only when [hostedSearch] is true and the provider has
+     * it on. Only a run passes true, as decided by `CapabilityTools.hostedSearch` (capabilities, the web_search
+     * switch and "Web search and reading"); side calls (titles, compaction, dictation, tests) keep the default.
+     */
+    suspend fun acquire(selection: EngineSelection? = null, hostedSearch: Boolean = false): RoutedEngine = mutex.withLock {
         idleJob?.cancel()
         idleJob = null
         val current = settings.current()
         val selection = selection ?: current.selection ?: throw RouteException(context.getString(R.string.route_no_engine))
         val routed = when (selection) {
-            is EngineSelection.Cloud -> cloud(selection, notice = null)
+            is EngineSelection.Cloud -> cloud(selection, notice = null, hostedSearch = hostedSearch)
             is EngineSelection.Local -> {
                 val governor = power()
                 if (governor.localInferenceAllowed) {
@@ -161,7 +170,7 @@ class EngineRouter(
                     val reason = blockReason(governor.state.value)
                     val fallback = current.cloudFallback
                         ?: throw RouteException(context.getString(R.string.route_local_paused, reason))
-                    cloud(fallback, notice = context.getString(R.string.route_fallback_notice, reason))
+                    cloud(fallback, notice = context.getString(R.string.route_fallback_notice, reason), hostedSearch = hostedSearch)
                 }
             }
         }
@@ -209,7 +218,7 @@ class EngineRouter(
         }
     }
 
-    private suspend fun cloud(selection: EngineSelection.Cloud, notice: String?): RoutedEngine {
+    private suspend fun cloud(selection: EngineSelection.Cloud, notice: String?, hostedSearch: Boolean): RoutedEngine {
         val config = providers.get(selection.providerId) ?: ProviderResolver.legacyConfig(selection)
             ?: throw RouteException(context.getString(R.string.route_unknown_provider, selection.providerId))
         if (!config.enabled) throw RouteException(context.getString(R.string.mdl_route_disabled, config.displayName))
@@ -227,13 +236,14 @@ class EngineRouter(
             authHeaders = credential.headers,
             extraBody = extraBody,
             systemPrompt = config.systemPrompt.takeIf { it.isNotBlank() },
-            hostedWebSearch = config.hostedWebSearch && provider.wire == Wire.OpenAiResponses,
-            googleSearch = config.googleSearch && provider.wire.protocol == Protocol.Gemini,
+            hostedWebSearch = hostedSearch && config.hostedWebSearch && provider.wire == Wire.OpenAiResponses,
+            googleSearch = hostedSearch && config.googleSearch && provider.wire.protocol == Protocol.Gemini,
             vertexProject = config.vertexProject.takeIf { it.isNotBlank() },
             vertexLocation = config.vertexLocation,
             reasoning = modelConfig.reasoning,
             contextWindow = modelConfig.effectiveContextWindow,
             vision = modelConfig.vision,
+            anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() },
         )
         val engine = try {
             CloudEngines.create(provider, credential.secret, modelId, baseUrl, options)
