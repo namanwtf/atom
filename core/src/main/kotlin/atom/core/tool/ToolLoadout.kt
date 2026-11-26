@@ -83,6 +83,27 @@ class ToolLoadout(
         }
     }
 
+    /**
+     * Loads [groups] up front, before the model asks (the run's guess at what the request needs), in order and at
+     * most [maxGroups] of them; a group is skipped when the offered tools would no longer pass [fits]. Returns the
+     * groups loaded and their notes, which the caller puts in the system prompt since no loader result carries them.
+     */
+    @Synchronized
+    fun preloadGroups(groups: List<String>, maxGroups: Int = Int.MAX_VALUE, fits: (List<ToolSpec>) -> Boolean = { true }): Preloaded {
+        val added = ArrayList<String>()
+        for (g in groups.distinct()) {
+            if (added.size >= maxGroups) break
+            if (g !in members || g in loaded) continue
+            loaded += g
+            if (fits(specs())) added += g else loaded -= g
+        }
+        val fresh = added.flatMap { notes[it].orEmpty() }.distinct().filter { sentNotes.add(it) }
+        return Preloaded(added, fresh)
+    }
+
+    /** What [preloadGroups] loaded, and the notes that go with those groups. */
+    data class Preloaded(val groups: List<String>, val notes: List<String>)
+
     /** Loads [requested] (group names, or tool names standing for their group) and says what was added. */
     @Synchronized
     fun load(requested: Collection<String>): ToolResult {
