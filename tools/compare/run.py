@@ -463,7 +463,11 @@ def app_alive():
 
 
 def crash_lines():
-    text = adb("logcat", "-d", "-b", "crash", timeout=60).decode(errors="replace")
+    try:
+        text = adb("logcat", "-d", "-b", "crash", timeout=60).decode(errors="replace")
+    except Exception as e:  # an emulator that stopped answering must not lose the results gathered so far
+        log(f"  crash buffer unreadable: {e}")
+        return []
     return [ln for ln in text.splitlines() if PKG in ln or "FATAL EXCEPTION" in ln]
 
 
@@ -693,7 +697,11 @@ def main():
     log(f"app under test: {label} {result['version']}")
     grant_everything()
     set_label(f"{label}-setup")
-    result["configured"] = configure_provider(label)
+    try:
+        result["configured"] = configure_provider(label)
+    except Exception as e:
+        log(f"set-up failed: {type(e).__name__}: {e}")
+        result["configured"] = False
     result["setup_requests"] = len(proxy_entries(f"{label}-setup"))
     tasks = result["tasks"] = []
 
