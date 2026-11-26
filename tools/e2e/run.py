@@ -630,20 +630,18 @@ def s_screen_off_ui(res):
     res.check(bool(answer(run)), "an answer")
 
 
-def package_components(section):
-    """Component class names listed under enabledComponents: / disabledComponents: in dumpsys package."""
-    out = sh(f"dumpsys package {PKG}")
-    m = re.search(section + r":\n((?:\s+\S+\n)+)", out)
-    return [ln.strip() for ln in m.group(1).splitlines()] if m else []
+def boot_receiver_enabled():
+    """True when the system would deliver BOOT_COMPLETED to Atom's receiver (only enabled receivers are listed)."""
+    out = sh("cmd package query-receivers --components -a android.intent.action.BOOT_COMPLETED")
+    return f"{PKG}/atom.automation.system.SystemEventReceiver" in out
 
 
 def s_reboot(res):
     """l. Battery fix check: after a reboot the receiver is still on, Atom starts for BOOT_COMPLETED and re-arms."""
-    rx = "atom.automation.system.SystemEventReceiver"
     tasks = [t for t in state().get("scheduledTasks", []) if t.get("enabled")]
     if not res.check(bool(tasks), f"an enabled scheduled task exists before the reboot ({len(tasks)})"):
         return
-    res.notes.append(f"before reboot: enabled={rx in package_components('enabledComponents')} disabled={rx in package_components('disabledComponents')}")
+    res.notes.append(f"before reboot: boot receiver enabled={boot_receiver_enabled()}")
     adb("reboot", timeout=60)
     time.sleep(10)
     adb("wait-for-device", timeout=300)
@@ -651,8 +649,7 @@ def s_reboot(res):
     while time.time() < end and sh("getprop sys.boot_completed").strip() != "1":
         time.sleep(5)
     time.sleep(30)  # BOOT_COMPLETED is delivered after boot_completed is set
-    disabled = rx in package_components("disabledComponents")
-    res.check(not disabled, "receiver still enabled after the reboot")
+    res.check(boot_receiver_enabled(), "receiver still enabled after the reboot")
     alive = app_alive()
     res.notes.append(f"Atom process after boot (started by BOOT_COMPLETED): {alive}")
     alarms = sh("dumpsys alarm")

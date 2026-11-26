@@ -26,53 +26,67 @@ plus a small AI model running on the same machine), never on a personal computer
 - **Release safety.** Every release pull request (not only the first one) now waits for this scorecard to be
   approved before it can merge.
 
+## Final review
+
+An independent review of the whole 4.0.5 change said **SHIP, no blockers**. Its findings from the earlier rounds were
+fixed before that: every shell command asks again (as in 4.0.4), with "Allow all commands for this task" for long jobs;
+files that start programs are protected from being overwritten; the screen-off wait no longer counts against a step's
+time limit and holds no wake lock; approvals with long or multi-line text must be read in the app instead of allowed
+from the notification. The last four tidy-ups (safe file paths, no nudge for waiting steps, the notification's first
+line, the tool note folded into the user's message) are included.
+
 ## Old Atom (3.4.5) vs new Atom, same phone emulator, same AI model
 
-| What was measured | Old Atom 3.4.5 | New Atom | Run |
+Both apps were set up through their own settings screens and given the same tasks, one after the other
+([run 45867500321](https://github.com/namanwtf/atom/actions/runs/45867500321)). The new app in that run was an
+evening build without the new tool routing and screen-off fix; a re-run on the final code
+([45888323991](https://github.com/namanwtf/atom/actions/runs/45888323991)) had not finished when this was written.
+
+| What was measured | Old Atom 3.4.5 | New Atom | Who wins |
 |---|---|---|---|
-| Download size (the app itself) | 9.2 MB | 7.2 MB (4.0.4 as published; 6.8 MB before signing) | [old vs new](https://github.com/namanwtf/atom/actions/runs/45853830245), [4.0.4 release](https://github.com/namanwtf/atom/actions/runs/45850482690) |
-| Crashes and freezes seen | "Atom isn't responding" on its first start, in 3 of 3 runs | none during set-up in the same runs; none in the screens tour | [1](https://github.com/namanwtf/atom/actions/runs/45853830245), [2](https://github.com/namanwtf/atom/actions/runs/45859203081), [3](https://github.com/namanwtf/atom/actions/runs/45862967351) |
-| Tasks done correctly | not measured yet | not measured yet | see below |
-| AI words ("tokens") sent for a plain "hi" | not measured yet | not measured yet | see below |
-| Time per task | not measured yet | not measured yet | see below |
-| Idle battery (10 minutes, screen off) | not measured (the counting script read the wrong field; fixed) | not measured (same) | [run](https://github.com/namanwtf/atom/actions/runs/45853830245) |
+| Download size (the app itself) | 9.2 MB | 7.2 MB as published (6.8 MB before signing) | new |
+| AI words ("tokens") in the first request of a task | 19,355, carrying 59 tools | 4,224 for "hi", carrying 18 tools | new (about 4.6 times smaller) |
+| Time for that first request on the test machine | 859 seconds | 264 seconds | new (mostly the test machine reading the longer request) |
+| Tasks done correctly (8 tasks) | 2 (open Settings, stop a task) | 1 ("hi") | old, in this run: the new app's model locked the screen during the Do Not Disturb task and the later tasks never reached it; the old app's "hi" never reached the model |
+| Crashes in the crash log | 0 | 0 | tie |
+| Freezes ("isn't responding") | on its first start in 3 of 3 earlier runs | none | new |
+| Idle battery, 10 minutes, screen off: wake locks, wake-up alarms, CPU | 0, 0, 1 ms | 0, 0, 1 ms | tie |
 
-Why several lines are still empty: both apps have to be set up through their own settings screens to talk to the
-test model. Tonight the old app froze on its first start ("isn't responding"), and the emulator stopped answering
-while the test was scrolling the old app's provider form. The emulator's graphics crash on blur effects, which the
-old app uses too. The test now waits out the freeze, scrolls differently and draws with a sturdier graphics mode;
-the next comparison run fills these lines. Nothing in this table is estimated.
+The task line is the weak spot of this comparison: a 3-billion-parameter test model on a CPU, through screens it
+taps blindly, decides most of it. The end-to-end tasks below, on the final code, are the better guide to what works.
 
-## End-to-end tasks (new app, debug build, small local model)
+## End-to-end tasks (new app, final code, small local model)
+
+[Run 45888323904](https://github.com/namanwtf/atom/actions/runs/45888323904) on 56a2860 (the reviewed code; the last
+tidy-ups came after it): **11 of 15 passed**.
 
 | | Task | Result | Notes |
 |---|---|---|---|
-| g | Open the Lumen character | pass | no crash (this crashed before 4.0.4) |
+| g | Open the Lumen character | pass | no crash |
+| c | Turn on Do Not Disturb | pass | used the Do Not Disturb tool; it was on afterwards |
+| d | What was my last notification about? | pass | answered "Dinner, Pizza at 8" |
+| e | Remind me every day at 9am to drink water | pass | a daily 09:00 task was created |
+| b | Summarize the top story on example.com in the agent browser | pass | |
+| o | Read a web page in the agent browser | pass | no browser threading errors |
 | f | Stop a task halfway | pass | ended as stopped, history kept, app alive |
-| j | Normal notifications still saved after the battery fix | pass | "Parcel" and "Dinner" both in the history |
-| n | Screen off while operating Settings | passes every check that matters | 0 actions while the screen was off, the notification said "Waiting for the screen to be unlocked", it finished after unlocking (the test counted "Done" as unfinished; fixed) |
-| m | Screen off during a command task | pass in substance | the command's output came back with the screen off, the run finished, and the wake lock and foreground service were on during it (the test counted "Done" as unfinished; fixed) |
-| c | Turn on Do Not Disturb | pass (with the new tool routing) | used the Do Not Disturb tool; Do Not Disturb was on afterwards |
-| d | What was my last notification about? | pass (with the new tool routing) | "Your last notification was about dinner plans... Pizza at 8" |
-| e | Remind me every day at 9am to drink water | pass (with the new tool routing) | a daily 09:00 scheduled task was created |
-| o | Read a web page in the agent browser | pass | the page text reached the model and the answer summarized it; no browser threading errors |
-| b | Summarize the "top story" on example.com in the agent browser | fail | opened the agent browser correctly but then tapped around a page that has no top story, and ran out of time |
-| a | Write and run a small script in the terminal | fail | the Linux install never finishes on this emulator (see below), so the terminal was not ready |
-| h | Floating bubble mini chat | fail | the mini chat did not open in the test |
-| k | "Hey Atom" pauses on battery and listens when charging | could not test | the wake-word model does not load on this emulator (it runs the app through ARM translation) |
-| i, l | Automation start-up switch, and after a reboot | not yet conclusive | no task existed because the model did not create one; the test now creates it directly |
+| i | Automation start-up switch turns on with the first task | pass | off before any automation, on once a task existed |
+| j | Normal notifications still saved after the battery fix | pass | |
+| m | Screen turned off during a command task | pass | it finished with the screen off; wake lock and background service were on during it |
+| n | Screen turned off while operating Settings | pass | 0 actions while off, "Waiting for the screen to be unlocked" in the notification, finished after unlocking |
+| a | Write and run a small script in the terminal | fail | the Linux install never finishes on this emulator (its PRoot process crashes in the emulator's ARM translator) |
+| h | Floating bubble mini chat | fail | the message typed into the mini chat did not start a task in the test; needs a check on a phone |
+| k | "Hey Atom" pauses on battery and listens when charging | could not test | the wake-word model does not load on this emulator |
+| l | After a reboot: start-up switch, Atom started by the boot, alarm re-armed | pass in substance | Atom was started by the boot and its alarm was armed again, which only happens with the switch on; the test's own switch check read the wrong list (fixed for the next run) |
 
-Runs: [before tool routing](https://github.com/namanwtf/atom/actions/runs/45860990063) (Do Not Disturb, notification,
-reminder and web failed: the small test model never loaded the right tools), [with tool routing](https://github.com/namanwtf/atom/actions/runs/45876766521)
-(c, d, e, o now pass; that run was stopped after the terminal task by a newer push). The 4.0.4 run
-([45849080166](https://github.com/namanwtf/atom/actions/runs/45849080166)) passed 1 of 8 because the model ran at
-0.4 words per second next to the emulator and leftover tasks blocked later ones; both are fixed in the test.
+Earlier runs for comparison: [before tool routing](https://github.com/namanwtf/atom/actions/runs/45860990063) the
+Do Not Disturb, notification, reminder and web tasks failed (the small model never loaded the right tools); the 4.0.4
+run ([45849080166](https://github.com/namanwtf/atom/actions/runs/45849080166)) passed 1 of 8 because the model ran at
+0.4 words per second next to the emulator.
 
 ## Battery-fix checks (from 4.0.4)
 
-- Automation start-up switch: off while there is no automation (seen on the emulator). Code review: it turns on
-  whenever a task or rule is saved or enabled, and Android remembers it across reboots. The emulator check with a
-  real task is in the next run.
+- Automation start-up switch: off while there is no automation, on as soon as a task exists (test i), and still
+  working after a reboot: Atom was started by the boot and re-armed its alarm (test l).
 - Notification history: normal notifications are kept (test j passed); only progress-bar updates are skipped.
 - "Hey Atom" while charging: code review only. It listens again on the plug-in signal and reads the battery state at
   that moment. The emulator cannot load the wake-word model, so this needs a real phone.
@@ -83,8 +97,10 @@ reminder and web failed: the small test model never loaded the right tools), [wi
 - Chat top bar: frosted.
 - Side menu: slowed-down frames of opening and closing, over the empty home and over a long chat, in both themes,
   show the frosted pane in every frame and no flash ([run](https://github.com/namanwtf/atom/actions/runs/45867496843)).
-- Start-up with the on-device download installed: 2.7 to 4.5 seconds in every timed start across five runs. One
-  earlier freeze happened while the emulator was translating the app from ARM; it did not come back.
+- Start-up with the on-device download installed: 1.8 to 4.5 seconds in every timed start across eight runs
+  (final code: 3.9, 3.7 and 3.1 seconds, [run 45888323976](https://github.com/namanwtf/atom/actions/runs/45888323976)).
+  One early freeze happened while the emulator was translating the app from ARM; it did not come back.
+- The screenshot runs on the final code passed, dark and light.
 
 ## What was not tested, and what an emulator cannot tell
 
@@ -119,8 +135,10 @@ Feature ideas:
 
 ## Verdict
 
-Not decided yet: the old-vs-new task, token, time and battery lines still need the next comparison run. On what is
-measured so far, the new app wins on size (7.2 MB vs 9.2 MB) and on crashes and freezes (none vs a freeze on every
-first start).
+The new app wins on size (7.2 MB vs 9.2 MB), on request size (about 4.6 times fewer AI words per request, so
+cheaper and faster with paid models) and on freezes; it ties on crashes and idle battery. It loses on tasks done in
+the one finished side-by-side run (1 vs 2 of 8), which used an evening build without the tool routing and the
+screen-off fix and was derailed when the test model locked the screen; on the final code the end-to-end tasks pass
+11 of 15, and the rest are emulator limits (terminal, "Hey Atom") or need a phone check (the bubble mini chat).
 
 Result: awaiting owner review
