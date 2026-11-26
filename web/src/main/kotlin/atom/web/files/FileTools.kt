@@ -61,6 +61,9 @@ internal class FileScopes(context: Context, private val priv: () -> PrivilegedFi
     fun isShared(path: String): Boolean = path.startsWith("/storage/") || path.startsWith("/sdcard")
 
     fun isAppPrivate(path: String): Boolean = path.startsWith(app.filesDir.parent ?: app.filesDir.path) || path.startsWith(app.cacheDir.path)
+
+    /** Why writing [path] with [fs] must ask whatever else allows it ([WriteGuard]), or null. */
+    fun guarded(fs: Fs, path: String): String? = WriteGuard.reason(fs.label, path, app.filesDir.path, app.noBackupFilesDir.path)
 }
 
 internal object FileTools {
@@ -133,8 +136,12 @@ internal object FileTools {
             val existing = fs.stat(path)
             if (existing?.isDir == true) return ToolResult.error("$path is a directory.")
             if (mode == "create" && existing != null) return ToolResult.error("$path already exists. Use mode=overwrite or append.")
-            val needsOk = fs.label == "root" || (mode == "overwrite" && existing != null && fs is LocalFs && !s.isAppPrivate(path))
-            if (needsOk && !ctx.confirm("${if (existing != null && mode != "append") "Overwrite" else "Write"} $path${if (fs.label == "root") " as root" else ""}")) {
+            val guard = s.guarded(fs, path)
+            val needsOk = guard != null || fs.label == "root" || (mode == "overwrite" && existing != null && fs is LocalFs && !s.isAppPrivate(path))
+            val action = if (existing != null && mode != "append") "Overwrite" else "Write"
+            val ask = "$action $path${if (fs.label == "root") " as root" else if (fs.label == "linux") " in Linux" else ""}" +
+                (guard?.let { "\nAsks because $it." } ?: "")
+            if (needsOk && !ctx.confirm(ask)) {
                 return ToolResult.error("The user declined writing $path.")
             }
             runCatching { fs.write(path, content.toByteArray(), append = mode == "append") }.onFailure { return ToolResult.error(deniedHint(it, fs)) }
@@ -167,7 +174,10 @@ internal object FileTools {
             return when (val r = TextEdit.apply(text, args.string("old_text"), args.optString("new_text") ?: "", args.optBoolean("replace_all") == true)) {
                 is EditOutcome.Failed -> ToolResult.error(r.reason)
                 is EditOutcome.Applied -> {
-                    if (fs.label == "root" && !ctx.confirm("Edit $path as root")) return ToolResult.error("The user declined editing $path.")
+                    val guard = s.guarded(fs, path)
+                    val ask = "Edit $path${if (fs.label == "root") " as root" else if (fs.label == "linux") " in Linux" else ""}" +
+                        (guard?.let { "\nAsks because $it." } ?: "")
+                    if ((fs.label == "root" || guard != null) && !ctx.confirm(ask)) return ToolResult.error("The user declined editing $path.")
                     runCatching { fs.write(path, r.content.toByteArray(), append = false) }.onFailure { return ToolResult.error(deniedHint(it, fs)) }
                     ToolResult.ok("Edited $path: ${r.replacements} replacement${if (r.replacements == 1) "" else "s"}, starting at line ${r.firstLine}.")
                 }

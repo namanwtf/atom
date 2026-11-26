@@ -122,3 +122,25 @@ class ToolRegistry(tools: Iterable<Tool>) {
 
     operator fun plus(other: ToolRegistry) = ToolRegistry(byName.values + other.byName.values)
 }
+
+/**
+ * One run's "allow all commands for this task" decision. The grant is offered only in runs a person started (never
+ * in scheduled or automation runs), lasts only as long as this object (one run) and is never saved. Under it,
+ * shell-type requests are approved without asking, except those marked [ApprovalRequest.alwaysAsk].
+ */
+class TaskGrant(val offered: Boolean) {
+    @Volatile
+    var granted: Boolean = false
+        private set
+
+    /** Whether [request]'s prompt may show "allow all commands for this task". */
+    fun grantable(request: ApprovalRequest): Boolean = offered && request.taskGrantable
+
+    /** True when [request] is approved by the grant and needs no prompt. */
+    fun covers(request: ApprovalRequest): Boolean = granted && grantable(request) && !request.alwaysAsk
+
+    /** The user chose "allow all commands for this task". */
+    fun grant() {
+        if (offered) granted = true
+    }
+}

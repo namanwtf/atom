@@ -80,6 +80,8 @@ internal class BrowserSearch(context: Context) : PageRenderer {
         } finally {
             BrowserSessions.returnTimers(view, hadPausedTimers)
             if (!gone) view.stopLoading()
+            // The search profile's HTTP cache goes too, not only its cookies and storage.
+            runCatching { view.clearCache(true) }
             view.destroy()
             wipeProfile()
         }

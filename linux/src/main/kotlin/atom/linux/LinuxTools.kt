@@ -90,7 +90,8 @@ object LinuxTools {
     /** The risk of running [command] in the env named by [envName] (null = linux); an unknown env asks. */
     internal fun commandRisk(app: Context, command: String, envName: String?, cwdKnown: Boolean = true): Risk {
         val env = parseEnv(envName) ?: return Risk.Sensitive
-        return ShellRisk.classify(command, scope(app, env, cwdKnown))
+        // Every command asks unless the task's grant covers it (ShellRisk.AUTO_RUN_PROVEN is off).
+        return ShellRisk.approvalRisk(command, scope(app, env, cwdKnown))
     }
 
     /** The approval prompt for [command] in the env named by [envName]: the whole command and why it asks. */
@@ -120,7 +121,7 @@ object LinuxTools {
 private class RunTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
 
-    // Commands proven read-only run without asking; everything else asks (or runs under the task's grant).
+    // Every command asks, or runs under the task's grant (see ShellRisk.AUTO_RUN_PROVEN).
     override fun riskFor(args: JsonObject): Risk = LinuxTools.commandRisk(app, args.optString("command").orEmpty(), args.optString("env"))
 
     override fun approvalRequest(args: JsonObject): ApprovalRequest =
@@ -173,12 +174,21 @@ private class SessionTool(private val app: Context) : Tool, PerCallRisk {
 
     // A session keeps its own state (cwd, variables, aliases, a program that is still running and reads the input), so
     // nothing sent to it can be proven harmless: every send asks, unless the user allowed commands for this task.
+    // Opening asks too: it starts a login shell, which runs the distro's start-up files (.profile, /etc/profile).
     override fun riskFor(args: JsonObject): Risk = when (args.optString("action")) {
-        "open", "close" -> Risk.Act
+        "close" -> Risk.Act
         else -> Risk.Sensitive
     }
 
     override fun approvalRequest(args: JsonObject): ApprovalRequest? {
+        if (args.optString("action") == "open") {
+            val env = LinuxTools.parseEnv(args.optString("env")) ?: ShellEnv.Root
+            return ApprovalRequest(
+                action = "Open a terminal session (${LinuxTools.where(env)})",
+                reason = "Asks because a session starts a login shell, which runs its start-up files.",
+                taskGrantable = true,
+            )
+        }
         if (args.optString("action") != "send") return null
         val id = args.optString("id").orEmpty()
         val input = args.optString("input").orEmpty()

@@ -57,11 +57,18 @@ internal object LaunchCommands {
         "COLORTERM" to "truecolor",
         "LANG" to "C.UTF-8",
         "TMPDIR" to "/tmp",
+        // What /etc/profile.d/uv.sh sets for login shells; one-off commands run without a login shell.
+        "UV_PYTHON_INSTALL_DIR" to "/opt/uv/python",
+        "UV_PYTHON_BIN_DIR" to "/usr/local/bin",
     )
 
-    /** The guest program: a login shell, or a login shell running [command]. */
+    /**
+     * The guest program: a login shell for a terminal, or a plain `sh -c` for [command]. One-off commands get a fixed
+     * environment ([guestEnv], PATH included) and no login shell, so start-up files (.profile, /etc/profile) that a
+     * file tool could have written never run with them.
+     */
     fun shellArgv(shell: String, command: String?): List<String> =
-        if (command == null) listOf(shell, "-l") else listOf(shell, "-l", "-c", command)
+        if (command == null) listOf(shell, "-l") else listOf(shell, "-c", command)
 
     // ------------------------------------------------------------------ proot
 
@@ -152,11 +159,11 @@ internal object LaunchCommands {
         |cd "${'$'}R/root" 2>/dev/null || cd "${'$'}R"
         |CHROOT=chroot
         |command -v chroot >/dev/null 2>&1 || CHROOT="${'$'}BB chroot"
-        |set -- HOME=/root USER=root LOGNAME=root TERM="${'$'}GTERM" COLORTERM=truecolor LANG=C.UTF-8 TMPDIR=/tmp PATH=$GUEST_PATH
+        |set -- HOME=/root USER=root LOGNAME=root TERM="${'$'}GTERM" COLORTERM=truecolor LANG=C.UTF-8 TMPDIR=/tmp PATH=$GUEST_PATH UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_PYTHON_BIN_DIR=/usr/local/bin
         |if [ "${'$'}MODE" = login ]; then
         |  exec ${'$'}CHROOT "${'$'}R" /usr/bin/env -i "${'$'}@" "${'$'}GSHELL" -l
         |else
-        |  exec ${'$'}CHROOT "${'$'}R" /usr/bin/env -i "${'$'}@" "${'$'}GSHELL" -l -c "${'$'}CMD"
+        |  exec ${'$'}CHROOT "${'$'}R" /usr/bin/env -i "${'$'}@" "${'$'}GSHELL" -c "${'$'}CMD"
         |fi
         |""".trimMargin()
 

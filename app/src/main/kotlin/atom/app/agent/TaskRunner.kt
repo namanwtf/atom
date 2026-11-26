@@ -717,17 +717,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
          * without asking until this run ends. Never saved, never offered to scheduled or automation runs, and
          * commands that look plainly destructive still ask.
          */
-        @Volatile
-        private var shellGrant = false
-
-        private val grantOffered: Boolean
-            get() = request.source != RunSource.Automation && request.source != RunSource.Schedule
+        private val shellGrant = atom.core.tool.TaskGrant(
+            offered = request.source != RunSource.Automation && request.source != RunSource.Schedule,
+        )
 
         fun owns(approvalId: Long): Boolean = approvalId in myApprovals
 
-        fun grantShell() {
-            if (grantOffered) shellGrant = true
-        }
+        fun grantShell() = shellGrant.grant()
 
         val startedAt = System.currentTimeMillis()
 
@@ -1225,8 +1221,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
 
         private suspend fun requestApproval(ask: atom.core.tool.ApprovalRequest): Boolean {
-            val grantable = ask.taskGrantable && grantOffered
-            if (grantable && shellGrant && !ask.alwaysAsk) return true
+            if (shellGrant.covers(ask)) return true
+            val grantable = shellGrant.grantable(ask)
             val approvalId = approvalSeq.incrementAndGet()
             val deferred = CompletableDeferred<Boolean>()
             approvals[approvalId] = deferred

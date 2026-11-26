@@ -150,4 +150,29 @@ class ShellRiskTest {
         assertEquals("/", ShellRisk.normalize("/../.."))
         assertEquals("/a/b", ShellRisk.normalize("//a/./b/"))
     }
+
+    @Test
+    fun shellCallsAlwaysAskWhileTheProofIsOff() {
+        assertFalse(ShellRisk.AUTO_RUN_PROVEN, "the allowlist must not run commands without approval in this release")
+        val everything = listOf("bypass1.txt", "bypass2.txt", "bypass3.txt", "readonly.txt", "review2_all.txt", "review2_atk.txt", "review2_atk2.txt")
+            .flatMap { corpus(it) } + listOf("ls", "echo hi", "cat /proc/cpuinfo")
+        assertTrue(everything.size > 300)
+        expectApproval(everything)
+    }
+
+    private fun expectApproval(commands: List<String>) {
+        val wrong = commands.flatMap { c -> all.mapNotNull { s -> ShellRisk.approvalRisk(c, s).takeIf { it != Risk.Sensitive }?.let { c } } }
+        assertTrue(wrong.isEmpty(), "these would run without approval:\n" + wrong.joinToString("\n"))
+    }
+
+    @Test
+    fun theApprovalStillSaysWhyAndStillFlagsDestructiveLines() {
+        val proven = ShellRisk.approval("ls -la", app, "the phone's shell")
+        assertTrue(proven.reason!!.contains("always ask"), proven.reason)
+        assertTrue(proven.taskGrantable)
+        assertFalse(proven.alwaysAsk)
+        val unproven = ShellRisk.approval("rm -rf /workspace/build", distro, "the Linux terminal")
+        assertTrue(unproven.reason!!.contains("rm"))
+        assertTrue(ShellRisk.approval("rm -rf /sdcard", app, "the phone's shell").alwaysAsk)
+    }
 }

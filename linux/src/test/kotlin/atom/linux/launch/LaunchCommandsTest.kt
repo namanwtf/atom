@@ -52,7 +52,8 @@ class LaunchCommandsTest {
     fun prootCommandWithoutSdcardRunsCommand() {
         val spec = LaunchCommands.proot(proot.copy(sdcard = null, fakeProc = emptyMap()), "echo hi && uname -a")
         assertFalse(spec.argv.any { it.endsWith(":/sdcard") })
-        assertEquals(listOf("/bin/sh", "-l", "-c", "echo hi && uname -a"), spec.argv.takeLast(4))
+        // One-off commands run without a login shell, so planted start-up files never run with them.
+        assertEquals(listOf("-w", "/root", "/bin/sh", "-c", "echo hi && uname -a"), spec.argv.takeLast(5))
     }
 
     @Test
@@ -101,6 +102,10 @@ class LaunchCommandsTest {
         assertTrue(s.contains("exit ${LaunchCommands.EXIT_NO_PRIVATE_MOUNTS}"))
         assertTrue(s.contains("/usr/bin/env -i"))
         assertTrue(s.contains("ns/mnt"))
+        // Terminals get a login shell; one-off commands do not, so planted start-up files never run with them.
+        assertTrue(s.contains("\"\$GSHELL\" -l\n"))
+        assertTrue(s.contains("\"\$GSHELL\" -c \"\$CMD\""))
+        assertTrue(!s.contains("-l -c"))
         // Everything is bound inside the rootfs only.
         Regex("bindmnt (\\S+) (\\S+)").findAll(s).filter { !it.value.startsWith("bindmnt()") }.forEach {
             assertTrue(it.groupValues[2].startsWith("\"\$R"), it.value)

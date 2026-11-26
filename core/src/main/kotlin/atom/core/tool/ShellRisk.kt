@@ -67,6 +67,19 @@ data class ShellScope(
  * the user allowed all commands for the task.
  */
 object ShellRisk {
+    /**
+     * Off on purpose. The allowlist proof ([classify]) is not trusted to run commands without approval: review kept
+     * finding ways around it (substitutions inside `${…}` and `$((…))`, bash `printf -v`/`test -v` subscripts, git
+     * running a repository's own config, symlinks under the app's folders, start-up files planted by file tools).
+     * Until it is, every shell-type call asks, as in 4.0.4, and "allow all commands for this task" is the way to
+     * stop asking. The proof still writes the reason line on the approval sheet.
+     */
+    const val AUTO_RUN_PROVEN = false
+
+    /** The risk shell-type tools report for [command]: [classify]'s result only when [AUTO_RUN_PROVEN] is on. */
+    fun approvalRisk(command: String, scope: ShellScope): Risk = if (AUTO_RUN_PROVEN) classify(command, scope) else Risk.Sensitive
+
+    /** The allowlist proof: [Risk.Act] when every command in the line is proven read-only. See [AUTO_RUN_PROVEN]. */
     fun classify(command: String, scope: ShellScope): Risk = if (whyAsk(command, scope) == null) Risk.Act else Risk.Sensitive
 
     /** Why the line needs approval, in a few words for the approval sheet; null when it is proven read-only. */
@@ -116,7 +129,7 @@ object ShellRisk {
     fun approval(command: String, scope: ShellScope, where: String, reason: String? = reason(command, scope)): ApprovalRequest =
         ApprovalRequest(
             action = "Run in $where:\n$command",
-            reason = reason?.let { "Asks because $it." },
+            reason = reason?.let { "Asks because $it." } ?: "Shell commands always ask, unless you allow all commands for this task.",
             taskGrantable = true,
             alwaysAsk = looksDestructive(command, scope),
         )
