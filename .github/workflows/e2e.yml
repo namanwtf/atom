@@ -22,13 +22,14 @@ env:
   LLAMA_TAG: b12500
   LLAMA_ASSET: llama-b12500-bin-ubuntu-x64.tar.gz
   LLAMA_SHA256: "decd26836af2cb9e0925e3bd5c79f7aa3740df9f2dbe88bbc57b1b4249cfd7ea"
-  # The model: Qwen2.5 3B Instruct, Q4_K_M (about 2 GB). Small enough for 4 vCPUs / 16 GB, fast enough on the CPU, and
-  # its chat template has native tool calling (llama-server --jinja parses it). Pinned repo, revision, file, checksum.
-  MODEL_REPO: Qwen/Qwen2.5-3B-Instruct-GGUF
-  MODEL_REVISION: 7dabda4d13d513e3e842b20f0d435c732f172cbe
-  MODEL_FILE: qwen2.5-3b-instruct-q4_k_m.gguf
-  MODEL_SHA256: "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
-  MODEL_ALIAS: qwen2.5-3b-instruct
+  # The model: Qwen3 4B Instruct 2507 (non-thinking), Q4_K_M (about 2.5 GB). It fits 4 vCPUs / 16 GB, is quick enough
+  # on the CPU, and its chat template has native tool calling (llama-server --jinja parses it). Qwen2.5 3B was tried
+  # first and was faster but called tools almost at random. Pinned repo, revision, file and checksum.
+  MODEL_REPO: unsloth/Qwen3-4B-Instruct-2507-GGUF
+  MODEL_REVISION: main
+  MODEL_FILE: Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+  MODEL_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+  MODEL_ALIAS: qwen3-4b-instruct-2507
   # Room for Atom's first request (system prompt plus every tool's schema) and a few steps of history.
   CTX_SIZE: "32768"
 
@@ -122,7 +123,7 @@ jobs:
           nohup env LD_LIBRARY_PATH="$LLAMA_LIB" "$LLAMA_SERVER" \
             -m ~/e2e-model/model.gguf --alias "$MODEL_ALIAS" --jinja \
             --host 127.0.0.1 --port 8080 --ctx-size "$CTX_SIZE" -np 1 -t 4 -tb 4 -b 512 \
-            --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
+            --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0 --cache-reuse 256 --metrics > "$RUNNER_TEMP/llama-server.log" 2>&1 &
           for i in $(seq 1 120); do
             if curl -fs http://127.0.0.1:8080/health > /dev/null; then break; fi
             sleep 2

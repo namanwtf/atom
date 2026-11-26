@@ -406,8 +406,14 @@ def s_stop(res):
 def s_character(res):
     """g. Character library: open Lumen."""
     launch("characters/library", wait=4)
-    found = find("^Lumen$") or find("Lumen")
+    found = None
+    for _ in range(8):  # the library loads its cards after the screen appears
+        found = find("^Lumen$") or find(r"^Lumen\b")
+        if found:
+            break
+        time.sleep(2)
     if not res.check(found is not None, "Lumen listed"):
+        shot(f"{res.key}_library")
         return
     tap_bounds(found)
     time.sleep(5)
@@ -496,6 +502,8 @@ def setup():
         "settings put global window_animation_scale 0.5",
         "settings put system screen_off_timeout 1800000",
         "svc power stayon true",
+        # No lock screen: an agent may lock the phone (global_action lock_screen), and the next task needs the screen.
+        "locksettings set-disabled true",
     ):
         out = sh(cmd).strip()
         log(f"$ {cmd}" + (f" -> {out[:200]}" if out else ""))
@@ -547,6 +555,11 @@ def main():
         res = Result(key, title, core=key != "0")
         log(f"===== {key}. {title} =====")
         call("clear")
+        # Whatever the last task did to the screen (locked it, left a panel or the shade open), start awake and home.
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        sh("cmd statusbar collapse")
+        sh("input keyevent KEYCODE_HOME")
         clear_crashes()
         m0 = server_metrics()
         t0 = time.time()
@@ -598,15 +611,16 @@ def scorecard(results):
             for n in r.notes:
                 print("    " + n)
     print("=====END=====")
-    passed = sum(r.passed for r in results)
-    print(f"{passed}/{len(results)} scenarios passed")
+    core = [r for r in results if r.core]
+    passed = sum(r.passed for r in core)
+    print(f"{passed}/{len(core)} core scenarios passed")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as f:
             f.write("## End-to-end tasks\n\n| | Scenario | Result | Tool calls | Time | Model speed |\n|---|---|---|---|---|---|\n")
             for r in results:
                 f.write(f"| {r.key} | {r.title} | {'PASS' if r.passed else 'FAIL'} | {', '.join(r.tools) or '-'} | {r.duration:.0f}s | {r.speed or '-'} |\n")
-            f.write(f"\n{passed}/{len(results)} passed\n")
+            f.write(f"\n{passed}/{len(core)} core scenarios passed\n")
             for r in results:
                 if not r.passed:
                     f.write(f"\n**{r.key}. {r.title}**\n\n" + "".join(f"- {n}\n" for n in r.notes))
