@@ -52,6 +52,8 @@ data class ReportInput(
     val exits: List<ExitFacts> = emptyList(),
     /** Raw lines of Atom's log tags, oldest first; null when the log could not be read. */
     val log: List<String>? = emptyList(),
+    /** Why the log is missing or empty, when that is known. */
+    val logNote: String? = null,
     /** The conversation as exported, when the person chose to include it. */
     val conversation: String? = null,
     val screenshot: Boolean = false,
@@ -133,10 +135,11 @@ object ProblemReport {
             if (log == null) {
                 section("Atom log")
                 appendLine("Could not be read on this phone.")
+                input.logNote?.let { appendLine("(${mine(it)})") }
             } else {
                 val lines = log.takeLast(MAX_LOG_LINES)
                 section(if (lines.isEmpty()) "Atom log" else "Atom log (last ${lines.size} lines)")
-                if (lines.isEmpty()) appendLine("No lines from Atom's log tags since the phone started.")
+                if (lines.isEmpty()) appendLine("No lines from Atom's log tags." + (input.logNote?.let { " (${mine(it)})" } ?: ""))
                 lines.forEach { appendLine(logLine(it, known)) }
             }
 
