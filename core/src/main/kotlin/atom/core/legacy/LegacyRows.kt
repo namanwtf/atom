@@ -149,6 +149,9 @@ object LegacyFiles {
     const val CREDENTIALS_DIR = "provider_credentials"
     const val CREDENTIALS_ALIAS = "atom_provider_credentials_v1"
 
+    /** Long-term memory, under `files/` (written as an AtomicFile, so a `.bak` copy is the valid one when present). */
+    const val MEMORY = "memory/MEMORY.md"
+
     /** The credential file of [providerId] under `no_backup/provider_credentials/`: lowercase hex SHA-256 + `.bin`. */
     fun credentialFileName(providerId: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(providerId.toByteArray(Charsets.UTF_8))

@@ -19,6 +19,8 @@
         <item quantity="other">%d sign-ins</item>
     </plurals>
     <string name="import_selection">Your default model was carried over.</string>
+    <string name="import_memory">Your long-term memory was carried over.</string>
+    <string name="import_memory_failed">Your long-term memory could not be carried over (it may be too large together with Atom 4\'s). Importing again retries it.</string>
     <string name="import_sign_in_again">Sign in again: %1$s.</string>
     <plurals name="import_failed_providers">
         <item quantity="one">%d provider could not be read; importing again retries it.</item>
@@ -27,6 +29,10 @@
     <plurals name="import_failed_conversations">
         <item quantity="one">%d conversation could not be read; importing again retries it.</item>
         <item quantity="other">%d conversations could not be read; importing again retries them.</item>
+    </plurals>
+    <plurals name="import_failed_sign_ins">
+        <item quantity="one">%d sign-in could not be read this time; importing again retries it.</item>
+        <item quantity="other">%d sign-ins could not be read this time; importing again retries them.</item>
     </plurals>
     <plurals name="import_without_tool_details">
         <item quantity="one">%d conversation kept only short previews of some tool steps.</item>
@@ -48,7 +54,7 @@
         <item quantity="one">%d character chat was imported as a normal chat.</item>
         <item quantity="other">%d character chats were imported as normal chats.</item>
     </plurals>
-    <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old files are left untouched.</string>
+    <string name="import_not_included">Not imported: MCP servers, skills, scheduled tasks and other settings. The old app\'s files stay for 7 days after an import that brought everything over, then they are removed together with those (sooner from Settings, Data backup).</string>
     <string name="import_nothing">No data from the previous Atom was found on this phone.</string>
     <string name="import_error">The import stopped early (%1$s). What was imported is kept; it continues at the next start or when you import again.</string>
     <string name="import_error_space">not enough free storage for a temporary copy</string>

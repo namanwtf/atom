@@ -90,6 +90,12 @@ internal object Integration {
             override fun available(): Boolean = atom.app.data.legacy.LegacyImport.available(app)
 
             override suspend fun run(): String = atom.app.data.legacy.LegacyImport.runManually(app, graph)
+
+            override fun cleanupOffer() = atom.app.data.legacy.LegacyImport.cleanupOffer(app)
+
+            override suspend fun removeOldData() = atom.app.data.legacy.LegacyImport.removeOldData(app)
+
+            override fun changes() = atom.app.data.legacy.LegacyImport.changes
         }
         GeneralHooks.onImported = {
             // Settings flows refresh themselves; Hey Atom must be re-applied by hand (it owns a service).

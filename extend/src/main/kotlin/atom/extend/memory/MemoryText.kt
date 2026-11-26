@@ -118,4 +118,19 @@ object MemoryText {
     }
 
     fun byteSize(text: String): Int = text.toByteArray(Charsets.UTF_8).size
+
+    /** True for a memory with nothing recorded yet: blank, or still the starting [TEMPLATE]. */
+    fun isEmpty(text: String): Boolean = text.isBlank() || text.trim() == TEMPLATE.trim()
+
+    /**
+     * [current] with [imported] brought in: [imported] replaces an empty memory, and is otherwise added at the end
+     * under its own `# [heading]`. Blank [imported], or one already contained in [current], changes nothing, so a
+     * repeated import never adds it twice.
+     */
+    fun merge(current: String, imported: String, heading: String): String {
+        val add = imported.trim('\n').trimEnd()
+        if (add.isBlank() || (!isEmpty(current) && current.contains(add))) return current
+        if (isEmpty(current)) return add + "\n"
+        return current.trimEnd('\n') + "\n\n# " + heading.trim() + "\n\n" + add + "\n"
+    }
 }

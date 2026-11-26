@@ -1,5 +1,9 @@
 package atom.general
 
+import atom.core.legacy.LegacyCleanup
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+
 /**
  * Project links. Empty values hide the matching About rows ("Updates: not configured" for the update check). The
  * app may override them once at startup (e.g. from BuildConfig) before any screen opens.
@@ -45,5 +49,14 @@ object GeneralHooks {
 
         /** Runs the import again (only what is not imported yet) and returns the result text. */
         suspend fun run(): String
+
+        /** Whether and how the backup screen offers to remove the previous app's files (cheap file checks). */
+        fun cleanupOffer(): LegacyCleanup.Offer = LegacyCleanup.Offer.Hidden
+
+        /** Removes the previous app's files and Keystore keys. */
+        suspend fun removeOldData(): LegacyCleanup.Removal = LegacyCleanup.Removal.Partial
+
+        /** Changes after every import run and removal (including automatic ones), so the rows are checked again. */
+        fun changes(): Flow<Int> = flowOf(0)
     }
 }
