@@ -111,7 +111,7 @@
     <string name="live_waiting">Approve</string>
     <string name="notif_done">Task done</string>
     <string name="notif_failed">Task failed</string>
-    <string name="notif_step_limit">Stopped at the step limit</string>
+    <string name="notif_step_limit">Stopped before finishing</string>
 
     <!-- Models -->
     <string name="tab_on_device">On-device</string>

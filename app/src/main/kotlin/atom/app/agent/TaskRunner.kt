@@ -91,7 +91,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 data class PendingApproval(val id: Long, val action: String, val expiresAtMillis: Long)
 
@@ -670,6 +672,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private var outcome: RunOutcome? = null
         private var error: String? = null
         private var finalText: String? = null
+
+        /** The run ended at the step limit because the loop guard found it repeating itself. */
+        private var stuck = false
         private var routed: RoutedEngine? = null
         private var support = ReasoningSupport.None
         private var journalOpen = false
@@ -811,7 +816,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val messages = if (character == null) SystemPrompt.withTime(history.messages) else history.messages
                 val autoCompact = settings.autoCompaction
                 val config = engine.agentConfig(systemPrompt = systemPrompt, tools = registry.specs, slowApprovals = settings.confirmActTools)
-                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1) else c }
+                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
                     .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
                 if (debuggable) logRequestSize(systemPrompt, messages, loadout.specs(), registry.specs, config)
                 val notice = listOfNotNull(
@@ -928,7 +933,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 .map { it.switchChecked() }
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
-            return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk }
+            return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk; toolOf[it.spec.name] = it }
         }
 
         private fun originOf(featureId: String): ToolOrigin = ToolFamilies.originOf(featureId)
@@ -979,6 +984,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 is AgentEvent.Appended -> appended(event.message, event.info)
                 is AgentEvent.ToolStarted -> {
                     flushStream()
+                    judge(event.call)?.let { callRisk[event.call.id] = it }
                     updateRun(id) {
                         copy(
                             currentTool = event.call.name,
@@ -1025,9 +1031,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     finalText = event.finalText
                     outcome = when (event.reason) {
                         StopReason.Completed -> RunOutcome.Completed
-                        StopReason.StepLimit -> RunOutcome.StepLimit
+                        StopReason.StepLimit, StopReason.Stuck -> RunOutcome.StepLimit
                         StopReason.OutputLimit -> RunOutcome.OutputLimit
                     }
+                    stuck = event.reason == StopReason.Stuck
                 }
                 is AgentEvent.Failed -> {
                     flushStream()
@@ -1057,7 +1064,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     message = if (info.sensitive) Scrubber.scrub(message) else stripImages(message),
                     durationMs = info.durationMs,
                     isError = info.isError,
-                    risk = message.toolName?.let { riskOf[it] },
+                    risk = message.toolCallId?.let { callRisk.remove(it) } ?: message.toolName?.let { riskOf[it] },
                     createdAt = now,
                 )
                 else -> if (info.steering) {
@@ -1072,6 +1079,18 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         }
 
         private val riskOf = HashMap<String, Risk>()
+        private val toolOf = HashMap<String, Tool>()
+
+        /** The risk each running call was judged at (a shell's `ls` is not marked like its `rm -rf`). */
+        private val callRisk = HashMap<String, Risk>()
+
+        private fun judge(call: atom.core.llm.ToolCall): Risk? {
+            val tool = toolOf[call.name] ?: return null
+            return runCatching {
+                val args = if (call.argumentsJson.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(call.argumentsJson).jsonObject
+                tool.riskFor(args)
+            }.getOrNull()
+        }
 
         private fun commit(entry: StoredMessage, modelVisible: Boolean) {
             stored += entry
@@ -1210,7 +1229,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
                 RunOutcome.Cancelled -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_stopped))
                 RunOutcome.Failed -> stored += StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true)
-                RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_step_limit))
+                RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(if (stuck) atom.app.R.string.run_stuck else atom.app.R.string.run_step_limit))
                 RunOutcome.OutputLimit -> stored += StoredMessage.notice(LlmErrors.explain(atom.core.llm.LlmFailure.OutputLimit))
                 else -> Unit
             }

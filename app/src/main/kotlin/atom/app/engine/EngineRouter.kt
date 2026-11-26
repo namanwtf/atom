@@ -80,7 +80,7 @@ class RoutedEngine internal constructor(
             return AgentConfig(
                 model = model,
                 systemPrompt = systemPrompt,
-                maxSteps = 30,
+                maxSteps = CLOUD_MAX_STEPS,
                 maxOutputTokens = CLOUD_MAX_OUTPUT,
                 toolTimeoutMs = toolTimeout,
                 // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
@@ -97,7 +97,7 @@ class RoutedEngine internal constructor(
         return AgentConfig(
             model = model,
             systemPrompt = systemPrompt,
-            maxSteps = 15,
+            maxSteps = LOCAL_MAX_STEPS,
             maxOutputTokens = maxOut,
             toolTimeoutMs = toolTimeout,
             maxRetries = 1,
@@ -114,6 +114,16 @@ class RoutedEngine internal constructor(
     companion object {
         const val LOCAL_CONTEXT_WINDOW = 8_192
         const val LOCAL_PROMPT_BUDGET = 6_000
+
+        /**
+         * Safety caps on steps (model calls) per run, not a budget: operating the phone takes one step per screen
+         * read, tap or scroll, so a run goes on as long as it makes progress. The loop guard ends a run that keeps
+         * repeating itself without new information, automatic compaction keeps long runs inside the window, and
+         * whenever a run stops early the model writes a final reply. On-device every step is a full prefill on the
+         * phone, so its cap is lower.
+         */
+        const val CLOUD_MAX_STEPS = 400
+        const val LOCAL_MAX_STEPS = 60
 
         /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
         const val CLOUD_MAX_OUTPUT = 2048

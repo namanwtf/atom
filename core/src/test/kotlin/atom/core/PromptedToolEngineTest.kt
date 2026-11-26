@@ -69,6 +69,27 @@ class PromptedToolEngineTest {
         assertTrue(sent.messages[2].text.contains("<tool_call>"))
         assertEquals(Role.User, sent.messages[3].role)
     }
+
+    @Test
+    fun requestWithoutToolsStillWritesOutEarlierCalls() = runTest {
+        val inner = chunked("Done for now.")
+        val call = ToolCall("c1", "tap", """{"id":"1"}""")
+        val history = listOf(
+            ChatMessage.system("sys"),
+            ChatMessage.user("go"),
+            ChatMessage.assistant("", listOf(call)),
+            ChatMessage.toolResult(call, listOf(ContentPart.Text("tapped"))),
+            ChatMessage.user("wrap up"),
+        )
+        val events = PromptedToolEngine(inner).stream(LlmRequest("m", history)).toList()
+        val sent = inner.requests.single()
+        assertEquals("sys", sent.messages.first().text, "no tool instructions without tools")
+        assertTrue(sent.messages[2].text.contains("<tool_call>"))
+        assertTrue(sent.messages[2].toolCalls.isEmpty())
+        assertEquals(Role.User, sent.messages[3].role)
+        assertTrue(sent.messages[3].text.contains("<tool_result name=\"tap\">"))
+        assertEquals("Done for now.", events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text })
+    }
 }
 
 class ContextPackerTest {

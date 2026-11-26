@@ -485,6 +485,13 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         return true
     }
 
+    /** After a run stopped at its step limit: a new run in the same conversation picks the work back up. */
+    fun continueRun(prompt: String): Boolean {
+        val current = currentConversation() ?: return false
+        if (runner.isRunning(current.id) || _editing.value != null) return false
+        return runner.send(current, prompt, emptyList()) != null
+    }
+
     fun stop() {
         selectedId.value?.let(runner::stop)
     }

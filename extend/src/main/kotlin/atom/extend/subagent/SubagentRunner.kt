@@ -82,13 +82,16 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         val config = AgentConfig(
             model = engine.model,
             systemPrompt = systemPrompt(def, tools),
-            maxSteps = if (engine.onDevice) 10 else 24,
+            // The time budget is the real bound; the step cap and the loop guard catch runaway loops.
+            maxSteps = if (engine.onDevice) 16 else 60,
             maxOutputTokens = if (engine.onDevice) 768 else 2048,
             reasoning = settings.reasoning,
             contextWindow = window,
             // Cloud: the model's own window (compaction near 85% of it). On-device every prompt token is prefill on the
             // phone, so a deliberate cap stays.
             context = ContextPolicy(budgetTokens = if (engine.onDevice) window?.let { (it * 0.7).toInt().coerceIn(2_500, 24_000) } ?: 2_500 else null),
+            // At the step limit (or when stuck) the subagent still writes its summary for the main agent, with no more tools.
+            wrapUpPrompt = WRAP_UP,
         )
         val runId = SubagentRuns.start(parent.taskId, def.name, task.task)
         SubagentRuns.update(runId) { copy(model = engine.model) }
@@ -162,6 +165,10 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         val f = failed
         val (status, summary) = when {
             d != null && d.reason == atom.core.agent.StopReason.Completed -> SubagentStatus.Done to d.finalText
+            d != null && d.reason == atom.core.agent.StopReason.StepLimit -> SubagentStatus.Partial to
+                (d.finalText.ifBlank { "Stopped before finishing." } + "\n[The subagent reached its step limit; this is partial.]")
+            d != null && d.reason == atom.core.agent.StopReason.Stuck -> SubagentStatus.Partial to
+                (d.finalText.ifBlank { "Stopped before finishing." } + "\n[The subagent kept repeating itself and was stopped; this is partial.]")
             d != null -> SubagentStatus.Partial to d.finalText.ifBlank { "Stopped before finishing." }
             f != null -> SubagentStatus.Failed to "Failed: ${f.message}"
             !finished -> SubagentStatus.Partial to (text.toString().ifBlank { "Ran out of time after $calls tool calls before writing a summary." } +
@@ -188,6 +195,10 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         const val MAX_PARALLEL = 4
         private const val MAX_SUMMARY = 6_000
         private const val PUBLISH_MS = 150L
+
+        /** Sent with no tools offered when the subagent stops before finishing (step limit, stuck), so it still reports back. */
+        const val WRAP_UP =
+            "Reply to the main agent now with your summary: what you did, what you found, and what is still unfinished."
 
         fun systemPrompt(def: SubagentDef, tools: List<Tool>): String = buildString {
             append("You are \"${def.name}\", a subagent of Atom, an assistant on the user's Android phone. ")
