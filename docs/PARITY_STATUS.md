@@ -67,9 +67,8 @@ Only these need the owner:
 
 | # | What to do | Why only the owner can |
 |---|---|---|
-| O1 | **Add four secrets to this GitHub repository** (Settings → Secrets and variables → Actions): `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, with the same values the old repository used. | They are the app's signing key. Without them no release is published, and old installs can't update. The agents can't see or create them, and a new key would break updates. |
+| O1 | **Paste two values into GitHub once** (the app's new signing key, created by the agents; step-by-step note provided in the session). | GitHub doesn't let this session store secrets. |
 | O2 | **Merge the PRs on GitHub** in this order: #1, then #2, then #5. | Merging into `main` publishes a release to users, so it stays the owner's call. |
-| O3 | *(Optional)* **Allow commits under your GitHub account**, if you want the history to show your name instead of the session's. | It changes the identity on your repository; the session's permission checks refused it without you. |
 
 | # | Closed decision | Choice |
 |---|---|---|
@@ -77,4 +76,5 @@ Only these need the owner:
 | D20 | Brand logos | Keep the Lobe Icons logos (MIT, credited in NOTICE and on the licences screen). |
 | D21 | Upstream-derived parts of the old app | Not reused. Atom 4 is new code; the bubble uses only the owner's emblem. Nothing to license. |
 | D22 | Starting model, default character, speech recognizer | DeepSeek Flash stays the starting model; no default character is shipped beyond the built-in example; speech uses the phone's own recognizer until the user adds a cloud key. |
+| D24 | Signing key | A fresh release key (owner: the earlier app was never launched). Phones with the earlier app reinstall once; afterwards every release updates in place. Fingerprint pinned in `release.yml`; only two secrets are needed. |
 | D23 | Mentions of other apps | None in Atom 4 (files, commits, PR texts), enforced by CI. The old repository is not edited: it is being retired, and any push to it publishes a release to existing users. |

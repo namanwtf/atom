@@ -1,16 +1,16 @@
 # Updates and the path from the earlier Atom app
 
 Atom 4 replaces the earlier Atom app (a separate, older codebase whose last release was `v3.4.5-atom.38`,
-published 2026-11-24). A phone that has the earlier app updates straight into Atom 4, in place, with no uninstall.
+published 2026-11-24). Atom 4 starts with a **fresh release signing key** (owner decision, 2026-11-26: the earlier app was never launched publicly). A phone with the earlier app therefore cannot update in place: Android refuses an update signed with a different key, so that phone uninstalls the earlier app once and installs Atom 4. From then on every Atom 4 release updates in place. The importer (docs/IMPORT.md) still runs whenever an earlier app's data is present, e.g. on a phone restored from a backup.
 
 ## How an earlier install reaches Atom 4
 
-Android accepts an APK as an update only when three things hold, and all three are kept on purpose:
+Android accepts an APK as an update only when three things hold. Atom 4 keeps the id and version rules; the signing key is new:
 
 | Rule | Earlier app | Atom 4 |
 |---|---|---|
 | Same `applicationId` | `io.github.namanwtf.atom` | `io.github.namanwtf.atom` (release builds) |
-| Same signing certificate | SHA-256 `F3:BA:9F:48:…:CB:8F:A7` | the release workflow refuses to publish anything else |
+| Same signing certificate | earlier key (not reused) | new key, SHA-256 `D2:B8:3B:EC:…:7A:45:78`; the release workflow refuses to publish anything else |
 | Higher `versionCode` | below `2026112500` | published releases start at `2026112601` |
 
 The earlier app's updater calls `GET https://api.github.com/repos/namanwtf/atom/releases/latest`, reads
@@ -20,8 +20,8 @@ segments are integers), ignoring its own `-atom.38` suffix. A normal (not draft,
 `atom-<version>.apk` and installs it over the earlier app. This repository now owns the name
 `namanwtf/atom`, so every Atom 4 release is what the earlier app finds.
 
-The full certificate fingerprint is
-`F3:BA:9F:48:E1:53:A9:97:98:BB:0D:7C:74:C2:41:D8:D0:C3:F9:C1:DB:26:86:F7:B5:0C:28:F1:87:CB:8F:A7`.
+Atom 4's full certificate fingerprint is
+`D2:B8:3B:EC:14:AD:2B:0E:E6:A0:18:85:46:1A:0A:9D:BD:78:A4:B3:D3:74:D2:92:71:4D:E8:63:B4:7A:45:78`.
 
 Debug builds use `applicationIdSuffix = ".debug"` (`io.github.namanwtf.atom.debug`), so installing a CI debug
 APK never touches a phone's release install. `tools/screenshots/capture.py` drives that id by default.
@@ -41,21 +41,21 @@ APK never touches a phone's release install. `tools/screenshots/capture.py` driv
 
 ## Publishing (owner actions)
 
-1. **Add the signing secrets to this repository** (Settings > Secrets and variables > Actions), with the same
-   values the earlier app's repository used: `KEYSTORE_BASE64` (the release keystore, base64), `KEYSTORE_PASSWORD`,
-   `KEY_ALIAS`, `KEY_PASSWORD`. Never generate a new key: an APK signed with any other key cannot update existing
-   installs, and Android will refuse it.
+1. **Add two signing secrets to this repository** (Settings > Secrets and variables > Actions): `KEYSTORE_BASE64`
+   (the release keystore, base64) and `KEYSTORE_PASSWORD`. `KEY_ALIAS` (default `atom`) and `KEY_PASSWORD`
+   (default: the keystore password) are optional. Keep a private backup of the keystore: if it is lost, installed
+   copies can never update again. Never replace the key once releases are out.
 2. **Merge to `main`.** Every push to `main` runs `.github/workflows/release.yml`. If pushes landed before the
    secrets existed, run the workflow by hand (Actions > Release > Run workflow): a manual run releases `main`'s
    current tip. Do not re-run old failed runs; they skip anyway (below). The workflow:
-   - fails at once, publishing nothing, if any of the four secrets is missing or empty;
+   - fails at once, publishing nothing, if either required secret is missing or empty;
    - releases only the current tip of `main`, and only when the previous release tag is an ancestor of it; a
      commit that is already released, a re-run of an older push, or a tip that moved during the build skips with
      a notice, so older code can never become the latest release;
    - computes the tag and `versionCode`, runs the unit tests (`test testDebugUnitTest`), builds
      `:app:assembleRelease`, zipaligns and signs with `apksigner` (the decoded keystore is removed on exit);
-   - checks with `apksigner verify --print-certs` that there is exactly one signer and its SHA-256 is the earlier
-     app's certificate, and with `aapt2` that the id, `versionCode` and `versionName` are the stamped ones;
+   - checks with `apksigner verify --print-certs` that there is exactly one signer and its SHA-256 is Atom 4's
+     certificate, and with `aapt2` that the id, `versionCode` and `versionName` are the stamped ones;
      any mismatch fails the run before publishing;
    - attaches `atom-<version>.apk` and `atom-<version>.apk.sha256` (`sha256sum` format);
    - writes the release notes: a changelog of the commit subjects since the previous tag, the APK's SHA-256 and
