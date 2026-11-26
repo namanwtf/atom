@@ -3,16 +3,14 @@ package atom.core.tool
 /**
  * Where a shell command runs, for [ShellRisk]. Paths are as the shell sees them.
  *
- * @property ownDirs folders the agent may delete in freely: the app's own scratch and work folders, tmp.
- * @property writableDirs further folders of the app's own that may be written but not deleted wholesale (its data
- *   folder, its folder in shared storage).
- * @property ownPackage the app's package; clearing or stopping it is not a threat to anything else.
- * @property cwd where the command starts, when known; relative paths resolve against it.
- * @property home what `~` expands to, when known.
- * @property distro the installed Linux distro: /etc, /usr, /bin... are the distro's own, so package installs and
- *   edits there are ordinary work. Android's system paths, /proc, /sys, /dev and shared storage stay protected.
- * @property privileged the shell can reach other apps and the system (Android root, Shizuku, the distro in chroot
- *   mode), so killing processes by id can hit system ones.
+ * @property writeDirs the app's own scratch folders: a redirect into one of them still runs without asking.
+ * @property ownDirs folders the old danger heuristics treat as the agent's own to delete in.
+ * @property writableDirs further folders of the app's own those heuristics let it write but not delete wholesale.
+ * @property ownPackage the app's package.
+ * @property cwd where the command starts, when known (heuristics only; proofs never rely on it).
+ * @property home what `~` expands to, when known (heuristics only).
+ * @property distro the installed Linux distro (heuristics only: /etc, /usr... are the distro's own).
+ * @property privileged the shell can reach other apps and the system (heuristics only).
  */
 data class ShellScope(
     val ownDirs: List<String>,
@@ -22,13 +20,10 @@ data class ShellScope(
     val home: String? = null,
     val distro: Boolean = false,
     val privileged: Boolean = false,
+    val writeDirs: List<String> = emptyList(),
 ) {
     companion object {
-        /**
-         * Android's own shell, as the app ([privileged] false) or as root or the adb shell user. The app's cache, its
-         * agent workspace ([workDirs]) and /data/local/tmp may be deleted in; its data folder and its folder in shared
-         * storage may be written.
-         */
+        /** Android's own shell, as the app ([privileged] false) or as root or the adb shell user. */
         fun android(
             packageName: String,
             dataDir: String,
@@ -45,6 +40,7 @@ data class ShellScope(
             ownPackage = packageName,
             cwd = cwd,
             privileged = privileged,
+            writeDirs = listOf(cacheDir) + workDirs,
         )
 
         /** The installed Linux distro: root inside it, starting in /root, with /workspace as its work folder. */
@@ -55,45 +51,77 @@ data class ShellScope(
             home = "/root",
             distro = true,
             privileged = privileged,
+            writeDirs = listOf("/workspace", "/tmp"),
         )
     }
 }
 
 /**
- * Decides, per command line, whether a shell call needs the user's approval. Conservative: [Risk.Sensitive] for
- * anything seriously dangerous to the system or the user's data (deleting outside the app's own folders, formatting,
- * rebooting, writing system paths or other apps' data, changing secure settings, piping downloads into a shell...)
- * and for anything it cannot parse or resolve with confidence (unbalanced quotes, `case`, `$VAR` in a path that is
- * deleted or written, `eval` of an expansion...). Everything else, including root commands that only read, is
- * [Risk.Act]: it runs without asking.
+ * Decides, per command line, whether a shell call needs the user's approval, by proof rather than by hunting for
+ * danger: a line runs without asking ([Risk.Act]) only when every command in it is a known read-only command used
+ * with known-safe options, with no unknown wrapper, no brace expansion, no variable assignment, every `$( )` and
+ * `<( )` itself proven, and every output redirect going to /dev/null or the app's own scratch folders. Anything else,
+ * including anything the parser cannot follow, is [Risk.Sensitive] and asks. The working directory is never relied on.
  *
- * It reads the whole line: `;`, `&&`, `||`, `|`, `&`, newlines, subshells, `$( )`, backticks, `<( )`, here-docs and
- * here-strings, `sh -c`, `su -c`, `env`, `sudo`, `busybox`, `xargs` and `find -exec`; each command in it is judged,
- * and the line is as risky as its riskiest part.
+ * [looksDestructive] keeps the older danger heuristics: commands that look plainly destructive keep asking even when
+ * the user allowed all commands for the task.
  */
 object ShellRisk {
-    fun classify(command: String, scope: ShellScope): Risk = try {
-        Judge(scope).line(command)
-        Risk.Act
-    } catch (e: Dangerous) {
-        Risk.Sensitive
+    fun classify(command: String, scope: ShellScope): Risk = if (whyAsk(command, scope) == null) Risk.Act else Risk.Sensitive
+
+    /** Why the line needs approval, in a few words for the approval sheet; null when it is proven read-only. */
+    fun reason(command: String, scope: ShellScope): String? = whyAsk(command, scope)
+
+    private fun whyAsk(command: String, scope: ShellScope): String? = try {
+        Proof(scope, 0).line(command)
+        null
+    } catch (e: NotProven) {
+        e.message
     } catch (e: Unclear) {
-        Risk.Sensitive
+        "the command line could not be fully understood (${e.message})"
     } catch (e: RuntimeException) {
-        Risk.Sensitive
+        "the command line could not be fully understood"
     }
 
-    /** The reason a line was judged dangerous or unclear, or null when it runs without asking. For tests and logs. */
-    fun reason(command: String, scope: ShellScope): String? = try {
+    /**
+     * The old danger heuristics: true for lines that plainly delete outside the app's own folders, format, reboot,
+     * write system paths or other apps' data, change secure settings, pipe downloads into a shell, and the like.
+     * Used as extra friction: such lines ask even when the user allowed all commands for the task.
+     */
+    fun looksDestructive(command: String, scope: ShellScope): Boolean = try {
+        Judge(scope).line(command)
+        false
+    } catch (e: Dangerous) {
+        true
+    } catch (e: Unclear) {
+        false
+    } catch (e: RuntimeException) {
+        false
+    }
+
+    /** The heuristics' reason, for tests and logs. */
+    internal fun dangerReason(command: String, scope: ShellScope): String? = try {
         Judge(scope).line(command)
         null
     } catch (e: Dangerous) {
         e.message
-    } catch (e: Unclear) {
-        "unclear: " + e.message
-    } catch (e: RuntimeException) {
-        "unclear: " + (e.message ?: e.javaClass.simpleName)
+    } catch (e: Exception) {
+        null
     }
+
+    /**
+     * The approval prompt for running [command] in [where] (e.g. "the Linux terminal"): the whole command, why it
+     * asks, open to "allow all commands for this task", and asking regardless when it looks plainly destructive.
+     */
+    fun approval(command: String, scope: ShellScope, where: String, reason: String? = reason(command, scope)): ApprovalRequest =
+        ApprovalRequest(
+            action = "Run in $where:\n$command",
+            reason = reason?.let { "Asks because $it." },
+            taskGrantable = true,
+            alwaysAsk = looksDestructive(command, scope),
+        )
+
+    private class NotProven(why: String) : Exception(why)
 
     private class Dangerous(why: String) : Exception(why)
     private class Unclear(why: String) : Exception(why)
@@ -106,6 +134,8 @@ object ShellRisk {
         val tilde: Boolean = false,
         val procSubst: Boolean = false,
         val quoted: Boolean = false,
+        /** An unquoted `{` or `}`: brace expansion can turn one word into a whole command. */
+        val brace: Boolean = false,
     ) {
         val literal: Boolean get() = !expands && !procSubst
         override fun toString() = text
@@ -144,6 +174,203 @@ object ShellRisk {
     private val HARMLESS_DEVICES = setOf("/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/stdin", "/dev/tty", "/dev/random", "/dev/urandom", "/dev/full")
     private val PM_READS = setOf("list", "path", "dump", "help", "resolve-activity", "query-activities", "query-services", "query-receivers", "has-feature", "dump-profiles", "art")
     private val AM_KILLS = setOf("force-stop", "kill", "kill-all", "crash", "hang", "restart", "stop-user", "remove-task", "make-uid-idle", "set-inactive")
+
+
+    /** What an allowlisted command accepts besides plain literal words, and its own check of those words. */
+    private class Rule(
+        /** Globs and `~` in arguments (they only name files to read). */
+        val globs: Boolean = true,
+        /** `$VAR`, `$( )` in arguments (only for commands where no argument can turn into an action). */
+        val expansions: Boolean = false,
+        /** Returns why the arguments are not safe, or null when they are. Plain words only (flags included). */
+        val check: (List<String>) -> String? = { null },
+    )
+
+    private val BIN_DIRS = setOf("/system/bin", "/system/xbin", "/bin", "/usr/bin", "/sbin", "/usr/sbin", "/vendor/bin", "/product/bin")
+    private val KEYWORD_PREFIX = setOf("if", "then", "else", "elif", "fi", "while", "until", "do", "done", "!")
+    private val SINKS = setOf("/dev/null", "/dev/stdout", "/dev/stderr")
+    private val SHELL_NAMES = setOf("sh", "bash", "ash", "dash", "zsh", "ksh", "mksh", "hush")
+
+    private fun shortFlagHas(words: List<String>, vararg letters: Char) =
+        words.any { w -> w.length > 1 && w[0] == '-' && w[1] != '-' && letters.any { it in w.substring(1) } }
+
+    private fun anyStarts(words: List<String>, vararg prefixes: String) = words.any { w -> prefixes.any { w == it || w.startsWith("$it=") || (it.length == 2 && w.startsWith(it)) } }
+
+    private fun positional(words: List<String>) = words.filterNot { it.startsWith("-") }
+
+    private val DUMPSYS_CHANGES = setOf(
+        "set", "unplug", "reset", "force-idle", "unforce", "enable", "disable", "clear", "put", "delete", "remove", "add",
+        "kill", "stop", "start", "step", "whitelist", "except-idle-whitelist", "tempwhitelist", "sys-whitelist", "suspend",
+        "resume", "reboot", "shutdown", "write", "grant", "revoke", "trim-caches", "setprop",
+    )
+    private val IP_CHANGES = setOf("add", "del", "delete", "set", "flush", "change", "replace", "append", "prepend", "restore", "exec", "netns", "-batch", "-b", "-force", "save")
+    private val PM_READ_SUBS = setOf("list", "path", "dump", "help", "resolve-activity", "query-activities", "query-services", "query-receivers", "has-feature")
+
+    private fun pmRead(args: List<String>): String? {
+        val sub = positional(args).firstOrNull() ?: return null
+        return if (sub in PM_READ_SUBS || sub.startsWith("list-") || sub.startsWith("query-") || sub.startsWith("get-")) null else "pm $sub changes apps"
+    }
+
+    private fun gitRead(args: List<String>): String? {
+        var i = 0
+        while (i < args.size && args[i].startsWith("-")) {
+            when (args[i]) {
+                "-C" -> i += 2
+                "--no-pager", "-P", "--no-replace-objects" -> i++
+                else -> return "git option ${args[i]} can run commands"
+            }
+        }
+        val sub = args.getOrNull(i) ?: return null
+        val rest = args.drop(i + 1)
+        val restPlain = positional(rest)
+        if (rest.any { it.startsWith("--output") || it == "--ext-diff" || it == "-O" || it.startsWith("--open-files-in-pager") || it.startsWith("--exec") || it.startsWith("--upload-pack") }) {
+            return "git $sub with an option that writes files or runs programs"
+        }
+        return when (sub) {
+            "status", "log", "diff", "show", "rev-parse", "ls-files", "ls-tree", "blame", "describe", "shortlog", "grep",
+            "cat-file", "show-ref", "whatchanged", "rev-list", "count-objects", "version", "help" -> null
+            "branch" -> if (restPlain.isEmpty() && rest.none { it in setOf("-d", "-D", "-m", "-M", "-c", "-C", "-f", "-u", "--delete", "--move", "--copy", "--force", "--edit-description", "--unset-upstream") || it.startsWith("--set-upstream") }) null else "git branch that changes branches"
+            "tag" -> if (restPlain.isEmpty() || rest.any { it == "-l" || it == "--list" }) null else "git tag that creates tags"
+            "remote" -> if (restPlain.isEmpty() || restPlain.first() in setOf("show", "get-url")) null else "git remote that changes remotes"
+            "config" -> if (rest.any { it in setOf("--get", "--get-all", "--get-regexp", "--list", "-l") } && rest.none { it in setOf("--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section") }) null else "git config that changes settings"
+            "reflog" -> if (restPlain.isEmpty() || restPlain.first() == "show") null else "git reflog that changes history"
+            "stash" -> if (restPlain.firstOrNull() in setOf("list", "show")) null else "git stash changes files"
+            else -> "git $sub can change files"
+        }
+    }
+
+    private val ALLOW: Map<String, Rule> = buildMap {
+        val plain = Rule()
+        for (n in listOf(
+            "ls", "cat", "head", "tail", "wc", "stat", "file", "du", "df", "id", "uname", "whoami", "groups", "nproc",
+            "uptime", "free", "pwd", "basename", "dirname", "realpath", "readlink", "sha1sum", "sha224sum", "sha256sum",
+            "sha384sum", "sha512sum", "md5sum", "cksum", "b2sum", "cut", "tr", "nl", "od", "hexdump", "strings", "cmp",
+            "diff", "comm", "column", "base64", "printenv", "which", "whereis", "getprop", "getenforce", "lsof", "netstat",
+            "ss", "nslookup", "dig", "host", "lscpu", "lsblk", "lsmod", "lsusb", "lspci", "seq", "true", "false", "sleep",
+            "jq", "rev", "tac", "fold", "fmt", "expand", "unexpand", "paste", "join", "numfmt", "expr", "cal", "getconf",
+            "locale", "tty", "logname", "arch", "pidof", "pgrep", "ps", "grep", "egrep", "fgrep", "type", "wait", ":",
+            "cd", "pushd", "popd", "dirs",
+        )) put(n, plain)
+        for (n in listOf("echo", "printf", "test", "[")) put(n, Rule(expansions = true))
+        put("rg", Rule(check = { a -> if (a.any { it.startsWith("--pre") }) "rg --pre runs a program" else null }))
+        put("sort", Rule(globs = false, check = { a -> if (anyStarts(a, "--output", "--compress-program", "-o") || shortFlagHas(a, 'o')) "sort -o writes a file" else null }))
+        put("uniq", Rule(globs = false, check = { a -> if (positional(a).size > 1) "uniq with two files writes the second" else null }))
+        put("xxd", Rule(globs = false, check = { a -> if (shortFlagHas(a, 'r') || a.any { it.startsWith("--rev") } || positional(a).size > 1) "xxd that writes a file" else null }))
+        put("tree", Rule(check = { a -> if (shortFlagHas(a, 'o')) "tree -o writes a file" else null }))
+        put("date", Rule(globs = false, check = { a -> if (shortFlagHas(a, 's') || anyStarts(a, "--set") || positional(a).any { !it.startsWith("+") }) "date that sets the clock" else null }))
+        put("hostname", Rule(globs = false, check = { a -> if (positional(a).isNotEmpty() || shortFlagHas(a, 'F', 'b')) "hostname that sets the name" else null }))
+        put("env", Rule(globs = false, check = { a -> if (a.any { it != "-0" && it != "--null" }) "env runs a command or changes its environment" else null }))
+        put("mount", Rule(globs = false, check = { a -> if (a.isNotEmpty()) "mount with arguments" else null }))
+        put("ifconfig", Rule(globs = false, check = { a -> if (positional(a).size > 1 || a.any { it.startsWith("-") && it != "-a" }) "ifconfig that changes an interface" else null }))
+        put("top", Rule(globs = false, check = { a -> if (a.none { it == "-n" || it.startsWith("-n") || (it.startsWith("-") && it.contains('n')) }) "top without -n keeps running" else null }))
+        put("find", Rule(globs = false, check = { a ->
+            val bad = a.firstOrNull { it in setOf("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls") }
+            if (bad != null) "find $bad runs commands, deletes or writes files" else null
+        }))
+        put("logcat", Rule(globs = false, check = { a ->
+            when {
+                a.none { it == "-d" || (it.startsWith("-") && !it.startsWith("--") && 'd' in it) } -> "logcat without -d keeps running"
+                shortFlagHas(a, 'c', 'f', 'G', 'P', 'r', 'n') || anyStarts(a, "--clear", "--file", "--buffer-size", "--prune", "--rotate-kbytes", "--rotate-count") -> "logcat that clears or writes logs"
+                else -> null
+            }
+        }))
+        put("dumpsys", Rule(globs = false, check = { a -> a.firstOrNull { it.lowercase() in DUMPSYS_CHANGES || it.startsWith("+") }?.let { "dumpsys ... $it changes state" } }))
+        put("pm", Rule(globs = false, check = ::pmRead))
+        put("cmd", Rule(globs = false, check = { a ->
+            val p = positional(a)
+            when {
+                a == listOf("-l") -> null
+                p.firstOrNull() == "package" -> pmRead(a.drop(a.indexOf("package") + 1))
+                else -> "cmd ${p.firstOrNull() ?: ""} can change system state".replace("  ", " ")
+            }
+        }))
+        put("settings", Rule(globs = false, check = { a ->
+            val p = positional(a).dropWhile { it.all(Char::isDigit) }
+            if (p.firstOrNull() in setOf("get", "list")) null else "settings ${p.firstOrNull() ?: ""} changes settings"
+        }))
+        put("wm", Rule(globs = false, check = { a -> if (a.size == 1 && a[0] in setOf("size", "density")) null else "wm that changes the display" }))
+        put("service", Rule(globs = false, check = { a -> if (a.firstOrNull() == "list" || (a.firstOrNull() == "check" && a.size <= 2)) null else "service call can do anything" }))
+        put("git", Rule(globs = false, check = ::gitRead))
+        put("ip", Rule(globs = false, check = { a -> a.firstOrNull { it in IP_CHANGES }?.let { "ip $it changes networking" } }))
+        for (n in listOf("ping", "ping6")) put(n, Rule(globs = false, check = { a -> if (a.none { it == "-c" || it.startsWith("-c") }) "$n without -c keeps running" else null }))
+    }
+
+    /** Proves a command line read-only, or throws [NotProven] (or [Unclear] from the parser) saying why not. */
+    private class Proof(private val scope: ShellScope, private val depth: Int) {
+        fun line(command: String) {
+            if (depth > 6) throw NotProven("commands are nested too deeply")
+            for (cmd in Parser(command).parse()) {
+                for (sub in cmd.subs) Proof(scope, depth + 1).line(sub)
+                simple(cmd.words, cmd.redirects)
+            }
+        }
+
+        private fun simple(all: List<Word>, redirects: List<Redirect>) {
+            for (r in redirects) redirect(r)
+            val words = all.dropWhile { it.text in KEYWORD_PREFIX && it.literal && !it.quoted }
+            if (words.isEmpty()) return
+            words.firstOrNull { it.brace }?.let { throw NotProven("brace expansion can build any command") }
+            val head = words[0]
+            if (isAssignment(head)) throw NotProven("it sets a shell variable")
+            if (!head.literal || (head.glob && head.text != "[") || head.tilde) throw NotProven("the program is only known when it runs")
+            val name = programName(head.text) ?: throw NotProven("it runs a program by its path (${head.text})")
+            val args = words.drop(1)
+            when (name) {
+                "busybox", "toybox" -> return simple(args, emptyList())
+                "su" -> return su(args)
+                in SHELL_NAMES -> return shell(name, args)
+            }
+            val rule = ALLOW[name] ?: throw NotProven("$name is not on the list of read-only commands")
+            for (a in args) {
+                when {
+                    a.procSubst -> Unit // proven above with the other substitutions
+                    !a.literal && !rule.expansions -> throw NotProven("an argument of $name is only known when it runs")
+                    (a.glob || a.tilde) && !rule.globs -> throw NotProven("a wildcard could pass $name an option")
+                }
+            }
+            rule.check(args.map { it.text })?.let { throw NotProven(it) }
+        }
+
+        /** `su [0|root] -c 'COMMAND'` with the command as its last word; anything else asks. */
+        private fun su(args: List<Word>) {
+            var rest = args
+            if (rest.firstOrNull()?.text in setOf("0", "root")) rest = rest.drop(1)
+            if (rest.size != 2 || rest[0].text != "-c" || !rest[1].literal) throw NotProven("su is only proven as su -c 'COMMAND'")
+            Proof(scope, depth + 1).line(rest[1].text)
+        }
+
+        /** `sh -c 'COMMAND'` exactly; scripts, options and stdin ask. */
+        private fun shell(name: String, args: List<Word>) {
+            if (args.size != 2 || args[0].text != "-c" || !args[1].literal) throw NotProven("$name is only proven as $name -c 'COMMAND'")
+            Proof(scope, depth + 1).line(args[1].text)
+        }
+
+        private fun redirect(r: Redirect) {
+            val t = r.target ?: return
+            val input = r.op.startsWith("<") && !r.op.contains(">")
+            if (input) {
+                if (!t.literal && !t.procSubst) throw NotProven("it reads from a file only known when it runs")
+                return
+            }
+            if (!t.literal || t.glob || t.tilde || t.brace) throw NotProven("it writes to a file only known when it runs")
+            val path = t.text
+            if (path in SINKS) return
+            if (!path.startsWith("/") || path.split('/').any { it == ".." || it == "." }) throw NotProven("it writes to $path")
+            val dirs = scope.writeDirs.map { normalize(it) }.filter { it != "/" }
+            if (dirs.none { path.startsWith("$it/") }) throw NotProven("it writes to $path, outside the app's own folders")
+        }
+
+        private fun isAssignment(w: Word): Boolean {
+            val eq = w.text.indexOf('=')
+            return eq > 0 && w.text.substring(0, eq).all { it.isLetterOrDigit() || it == '_' }
+        }
+
+        private fun programName(text: String): String? {
+            if (!text.contains('/')) return text
+            val dir = text.substringBeforeLast('/')
+            return if (dir in BIN_DIRS) text.substringAfterLast('/') else null
+        }
+    }
 
     private class Judge(private val scope: ShellScope) {
         private var cwd: String? = scope.cwd
@@ -552,6 +779,7 @@ object ShellRisk {
         private var tilde = false
         private var procSubst = false
         private var quoted = false
+        private var brace = false
 
         fun parse(): List<Simple> {
             while (i < s.length) {
@@ -594,6 +822,7 @@ object ShellRisk {
                     else -> {
                         if (!inWord && c == '~') tilde = true
                         if (c == '*' || c == '?' || c == '[') glob = true
+                        if (c == '{' || c == '}') brace = true
                         inWord = true
                         sb.append(c)
                         i++
@@ -764,24 +993,25 @@ object ShellRisk {
                     else -> {
                         if (i == startI && c == '~') tilde = true
                         if (c == '*' || c == '?' || c == '[') glob = true
+                        if (c == '{' || c == '}') brace = true
                         inWord = true; sb.append(c); i++
                     }
                 }
             }
             if (!inWord) throw Unclear("missing word after an operator")
-            val w = Word(sb.toString(), expands, glob, tilde, procSubst, quoted)
+            val w = Word(sb.toString(), expands, glob, tilde, procSubst, quoted, brace)
             reset()
             return w
         }
 
         private fun endWord() {
-            if (inWord) words.add(Word(sb.toString(), expands, glob, tilde, procSubst, quoted))
+            if (inWord) words.add(Word(sb.toString(), expands, glob, tilde, procSubst, quoted, brace))
             reset()
         }
 
         private fun reset() {
             sb.setLength(0)
-            inWord = false; expands = false; glob = false; tilde = false; procSubst = false; quoted = false
+            inWord = false; expands = false; glob = false; tilde = false; procSubst = false; quoted = false; brace = false
         }
 
         private fun endCommand(pipeNext: Boolean) {

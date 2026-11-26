@@ -1,0 +1,101 @@
+ls -la /sdcard
+====
+ls
+====
+cat /proc/cpuinfo
+====
+head -n 20 /sdcard/Download/notes.txt
+====
+grep -rn TODO /data/user/0/io.github.namanwtf.atom/files/atom4_workspace
+====
+find /sdcard -name '*.jpg' -mtime -1
+====
+ps -A | grep atom
+====
+top -n 1
+====
+top -b -n 1
+====
+df -h
+====
+du -sh /sdcard/*
+====
+logcat -d | tail -50
+====
+logcat -d -t 100 -s ActivityManager
+====
+dumpsys battery
+====
+dumpsys activity activities | grep mResumed
+====
+getprop ro.build.version.release
+====
+pm list packages -3
+====
+pm path com.whatsapp
+====
+cmd package list packages
+====
+settings get global airplane_mode_on
+====
+echo hello
+====
+echo "today is $(date)"
+====
+echo `whoami`
+====
+cd /sdcard && ls
+====
+ls > /dev/null 2>&1
+====
+ls 2>/dev/null | wc -l
+====
+if [ -f /sdcard/x ]; then cat /sdcard/x; fi
+====
+mount | grep system
+====
+ip addr
+====
+ip route show
+====
+ping -c 3 8.8.8.8
+====
+git status
+====
+git -C /workspace/app log --oneline -5
+====
+git diff HEAD~1
+====
+git branch
+====
+sha256sum /sdcard/Download/a.zip
+====
+uname -a; id; date
+====
+date +%Y-%m-%d
+====
+which python3
+====
+env
+====
+wm size
+====
+stat /sdcard/DCIM
+====
+ls /sdcard > /data/user/0/io.github.namanwtf.atom/cache/list.txt
+====
+su -c 'cat /data/data/com.whatsapp/shared_prefs/x.xml'
+====
+su 0 -c 'ls /data/data'
+====
+sh -c 'ls /sdcard'
+====
+diff <(ls /sdcard/a) <(ls /sdcard/b)
+====
+cat <<'EOF2'
+hello
+EOF2
+====
+grep -c x <<< "abc"
+====
+while true; do sleep 1; done

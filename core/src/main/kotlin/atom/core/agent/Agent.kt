@@ -14,6 +14,7 @@ import atom.core.llm.PromptedTools
 import atom.core.llm.ToolSpec
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.ToolCall
+import atom.core.tool.ApprovalRequest
 import atom.core.tool.Risk
 import atom.core.tool.ToolArgumentException
 import atom.core.tool.ToolContext
@@ -312,10 +313,11 @@ class Agent(
      */
     private suspend fun FlowCollector<AgentEvent>.wrapUp(state: RunState, control: RunControl, prompt: String): String? {
         control.checkpoint()
-        append(state, ChatMessage.user(prompt), MessageInfo(internal = true))
         state.toolTokens = 0
         maybeCompact(state)
-        val messages = ContextPacker.pack(config.systemPrompt, state.convo, config.packing)
+        // The nudge joins the history only with the reply it produced; a failed wrap-up leaves no trace.
+        val nudge = ChatMessage.user(prompt)
+        val messages = ContextPacker.pack(config.systemPrompt, state.convo + nudge, config.packing)
         val request = LlmRequest(
             model = config.model,
             messages = messages,
@@ -340,6 +342,7 @@ class Agent(
         emit(AgentEvent.ModelCall(turn.stats))
         emit(AgentEvent.Usage(state.inTokens, state.outTokens))
         if (turn.text.isBlank()) return null
+        append(state, nudge, MessageInfo(internal = true))
         val answer = ChatMessage.assistant(turn.text)
         append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
         state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
@@ -537,8 +540,12 @@ class Agent(
         if (tool.usesPhoneUi) control.acquirePhone()
 
         val risk = runCatching { tool.riskFor(args) }.getOrDefault(Risk.Sensitive)
-        if (risk == Risk.Sensitive && !ctx.confirm(tool.approvalText(args) ?: describe(call))) {
-            return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
+        if (risk == Risk.Sensitive) {
+            val request = runCatching { tool.approvalRequest(args) }.getOrNull()
+                ?: ApprovalRequest(tool.approvalText(args) ?: describe(call))
+            if (!ctx.approve(request)) {
+                return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
+            }
         }
 
         // The screen went off or locked mid-task: wait for it here, not inside the tool's timeout, so the model never
@@ -562,8 +569,9 @@ class Agent(
         }
     }
 
+    /** The default approval text: the tool and its arguments, long enough to show what it will do. */
     private fun describe(call: ToolCall): String {
-        val args = call.argumentsJson.take(400)
+        val args = call.argumentsJson.let { if (it.length > MAX_APPROVAL_ARGS) it.take(MAX_APPROVAL_ARGS) + "…" else it }
         return "${call.name}($args)"
     }
 
@@ -580,6 +588,9 @@ class Agent(
                 "so no more tools will run."
 
         private const val KEEP_RECENT_SHARE = 0.3
+
+        /** The approval sheet scrolls; this only bounds pathological arguments. */
+        private const val MAX_APPROVAL_ARGS = 8_000
 
         /** Growth (share of the window) needed after one automatic compaction before the next. */
         private const val MIN_GROWTH_SHARE = 0.1
@@ -613,6 +624,9 @@ internal class LoopGuard(
     private val seen = ArrayDeque<Set<String>>()
 
     fun after(calls: List<ToolCall>, results: List<ToolResult>): Verdict {
+        // Waiting and polling (wait, read the screen or a terminal until something changes) is how long tasks pass
+        // time: such steps neither count as stale nor reset the count, and repeating them is not nagged about.
+        if (calls.isNotEmpty() && calls.all { it.name in WAITING_TOOLS }) return Verdict()
         val keys = calls.mapIndexed { i, c -> callKey(c) + "=>" + digest(results.getOrNull(i)) }.toSet()
         val stale = keys.isNotEmpty() && keys.all { k -> seen.any { k in it } }
         seen.addLast(keys)
@@ -640,6 +654,13 @@ internal class LoopGuard(
     }
 
     private fun callKey(c: ToolCall) = c.name + ":" + c.argumentsJson.filterNot(Char::isWhitespace)
+
+    companion object {
+        /** Tools whose repeated calls with the same result mean "still waiting", not "stuck". */
+        val WAITING_TOOLS = setOf(
+            "wait", "browser_wait", "read_screen", "terminal_session_read", "terminal_job_info", "device_status",
+        )
+    }
 
     /** What a result said, ignoring per-call noise (the browser card's preview file name). */
     private fun digest(r: ToolResult?): String {

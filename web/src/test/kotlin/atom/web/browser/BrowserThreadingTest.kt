@@ -2,6 +2,7 @@ package atom.web.browser
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -52,5 +53,25 @@ class BrowserThreadingTest {
             assertTrue(decl != null, "BrowserSession.$method must run through onMain")
         }
         assertTrue(browser.contains("withContext(Dispatchers.Main.immediate)"), "onMain must switch to the main looper")
+    }
+
+    @Test
+    fun keylessSearchWebViewSurvivesARendererCrashAndKeepsItsOwnProfile() {
+        val src = source("BrowserSearch.kt")
+        assertTrue(src.contains("override fun onRenderProcessGone"), "a renderer death must not kill the app")
+        assertTrue(src.contains("WebViewCompat.setProfile"), "keyless search runs in its own WebView profile")
+        assertTrue(src.contains("removeAllCookies"), "the search profile is wiped after use")
+        assertTrue(src.contains("returnTimers"), "the global WebView timers go back to how they were")
+        assertTrue(Regex("""withTimeoutOrNull\(READ_TIMEOUT_MS\)""").containsMatchIn(src), "reading the page has its own timeout")
+    }
+
+    @Test
+    fun searchHelpers() {
+        assertEquals("<html>a</html>", BrowserSearch.decode("\"<html>a</html>\""))
+        assertEquals(null, BrowserSearch.decode("null"))
+        val device = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240805.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/127.0.6533.103 Mobile Safari/537.36"
+        val generic = BrowserSearch.genericUserAgent(device)
+        assertEquals("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/127.0.6533.103 Mobile Safari/537.36", generic)
+        assertTrue("Pixel" !in generic)
     }
 }

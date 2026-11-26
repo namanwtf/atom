@@ -98,6 +98,8 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         val child = object : ToolContext {
             override val taskId: String = parent.taskId
             override suspend fun confirm(action: String) = parent.confirm("Subagent ${def.name}: $action")
+            override suspend fun approve(request: atom.core.tool.ApprovalRequest) =
+                parent.approve(request.copy(action = "Subagent ${def.name}: ${request.action}"))
         }
         val text = StringBuilder()
         var lastPublish = 0L

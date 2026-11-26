@@ -2,6 +2,7 @@ package atom.linux
 
 import android.content.Context
 import atom.core.llm.ToolSpec
+import atom.core.tool.ApprovalRequest
 import atom.core.tool.PerCallRisk
 import atom.core.tool.Risk
 import atom.core.tool.ShellRisk
@@ -92,6 +93,18 @@ object LinuxTools {
         return ShellRisk.classify(command, scope(app, env, cwdKnown))
     }
 
+    /** The approval prompt for [command] in the env named by [envName]: the whole command and why it asks. */
+    internal fun commandApproval(app: Context, command: String, envName: String?, cwdKnown: Boolean = true): ApprovalRequest {
+        val env = parseEnv(envName) ?: ShellEnv.Root
+        return ShellRisk.approval(command, scope(app, env, cwdKnown), where(env))
+    }
+
+    internal fun where(env: ShellEnv) = when (env) {
+        ShellEnv.Linux -> "the Linux terminal"
+        ShellEnv.Android -> "Android's shell"
+        ShellEnv.Root -> "a root shell"
+    }
+
     internal fun blockText(command: String, b: SimpleBlock?): String = buildString {
         append("$ ").append(command).append('\n')
         if (b == null) {
@@ -107,8 +120,11 @@ object LinuxTools {
 private class RunTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
 
-    // Only commands that could seriously harm the system or the user's data ask first.
+    // Commands proven read-only run without asking; everything else asks (or runs under the task's grant).
     override fun riskFor(args: JsonObject): Risk = LinuxTools.commandRisk(app, args.optString("command").orEmpty(), args.optString("env"))
+
+    override fun approvalRequest(args: JsonObject): ApprovalRequest =
+        LinuxTools.commandApproval(app, args.optString("command").orEmpty(), args.optString("env"))
     // timeout_s goes up to 600; the command enforces its own limit, this only has to outlast it.
     override val timeoutMs: Long = 615_000
     override val spec = ToolSpec(
@@ -155,16 +171,24 @@ private class RunTool(private val app: Context) : Tool, PerCallRisk {
 private class SessionTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
 
-    // A session keeps its cwd between commands, so relative paths count as unknown.
+    // A session keeps its own state (cwd, variables, aliases, a program that is still running and reads the input), so
+    // nothing sent to it can be proven harmless: every send asks, unless the user allowed commands for this task.
     override fun riskFor(args: JsonObject): Risk = when (args.optString("action")) {
-        "send" -> {
-            val entry = args.optString("id")?.let(TerminalSessions::find)
-            val env = entry?.env ?: ShellEnv.Root
-            ShellRisk.classify(args.optString("input").orEmpty(), LinuxTools.scope(app, env, cwdKnown = false))
-        }
-        // Opening or closing a shell runs nothing; each command sent to it is judged on its own.
         "open", "close" -> Risk.Act
         else -> Risk.Sensitive
+    }
+
+    override fun approvalRequest(args: JsonObject): ApprovalRequest? {
+        if (args.optString("action") != "send") return null
+        val id = args.optString("id").orEmpty()
+        val input = args.optString("input").orEmpty()
+        val env = TerminalSessions.find(id)?.env ?: ShellEnv.Root
+        return ApprovalRequest(
+            action = "Send to terminal session $id (${LinuxTools.where(env)}):\n$input",
+            reason = "Asks because a terminal session keeps its own state, so what this input does cannot be checked ahead.",
+            taskGrantable = true,
+            alwaysAsk = ShellRisk.looksDestructive(input, LinuxTools.scope(app, env, cwdKnown = false)),
+        )
     }
     // open waits up to 15 s for the shell, send up to wait_s (120 s max).
     override val timeoutMs: Long = 140_000
@@ -266,6 +290,10 @@ private class JobStartTool(private val app: Context) : Tool, PerCallRisk {
     override val risk = Risk.Sensitive
 
     override fun riskFor(args: JsonObject): Risk = LinuxTools.commandRisk(app, args.optString("command").orEmpty(), args.optString("env"))
+
+    override fun approvalRequest(args: JsonObject): ApprovalRequest =
+        LinuxTools.commandApproval(app, args.optString("command").orEmpty(), args.optString("env"))
+
     override val spec = ToolSpec(
         name = "terminal_job_start",
         description = "Start a command in the background; it keeps running after your reply ends and the user is notified " +
