@@ -384,7 +384,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
                 StoredMessage.notice(opening.marker, now),
                 StoredMessage(ChatMessage.assistant(opening.text), createdAt = now + 1),
             ),
-            titleSource = TitleSource.User,
+            // Named after the character until the first exchange, then titled like any chat (when auto titles are on).
+            titleSource = TitleSource.Placeholder,
         )
         graph.conversations.save(c)
         return c

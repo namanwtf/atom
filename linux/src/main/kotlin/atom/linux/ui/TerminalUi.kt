@@ -122,7 +122,8 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
     var selectedConsole by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSimple by rememberSaveable { mutableStateOf<String?>(null) }
     var fontSize by rememberSaveable { mutableFloatStateOf(TerminalText.clamp(linux.config.value.terminalFontSp)) }
-    var rootAvailable by remember { mutableStateOf<Boolean?>(null) }
+    // Live from the shared root status: a grant made anywhere enables the root terminal here at once.
+    val rootAvailable by linux.rootAvailable.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf<String?>(null) }
     var grid by remember { mutableStateOf(80 to 24) }
     var showSessions by remember { mutableStateOf(false) }
@@ -138,7 +139,7 @@ fun TerminalScreen(onBack: () -> Unit, openRoute: (String) -> Unit = {}) {
     }
 
     LaunchedEffect(Unit) {
-        rootAvailable = linux.probeRoot().root
+        linux.probeRoot()
         if (linux.state.value is LinuxState.Ready) linux.refresh()
     }
 

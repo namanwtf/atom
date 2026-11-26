@@ -33,16 +33,24 @@ internal class ErrorMapper(private val providerName: String, private val secret:
     fun stream(detail: String, retryable: Boolean): LlmException =
         LlmException(scrub("$providerName: $detail"), retryable)
 
+    /**
+     * Maps an event-source failure. Runs on OkHttp's thread, so it must never throw: once a stream has opened,
+     * OkHttp passes the response with its body replaced by one that throws IllegalStateException on read, and
+     * that is exactly what Stop (or a dropped connection) produces mid-answer.
+     */
     fun failure(t: Throwable?, response: Response?): LlmException {
         if (response != null) {
             val body = try {
                 response.body.string()
-            } catch (e: IOException) {
-                ""
+            } catch (e: Exception) {
+                null
             }
-            if (!response.isSuccessful) return http(response.code, body)
-            val detail = errorMessage(body) ?: "unexpected response type ${response.header("Content-Type")}"
-            return LlmException(scrub("$providerName: $detail"), retryable = false, statusCode = response.code)
+            if (!response.isSuccessful) return http(response.code, body.orEmpty())
+            // A readable body on a 2xx means the server answered something other than a stream.
+            if (body != null && t !is IOException) {
+                val detail = errorMessage(body) ?: "unexpected response type ${response.header("Content-Type")}"
+                return LlmException(scrub("$providerName: $detail"), retryable = false, statusCode = response.code)
+            }
         }
         return when (t) {
             is LlmException -> t

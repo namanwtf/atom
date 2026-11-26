@@ -74,6 +74,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -798,8 +800,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
                 stats = stats.withTurn()
                 Agent(engine.engine, registry, config).run(history.messages, toolContext, control).collect { handle(it) }
-                if (outcome == null) outcome = RunOutcome.Completed
-                finish()
+                settle(RunOutcome.Completed)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
                     outcome = RunOutcome.Cancelled
@@ -809,11 +810,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             } catch (e: RouteException) {
                 outcome = RunOutcome.Failed
                 error = e.message
-                finish()
+                settle(RunOutcome.Failed)
             } catch (e: Exception) {
                 outcome = RunOutcome.Failed
                 error = e.message ?: e::class.simpleName
-                finish()
+                settle(RunOutcome.Failed)
             } finally {
                 subagentWatch?.cancel()
                 if (character != null) CharacterSession.endRun(id)
@@ -1100,6 +1101,24 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
             }
             return approved
+        }
+
+        /**
+         * Ends the run after the agent returned or failed. Stop can surface as an ordinary failure (a stream or tool
+         * that reports its cancelled call as an error) or arrive just after the agent finished: then the run counts
+         * as stopped, and saving runs to the end anyway, so the partial history is kept.
+         */
+        private suspend fun settle(fallback: RunOutcome) {
+            val stopped = !currentCoroutineContext().isActive
+            withContext(NonCancellable) {
+                if (stopped) {
+                    outcome = RunOutcome.Cancelled
+                    error = null
+                } else if (outcome == null) {
+                    outcome = fallback
+                }
+                finish()
+            }
         }
 
         private suspend fun finish() {

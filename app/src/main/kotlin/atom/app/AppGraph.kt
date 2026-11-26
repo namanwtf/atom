@@ -20,6 +20,7 @@ import atom.app.service.TaskNotifications
 import atom.device.ShellExecutor
 import atom.device.ShellTier
 import atom.device.Shells
+import atom.device.root.RootMonitor
 import atom.device.power.PowerGovernor
 import atom.models.ModelStore
 import java.io.File
@@ -109,27 +110,19 @@ class AppGraph(private val app: Application) {
     @Volatile
     var uiVisible: Boolean = false
 
-    private val shellMutex = Mutex()
-    private var shell: ShellExecutor? = null
-    private val _shellTier = MutableStateFlow<ShellTier?>(null)
+    /**
+     * The shell tier, shared with the device module ([Shells.tier]): it follows the live root status, so a grant
+     * shows everywhere at once. Null until the first detection has run.
+     */
+    val shellTier: StateFlow<ShellTier?> = Shells.tier
 
-    /** Null until the first detection has run. */
-    val shellTier: StateFlow<ShellTier?> = _shellTier.asStateFlow()
+    /** The shell for a run. [Shells] keeps one executor per tier, so this is cheap after the first call. */
+    suspend fun shell(): ShellExecutor = Shells.detect(app)
 
-    /** Detected lazily on first use (root and Shizuku probing is not free). */
-    suspend fun shell(): ShellExecutor = shellMutex.withLock {
-        shell ?: Shells.detect(app).also {
-            shell = it
-            _shellTier.value = it.tier
-        }
-    }
-
-    /** Re-probes after the user grants root or Shizuku. */
-    suspend fun redetectShell(): ShellTier = shellMutex.withLock {
-        Shells.detect(app).also {
-            shell = it
-            _shellTier.value = it.tier
-        }.tier
+    /** Setup's Check again: asks for root again (the user's own tap), then re-picks the tier. */
+    suspend fun redetectShell(): ShellTier {
+        RootMonitor.checkAgain(app)
+        return Shells.detect(app, probeRoot = false).tier
     }
 }
 

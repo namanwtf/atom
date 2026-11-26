@@ -94,6 +94,7 @@ import atom.core.settings.SettingsTree
 import atom.device.Accessibility
 import atom.device.ShellTier
 import atom.device.root.RootAccess
+import atom.device.root.RootStatus
 import atom.general.GeneralConfig
 import atom.general.language.AppLanguage
 import atom.general.update.UpdateChecker
@@ -214,6 +215,7 @@ fun SettingsScreen(vm: SettingsViewModel, nav: SettingsNav, features: List<Featu
     val settings by vm.settings.collectAsStateWithLifecycle()
     val s = settings ?: AppSettings()
     val frameworkSeen = rememberFrameworkSeen()
+    val root by RootAccess.status.collectAsStateWithLifecycle()
     val links = remember { ProjectLinks.current() }
     val byRoute = remember(features) { features.associateBy { it.route } }
     val groups = SettingsTree.place(features.map { it.route to it.section.name }) { key ->
@@ -221,7 +223,7 @@ fun SettingsScreen(vm: SettingsViewModel, nav: SettingsNav, features: List<Featu
             SettingsRows.HARDWARE -> s.selection is EngineSelection.Local
             SettingsRows.FEEDBACK -> links.feedback != null
             SettingsRows.SOURCE_CODE -> links.source != null
-            SettingsRows.AUTO_ASSISTANT -> frameworkSeen || RootAccess.granted
+            SettingsRows.AUTO_ASSISTANT -> frameworkSeen || root == RootStatus.Granted
             in SettingsRows.NEEDS_FRAMEWORK -> frameworkSeen
             else -> true
         }

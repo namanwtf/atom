@@ -21,9 +21,10 @@ data class CharacterPrompt(
 }
 
 object Macros {
-    private val CHAR = Regex("""\{\{\s*char\s*}}|<BOT>""", RegexOption.IGNORE_CASE)
-    private val USER = Regex("""\{\{\s*user\s*}}|<USER>""", RegexOption.IGNORE_CASE)
-    private val ORIGINAL = Regex("""\{\{\s*original\s*}}""", RegexOption.IGNORE_CASE)
+    // Every brace escaped: Android's ICU regex rejects a bare "}" that the JVM accepts (the detail screen crashed on it).
+    internal val CHAR = Regex("""\{\{\s*char\s*\}\}|<BOT>""", RegexOption.IGNORE_CASE)
+    internal val USER = Regex("""\{\{\s*user\s*\}\}|<USER>""", RegexOption.IGNORE_CASE)
+    internal val ORIGINAL = Regex("""\{\{\s*original\s*\}\}""", RegexOption.IGNORE_CASE)
 
     fun apply(text: String, charName: String, userName: String): String =
         text.replace(CHAR) { charName }.replace(USER) { userName }.replace(ORIGINAL) { "" }

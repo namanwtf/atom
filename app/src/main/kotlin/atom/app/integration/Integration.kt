@@ -8,6 +8,8 @@ import atom.automation.Automations
 import atom.context.notifications.AtomNotificationListener
 import atom.device.Accessibility
 import atom.device.root.RootAccess
+import atom.device.root.RootMonitor
+import atom.device.root.RootStatus
 import atom.device.screen.DisplayUi
 import atom.extend.Extend
 import atom.general.GeneralHooks
@@ -21,7 +23,10 @@ import atom.voice.speech.Speech
 import atom.web.Web
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -74,6 +79,17 @@ internal object Integration {
             override fun onAppOpened(packageName: String) = Automations.appOpenEvents.onAppOpened(packageName)
         }
         Automations.onListenersChanged = { Accessibility.refreshEventMask() }
+
+        // Linux: Root mode and the root terminal follow the app's one root status instead of a su check of their own.
+        atom.linux.LinuxEnv.rootLink = object : atom.linux.RootLink {
+            override val granted: StateFlow<Boolean> = RootAccess.status
+                .map { it == RootStatus.Granted }
+                .stateIn(graph.appScope, SharingStarted.Eagerly, RootAccess.granted)
+
+            override suspend fun ensure(): Boolean = RootAccess.ensure(app)
+
+            override suspend fun authorize(): Boolean = RootMonitor.checkAgain(app) == RootStatus.Granted
+        }
 
         // Web: provider keys, own secrets, root / Linux file access, run -> conversation, image -> composer.
         Web.install(AppWebHost(app, graph, graph.vault))

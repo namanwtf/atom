@@ -30,6 +30,8 @@ class AtomApp : Application() {
         // so each feature's onAppCreate already sees the app's adapters.
         Integration.install(this)
         Features.all.forEach { runCatching { it.onAppCreate(this) } }
+        // After the characters feature installed its store: renamed characters rename their chats.
+        atom.app.integration.CharacterChatTitles.start(graph)
         // Once, after the update that brought per-tool switches: build the tools (that records each one's real
         // gate), then turn any old master switch that was off into per-tool switches. Nothing runs afterwards.
         atom.device.switches.ToolSwitches.init(this)

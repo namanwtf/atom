@@ -46,6 +46,8 @@ internal fun sseEvents(client: OkHttpClient, request: Request, errors: ErrorMapp
         }
 
         override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+            // Runs on OkHttp's thread, also after Stop cancelled the call: it must never throw (ErrorMapper.failure
+            // makes sure), or the exception escapes there and takes the whole app down.
             channel.close(errors.failure(t, response))
         }
     }
