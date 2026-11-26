@@ -31,6 +31,7 @@ import atom.core.tool.schema
 import atom.core.tool.string
 import atom.device.ShellTier
 import atom.device.Shells
+import atom.ui.permission.PermissionAsks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -68,6 +69,7 @@ internal class PersonalTools(context: Context) {
         parameters = schema {
             boolean("fresh", "Request a new fix when the last one is stale (uses GPS briefly). Default false.")
             boolean("address", "Look up the street address (needs internet). Default true.")
+            boolean("location", "Include the location. Default true; pass false when only the time is needed, so Atom does not ask for location access.")
         },
     ) { args, _ ->
         val now = ZonedDateTime.now()
@@ -75,14 +77,16 @@ internal class PersonalTools(context: Context) {
             "time: " + now.format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm", Locale.US)) +
                 " (${now.zone.id}, UTC${now.offset.id.replace("Z", "+00:00")})",
         )
-        lines += location(args.optBoolean("fresh") == true, args.optBoolean("address") != false)
+        if (args.optBoolean("location") != false) lines += location(args.optBoolean("fresh") == true, args.optBoolean("address") != false)
         ToolResult.sensitive(lines.joinToString("\n"))
     }
 
     private suspend fun location(fresh: Boolean, address: Boolean): String {
         val fine = app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == 0
         val coarse = app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == 0
-        if (!fine && !coarse) return "location: Atom has no location permission (grant it on the Permissions page)."
+        if (!fine && !coarse) {
+            return "location: " + PermissionAsks.toolMessage(app, JitAsks.forPermission(app, Manifest.permission.ACCESS_FINE_LOCATION), "The location")
+        }
         val lm = app.getSystemService(LocationManager::class.java) ?: return "location: unavailable."
         if (!lm.isLocationEnabled) return "location: location is switched off on the phone."
         val background = app.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == 0
@@ -409,20 +413,15 @@ internal class PersonalTools(context: Context) {
     }
 
     private fun searchMedia(kind: String, q: String?, days: Int?, offset: Int, limit: Int): ToolResult {
-        val visual = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
-        val video = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
-        val audio = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+        // One grant covers every kind: All files access. Without it Android shows only files Atom created itself,
+        // so the search still runs and says what is missing (the user is asked once, in context).
         val allFiles = Environment.isExternalStorageManager()
-        val (uri, perm) = when (kind) {
-            "photos", "screenshots" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to visual
-            "videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to video
-            "audio", "recordings" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to audio
-            "downloads" -> MediaStore.Downloads.EXTERNAL_CONTENT_URI to null
-            else -> MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL) to null
-        }
-        if (perm != null && !allFiles) {
-            val partial = Build.VERSION.SDK_INT >= 34 && app.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == 0
-            if (app.checkSelfPermission(perm) != 0 && !partial) app.requirePermission(perm, what = "Searching $kind")
+        val uri = when (kind) {
+            "photos", "screenshots" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            "videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            "audio", "recordings" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            "downloads" -> MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            else -> MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
         }
         val where = mutableListOf<String>()
         val wa = mutableListOf<String>()
@@ -455,10 +454,10 @@ internal class PersonalTools(context: Context) {
             runCatching { cr.query(uri, projection, where.joinToString(" AND ").ifEmpty { null }, wa.toTypedArray(), "${MediaStore.MediaColumns.DATE_MODIFIED} DESC") }.getOrNull(),
             offset, limit,
         ) { c -> mediaLine(c, kind) }
-        val note = when {
-            (kind == "documents" || kind == "downloads" || kind == "any") && !allFiles ->
-                "\n(Without All files access Android only shows media and files Atom created; grant it on the Permissions page to search every document and download.)"
-            else -> ""
+        val note = if (allFiles) {
+            ""
+        } else {
+            "\n(Only files Atom created are visible. " + PermissionAsks.toolMessage(app, JitAsks.allFiles(app), "Searching all $kind") + ")"
         }
         return ToolResult.sensitive(slice.render(kind) { it } + note)
     }
@@ -495,7 +494,7 @@ internal class PersonalTools(context: Context) {
         },
     ) { args, _ ->
         guarded {
-            if (!Usage.granted(app)) throw Missing("App usage needs usage access. Ask the user to grant it on Atom's Permissions page.")
+            if (!Usage.granted(app)) throw Missing(PermissionAsks.toolMessage(app, JitAsks.usageAccess(app), "App usage"))
             val hours = (args.optInt("hours") ?: 24).coerceIn(1, 168)
             val top = (args.optInt("top") ?: 15).coerceIn(1, 50)
             val usm = app.getSystemService(UsageStatsManager::class.java) ?: throw Missing("Usage stats unavailable.")

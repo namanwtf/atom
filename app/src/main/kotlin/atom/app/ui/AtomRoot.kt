@@ -1,10 +1,6 @@
 package atom.app.ui
 
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -49,6 +45,7 @@ import atom.app.ui.setup.SetupScreen
 import atom.app.integration.NavRequests
 import atom.characters.ui.CharacterRoutes
 import atom.device.feature.DeviceFeature
+import atom.device.ui.PermissionAskHost
 import atom.linux.ui.LinuxFeature
 import atom.ui.feature.FeatureNav
 import atom.ui.theme.LocalAppearance
@@ -86,17 +83,10 @@ fun AtomRoot(settings: AppSettings) {
     var stack by rememberSaveable { mutableStateOf(listOf(Routes.CHAT)) }
     // The four items the old sidebar badge watched: background running, floating window, accessibility, notifications.
     var permissionsNeedAttention by remember { mutableStateOf(false) }
-    val notificationPrompt = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        permissionsNeedAttention = PermissionAttention.needed(context)
-    }
+    // Nothing is asked at first launch: notifications are asked the first time a task keeps running in the
+    // background, and every other permission when a feature first needs it (PermissionAskHost below).
     LaunchedEffect(settings.onboarded) {
-        if (settings.onboarded) return@LaunchedEffect
-        // First launch only: ask once for notifications (running-task controls and results), then never again here.
-        val permission = "android.permission.POST_NOTIFICATIONS"
-        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-            runCatching { notificationPrompt.launch(permission) }
-        }
-        graph.settings.setOnboarded()
+        if (!settings.onboarded) graph.settings.setOnboarded()
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         permissionsNeedAttention = PermissionAttention.needed(context)
@@ -234,5 +224,6 @@ fun AtomRoot(settings: AppSettings) {
             }
             }
         }
+        PermissionAskHost()
     }
 }

@@ -138,8 +138,9 @@ internal fun <T> PickerRow(title: String, options: List<T>, selected: T, label: 
 }
 
 @Composable
-internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    atom.ui.components.AtomDialog(show = true, onDismiss = onDismiss, title = title, summary = text) {
+internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit, show: Boolean = true) {
+    // Keep this composed and drive [show], so the card animates out instead of vanishing.
+    atom.ui.components.AtomDialog(show = show, onDismiss = onDismiss, title = title, summary = text) {
         DangerButtons(
             confirm,
             onConfirm = {
@@ -211,6 +212,9 @@ internal object WebIcons {
     }
     val Stop: ImageVector by lazy { icon("Stop", "M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z") }
     val Save: ImageVector by lazy { icon("Save", "M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z") }
+    val DeleteSweep: ImageVector by lazy {
+        icon("DeleteSweep", "M15,16h4v2h-4zM15,8h7v2h-7zM15,12h6v2h-6zM3,18c0,1.1 0.9,2 2,2h6c1.1,0 2,-0.9 2,-2L13,8L3,8v10zM14,5h-3l-1,-1L6,4L5,5L2,5v2h12z")
+    }
 
     private fun icon(name: String, path: String): ImageVector =
         ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)

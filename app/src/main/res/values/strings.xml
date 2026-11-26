@@ -170,7 +170,7 @@
     <string name="setup_open_accessibility">Open Accessibility settings</string>
     <string name="setup_notifications_title">Notifications</string>
     <string name="setup_notifications_text">Shows progress with a Stop button, and asks for approval while Atom works in other apps.</string>
-    <string name="setup_allow_notifications">Allow notifications</string>
+    <string name="setup_notifications_later">Nothing to do now: Atom asks once, the first time a task keeps running in the background.</string>
     <string name="setup_shell_title">Shell access</string>
     <string name="setup_battery_title">Battery</string>
     <string name="setup_battery_1">Atom does nothing in the background. It runs only while a task you started is in progress, and the notification disappears when it ends.</string>
@@ -198,7 +198,7 @@
     <string name="voice_screen_off_text">Keeps the microphone open on battery. Costs noticeably more.</string>
     <string name="status_off">Off</string>
     <string name="status_allowed">Allowed</string>
-    <string name="status_not_allowed">Not allowed</string>
+    <string name="status_when_needed">When needed</string>
     <string name="shell_detecting">Checking…</string>
     <string name="shell_root">Root available</string>
     <string name="shell_shizuku">Shizuku connected</string>

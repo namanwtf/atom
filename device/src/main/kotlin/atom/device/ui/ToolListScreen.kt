@@ -39,7 +39,7 @@ import atom.device.feature.DeviceFeature
 import atom.device.switches.ToolGates
 import atom.device.switches.ToolSwitches
 import atom.ui.components.ArrowRow
-import atom.ui.components.AtomDialog
+import atom.ui.components.AtomDialogFor
 import atom.ui.components.AtomSwitch
 import atom.ui.components.AtomTextButton
 import atom.ui.components.CompactButton
@@ -167,32 +167,29 @@ fun ToolListScreen(nav: FeatureNav) {
         }
     }
 
-    val open = info
-    AtomDialog(show = open != null, onDismiss = { info = null }, title = open?.title) {
-        if (open != null) {
+    AtomDialogFor(info, onDismiss = { info = null }, title = { it.title }) { open ->
+        Text(
+            open.group.description,
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        requirement(open.group.needs, met = true)?.let {
             Text(
-                open.group.description,
-                style = MiuixTheme.textStyles.body2,
+                it,
+                style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 8.dp),
             )
-            requirement(open.group.needs, met = true)?.let {
-                Text(
-                    it,
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+        }
+        val link = actionLink(open)
+        Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (link != null) {
+                AtomTextButton(link.first, onClick = {
+                    info = null
+                    nav.open(link.second)
+                }, modifier = Modifier.weight(1f))
             }
-            val link = actionLink(open)
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (link != null) {
-                    AtomTextButton(link.first, onClick = {
-                        info = null
-                        nav.open(link.second)
-                    }, modifier = Modifier.weight(1f))
-                }
-                AtomTextButton("Got it", onClick = { info = null }, modifier = Modifier.weight(1f), primary = true)
-            }
+            AtomTextButton("Got it", onClick = { info = null }, modifier = Modifier.weight(1f), primary = true)
         }
     }
 }
