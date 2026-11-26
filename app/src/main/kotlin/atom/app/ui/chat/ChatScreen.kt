@@ -97,7 +97,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -134,6 +133,12 @@ import atom.characters.model.Character
 import atom.characters.ui.CharacterAvatar
 import atom.device.Accessibility
 import atom.ui.components.AtomMenu
+import atom.ui.components.GlassEdge
+import atom.ui.components.glassBand
+import atom.ui.components.glassPane
+import atom.ui.components.glassSource
+import atom.ui.components.rememberGlassChrome
+import atom.ui.components.rememberGlassState
 import atom.ui.theme.AtomIcons
 import atom.ui.theme.extras
 import atom.voice.speech.Speech
@@ -508,6 +513,9 @@ internal class PushDrawerState {
 
     val progress: Float get() = if (width <= 0f) 0f else (offset / width).coerceIn(0f, 1f)
 
+    /** Fully open and not moving. */
+    val settledOpen: Boolean get() = target && width > 0f && offset >= width - 0.5f
+
     /** Settles with a critically damped spring, as the old pane did. */
     suspend fun animateTo(open: Boolean, velocity: Float = 0f) {
         target = open
@@ -536,6 +544,9 @@ internal class PushDrawerState {
     }
 }
 
+/** Share of the pane width the chat moves by when the pane is glass (the rest of the pane overlaps the chat). */
+private const val GLASS_PUSH = 0.3f
+
 @Composable
 private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, content: @Composable () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -544,6 +555,12 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
     val dir = if (rtl) -1f else 1f
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
+    // With blur on, the pane is frosted glass over the chat: the chat moves only part of the way and shows through,
+    // blurred. Without blur the pane is solid and pushes the chat all the way, as before. The blur itself is drawn
+    // only once the pane has settled open: while it slides the pane is solid, so nothing re-blurs every frame.
+    val glass = rememberGlassChrome().blur
+    val chatGlass = rememberGlassState()
+    val push = if (glass) GLASS_PUSH else 1f
     BackHandler(enabled = state.target) { scope.launch { state.animateTo(false) } }
     LaunchedEffect(state.target) {
         if (state.target) {
@@ -571,8 +588,8 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
             }
         }
         // Chat page, pushed right by the pane.
-        Box(Modifier.fillMaxSize().offset { IntOffset(state.offset.roundToInt(), 0) }) {
-            content()
+        Box(Modifier.fillMaxSize().offset { IntOffset((state.offset * push).roundToInt(), 0) }) {
+            Box(Modifier.fillMaxSize().then(if (glass) Modifier.glassSource(chatGlass) else Modifier)) { content() }
             val progress = state.progress
             if (progress > 0f) {
                 val closeLabel = stringResource(R.string.home_close_drawer)
@@ -601,7 +618,7 @@ private fun PushDrawer(state: PushDrawerState, pane: @Composable () -> Unit, con
                     .width(paneWidth)
                     .fillMaxHeight()
                     .offset { IntOffset((state.offset - widthPx).roundToInt(), 0) }
-                    .background(paneColor())
+                    .glassPane(chatGlass, paneColor(), glass && state.settledOpen)
                     .edgeLine(),
             ) { pane() }
         }
@@ -649,6 +666,9 @@ private fun ChatPane(
     var topPx by remember { mutableIntStateOf(0) }
     var bottomPx by remember { mutableIntStateOf(0) }
     val bars = with(density) { PaddingValues(top = topPx.toDp(), bottom = bottomPx.toDp()) }
+    // The transcript is the glass source; the bands blur it only while it actually sits under them.
+    val glass = rememberGlassState()
+    val cover = remember { BarCover() }
     Box(Modifier.fillMaxSize().background(bg)) {
         when {
             state.loadFailed -> LoadFailed(bars, onRetry = vm::retryLoad)
@@ -662,6 +682,8 @@ private fun ChatPane(
             else -> TranscriptList(
                 state = state,
                 bars = bars,
+                glass = glass,
+                cover = cover,
                 actions = actions,
                 restore = restore,
                 onRestored = vm::consumeRestore,
@@ -670,6 +692,16 @@ private fun ChatPane(
                 onResume = vm::resume,
             )
         }
+        // Frosted band behind the top bar: status bar + the 60dp bar + a fading tail under the buttons. It takes no
+        // input, so taps in the tail still reach the transcript.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .glassBand(glass, GlassEdge.Top, covered = cover.top, fade = TOP_BAND_FADE)
+                .statusBarsPadding()
+                .height(TOP_BAR_HEIGHT + TOP_BAND_TAIL),
+        )
         ChatTopBar(
             modifier = Modifier.align(Alignment.TopCenter).onSizeChanged { topPx = it.height },
             state = state,
@@ -692,14 +724,7 @@ private fun ChatPane(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .onSizeChanged { bottomPx = it.height }
-                .background(
-                    Brush.verticalGradient(
-                        0f to bg.copy(alpha = 0f),
-                        0.26f to bg.copy(alpha = 0.86f),
-                        0.55f to bg.copy(alpha = 0.98f),
-                        1f to bg,
-                    ),
-                )
+                .glassBand(glass, GlassEdge.Bottom, covered = cover.bottom, fade = BOTTOM_BAND_FADE)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 10.dp),
@@ -726,6 +751,20 @@ private fun LoadFailed(bars: PaddingValues, onRetry: () -> Unit) {
 
 // ---------------------------------------------------------------- Top bar
 
+private val TOP_BAR_HEIGHT = 60.dp
+
+/** How far the top band reaches below the bar, so it can fade out under the buttons instead of ending at them. */
+private val TOP_BAND_TAIL = 16.dp
+
+/** The top band fades from below the 44dp buttons (8dp above the bar's end) through the tail. */
+private val TOP_BAND_FADE = TOP_BAND_TAIL + 8.dp
+
+/**
+ * The bottom band fades in over the composer area's 14dp top padding and on beside the (opaque) composer, so text
+ * in the side gutters melts away too.
+ */
+private val BOTTOM_BAND_FADE = 30.dp
+
 @Composable
 private fun ChatTopBar(
     modifier: Modifier,
@@ -744,16 +783,14 @@ private fun ChatTopBar(
     onStats: () -> Unit,
     onExport: () -> Unit,
 ) {
-    val bg = MaterialTheme.colorScheme.background
     var menu by remember { mutableStateOf(false) }
     val capsuleEnabled = !state.running && state.hasProviders
+    // The frosted band behind this bar is drawn by ChatPane (glassBand), so the bar itself stays transparent.
     Box(
         modifier
             .fillMaxWidth()
-            // A band of the page colour so the transcript fades out under the buttons.
-            .background(Brush.verticalGradient(0f to bg, 0.7f to bg.copy(alpha = 0.94f), 1f to bg.copy(alpha = 0f)))
             .statusBarsPadding()
-            .height(60.dp)
+            .height(TOP_BAR_HEIGHT)
             .padding(horizontal = 12.dp)
             // Taps on empty bar space do not fall through to the transcript.
             .pointerInput(Unit) { detectTapGestures { } },
