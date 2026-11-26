@@ -26,9 +26,9 @@ env:
   # on the CPU, and its chat template has native tool calling (llama-server --jinja parses it). Qwen2.5 3B was tried
   # first and was faster but called tools almost at random. Pinned repo, revision, file and checksum.
   MODEL_REPO: unsloth/Qwen3-4B-Instruct-2507-GGUF
-  MODEL_REVISION: main
+  MODEL_REVISION: a06e946bb6b655725eafa393f4a9745d460374c9
   MODEL_FILE: Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-  MODEL_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+  MODEL_SHA256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
   MODEL_ALIAS: qwen3-4b-instruct-2507
   # Room for Atom's first request (system prompt plus every tool's schema) and a few steps of history.
   CTX_SIZE: "32768"
