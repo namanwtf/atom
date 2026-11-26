@@ -123,9 +123,20 @@ internal class TfliteWakeModels private constructor(
             return LoadResult.Failed(reason)
         }
 
+        /**
+         * Opens a model with the XNNPack delegate when the phone's runtime can prepare it, else with the plain CPU
+         * kernels. On some phones XNNPack fails to prepare a node of these small models ("failed to reshape");
+         * the plain kernels are fast enough for 80 ms audio frames.
+         */
         private fun open(context: Context, name: String): Interpreter {
-            val options = Interpreter.Options().setNumThreads(1).setUseXNNPACK(true)
-            return Interpreter(map(context, "${Wake.ASSET_DIR}/$name"), options)
+            val path = "${Wake.ASSET_DIR}/$name"
+            return try {
+                Interpreter(map(context, path), Interpreter.Options().setNumThreads(1).setUseXNNPACK(true))
+                    .also { it.allocateTensors() }
+            } catch (e: Exception) {
+                Interpreter(map(context, path), Interpreter.Options().setNumThreads(1).setUseXNNPACK(false))
+                    .also { it.allocateTensors() }
+            }
         }
 
         private fun map(context: Context, path: String): MappedByteBuffer =

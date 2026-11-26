@@ -42,6 +42,9 @@ androidComponents {
 }
 
 android {
+    // Same NDK as the native modules: without it the release build cannot strip debug symbols from the
+    // bundled native libraries and ships them unstripped (tens of MB).
+    ndkVersion = "30.0.16248370"
     namespace = "atom.app"
     compileSdk {
         version = release(37) { minorApiLevel = 2 }
@@ -84,6 +87,8 @@ android {
     packaging {
         // proot must exist as a real file in nativeLibraryDir to be executable (Android forbids exec from app data).
         jniLibs { useLegacyPackaging = true }
+        // Compressed dex: a much smaller download for a negligible first-start cost.
+        dex { useLegacyPackaging = true }
     }
 }
 
