@@ -94,6 +94,26 @@ class ToolCallWireTest {
             // The real call keeps its tool-call turn and its result.
             assertEquals(listOf("call_0123456789abcdefghijklmn"), callIds(messages), provider)
             assertEquals(listOf("call_0123456789abcdefghijklmn"), resultIds(messages), provider)
+            // The note joins the user's turn, so roles alternate: never two user turns in a row.
+            val roles = messages.map { it.str("role") }
+            assertTrue(roles.zipWithNext().none { (a, b) -> a == "user" && b == "user" }, "$provider: $roles")
+            val first = messages.first { it.str("role") == "user" }.str("content")!!
+            assertTrue(first.startsWith("turn the volume down") && first.contains("[Tools loaded for this task]"), first)
+            assertTrue(messages.none { "_atom_note" in it }, "the internal mark never goes out")
         }
+    }
+
+    @Test
+    fun aNoteAfterAnImageTurnJoinsItsParts() {
+        val preload = ToolCall(ToolCallIds.fresh(), ToolLoadout.LOADER, "{}")
+        val history = listOf(
+            ChatMessage(atom.core.llm.Role.User, listOf(ContentPart.Text("what is this?"), ContentPart.Image("image/png", "AAAA"))),
+            ChatMessage.assistant("", listOf(preload)),
+            ChatMessage.toolResult(preload, listOf(ContentPart.Text("Loaded for this task:\n- vision"))),
+        )
+        val messages = sent("deepseek", history)
+        assertEquals(listOf("user"), messages.map { it.str("role") })
+        val parts = messages.single()["content"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(parts.last().str("text")!!.contains("[Tools loaded for this task]"))
     }
 }

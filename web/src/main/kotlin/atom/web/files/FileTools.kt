@@ -137,6 +137,11 @@ internal object FileTools {
             if (existing?.isDir == true) return ToolResult.error("$path is a directory.")
             if (mode == "create" && existing != null) return ToolResult.error("$path already exists. Use mode=overwrite or append.")
             val guard = s.guarded(fs, path)
+                ?: if (mode == "append" && existing != null && fs is LocalFs && runCatching { File(path).canExecute() }.getOrDefault(true)) {
+                    "it adds to a program file, which then runs what it adds"
+                } else {
+                    null
+                }
             val needsOk = guard != null || fs.label == "root" || (mode == "overwrite" && existing != null && fs is LocalFs && !s.isAppPrivate(path))
             val action = if (existing != null && mode != "append") "Overwrite" else "Write"
             val ask = "$action $path${if (fs.label == "root") " as root" else if (fs.label == "linux") " in Linux" else ""}" +

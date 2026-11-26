@@ -18,6 +18,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -102,7 +105,7 @@ internal class OpenAiChatEngine(
         if (temperature != null && !reasoningModel) put("temperature", temperature)
     }
 
-    private fun messages(history: List<ChatMessage>): JsonArray = buildJsonArray {
+    private fun messages(history: List<ChatMessage>): JsonArray = mergeNotes(buildJsonArray {
         val pendingImages = mutableListOf<ContentPart.Image>()
         val replay = ChatReasoning.interleaved(family)
         fun flushImages() {
@@ -141,6 +144,7 @@ internal class OpenAiChatEngine(
                 addJsonObject {
                     put("role", "user")
                     put("content", "[Tools loaded for this task]\n" + message.text)
+                    put(NOTE_MARK, true)
                 }
                 continue
             }
@@ -186,7 +190,7 @@ internal class OpenAiChatEngine(
             }
         }
         flushImages()
-    }
+    })
 
     private fun JsonObjectBuilder.putUserContent(parts: List<ContentPart>) {
         if (parts.all { it is ContentPart.Text }) {
@@ -326,3 +330,34 @@ internal fun visionLikely(provider: Provider, model: String): Boolean {
 }
 
 private val VISION_HINT = Regex("vl|vision|omni|4o|gpt-4\\.1|gpt-[5-9]|grok-4|pixtral|mistral-(medium|small)|llava|gemma-?3|kimi-k(2\\.[6-9]|3)|minimax-m3|qwen3\\.[5-9]|mimo|deepseek-(flash|v4\\.1)|step-[3-9]")
+
+/** Marks a preload note while the messages are built; [mergeNotes] removes it. */
+private const val NOTE_MARK = "_atom_note"
+
+/**
+ * Roles must alternate: a preload note that follows a user turn is appended to that turn's content instead of
+ * going out as a second user turn. Notes elsewhere stay their own user turn.
+ */
+internal fun mergeNotes(messages: JsonArray): JsonArray {
+    val out = ArrayList<JsonObject>(messages.size)
+    for (element in messages) {
+        val m = element.jsonObject
+        if (NOTE_MARK !in m) {
+            out += m
+            continue
+        }
+        val note = m["content"]!!.jsonPrimitive.content
+        val previous = out.lastOrNull()
+        if (previous == null || previous["role"]?.jsonPrimitive?.content != "user") {
+            out += JsonObject(m - NOTE_MARK)
+            continue
+        }
+        val merged = when (val content = previous["content"]) {
+            is JsonArray -> JsonArray(content + buildJsonObject { put("type", "text"); put("text", note) })
+            null, JsonNull -> JsonPrimitive(note)
+            else -> JsonPrimitive(content.jsonPrimitive.content + "\n\n" + note)
+        }
+        out[out.lastIndex] = JsonObject(previous + ("content" to merged))
+    }
+    return JsonArray(out)
+}

@@ -679,7 +679,8 @@ internal class LoopGuard(
             } else {
                 waitStreak = 0
             }
-            return nudgeFor(calls)?.let { Verdict(nudge = it) } ?: Verdict()
+            // Repeating the same wait is the point of waiting: no "stop repeating it" nudge. The bound above still applies.
+            return Verdict()
         }
         waitStreak = 0
         staleStreak = if (stale) staleStreak + 1 else 0

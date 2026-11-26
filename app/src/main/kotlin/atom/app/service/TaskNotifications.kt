@@ -215,9 +215,10 @@ class TaskNotifications(private val context: Context) {
         // multi-line command (an innocent first line, blank lines, then something else) or one that could grant the
         // whole task is answered in the app's dialog, where all of it is visible: tapping opens it.
         val answerInApp = ApprovalText.needsFullView(pending.action, pending.taskGrantable)
+        // Collapsed and heads-up, only the title and one line show: the command itself goes in the title.
         val notification = base(CH_APPROVAL)
-            .setContentTitle(context.getString(R.string.confirm_title))
-            .setContentText(pending.action)
+            .setContentTitle(ApprovalText.headline(pending.action))
+            .setContentText(context.getString(R.string.confirm_title))
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.action))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -351,6 +352,28 @@ internal object ApprovalText {
     const val MAX_LINES = 3
     const val MAX_CHARS = 200
 
+    /** Line breaks as a notification renders them, the Unicode line and paragraph separators and NEL included. */
+    private val BREAKS = Regex("\r\n|[\n\r\u0085\u2028\u2029]")
+
     fun needsFullView(action: String, taskGrantable: Boolean): Boolean =
-        taskGrantable || action.length > MAX_CHARS || action.lines().size > MAX_LINES
+        taskGrantable || action.length > MAX_CHARS || lineCount(action) > MAX_LINES
+
+    fun lineCount(action: String): Int = action.split(BREAKS).size
+
+    /**
+     * The one line a collapsed or heads-up notification shows: the command itself first, then where it runs
+     * ("ls -la /data — Run in a root shell"), cut with an ellipsis past [max] characters.
+     */
+    fun headline(action: String, max: Int = HEADLINE_CHARS): String {
+        val lines = action.split(BREAKS).map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return ""
+        val text = if (lines.size > 1 && lines[0].endsWith(":")) {
+            lines.drop(1).joinToString(" ") + " — " + lines[0].removeSuffix(":")
+        } else {
+            lines.joinToString(" ")
+        }
+        return if (text.length > max) text.take(max - 1).trimEnd() + "…" else text
+    }
+
+    const val HEADLINE_CHARS = 120
 }
