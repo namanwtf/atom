@@ -29,10 +29,11 @@ jobs:
           mkdir aar && cd aar
           curl -fsSL -o l.aar "https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/litertlm-android/$LITERTLM_VERSION/litertlm-android-$LITERTLM_VERSION.aar"
           unzip -q l.aar classes.jar
-          for c in ConversationConfig SamplerConfig EngineConfig Message Conversation Engine Contents Content ExperimentalFlags; do
+          for c in ThinkingConfig Channel 'ModelInfo' 'ModelInfo$Llm' 'ModelInfo$Companion' RepetitionPenaltyConfig NoRepeatNgramConfig Engine SessionConfig; do
             javap -cp classes.jar "com.google.ai.edge.litertlm.$c" 2>/dev/null || true
           done
-          unzip -l classes.jar | grep -o 'com/google/ai/edge/litertlm/[A-Za-z$]*\.class' | sort | head -120
+          # Defaults of ConversationConfig's optional parameters (the synthetic constructor).
+          javap -c -cp classes.jar com.google.ai.edge.litertlm.ConversationConfig | sed -n '/DefaultConstructorMarker);/,/return/p' | head -150
 
   probe:
     runs-on: ubuntu-latest
@@ -45,8 +46,6 @@ jobs:
             args: --peek --backend cpu
           - name: cpu-fp32
             args: --backend cpu --activation fp32 chat first near
-          - name: gpu-software
-            args: --backend gpu chat first fits near
     name: probe (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v7
@@ -55,9 +54,6 @@ jobs:
           python-version: "3.12"
       - name: Install LiteRT-LM
         run: pip install "litert-lm==$LITERTLM_VERSION"
-      - name: Software Vulkan for the GPU backend
-        if: matrix.name == 'gpu-software'
-        run: sudo apt-get update -q && sudo apt-get install -y -q mesa-vulkan-drivers libvulkan1 vulkan-tools && (vulkaninfo --summary || true)
       - uses: actions/cache@v5
         with:
           path: ~/model
