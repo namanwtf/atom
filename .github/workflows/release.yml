@@ -78,14 +78,20 @@ jobs:
           released=$(git tag --points-at HEAD --list 'v4.*')
           [ -z "$released" ] || skip "$head is already released as ${released%%$'\n'*}."
           prev=$(git tag --list 'v4.*.*' | grep -E '^v4\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          base="$prev"
           if [ -n "$prev" ] && ! git merge-base --is-ancestor "$prev" HEAD; then
-            skip "The previous release $prev is not an ancestor of $head."
+            # The history may have been rewritten (new commit ids, same commits). Accept it when main contains a
+            # commit with the previous release's original author time and subject, and use it as the changelog base.
+            key=$(git log -1 --format='%at %s' "$prev")
+            base=$(git log --format='%H %at %s' HEAD | awk -v k="$key" '{h=$1; $1=""; sub(/^ /,""); if ($0 == k) {print h; exit}}')
+            [ -n "$base" ] || skip "The previous release $prev is not an ancestor of $head."
           fi
           echo "Releasing $head (previous release: ${prev:-none})"
           {
             echo "skip=false"
             echo "sha=$head"
             echo "prev=$prev"
+            echo "base=$base"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v6
@@ -239,11 +245,12 @@ jobs:
         if: steps.plan.outputs.skip == 'false'
         env:
           PREV: ${{ steps.plan.outputs.prev }}
+          BASE: ${{ steps.plan.outputs.base }}
           VERSION: ${{ steps.version.outputs.version }}
           CODE: ${{ steps.version.outputs.code }}
         run: |
           set -euo pipefail
-          if [ -n "$PREV" ]; then range="$PREV..HEAD"; else range="HEAD"; fi
+          if [ -n "$BASE" ]; then range="$BASE..HEAD"; else range="HEAD"; fi
           {
             echo "## Changelog"
             echo
