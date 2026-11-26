@@ -85,7 +85,7 @@ sealed interface LlmEvent {
      * A tool the provider runs on its side (its own web search, code execution...) started or finished. Shown as
      * "Running Web search"; nothing is executed on the device.
      */
-    data class HostedTool(val kind: HostedToolKind, val running: Boolean) : LlmEvent
+    data class HostedTool(val kind: HostedToolKind, val running: Boolean, val callId: String? = null) : LlmEvent
 }
 
 /** Tools a provider can run on its own servers during a response. */

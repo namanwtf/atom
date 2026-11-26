@@ -59,6 +59,12 @@ interface Tool {
     val timeoutMs: Long? get() = null
 
     suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult
+
+    /**
+     * Plain-English text for the approval a [Risk.Sensitive] call asks for, e.g. what an automation compiles to.
+     * Null (the default) shows the tool name and its arguments. Must not throw; wrappers forward it.
+     */
+    suspend fun approvalText(args: JsonObject): String? = null
 }
 
 class ToolRegistry(tools: Iterable<Tool>) {

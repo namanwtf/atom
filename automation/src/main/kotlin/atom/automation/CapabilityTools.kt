@@ -56,6 +56,15 @@ object CapabilityTools {
     fun allowsHostedSearch(capabilities: Set<Capability>?): Boolean = capabilities == null || Capability.Web in capabilities
 
     /**
+     * The one place that decides whether a run's model calls may use provider-hosted search: the run's
+     * [capabilities] must include the web, the `web_search` tool must be on in the Tool list
+     * ([webSearchToolOn]) and "Web search and reading" must be on in Settings ([webEnabled]). Calls outside a run
+     * (titles, compaction, dictation, model tests) never search.
+     */
+    fun hostedSearch(capabilities: Set<Capability>?, webSearchToolOn: Boolean, webEnabled: Boolean): Boolean =
+        allowsHostedSearch(capabilities) && webSearchToolOn && webEnabled
+
+    /**
      * The family of one tool. [description] is only used to recognise MCP tools ("[MCP · server] ..."); tools that
      * drive the phone UI are always [ToolFamily.AppUi], whatever module they come from.
      */

@@ -32,13 +32,7 @@ import atom.ui.feature.RunPhase
 import atom.app.data.StoredMessage
 import atom.characters.model.CandidateSet
 import atom.characters.model.Character
-import atom.core.home.ModelReadiness
-import atom.core.home.ProviderFacts
-import atom.llm.cloud.AuthMethod
 import atom.llm.cloud.ProviderBrands
-import atom.llm.cloud.ProviderConfig
-import atom.llm.cloud.Providers
-import atom.models.InstalledModel
 import atom.characters.model.ChatBinding
 import atom.characters.session.CharacterSession
 import atom.core.llm.Role
@@ -62,6 +56,8 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * What the model capsule shows. [ready] is false when the selection cannot be used (no key, no sign-in, provider
@@ -174,19 +170,6 @@ private data class Selected(
     val loadFailed: String?,
 )
 
-/** Snapshot of what decides whether a model selection is usable. Never holds key values. */
-private data class Readiness(
-    val providers: List<ProviderConfig>,
-    val savedKeys: Set<String>,
-    val signedIn: Set<String>,
-    val installed: List<InstalledModel>,
-    val unreadable: Set<String> = emptySet(),
-) {
-    val facts: List<ProviderFacts> = providers.map { p ->
-        ProviderFacts(p.id, p.enabled, p.keyOptional, accountAuth = p.auth != AuthMethod.ApiKey, modelIds = p.models.map { it.id })
-    }
-}
-
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     private val runner = graph.tasks
@@ -248,13 +231,7 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
     private val settingsFlow = graph.settings.settings
 
     /** Null until the provider list, key presence and installed models have loaded (treated as usable). */
-    private val readiness: StateFlow<Readiness?> = combine(
-        graph.providers.providers,
-        graph.vault.savedProviders,
-        graph.vault.signedInProviders,
-        graph.models.installed,
-        graph.vault.unreadable,
-    ) { providers, saved, signedIn, installed, unreadable -> Readiness(providers, saved, signedIn, installed, unreadable) }
+    private val readiness: StateFlow<Readiness?> = Readiness.of(graph)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Subagent runs of the selected conversation's current or last run (in memory only). */
@@ -542,6 +519,8 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
             }
             // The picker returns asynchronously; a reference picked for another conversation is not attached here.
             if (selectedId.value != startedIn) {
+                // Nothing will send them, so the copies made for them go too.
+                withContext(Dispatchers.IO) { Attachments.discardCopies(context, added) }
                 if (added.isNotEmpty() || failed > 0) emit(ChatEvent.Toast(atom.app.R.string.attach_switched))
                 return@launch
             }
@@ -781,31 +760,14 @@ class ChatViewModel(private val graph: AppGraph) : ViewModel() {
         val info = graph.modelInfo
         val name = runCatching { info.modelName(selection) }.getOrNull()
         val exists = runCatching { info.exists(selection) }.getOrDefault(true)
-        val usable = exists && (ready == null || when (selection) {
-            is EngineSelection.Cloud -> ModelReadiness.cloudReady(
-                selection.providerId,
-                selection.model,
-                ready.facts,
-                ready.savedKeys,
-                ready.signedIn,
-                customBaseUrl = selection.baseUrl,
-                customId = Providers.CUSTOM_ID,
-            )
-            is EngineSelection.Local -> ModelReadiness.localReady(selection.installedModelId, ready.installed.map { it.id })
-        })
+        val reason = notReadyReason(selection, ready, info)
         val cloud = selection as? EngineSelection.Cloud
         val provider = cloud?.let { runCatching { info.provider(it) }.getOrNull() }
-        val reason = when {
-            usable -> null
-            provider != null && provider.enabled && provider.auth != AuthMethod.ApiKey && ready != null && provider.id !in ready.signedIn -> NotReady.SignIn
-            provider != null && ready != null && provider.id in ready.unreadable -> NotReady.KeyUnreadable
-            else -> NotReady.Configure
-        }
         return EngineInfo(
             name,
             selection is EngineSelection.Local,
             missing = !exists,
-            ready = usable,
+            ready = reason == null,
             logo = logo,
             reason = reason,
             providerName = provider?.displayName,

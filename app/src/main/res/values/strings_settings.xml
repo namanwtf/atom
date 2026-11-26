@@ -137,6 +137,8 @@
     <string name="set_legal_ofl_desc">JetBrains Mono, the terminal font.</string>
     <string name="set_legal_lobe">MIT License (Lobe Icons)</string>
     <string name="set_legal_lobe_desc">Provider and model brand logos. The logos are trademarks of their owners.</string>
+    <string name="set_legal_models_dev">MIT License (models.dev)</string>
+    <string name="set_legal_models_dev_desc">The bundled models.dev provider and model catalog.</string>
 
     <!-- General -->
     <string name="set_live_updates">Live Update notification</string>

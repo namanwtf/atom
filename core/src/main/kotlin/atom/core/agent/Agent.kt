@@ -99,8 +99,11 @@ sealed interface AgentEvent {
 
     data object Compacting : AgentEvent
 
-    /** A provider-hosted tool (its web search, code execution...) started ([running]) or finished. */
-    data class HostedTool(val kind: atom.core.llm.HostedToolKind, val running: Boolean) : AgentEvent
+    /**
+     * A provider-hosted tool (its web search, code execution...) started ([running]) or finished. [callId] tells
+     * calls that overlap apart (null when the provider gives none).
+     */
+    data class HostedTool(val kind: atom.core.llm.HostedToolKind, val running: Boolean, val callId: String? = null) : AgentEvent
 
     /**
      * The first [summarizedCount] messages of the conversation the agent works on (history given to [Agent.run]
@@ -346,7 +349,7 @@ class Agent(
                         is LlmEvent.Usage -> usage = event
                         is LlmEvent.Finished -> finish = event.reason
                         is LlmEvent.Suggestions -> if (!event.suggestions.isEmpty) suggestions = event.suggestions
-                        is LlmEvent.HostedTool -> emit(AgentEvent.HostedTool(event.kind, event.running))
+                        is LlmEvent.HostedTool -> emit(AgentEvent.HostedTool(event.kind, event.running, event.callId))
                     }
                 }
                 val end = System.nanoTime()
@@ -393,7 +396,7 @@ class Agent(
 
         if (tool.usesPhoneUi) control.acquirePhone()
 
-        if (tool.risk == Risk.Sensitive && !ctx.confirm(describe(call))) {
+        if (tool.risk == Risk.Sensitive && !ctx.confirm(tool.approvalText(args) ?: describe(call))) {
             return ToolResult.error("The user declined this action. Do not retry it; ask or choose another approach.")
         }
 

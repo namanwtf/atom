@@ -202,7 +202,7 @@ class RuleEngine(
                         failed = true
                         continue@loop
                     }
-                    val result = runCatching { invoker.invoke(a.tool, renderArgs(a.args, vars)) }
+                    val result = runCatching { invoker.invoke(a.tool, renderArgs(a.args, vars), rule.stepCapabilities) }
                         .getOrElse { atom.core.tool.ToolResult.error(it.message ?: "error") }
                     steps += "$n. ${a.tool}: " + (if (result.sensitive) "done" else result.text.trim().take(160))
                     if (result.isError) failed = true

@@ -719,7 +719,10 @@ private const val BROWSER_TOOL_PREFIX = "browser_"
 /** "Loading · N%" under a running browser step while its page loads. */
 @Composable
 private fun BrowserLoadingLine(conversationId: String) {
-    val session = remember(conversationId) { atom.web.browser.BrowserSessions.get(conversationId) } ?: return
+    // The step row appears before browser_open creates the session, and a session can be evicted and recreated:
+    // look it up again whenever the set of live sessions changes.
+    val active by atom.web.browser.BrowserSessions.active.collectAsState()
+    val session = remember(conversationId, active) { atom.web.browser.BrowserSessions.live(conversationId) } ?: return
     val page by session.page.collectAsState()
     if (!page.loading) return
     Text(
