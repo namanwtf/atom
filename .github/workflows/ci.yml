@@ -196,10 +196,10 @@ jobs:
           fi
 
       - name: Release readiness
-        # The weekly release PR (release/next into main) may auto-merge, so it must not go green until the
+        # A release PR (release/next, release/next-2, ... into main) may auto-merge, so it must not go green until the
         # combined release has passed the end-to-end tasks and the side-by-side comparison. That result is
         # written to docs/RELEASE_SCORECARD.md, which every release PR must update, ending in "Result: ready".
-        if: github.event_name == 'pull_request' && github.head_ref == 'release/next'
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/')
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
