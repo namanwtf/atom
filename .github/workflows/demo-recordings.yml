@@ -37,7 +37,7 @@ jobs:
   record:
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'media/launch-recordings'
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@v7
         with:
@@ -161,7 +161,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          cores: 2
+          cores: 4
           disk-size: 8G
           disable-animations: false
           emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none

@@ -214,8 +214,20 @@ def warm_up():
     time.sleep(2)
 
 
-def new_chat():
+def go_chat():
+    """Back to the chat screen: a launch resumes whatever screen the app was last on."""
     launch(wait=3)
+    for _ in range(5):
+        if find("^Conversations$"):
+            return True
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(1.5)
+        launch(wait=2)
+    return bool(find("^Conversations$"))
+
+
+def new_chat():
+    go_chat()
     if tap("^More options$", wait=1.2):
         if not tap("^New conversation$", wait=1.5):
             sh("input keyevent KEYCODE_BACK")
@@ -269,12 +281,26 @@ def clip_bubble():
     bubble_on()
     sh("input keyevent KEYCODE_HOME")
     time.sleep(1)
-    sh("am start -a android.settings.SETTINGS")
-    time.sleep(3)
-    b = bubble_bounds()
+    sh("am start -a android.intent.action.SHOW_ALARMS")
+    b = None
+    for _ in range(10):
+        time.sleep(1.5)
+        b = bubble_bounds()
+        if b:
+            break
+    if not b:
+        e2e.log("bubble: not shown over the Clock app; trying the home screen")
+        sh("input keyevent KEYCODE_HOME")
+        for _ in range(10):
+            time.sleep(1.5)
+            b = bubble_bounds()
+            if b:
+                break
+    e2e.capture.window_frames()
     if not b:
         e2e.log("bubble: window not found")
         return
+    e2e.log(f"bubble at {b}")
     rec = Recorder(name)
     rec.start()
     rec.wait(2)
@@ -300,9 +326,10 @@ def clip_bubble():
     rec.mark("tap: mini chat")
     sh(f"input tap {cx} {cy}")
     rec.wait(2.5)
+    shot("demo_bubble_panel")
     mic = find("^Dictate$")
     send = find("^Send$")
-    anchor = mic or send
+    anchor = mic or send or find("^Ask Atom")
     if not anchor:
         e2e.log("bubble: mini chat not found")
         finish(rec)
@@ -340,7 +367,7 @@ def wait_linux(timeout):
 def clip_terminal():
     """The terminal on the Alpine Linux environment: a package install and a Python one-liner."""
     name = "terminal"
-    if not wait_linux(900):
+    if not wait_linux(int(os.environ.get('LINUX_WAIT', '4500'))):
         e2e.log("terminal: Linux is not ready; recording the Android shell only")
     launch("linux/terminal", wait=5)
     tab = find("^Alpine$") or find("^Debian$")
@@ -370,6 +397,8 @@ def clip_terminal():
 def clip_offline():
     """An on-device model: download it in the app, pick it, turn on airplane mode, ask something."""
     name = "offline"
+    # The runner's model server is not needed any more; give its CPU to the emulator for the on-device model.
+    subprocess.run(["pkill", "-f", "llama-server"], check=False)
     launch("models-on-device", wait=4)
     rec = Recorder(name)
     rec.start()
@@ -388,7 +417,7 @@ def clip_offline():
     rec.mark("download")
     t0 = time.time()
     use = None
-    while time.time() - t0 < 900:
+    while time.time() - t0 < 1200:
         rec.wait(5)
         use = find("^Use$")
         if use or find("^In use$"):
@@ -420,7 +449,7 @@ def clip_offline():
     if not type_prompt(rec, "In two sentences, why is the sky blue?"):
         e2e.send_prompt("In two sentences, why is the sky blue?")
         rec.mark("sent (intent)")
-    run = wait_run(rec, w, 1200)
+    run = wait_run(rec, w, int(os.environ.get('OFFLINE_WAIT', '1800')))
     rec.wait(5)
     shot("demo_offline_answer")
     finish(rec)
@@ -474,7 +503,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     setup()
     warm_up()
-    order = sys.argv[1:] or ["task", "bubble", "menu", "terminal", "offline"]
+    order = sys.argv[1:] or ["bubble", "menu", "terminal", "offline"]
     for key in order:
         try:
             CLIPS[key]()
