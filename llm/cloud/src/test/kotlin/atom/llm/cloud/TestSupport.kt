@@ -43,3 +43,71 @@ internal val weatherSchema: JsonObject = Json.parseToJsonElement(
        "unit":{"type":["string","null"],"enum":["c","f"]}},"required":["city","missing"],
        "additionalProperties":false,"${'$'}schema":"http://json-schema.org/draft-07/schema#"}""",
 ).jsonObject
+
+/**
+ * Whether [text] is one JSON object under RFC 8259, as a strict provider parses it. kotlinx's own parser is no
+ * judge here: it accepts unquoted values (`{"a":hi}`) even when not lenient.
+ */
+internal fun isStrictJsonObject(text: String): Boolean {
+    var i = 0
+    fun ws() { while (i < text.length && text[i] in " \t\r\n") i++ }
+    fun fail(): Nothing = throw IllegalArgumentException("at $i")
+    fun expect(c: Char) { if (i < text.length && text[i] == c) i++ else fail() }
+    fun string() {
+        expect('"')
+        while (true) {
+            if (i >= text.length) fail()
+            val c = text[i++]
+            when {
+                c == '"' -> return
+                c == '\\' -> {
+                    if (i >= text.length) fail()
+                    when (text[i++]) {
+                        '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> Unit
+                        'u' -> repeat(4) { if (i >= text.length || text[i++].lowercaseChar() !in "0123456789abcdef") fail() }
+                        else -> fail()
+                    }
+                }
+                c < ' ' -> fail()
+            }
+        }
+    }
+    lateinit var value: () -> Unit
+    fun obj() {
+        expect('{'); ws()
+        if (i < text.length && text[i] == '}') { i++; return }
+        while (true) {
+            ws(); string(); ws(); expect(':'); value(); ws()
+            if (i < text.length && text[i] == ',') { i++; continue }
+            expect('}'); return
+        }
+    }
+    fun arr() {
+        expect('['); ws()
+        if (i < text.length && text[i] == ']') { i++; return }
+        while (true) {
+            value(); ws()
+            if (i < text.length && text[i] == ',') { i++; continue }
+            expect(']'); return
+        }
+    }
+    val number = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
+    value = {
+        ws()
+        when {
+            i >= text.length -> fail()
+            text[i] == '{' -> obj()
+            text[i] == '[' -> arr()
+            text[i] == '"' -> string()
+            text.startsWith("true", i) -> i += 4
+            text.startsWith("false", i) -> i += 5
+            text.startsWith("null", i) -> i += 4
+            else -> number.matchAt(text, i)?.let { i += it.value.length } ?: fail()
+        }
+    }
+    return try {
+        ws(); obj(); ws(); i == text.length
+    } catch (e: IllegalArgumentException) {
+        false
+    }
+}

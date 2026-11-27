@@ -124,6 +124,19 @@ class CatalogAndCapabilitiesTest {
     }
 
     @Test
+    fun outputCapsComeFromMetadataElseFromTheFewKnownSmallOnes() {
+        // Long-window models that still take only 4096-token replies: the cloud output budget must not go past it.
+        assertEquals(4_096, CapabilityDetector.byFamily("claude-3-haiku-20240307").maxOutputTokens)
+        assertEquals(4_096, CapabilityDetector.byFamily("gpt-4-turbo-2024-04-09").maxOutputTokens)
+        assertNull(CapabilityDetector.byFamily("claude-3-5-sonnet-20241022").maxOutputTokens)
+        assertNull(CapabilityDetector.byFamily("deepseek-flash").maxOutputTokens)
+        val listed = DetectedCapabilities(maxOutputTokens = 8_192, source = CapabilitySource.Remote)
+        assertEquals(8_192, CapabilityDetector.detect("claude-3-haiku-20240307", listed).maxOutputTokens)
+        assertEquals(4_096, CapabilityDetector.detect("claude-3-haiku-20240307", DetectedCapabilities()).maxOutputTokens)
+        assertEquals(4_096, ModelConfig("claude-3-haiku-20240307").maxOutputTokens)
+    }
+
+    @Test
     fun manualModelSettingsOverrideDetection() {
         val auto = ModelConfig("deepseek-v4-pro")
         assertTrue(auto.reasoning.supported)

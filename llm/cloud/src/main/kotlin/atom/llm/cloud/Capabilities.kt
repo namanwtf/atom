@@ -33,6 +33,8 @@ data class DetectedCapabilities(
     val contextWindow: Int? = null,
     val vision: Boolean? = null,
     val source: CapabilitySource = CapabilitySource.Unknown,
+    /** The most tokens one reply may have, when the catalog or the provider's model list says. */
+    val maxOutputTokens: Int? = null,
 )
 
 object Reasoning {
@@ -78,10 +80,11 @@ object CapabilityDetector {
     private val MAX = ReasoningEffort.Max
     private val OFF = ReasoningEffort.Off
 
-    private class Rule(val pattern: Regex, val reasoning: ReasoningInfo?, val context: Int?)
+    private class Rule(val pattern: Regex, val reasoning: ReasoningInfo?, val context: Int?, val output: Int?)
 
-    private fun rule(pattern: String, reasoning: ReasoningInfo?, context: Int? = null) =
-        Rule(Regex(pattern, RegexOption.IGNORE_CASE), reasoning, context)
+    /** [output] is set only where it is known and smaller than a long window suggests (see the cloud output budget). */
+    private fun rule(pattern: String, reasoning: ReasoningInfo?, context: Int? = null, output: Int? = null) =
+        Rule(Regex(pattern, RegexOption.IGNORE_CASE), reasoning, context, output)
 
     private val RULES = listOf(
         rule("(^|/)o[1-9](-mini|-pro)?($|-)", ReasoningInfo.of(L, M, H), 200_000),
@@ -91,10 +94,12 @@ object CapabilityDetector {
         rule("(^|/)gpt-oss", ReasoningInfo.of(L, M, H), 131_072),
         rule("(^|/)gpt-4\\.1", ReasoningInfo.None, 1_047_576),
         rule("(^|/)gpt-4o", ReasoningInfo.None, 128_000),
+        rule("(^|/)gpt-4-turbo", ReasoningInfo.None, 128_000, output = 4_096),
         rule("claude-(fable|opus-5|sonnet-6|opus-6)", ReasoningInfo.of(L, M, H, X, MAX), 1_000_000),
         rule("claude-(opus|sonnet)-(4-[6-9]|5)", ReasoningInfo.of(OFF, L, M, H, X, MAX), 1_000_000),
         rule("claude-(opus|sonnet|haiku)-4", ReasoningInfo.of(OFF, L, M, H), 200_000),
         rule("claude-3-7", ReasoningInfo.of(OFF, L, M, H), 200_000),
+        rule("claude-3-(opus|sonnet|haiku)", ReasoningInfo.None, 200_000, output = 4_096),
         rule("claude-3", ReasoningInfo.None, 200_000),
         rule("gemini-4-(neon|hydrogen)", ReasoningInfo.of(L, M, H, X, default = H), 1_048_576),
         rule("gemini-4", ReasoningInfo.of(L, M, H, default = M), 1_048_576),
@@ -132,7 +137,7 @@ object CapabilityDetector {
     fun byFamily(modelId: String): DetectedCapabilities {
         val rule = RULES.firstOrNull { it.pattern.containsMatchIn(modelId) }
             ?: return DetectedCapabilities(source = CapabilitySource.Unknown)
-        return DetectedCapabilities(rule.reasoning, rule.context, null, CapabilitySource.Family)
+        return DetectedCapabilities(rule.reasoning, rule.context, null, CapabilitySource.Family, rule.output)
     }
 
     /** Remote or catalog metadata wins field by field; family rules fill the gaps. */
@@ -142,6 +147,6 @@ object CapabilityDetector {
         val reasoning = metadata.reasoning ?: family.reasoning
         val context = metadata.contextWindow ?: family.contextWindow
         val source = if (metadata.reasoning != null || metadata.contextWindow != null) metadata.source else family.source
-        return DetectedCapabilities(reasoning, context, metadata.vision ?: family.vision, source)
+        return DetectedCapabilities(reasoning, context, metadata.vision ?: family.vision, source, metadata.maxOutputTokens ?: family.maxOutputTokens)
     }
 }

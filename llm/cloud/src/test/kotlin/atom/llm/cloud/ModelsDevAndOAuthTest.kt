@@ -48,6 +48,8 @@ class ModelsDevAndOAuthTest {
             think.capabilities.reasoning!!.levels,
         )
         assertEquals(262_144, think.capabilities.contextWindow)
+        assertEquals(8_192, think.capabilities.maxOutputTokens)
+        assertNull(acme.models.first { it.id == "acme-mini" }.capabilities.maxOutputTokens)
         assertEquals(true, think.capabilities.vision)
         assertFalse(acme.models.first { it.id == "acme-mini" }.capabilities.reasoning!!.supported)
 
@@ -67,6 +69,7 @@ class ModelsDevAndOAuthTest {
         assertEquals(listOf("acme-think"), config.models.map { it.id })
         assertEquals("acme-think", config.primaryModel)
         assertEquals("acme", config.importedFrom)
+        assertEquals(8_192, config.models.single().maxOutputTokens)
         assertTrue(config.models.single().reasoning.supported)
         assertEquals(providers, ModelsDev.decodeCache(ModelsDev.encodeCache(providers)))
         assertNull(ModelsDev.decodeCache("not json"))

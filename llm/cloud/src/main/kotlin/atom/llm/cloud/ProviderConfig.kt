@@ -55,6 +55,9 @@ data class ModelConfig(
 
     val effectiveContextWindow: Int? get() = contextWindow ?: autoCapabilities.contextWindow
 
+    /** The model's own cap on one reply's tokens, when metadata gives one; null when unknown. */
+    val maxOutputTokens: Int? get() = autoCapabilities.maxOutputTokens?.takeIf { it > 0 }
+
     val vision: Boolean? get() = autoCapabilities.vision
 }
 

@@ -282,9 +282,21 @@ class Agent(
             emit(AgentEvent.ModelCall(turn.stats))
             emit(AgentEvent.Usage(state.inTokens, state.outTokens))
 
+            // A reply that hit the output limit mid call leaves that call's arguments cut off: it is not run, and its
+            // arguments are kept as `{}` (strict providers refuse a later request that replays invalid JSON, and the
+            // fragment would only fill the context). Its tool result names the limit, so the model splits the work.
+            val cut = if (turn.finish == FinishReason.Length) turn.calls.filterNot { parsesAsObject(it.argumentsJson) } else emptyList()
+            val cutChars = cut.associate { it.id to it.argumentsJson.length }
+            // One cut before even its name arrived is no call at all.
+            val calls = if (cut.isEmpty()) {
+                turn.calls
+            } else {
+                turn.calls.mapNotNull { c -> if (c.id !in cutChars) c else c.takeIf { it.name.isNotBlank() }?.copy(argumentsJson = "{}") }
+            }
+
             // A wire that sends a tool-call turn's reasoning back gets it with the turn, so the context counts it too.
-            val answer = ChatMessage.assistant(turn.text, turn.calls).let { a ->
-                if (turn.calls.isNotEmpty() && engine.capabilities.replaysReasoning && turn.reasoning != null) a.copy(reasoning = turn.reasoning) else a
+            val answer = ChatMessage.assistant(turn.text, calls).let { a ->
+                if (calls.isNotEmpty() && engine.capabilities.replaysReasoning && turn.reasoning != null) a.copy(reasoning = turn.reasoning) else a
             }
             append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
             // The provider's prompt count already holds the system prompt and every tool schema. The answer counts by
@@ -293,19 +305,20 @@ class Agent(
             state.sinceReport = 0
             emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
 
-            if (turn.calls.isEmpty()) {
+            if (calls.isEmpty()) {
                 if (deliverSteering(state, control)) continue
                 val reason = if (turn.finish == FinishReason.Length) StopReason.OutputLimit else StopReason.Completed
                 emit(AgentEvent.Done(turn.text, reason, step, state.appended.toList()))
                 return@flow
             }
 
-            val results = ArrayList<ToolResult>(turn.calls.size)
-            for (call in turn.calls) {
+            val results = ArrayList<ToolResult>(calls.size)
+            for (call in calls) {
                 control.checkpoint()
                 emit(AgentEvent.ToolStarted(call))
                 val started = System.nanoTime()
-                val result = execute(call, ctx, control)
+                val result = cutChars[call.id]?.let { chars -> ToolResult.error(cutOffMessage(call.name, chars)) }
+                    ?: execute(call, ctx, control)
                 val duration = (System.nanoTime() - started) / 1_000_000
                 emit(AgentEvent.ToolFinished(call, result, duration))
                 append(
@@ -316,7 +329,7 @@ class Agent(
                 results += result
             }
 
-            val verdict = guard.after(turn.calls, results)
+            val verdict = guard.after(calls, results)
             if (verdict.stuck && config.stopWhenStuck) {
                 stuckAt = step
                 break
@@ -607,6 +620,16 @@ class Agent(
             ToolResult.error("'${call.name}' failed: ${e.message ?: e::class.simpleName}")
         }
     }
+
+    private fun parsesAsObject(argumentsJson: String): Boolean =
+        argumentsJson.isBlank() || runCatching { json.parseToJsonElement(argumentsJson) is JsonObject }.getOrDefault(false)
+
+    /** The tool result of a call whose arguments were cut off at the output limit; it was not run. */
+    private fun cutOffMessage(tool: String, receivedChars: Int): String =
+        "'$tool' was not run: your reply hit its output limit (${config.maxOutputTokens} tokens) partway through this " +
+            "call, so its arguments were cut off after $receivedChars characters. Do not repeat the same call. Make each " +
+            "call smaller so it fits in one reply: split large content into several smaller files or calls (for a web " +
+            "page, for example, move the CSS and scripts into their own files), and keep any text before the call short."
 
     /** The default approval text: the tool and its arguments, long enough to show what it will do. */
     private fun describe(call: ToolCall): String {

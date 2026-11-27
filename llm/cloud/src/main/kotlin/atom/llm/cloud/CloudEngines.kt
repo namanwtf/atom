@@ -100,8 +100,9 @@ object CloudEngines {
             else -> null
         }
         val inputs = row.obj("architecture")?.arr("input_modalities")?.mapNotNull { (it as? JsonPrimitive)?.content }
-        val caps = if (context != null || reasoning != null || inputs != null) {
-            DetectedCapabilities(reasoning, context, inputs?.contains("image"), CapabilitySource.Remote)
+        val output = row.obj("top_provider")?.int("max_completion_tokens") ?: row.int("max_completion_tokens") ?: row.int("max_output_tokens")
+        val caps = if (context != null || reasoning != null || inputs != null || output != null) {
+            DetectedCapabilities(reasoning, context, inputs?.contains("image"), CapabilitySource.Remote, output)
         } else {
             null
         }
@@ -135,10 +136,15 @@ object CloudEngines {
                 val row = element.asObject() ?: return@mapNotNullTo null
                 val id = row.str("id") ?: return@mapNotNullTo null
                 val context = row.int("max_input_tokens")
+                val output = row.int("max_tokens")
                 RemoteModel(
                     id,
                     row.str("display_name"),
-                    context?.let { DetectedCapabilities(contextWindow = it, source = CapabilitySource.Remote) },
+                    if (context != null || output != null) {
+                        DetectedCapabilities(contextWindow = context, source = CapabilitySource.Remote, maxOutputTokens = output)
+                    } else {
+                        null
+                    },
                 )
             }
             after = page.str("last_id")
@@ -179,6 +185,7 @@ object CloudEngines {
                         reasoning = thinking?.let { if (it) CapabilityDetector.byFamily(id).reasoning ?: ReasoningInfo.forced() else ReasoningInfo.None },
                         contextWindow = model.int("inputTokenLimit"),
                         source = CapabilitySource.Remote,
+                        maxOutputTokens = model.int("outputTokenLimit"),
                     ),
                 )
             }

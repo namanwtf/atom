@@ -73,6 +73,8 @@ class RoutedEngine internal constructor(
     val contextWindow: Int? = null,
     /** An on-device model under about 3B parameters ([SmallModel]): fine for chat, weak at multi-step tasks. */
     val smallModel: Boolean = false,
+    /** The model's own cap on one reply, when its metadata gives one; null when unknown. */
+    val modelMaxOutput: Int? = null,
 ) {
     fun snapReasoning(effort: ReasoningEffort?): ReasoningEffort? = Reasoning.snap(effort, reasoning)
 
@@ -84,7 +86,7 @@ class RoutedEngine internal constructor(
                 model = model,
                 systemPrompt = systemPrompt,
                 maxSteps = CLOUD_MAX_STEPS,
-                maxOutputTokens = CLOUD_MAX_OUTPUT,
+                maxOutputTokens = cloudMaxOutput(contextWindow, modelMaxOutput),
                 toolTimeoutMs = toolTimeout,
                 // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
                 // starts near 85% of that (AgentConfig.usableWindow).
@@ -145,8 +147,31 @@ class RoutedEngine internal constructor(
             return LocalPlan(promptBudget = budget, maxOutputTokens = maxOut, maxToolResultChars = if (small) 1_500 else 3_000)
         }
 
-        /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
+        /**
+         * Answer room a cloud run reserves for a model nothing is known about; its prompt may use the rest of the model
+         * window. Models known to allow more get more ([cloudMaxOutput]).
+         */
         const val CLOUD_MAX_OUTPUT = 2048
+
+        /** The most a cloud run reserves for one reply: room for a whole web page in one file write. */
+        const val CLOUD_LARGE_OUTPUT = 16_384
+
+        /** Without a known output cap, a model with a window at least this long gets [CLOUD_WINDOW_OUTPUT]. */
+        const val CLOUD_LONG_WINDOW = 128_000
+        const val CLOUD_WINDOW_OUTPUT = 8_192
+
+        /**
+         * The output budget of a cloud run. Tool calls carry whole files, and on thinking models (DeepSeek, Kimi...)
+         * the reasoning counts against the same budget, so 2048 tokens cut a page-sized file write off mid call. The
+         * model's own cap ([maxOutput], from the catalog or its provider's model list) wins up to
+         * [CLOUD_LARGE_OUTPUT]; without one, a long-window model (current generations take 8K-token replies; family
+         * rules give the older ones that do not their cap) gets [CLOUD_WINDOW_OUTPUT], and anything else the safe
+         * [CLOUD_MAX_OUTPUT]. A provider's extra body (`max_tokens`) still overrides this per request.
+         */
+        fun cloudMaxOutput(window: Int?, maxOutput: Int?): Int {
+            maxOutput?.takeIf { it > 0 }?.let { return it.coerceAtMost(CLOUD_LARGE_OUTPUT) }
+            return if (window != null && window >= CLOUD_LONG_WINDOW) CLOUD_WINDOW_OUTPUT else CLOUD_MAX_OUTPUT
+        }
     }
 }
 
@@ -281,6 +306,7 @@ class EngineRouter(
             selection = selection.copy(model = modelId),
             reasoning = modelConfig.reasoning,
             contextWindow = modelConfig.effectiveContextWindow,
+            modelMaxOutput = modelConfig.maxOutputTokens,
         )
     }
 

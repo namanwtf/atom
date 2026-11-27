@@ -167,7 +167,7 @@ internal class OpenAiResponsesEngine(
                         put("type", "function_call")
                         put("call_id", call.id)
                         put("name", call.name)
-                        put("arguments", normalizeArguments(call.argumentsJson))
+                        put("arguments", wireArguments(call.argumentsJson))
                     }
                 }
                 Role.Tool -> {

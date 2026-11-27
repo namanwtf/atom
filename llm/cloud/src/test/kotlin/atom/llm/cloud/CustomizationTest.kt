@@ -217,12 +217,14 @@ class CustomizationTest {
     fun remoteListingCarriesCapabilityMetadata() {
         val page = Json.parseToJsonElement(
             """{"data":[{"id":"a/b","name":"B","context_length":131072,"supported_parameters":["tools","reasoning"],
-               "architecture":{"input_modalities":["text","image"]}},{"id":"plain"}]}""",
+               "architecture":{"input_modalities":["text","image"]},"top_provider":{"max_completion_tokens":32768}},
+               {"id":"plain"}]}""",
         ).jsonObject
         val models = CloudEngines.openAiModels(page)
         assertEquals(131_072, models[0].capabilities!!.contextWindow)
         assertTrue(models[0].capabilities!!.reasoning!!.supported)
         assertEquals(true, models[0].capabilities!!.vision)
+        assertEquals(32_768, models[0].capabilities!!.maxOutputTokens)
         assertNull(models[1].capabilities)
     }
 }
