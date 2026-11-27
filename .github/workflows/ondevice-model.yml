@@ -53,6 +53,8 @@ jobs:
             for c in $(unzip -Z1 "$jar" | grep -E 'NativeInterpreterWrapper(Experimental)?\.class$' | sed 's/\.class$//; s#/#.#g'); do
               echo "== $jar $c"
               javap -c -p -cp "$jar" "$c" | awk '/^  [a-z].*\(/{m=$0} /allocateTensors/{print m " -> " $0}' | sort -u
+              # The constructor's init: whether its allocation is guarded (an exception table entry around it).
+              javap -c -p -cp "$jar" "$c" | awk '/private void init\(/{p=1} p&&/^$/{exit} p' | grep -E 'init\(|allocateTensors|Exception table|from +to|^ +[0-9]+ +[0-9]+ +[0-9]+|athrow|isMemoryAllocated' || true
             done
           done
 
