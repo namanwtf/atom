@@ -23,7 +23,8 @@ import org.tensorflow.lite.Interpreter
  *
  * Shapes are validated at load time against openWakeWord's front-end (dscripka/openWakeWord,
  * `openwakeword/utils.py` AudioFeatures and `openwakeword/model.py`):
- *  - melspectrogram: input [1, N] float32 raw PCM16 values, resized to [1, 1760]; output 8 x 32 (e.g. [1,1,8,32])
+ *  - melspectrogram: input [1, N] float32 raw PCM16 values (dynamic, stored as [1, 1]), resized to [1, 1760] before
+ *    its tensors are allocated; output 8 x 32 (e.g. [1,1,8,32])
  *  - embedding: input [1, 76, 32, 1] float32; output 96 values (e.g. [1,1,1,96])
  *  - classifier: input [1, F, 96] float32 (F = 16 for openWakeWord models); output 1 value
  */
@@ -82,15 +83,19 @@ internal class TfliteWakeModels private constructor(
     }
 
     companion object {
+        /** The input shapes the pipeline feeds, set before each model's tensors are allocated. */
+        private val MELSPEC_INPUT = intArrayOf(1, MEL_INPUT_SAMPLES)
+        private val EMBEDDING_INPUT = intArrayOf(1, MEL_WINDOW_FRAMES, MEL_BINS, 1)
+
         fun load(packPath: String): WakeModelsLoad {
             val opened = mutableListOf<Interpreter>()
             return try {
                 val files = ZipFile(packPath).use { zip ->
                     listOf(WakeShapes.MELSPEC_MODEL, WakeShapes.EMBEDDING_MODEL, WakeShapes.CLASSIFIER_MODEL).map { read(zip, it) }
                 }
-                val mel = open(files[0]).also(opened::add)
-                val emb = open(files[1]).also(opened::add)
-                val cls = open(files[2]).also(opened::add)
+                val mel = open(WakeShapes.MELSPEC_MODEL, files[0], MELSPEC_INPUT).also(opened::add)
+                val emb = open(WakeShapes.EMBEDDING_MODEL, files[1], EMBEDDING_INPUT).also(opened::add)
+                val cls = open(WakeShapes.CLASSIFIER_MODEL, files[2], null).also(opened::add)
                 val frames = classifierFrames(cls)
                 val error = validateMel(mel) ?: validateEmbedding(emb)
                     ?: if (frames == null) classifierError(cls) else null
@@ -121,16 +126,40 @@ internal class TfliteWakeModels private constructor(
         }
 
         /**
-         * Opens a model with the XNNPack delegate when the phone's runtime can prepare it, else with the plain CPU
-         * kernels. On some phones XNNPack fails to prepare a node of these small models ("failed to reshape");
-         * the plain kernels are fast enough for 80 ms audio frames.
+         * Opens a model, gives its input the shape the pipeline feeds ([inputShape], null keeps the model's own),
+         * and only then allocates its tensors. The melspectrogram model's input is dynamic ([-1, -1]) and is stored
+         * as [1, 1]: allocated at that size, its first CONV_2D (a 512-sample STFT window) has no valid output and
+         * fails to prepare ("Node number 2 (CONV_2D) failed to prepare", or "XNNPack delegate failed to reshape"
+         * with XNNPack), so the input must be resized first. XNNPack is used when the phone's runtime can prepare
+         * the model, else the plain CPU kernels, which are fast enough for 80 ms audio frames. A failure names the
+         * model file ([name]).
          */
-        private fun open(model: ByteBuffer): Interpreter = try {
-            Interpreter(model.duplicate().order(ByteOrder.nativeOrder()), Interpreter.Options().setNumThreads(1).setUseXNNPACK(true))
-                .also { it.allocateTensors() }
-        } catch (e: Exception) {
-            Interpreter(model.duplicate().order(ByteOrder.nativeOrder()), Interpreter.Options().setNumThreads(1).setUseXNNPACK(false))
-                .also { it.allocateTensors() }
+        private fun open(name: String, model: ByteBuffer, inputShape: IntArray?): Interpreter {
+            fun create(xnnpack: Boolean): Interpreter {
+                val interpreter = Interpreter(
+                    model.duplicate().order(ByteOrder.nativeOrder()),
+                    Interpreter.Options().setNumThreads(1).setUseXNNPACK(xnnpack),
+                )
+                try {
+                    if (inputShape != null && !interpreter.getInputTensor(0).shape().contentEquals(inputShape)) {
+                        interpreter.resizeInput(0, inputShape)
+                    }
+                    interpreter.allocateTensors()
+                } catch (e: Exception) {
+                    interpreter.close()
+                    throw e
+                }
+                return interpreter
+            }
+            return try {
+                create(xnnpack = true)
+            } catch (e: Exception) {
+                try {
+                    create(xnnpack = false)
+                } catch (plain: Exception) {
+                    throw IllegalStateException("$name: ${plain.message ?: plain.javaClass.simpleName}", plain)
+                }
+            }
         }
 
         private fun validateMel(mel: Interpreter): String? {
@@ -138,8 +167,9 @@ internal class TfliteWakeModels private constructor(
             if (input.dataType() != DataType.FLOAT32 || input.numDimensions() != 2) {
                 return "melspectrogram.tflite: expected float32 [1, samples] input, got ${input.dataType()} ${input.shape().contentToString()}"
             }
-            mel.resizeInput(0, intArrayOf(1, MEL_INPUT_SAMPLES))
-            mel.allocateTensors()
+            if (!input.shape().contentEquals(MELSPEC_INPUT)) {
+                return "melspectrogram.tflite: input could not be set to [1, $MEL_INPUT_SAMPLES], got ${input.shape().contentToString()}"
+            }
             val out = mel.getOutputTensor(0)
             val shape = out.shape()
             if (out.dataType() != DataType.FLOAT32 || shape.last() != MEL_BINS ||
@@ -152,14 +182,12 @@ internal class TfliteWakeModels private constructor(
         }
 
         private fun validateEmbedding(emb: Interpreter): String? {
-            val expected = intArrayOf(1, MEL_WINDOW_FRAMES, MEL_BINS, 1)
+            val expected = EMBEDDING_INPUT
             val input = emb.getInputTensor(0)
             if (input.dataType() != DataType.FLOAT32 || input.numDimensions() != 4) {
                 return "embedding_model.tflite: expected float32 [1, 76, 32, 1] input, got ${input.dataType()} ${input.shape().contentToString()}"
             }
-            if (!input.shape().contentEquals(expected)) emb.resizeInput(0, expected)
-            emb.allocateTensors()
-            val resized = emb.getInputTensor(0).shape()
+            val resized = input.shape()
             val out = emb.getOutputTensor(0)
             if (!resized.contentEquals(expected) || out.dataType() != DataType.FLOAT32 ||
                 out.numElements() != EMBEDDING_DIM
@@ -179,7 +207,6 @@ internal class TfliteWakeModels private constructor(
                 shape[1] in 1..64 && shape[2] == EMBEDDING_DIM &&
                 out.dataType() == DataType.FLOAT32 && out.numElements() == 1
             if (!ok) return null
-            cls.allocateTensors()
             return shape[1]
         }
 
