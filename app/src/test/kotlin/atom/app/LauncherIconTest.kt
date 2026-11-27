@@ -1,7 +1,6 @@
 package atom.app
 
 import java.io.File
-import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -9,12 +8,11 @@ import kotlin.test.assertTrue
 
 /**
  * The launcher icon lives under new resource names (atom_launcher, atom_launcher_round), so a launcher or
- * notification shade that cached the old app's icon by resource name or id misses its cache. Legacy bitmaps sit next
- * to the adaptive icon for shades that read those.
+ * notification shade that cached the old app's icon by resource name or id misses its cache. With minSdk 30 the
+ * adaptive icon in mipmap-anydpi always wins, so there are no density bitmaps of it (they would never be used).
  */
 class LauncherIconTest {
     private val res = File("src/main/res")
-    private val densities = mapOf("mdpi" to 48, "hdpi" to 72, "xhdpi" to 96, "xxhdpi" to 144, "xxxhdpi" to 192)
 
     @Test
     fun theManifestUsesTheNewNames() {
@@ -40,23 +38,8 @@ class LauncherIconTest {
     }
 
     @Test
-    fun legacyBitmapsExistAtEveryDensity() {
-        for ((d, px) in densities) {
-            for (name in listOf("atom_launcher", "atom_launcher_round")) {
-                val f = File(res, "mipmap-$d/$name.png")
-                assertTrue(f.isFile, f.path)
-                val img = ImageIO.read(f)
-                assertEquals(px, img.width, f.path)
-                assertEquals(px, img.height, f.path)
-                if (name == "atom_launcher") {
-                    // Square on black, edge to edge.
-                    assertEquals(0xFF000000.toInt(), img.getRGB(0, 0), f.path)
-                } else {
-                    // Clipped to a circle: the corners are transparent, the middle is not.
-                    assertEquals(0, img.getRGB(0, 0) ushr 24, f.path)
-                    assertEquals(0xFF, img.getRGB(px / 2, px / 2) ushr 24, f.path)
-                }
-            }
-        }
+    fun noUnusedDensityBitmaps() {
+        val dirs = res.listFiles { f -> f.isDirectory && f.name.startsWith("mipmap") }.orEmpty().map { it.name }
+        assertEquals(listOf("mipmap-anydpi"), dirs)
     }
 }
