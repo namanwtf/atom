@@ -33,6 +33,7 @@
     window.__atomRunDone = false;
     var typed = run.querySelector('.typed');
     var full = typed.getAttribute('data-text');
+    var perChar = parseFloat(typed.getAttribute('data-ms')) || 34;
     var steps = run.querySelectorAll('.run-steps li');
     typed.textContent = '';
     run.classList.add('pending', 'typing');
@@ -40,7 +41,7 @@
       var t0 = null;
       var tick = function (now) {
         if (t0 === null) t0 = now;
-        var i = Math.min(full.length, Math.floor((now - t0) / 34));
+        var i = Math.min(full.length, Math.floor((now - t0) / perChar));
         typed.textContent = full.slice(0, i);
         if (i < full.length) { requestAnimationFrame(tick); return; }
         run.classList.remove('typing');
