@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/hero-light.png">
-    <img src="docs/assets/hero-dark.png" width="100%" alt="Atom. Your phone finally has an agent of its own. It reads the screen, taps through apps, runs real Linux tools and works on a schedule, with the model you pick or fully offline. Shown: two real Atom runs, 'Turn on Do Not Disturb' and 'Every day at 9am remind me to drink water', done by a local 3B model.">
+    <img src="docs/assets/hero-dark.png" width="100%" alt="Atom. Your phone finally has an agent of its own. It reads the screen, taps through apps, runs real Linux tools and works on a schedule, with the model you pick or fully offline. Shown, cropped from real runs with a local 3B model: the request 'Turn on Do Not Disturb.', Atom's reply 'Do Not Disturb is now set to total silence', and the phone's quick settings with the Do Not Disturb tile on, set by Atom.">
   </picture>
 </p>
 
@@ -47,17 +47,17 @@ Atom opens apps, reads the screen, taps, types and scrolls, then looks again to 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-hands-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-hands-light.png">
-  <img src="docs/assets/plate-hands-dark.png" width="100%" alt="The floating bubble over the home screen, its hold menu, and the mini chat that opens over any app.">
+  <img src="docs/assets/plate-hands-dark.png" width="100%" alt="Close-ups of the floating bubble on the home screen, its hold menu with voice, chat and close, and the mini chat with a question typed in.">
 </picture>
 
 ### 02 &nbsp;A real workbench in your pocket
 
-A terminal with several sessions, and Linux on the phone: **Alpine or Debian**, in PRoot (no root needed) or a chroot (with root). Git, SSH, curl, jq and ripgrep come with the base install, and Python and Node are added on request. Atom writes code, runs it, reads the errors and fixes them. Scheduled tasks and phone-event automations run in the background and report back.
+A terminal with several sessions, and Linux on the phone: **Alpine or Debian**, in PRoot (no root needed) or a chroot (with root). Git, SSH, curl, jq and ripgrep come with the base install, and Python and Node are added on request. Atom writes code, runs it, reads the errors and fixes them. Its own browser shows every step, and you can take over. Scheduled tasks and phone-event automations run in the background and report back.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-bench-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-bench-light.png">
-  <img src="docs/assets/plate-bench-dark.png" width="100%" alt="The terminal, the Linux environment screen with Debian in PRoot, and Scheduled tasks.">
+  <img src="docs/assets/plate-bench-dark.png" width="100%" alt="Cropped from real runs: shell commands and their output in Atom's terminal, a daily reminder created from one sentence, and the agent browser's steps on example.com with a Take over button.">
 </picture>
 
 ### 03 &nbsp;Any model. Or no cloud at all.
@@ -72,7 +72,7 @@ A terminal with several sessions, and Linux on the phone: **Alpine or Debian**, 
 
 ### 04 &nbsp;It grows with you
 
-**Memory** you can read and edit. **Skills** installed from any public GitHub repo. **MCP** servers, with a switch for each tool. **Subagents** (explore, coder, plan, or your own) that work in parallel. **Voice**: dictation, spoken answers and an on-device "Hey Atom" wake word. An **agent browser** you can take over at any time.
+**Memory** you can read and edit. **Skills** installed from any public GitHub repo. **MCP** servers, with a switch for each tool. **Subagents** (explore, coder, plan, or your own) that work in parallel. **Voice**: dictation, spoken answers and an on-device "Hey Atom" wake word. **Images**: generate and edit them with the image model you choose.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-extend-dark.png">
