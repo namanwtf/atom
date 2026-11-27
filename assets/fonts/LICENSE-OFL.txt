@@ -1,18 +1,13 @@
 Fonts in this folder
 ====================
 
-All four families are used under the SIL Open Font License, Version 1.1.
-They are subsets (Latin) converted to WOFF2. Reserved Font Names, if any, are
-not used for these files.
+Both families are used under the SIL Open Font License, Version 1.1.
+Mona Sans is the unmodified Fontsource WOFF2 build (Latin). JetBrains Mono is a Latin subset converted to WOFF2.
 
-inter-400.woff2, inter-600.woff2, inter-display-600.woff2
-  Inter and Inter Display
-  Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
-
-instrument-serif-italic.woff2
-  Instrument Serif
-  Copyright 2022 The Instrument Serif Project Authors
-  (https://github.com/Instrument/instrument-serif)
+mona-sans-var.woff2 (variable: width 75-125, weight 200-900)
+  Mona Sans
+  Copyright 2022 The Mona Sans Project Authors (https://github.com/github/mona-sans),
+  with Reserved Font Name "Mona"
 
 jetbrains-mono-400.woff2
   JetBrains Mono

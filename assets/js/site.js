@@ -25,12 +25,100 @@
     window.addEventListener('scroll', onScroll, { passive: true });
   }
 
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Hero: type the real request, tick in the real steps, then play the recording. */
+  var run = d.querySelector('.run');
+  if (run && !reduceMotion && 'IntersectionObserver' in window) {
+    window.__atomRunDone = false;
+    var typed = run.querySelector('.typed');
+    var full = typed.getAttribute('data-text');
+    var steps = run.querySelectorAll('.run-steps li');
+    typed.textContent = '';
+    run.classList.add('pending', 'typing');
+    var go = function () {
+      var t0 = null;
+      var tick = function (now) {
+        if (t0 === null) t0 = now;
+        var i = Math.min(full.length, Math.floor((now - t0) / 34));
+        typed.textContent = full.slice(0, i);
+        if (i < full.length) { requestAnimationFrame(tick); return; }
+        run.classList.remove('typing');
+        var k = 0;
+        var step = function () {
+          if (k < steps.length) { steps[k++].classList.add('on'); setTimeout(step, k === steps.length ? 250 : 420); return; }
+          window.__atomRunDone = true;
+          if (window.__atomVideo) window.__atomVideo.start();
+        };
+        setTimeout(step, 300);
+      };
+      setTimeout(function () { requestAnimationFrame(tick); }, 350);
+    };
+    var ro = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { ro.disconnect(); go(); } }, { threshold: 0.6 });
+    ro.observe(run);
+  }
+
+  /* Scroll reveals and counters. */
+  var reveals = d.querySelectorAll('.reveal');
+  var countUp = function (el) {
+    var to = parseInt(el.getAttribute('data-to'), 10), t0 = null;
+    var f = function (now) {
+      if (t0 === null) t0 = now;
+      var p = Math.min(1, (now - t0) / 900);
+      el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) requestAnimationFrame(f);
+    };
+    requestAnimationFrame(f);
+  };
+  if (reveals.length && 'IntersectionObserver' in window && !reduceMotion) {
+    var rio = new IntersectionObserver(function (es) {
+      es.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        en.target.classList.add('in');
+        en.target.querySelectorAll('.count').forEach(countUp);
+        rio.unobserve(en.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    reveals.forEach(function (el) { rio.observe(el); });
+  } else {
+    reveals.forEach(function (el) { el.classList.add('in'); });
+  }
+
+  /* A slight parallax on phone screenshots (desktop, motion allowed). */
+  if (!reduceMotion && window.matchMedia('(min-width: 980px)').matches) {
+    var phonesEls = [].slice.call(d.querySelectorAll('.phone, .bench-media .phone'));
+    phonesEls.forEach(function (p) { p.classList.add('parallax'); });
+    var queued = false;
+    var px = function () {
+      queued = false;
+      var vh = window.innerHeight;
+      phonesEls.forEach(function (p) {
+        var r = p.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > vh) return;
+        var off = ((r.top + r.height / 2) - vh / 2) / vh;
+        p.style.transform = 'translate3d(0,' + (off * -18).toFixed(1) + 'px,0)';
+      });
+    };
+    window.addEventListener('scroll', function () { if (!queued) { queued = true; requestAnimationFrame(px); } }, { passive: true });
+    px();
+  }
+
+  /* The metal sheen follows the pointer over primary buttons. */
+  d.querySelectorAll('.btn.sheen').forEach(function (b) {
+    b.addEventListener('pointermove', function (e) {
+      var r = b.getBoundingClientRect();
+      b.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      b.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  });
+
   /* Demo video: no autoplay for reduced motion, pause while off screen, a visible pause button. */
   var video = d.querySelector('.screen video');
   var btn = d.querySelector('.play-toggle');
   if (video) {
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     var userPaused = reduce;
+    window.__atomVideo = { start: function () { if (!userPaused && video.getBoundingClientRect().top < window.innerHeight) { var p = video.play(); if (p && p.catch) p.catch(function () {}); } } };
     var label = function () {
       if (!btn) return;
       var playing = !video.paused;
@@ -39,7 +127,7 @@
         ? '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="9.5" y="2" width="3.5" height="12" rx="1" fill="currentColor"/></svg>'
         : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>';
     };
-    if (reduce) { video.removeAttribute('autoplay'); video.pause(); }
+    video.removeAttribute('autoplay'); video.pause();
     video.addEventListener('play', label);
     video.addEventListener('pause', label);
     if (btn) {
@@ -51,13 +139,48 @@
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
-          if (en.isIntersecting) { if (!userPaused) { var p = video.play(); if (p && p.catch) p.catch(function () {}); } }
+          if (en.isIntersecting) { if (!userPaused && window.__atomRunDone !== false) { var p = video.play(); if (p && p.catch) p.catch(function () {}); } }
           else if (!video.paused) { video.pause(); }
         });
       }, { threshold: 0.2 }).observe(video);
     }
     label();
   }
+
+  /* Swipe rows on phones: dots that show where you are and jump to a card. */
+  d.querySelectorAll('.phones, .bleed').forEach(function (row, r) {
+    var items = row.children;
+    if (items.length < 2) return;
+    var dots = d.createElement('div');
+    dots.className = 'dots';
+    dots.setAttribute('role', 'group');
+    dots.setAttribute('aria-label', 'Screens');
+    var btns = [];
+    for (var i = 0; i < items.length; i++) {
+      (function (i) {
+        var b = d.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Show screen ' + (i + 1) + ' of ' + items.length);
+        b.addEventListener('click', function () {
+          row.scrollTo({ left: items[i].offsetLeft - row.offsetLeft - parseFloat(getComputedStyle(row).paddingLeft || 0), behavior: 'smooth' });
+        });
+        dots.appendChild(b);
+        btns.push(b);
+      })(i);
+    }
+    row.parentNode.insertBefore(dots, row.nextSibling);
+    var mark = function () {
+      var best = 0, bestD = Infinity, left = row.getBoundingClientRect().left;
+      for (var i = 0; i < items.length; i++) {
+        var dist = Math.abs(items[i].getBoundingClientRect().left - left);
+        if (dist < bestD) { bestD = dist; best = i; }
+      }
+      if (row.scrollLeft + row.clientWidth >= row.scrollWidth - 4) best = items.length - 1;
+      btns.forEach(function (b, i) { b.setAttribute('aria-current', i === best ? 'true' : 'false'); });
+    };
+    row.addEventListener('scroll', function () { window.requestAnimationFrame(mark); }, { passive: true });
+    mark();
+  });
 
   /* Copy buttons on code blocks and fingerprints. */
   d.querySelectorAll('pre, .fingerprint').forEach(function (el) {
