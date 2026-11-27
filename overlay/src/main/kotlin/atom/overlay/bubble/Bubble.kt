@@ -463,7 +463,7 @@ internal object Bubble {
     private fun hoverIndex(x: Float, y: Float): Int {
         if (menu == null) return -1
         val reach = (MENU_BUTTON.value * 0.8f) * (window?.view?.resources?.displayMetrics?.density ?: 1f)
-        return menuCenters.indexOfFirst { hypot(it.x - x, it.y - y) <= reach }
+        return HoldMenuLayout.hovered(menuCenters, x, y, reach)
     }
 
     // ------------------------------------------------------------------ Touch

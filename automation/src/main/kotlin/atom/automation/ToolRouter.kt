@@ -35,9 +35,12 @@ object ToolRouter {
     private const val THING_ENDS =
         "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|to|for|with|so|and|or|about|like|using|called|named|i|we|please|of|in|on|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
 
-    /** After a bare "page": as [THING_ENDS], but "in" / "on" / "to" name where a page goes (Notion, the wiki...). */
+    /**
+     * After a bare "page": as [THING_ENDS], but "in" / "on" / "to" name where a page goes (Notion, the wiki...), and
+     * "called" / "named" are left out because "a page called Roadmap in Notion" is a note, not a website.
+     */
     private const val PAGE_ENDS =
-        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|for|with|so|and|or|about|like|using|called|named|i|we|please|of|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
+        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|for|with|so|and|or|about|like|using|i|we|please|of|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
 
     private val RULES: List<Rule> = buildList {
         addAll(

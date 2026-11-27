@@ -256,4 +256,15 @@ class BubbleGeometryTest {
         val one = HoldMenuLayout.place(Pt(70f, 1200f), Side.Left, 1, radius = 200f, button = 100f, area = area)
         assertEquals(Pt(270f, 1200f), one.single())
     }
+
+    @Test
+    fun slideAndLiftPicksTheNearestButtonNotTheFirst() {
+        // Two buttons 60 px apart with a 41.6 px reach: their circles overlap between them.
+        val centers = listOf(Pt(0f, 0f), Pt(60f, 0f), Pt(120f, 0f))
+        assertEquals(1, HoldMenuLayout.hovered(centers, 35f, 0f, reach = 41.6f))
+        assertEquals(0, HoldMenuLayout.hovered(centers, 25f, 0f, reach = 41.6f))
+        assertEquals(2, HoldMenuLayout.hovered(centers, 125f, 5f, reach = 41.6f))
+        assertEquals(-1, HoldMenuLayout.hovered(centers, 60f, 80f, reach = 41.6f))
+        assertEquals(-1, HoldMenuLayout.hovered(emptyList(), 0f, 0f, reach = 41.6f))
+    }
 }

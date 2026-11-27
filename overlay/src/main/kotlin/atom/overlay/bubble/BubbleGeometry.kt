@@ -98,6 +98,24 @@ object HoldMenuLayout {
     const val STEP_DEG = 52f
     const val MAX_SPAN = 170f
 
+    /**
+     * The action under a finger at ([x], [y]) for slide-and-lift: the nearest centre within [reach], or -1. Nearest,
+     * not first: at the menu's radius the reach circles of neighbouring buttons overlap, so the first match could be
+     * the wrong button when the finger is between them.
+     */
+    fun hovered(centers: List<Pt>, x: Float, y: Float, reach: Float): Int {
+        var best = -1
+        var bestDist = Float.MAX_VALUE
+        centers.forEachIndexed { i, c ->
+            val d = hypot(c.x - x, c.y - y)
+            if (d <= reach && d < bestDist) {
+                best = i
+                bestDist = d
+            }
+        }
+        return best
+    }
+
     /** Direction the fan points: right (0°) from the left half of the screen, left (180°) from the right half. */
     fun midAngle(side: Side): Double = if (side == Side.Left) 0.0 else 180.0
 

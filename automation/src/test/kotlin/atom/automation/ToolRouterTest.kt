@@ -92,7 +92,7 @@ class ToolRouterTest {
             "make me a small website that tracks my water intake", "Make a one-page site that says hello",
             "build me a snake game", "create a todo app", "make a landing page for my bakery", "write an html page with a clock",
             "erstelle mir eine Webseite für meinen Verein", "hazme una página web para mi tienda", "fais-moi un site pour mon club",
-            "make an app called Snake", "build me a game named Pong", "create a page called About me",
+            "make an app called Snake", "build me a game named Pong",
         )) {
             assertEquals("sites", top(r), r)
             // Small models get it too: one strong match is enough.
@@ -110,6 +110,8 @@ class ToolRouterTest {
             "write a python script that sorts a list", "make a call to mom", "set an alarm for 7",
             "make a game plan for tomorrow", "create a page in Notion", "summarize this html email",
             "make a page on confluence for the team", "build an app icon", "make a site visit list",
+            "create a page called Roadmap in Notion", "make a new page named Trip notes on Confluence",
+            "write a page called Intro in the wiki",
         )) {
             assertTrue("sites" !in groups(r), r)
             assertTrue("sites" !in groups(r, minScore = ToolRouter.STRONG - 1), r)

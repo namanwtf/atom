@@ -94,6 +94,12 @@ are in: websites no longer listen on a port, "Allow all commands for this task" 
 commands (now checked end to end), thinking models keep their reasoning where the vendors need it, and the bubble's
 menu sits next to it.
 
-This release has not been approved. It waits for the owner's review.
+A last independent check of the final review round found it safe to ship and named two small follow-ups, both fixed
+in the final commit with unit tests: the bubble's hold menu now picks the nearest button under the finger (the
+closer buttons made their touch areas overlap, so the first match could be the wrong one), and "a page called ... in
+Notion" no longer loads the website tools. The end-to-end run above is on the last code before those two changes;
+the commits after it change only the README, this scorecard, those two functions and their tests.
 
-Result: awaiting owner review
+Shipped at the owner's request: "Ship it as soon as review passes."
+
+Result: ready
