@@ -45,11 +45,16 @@ jobs:
         # of the app's LiteRT Java API allocate (the constructor's init, run, allocateTensors).
         run: |
           mkdir aar && cd aar
-          curl -fsSL -o l.aar "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert-api/$LITERT_VERSION/litert-api-$LITERT_VERSION.aar" \
-            || curl -fsSL -o l.aar "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/$LITERT_VERSION/litert-$LITERT_VERSION.aar"
-          unzip -q l.aar classes.jar
-          javap -c -p -cp classes.jar org.tensorflow.lite.NativeInterpreterWrapper \
-            | awk '/^  [a-z].*\(/{m=$0} /allocateTensors/{print m " -> " $0}' | sort -u || true
+          for a in litert litert-api; do
+            curl -fsSL -o "$a.aar" "https://dl.google.com/android/maven2/com/google/ai/edge/litert/$a/$LITERT_VERSION/$a-$LITERT_VERSION.aar" || continue
+            unzip -q -o "$a.aar" classes.jar && mv classes.jar "$a.jar"
+          done
+          for jar in *.jar; do
+            for c in $(unzip -Z1 "$jar" | grep -E 'NativeInterpreterWrapper(Experimental)?\.class$' | sed 's/\.class$//; s#/#.#g'); do
+              echo "== $jar $c"
+              javap -c -p -cp "$jar" "$c" | awk '/^  [a-z].*\(/{m=$0} /allocateTensors/{print m " -> " $0}' | sort -u
+            done
+          done
 
   api:
     runs-on: ubuntu-latest
