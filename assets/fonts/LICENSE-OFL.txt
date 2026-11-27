@@ -5,10 +5,10 @@ All three families are used under the SIL Open Font License, Version 1.1.
 They are the unmodified Fontsource WOFF2 builds (Latin subset). Reserved Font
 Names are not used for these files.
 
-ibm-plex-serif-400.woff2, ibm-plex-serif-500.woff2
-  IBM Plex Serif
-  Copyright 2020 IBM Corp. All rights reserved.
-  (https://github.com/IBM/plex)
+cormorant-garamond-400.woff2, cormorant-garamond-500.woff2
+  Cormorant Garamond
+  Copyright 2015 The Cormorant Project Authors
+  (https://github.com/CatharsisFonts/Cormorant)
 
 inter-var.woff2 (variable: weight 100-900)
   Inter
