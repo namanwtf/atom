@@ -16,7 +16,7 @@
 <link rel="manifest" href="/atom/site.webmanifest">
 <link rel="preload" href="/atom/assets/fonts/inter-display-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/atom/assets/fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/atom/assets/css/site.css?v=1">
+<link rel="stylesheet" href="/atom/assets/css/site.css?v=2">
 <meta property="og:site_name" content="Atom: AI agent for Android">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Atom: AI agent for Android, free, open source and private">
@@ -34,7 +34,7 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://namanwtf.github.io/atom/#app","name":"Atom","alternateName":"Atom: AI agent for Android","description":"A free, open-source AI agent for Android. It reads the screen, taps and types through apps and checks the result, runs a real Linux terminal, works on a schedule, and uses the model you choose, including fully offline on-device models.","applicationCategory":"UtilitiesApplication","applicationSubCategory":"AI assistant","operatingSystem":"Android 14 or newer","processorRequirements":"ARM64 (arm64-v8a)","fileSize":"7.2 MB","downloadUrl":"https://github.com/namanwtf/atom/releases/latest","installUrl":"https://github.com/namanwtf/atom/releases/latest","url":"https://namanwtf.github.io/atom/","image":"https://namanwtf.github.io/atom/assets/og/atom-og-1200x630.png","screenshot":["https://namanwtf.github.io/atom/assets/img/shots/task-steps-540.webp","https://namanwtf.github.io/atom/assets/img/shots/bubble-hold-540.webp","https://namanwtf.github.io/atom/assets/img/shots/terminal-540.webp","https://namanwtf.github.io/atom/assets/img/shots/ondevice-540.webp"],"license":"https://www.gnu.org/licenses/gpl-3.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"author":{"@type":"Person","name":"namanwtf","url":"https://github.com/namanwtf"},"sameAs":["https://github.com/namanwtf/atom"],"inLanguage":"en"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","@id":"https://namanwtf.github.io/atom/#website","url":"https://namanwtf.github.io/atom/","name":"Atom: AI agent for Android","inLanguage":"en","about":{"@id":"https://namanwtf.github.io/atom/#app"}}</script>
 <script>document.documentElement.classList.add('js')</script>
-<script src="/atom/assets/js/site.js?v=1" defer></script>
+<script src="/atom/assets/js/site.js?v=2" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -76,17 +76,17 @@
     <figure style="margin:0">
       <div class="screen fade">
         <video autoplay muted loop playsinline preload="metadata" width="1280" height="720"
-          poster="/atom/assets/video/atom-demo-poster.webp"
-          aria-label="Screen recording of Atom on an Android emulator: asked to turn on Do Not Disturb and set an alarm for 6:45, it does both with a local 3B model, the quick settings and the clock app confirm it, then an on-device model is downloaded and checked.">
-          <source src="/atom/assets/video/atom-demo-1080p.mp4" type='video/mp4; codecs="avc1.640028"' media="(min-width: 1000px)">
-          <source src="/atom/assets/video/atom-demo-720p.mp4" type='video/mp4; codecs="avc1.64001f"'>
-          <source src="/atom/assets/video/atom-demo-720p.webm" type='video/webm; codecs="vp9"'>
+          poster="/atom/assets/video/atom-demo-v2-poster.webp"
+          aria-label="Screen recording of Atom on an Android emulator: asked in one sentence to turn on Do Not Disturb and set an alarm for 6:45, a local 3B model sets Do Not Disturb, then the alarm, and reports back; the quick settings and the clock app confirm both.">
+          <source src="/atom/assets/video/atom-demo-v2-1080p.mp4" type='video/mp4; codecs="avc1.640028"' media="(min-width: 1000px)">
+          <source src="/atom/assets/video/atom-demo-v2-720p.mp4" type='video/mp4; codecs="avc1.64001f"'>
+          <source src="/atom/assets/video/atom-demo-v2-720p.webm" type='video/webm; codecs="vp9"'>
         </video>
         <button class="play-toggle" type="button" hidden aria-label="Pause the demo video"></button>
       </div>
       <figcaption class="screen-cap">
-        <span class="caption">A real recording on an Android emulator. The model is Qwen2.5 3B on a CI server’s CPU, sped up where marked.</span>
-        <span class="caption">55 seconds, no sound</span>
+        <span class="caption">A real recording on an Android emulator with a local 3B model; waiting time is cut, nothing is sped up.</span>
+        <span class="caption">20 seconds, no sound</span>
       </figcaption>
     </figure>
 
