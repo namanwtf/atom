@@ -286,32 +286,6 @@ class EngineRouter(
 
     private class Credential(val provider: Provider, val secret: String, val headers: List<HeaderEntry>)
 
-    internal companion object {
-        /** The engine options for [modelConfig] of [config] (pure, unit-tested). */
-        fun engineOptions(
-            config: ProviderConfig,
-            modelConfig: ModelConfig,
-            provider: Provider,
-            authHeaders: List<HeaderEntry>,
-            extraBody: kotlinx.serialization.json.JsonObject?,
-            hostedSearch: Boolean,
-        ) = EngineOptions(
-            headers = config.headers,
-            authHeaders = authHeaders,
-            extraBody = extraBody,
-            systemPrompt = config.systemPrompt.takeIf { it.isNotBlank() },
-            hostedWebSearch = hostedSearch && config.hostedWebSearch && provider.wire == Wire.OpenAiResponses,
-            googleSearch = hostedSearch && config.googleSearch && provider.wire.protocol == Protocol.Gemini,
-            vertexProject = config.vertexProject.takeIf { it.isNotBlank() },
-            vertexLocation = config.vertexLocation,
-            // Unknown (null) when nothing is detected in Auto mode: see ModelConfig.engineReasoning.
-            reasoning = modelConfig.engineReasoning,
-            contextWindow = modelConfig.effectiveContextWindow,
-            vision = modelConfig.vision,
-            anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() },
-        )
-    }
-
     private suspend fun credential(config: ProviderConfig): Credential {
         val provider = config.toProvider()
         return when (config.auth) {
@@ -414,6 +388,30 @@ class EngineRouter(
     companion object {
         const val IDLE_RELEASE_MS = 5 * 60 * 1000L
         private const val GGUF_GPU_ALL_LAYERS = 99
+
+        /** The engine options for [modelConfig] of [config] (pure, unit-tested). */
+        internal fun engineOptions(
+            config: ProviderConfig,
+            modelConfig: ModelConfig,
+            provider: Provider,
+            authHeaders: List<HeaderEntry>,
+            extraBody: kotlinx.serialization.json.JsonObject?,
+            hostedSearch: Boolean,
+        ) = EngineOptions(
+            headers = config.headers,
+            authHeaders = authHeaders,
+            extraBody = extraBody,
+            systemPrompt = config.systemPrompt.takeIf { it.isNotBlank() },
+            hostedWebSearch = hostedSearch && config.hostedWebSearch && provider.wire == Wire.OpenAiResponses,
+            googleSearch = hostedSearch && config.googleSearch && provider.wire.protocol == Protocol.Gemini,
+            vertexProject = config.vertexProject.takeIf { it.isNotBlank() },
+            vertexLocation = config.vertexLocation,
+            // Unknown (null) when nothing is detected in Auto mode: see ModelConfig.engineReasoning.
+            reasoning = modelConfig.engineReasoning,
+            contextWindow = modelConfig.effectiveContextWindow,
+            vision = modelConfig.vision,
+            anthropicVersion = config.anthropicVersion.takeIf { it.isNotBlank() },
+        )
     }
 }
 
