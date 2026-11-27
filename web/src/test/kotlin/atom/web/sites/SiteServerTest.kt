@@ -236,12 +236,16 @@ class SiteServerTest {
         server.stop()
         val again = SiteServer(root, preferredPort = port).start()
         try {
-            assertEquals(port, again.port)
-            assertEquals("http://127.0.0.1:$port/", again.url)
+            if (again.port != port) {
+                // Something else on the machine (another test process's connection) took the port in between; the
+                // server then falls back, by design. It must not fall back while the port is free.
+                assertFalse(canBind(port), "port $port is free, but the restarted server took ${again.port}")
+            }
+            assertEquals("http://127.0.0.1:${again.port}/", again.url)
             // A second server cannot take the same port; it falls back to another one.
-            val other = SiteServer(root, preferredPort = port).start()
+            val other = SiteServer(root, preferredPort = again.port).start()
             try {
-                assertTrue(other.port != port && other.port > 0)
+                assertTrue(other.port != again.port && other.port > 0)
             } finally {
                 other.stop()
             }
@@ -260,4 +264,11 @@ class SiteServerTest {
         assertEquals(null, SiteServer.percentDecode("/%"))
         assertEquals(null, SiteServer.percentDecode("/%C3"))
     }
+
+    private fun canBind(port: Int): Boolean = runCatching {
+        java.net.ServerSocket().use {
+            it.reuseAddress = true
+            it.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), port))
+        }
+    }.isSuccess
 }
