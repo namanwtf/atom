@@ -9,7 +9,7 @@ Atom is built and tested only on GitHub's disposable runners, never on a persona
 | **Screenshots** (`screenshots.yml`) | Walks the debug build's screens on an emulator and prints each screenshot into the log | Pull requests that touch UI modules |
 | **E2E** (`e2e.yml`) | Real agent tasks on an emulator, end to end | On demand, weekly, and on labelled or release pull requests |
 | **Compare** (`compare.yml`) | The previous Atom (latest 3.4.x) and the new one, side by side on one emulator and model | On demand, and on the release pull request |
-| **On-device model** (`ondevice-model.yml`) | The catalog's Qwen3 0.6B (`.litertlm`) on the runner's CPU with the app's LiteRT-LM version | On demand, and on pull requests that touch the LiteRT-LM engine or the probe |
+| **On-device model** (`ondevice-model.yml`) | The catalog's Qwen3 0.6B (`.litertlm`) on the runner's CPU with the app's LiteRT-LM version, and the "Hey Atom" models with the pack's LiteRT version | On demand, and on pull requests that touch the LiteRT-LM engine, the on-device AI pack or the probes |
 
 ## End-to-end tasks
 
@@ -152,7 +152,17 @@ then prints:
 - the prompt the runtime renders from Atom's messages (the compact system prompt plus `PromptedToolEngine`'s tool
   block) and the streamed answer, with the model's default sampler and thinking, and with thinking off and Qwen's
   non-thinking sampler; for a chat question, the first step of a browser task, and prompts sized just under and over
-  the model's window.
+  the model's window;
+- the bubble's "set an alarm for 8:00" with 4.0.6's prompt and with the tiny-model plan (`core/.../agent/TinyModel.kt`:
+  a short prompt and only the clock tools), the plan's second step after the tool result, plain chat, and a task the
+  plan has no tools for. Each answer's count of stray `<think>` / `</think>` tags is printed too.
+
+The `wake-word` job runs `tools/ondevice/wake_probe.py` with the LiteRT Python runtime at the version the pack ships
+(`com.google.ai.edge.litert:litert` in `ondevice-pack/build.gradle.kts`, the `ai-edge-litert` wheel). It opens the
+pack's three "Hey Atom" models the way the pack does (the input shape the pipeline feeds written into the model's
+stored shape, then allocated, as LiteRT's Java constructor allocates) with and without XNNPack, runs each once on
+silence, and fails when one does not load or gives non-finite output. It also lists where the pack's Java
+interpreter allocates tensors (`javap` of `NativeInterpreterWrapper`).
 
 It also lists the Kotlin API of the app's LiteRT-LM AAR (`javap`), so a runtime upgrade shows what changed. The
 runner has no GPU, so the phone's GPU and NPU paths and their speed are not covered.
