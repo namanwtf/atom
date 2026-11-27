@@ -130,7 +130,7 @@ class Recorder:
         # Full size, 30 fps, real time. Cuts are made in editing, and labelled there.
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst,
-             "-vf", "fps=30,scale=1080:-2:flags=lanczos", "-c:v", "libx264", "-crf", "22", "-preset", "medium",
+             "-vf", "fps=30,scale=1080:-2:flags=lanczos", "-c:v", "libx264", "-crf", "21", "-preset", "veryfast",
              "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", out],
             check=False,
         )
