@@ -33,7 +33,8 @@ object SiteToolNames {
             "site_* tools, not file_write or the terminal: site_create, then site_write index.html (plain HTML, CSS and " +
             "JavaScript, inline or in style.css / app.js; no build step; keep the user's data in localStorage), then " +
             "site_preview to show it. For a change, site_read the file and site_write it whole; the open preview reloads by " +
-            "itself. To check your work, browser_open the preview URL: the result notes the page's console errors."
+            "itself. To check your work, browser_open the site's URL (https://<id>-<tag>.sites.invalid/, given by site_preview; " +
+            "it opens only in Atom's own preview and browsers): the result notes the page's console errors."
 }
 
 /** What the website tools need from the app; a fake in unit tests. */
@@ -49,8 +50,11 @@ internal interface SiteBackend {
     /** Files of [id] changed. */
     fun changed(id: String)
 
-    /** Starts the server, opens the preview screen when the app is in front. Returns the URL and whether it opened. */
-    suspend fun preview(id: String): Pair<String, Boolean>
+    /**
+     * The site's address, and whether its preview is on screen: already open, or opened now because run [taskId] is
+     * one the user sees in the foreground. A background run never brings the preview up.
+     */
+    suspend fun preview(id: String, taskId: String): Pair<String, Boolean>
 
     /** True when the preview of [id] is running (it then reloads on its own). */
     fun previewing(id: String): Boolean
@@ -67,14 +71,13 @@ internal class AndroidSiteBackend(private val context: Context) : SiteBackend {
 
     override fun changed(id: String) = Sites.changed(id)
 
-    override suspend fun preview(id: String): Pair<String, Boolean> {
-        val server = withContext(Dispatchers.IO) { Sites.serve(context, id) }
-        server.touch()
-        val opened = id in Sites.visible.value || Web.host.openScreen(SiteCards.previewRoute(id))
-        return server.url to opened
+    override suspend fun preview(id: String, taskId: String): Pair<String, Boolean> {
+        val url = withContext(Dispatchers.IO) { Sites.url(context, id) }
+        val opened = id in Sites.visible.value || Web.host.openScreen(SiteCards.previewRoute(id), taskId)
+        return url to opened
     }
 
-    override fun previewing(id: String): Boolean = Sites.running(id) != null
+    override fun previewing(id: String): Boolean = id in Sites.visible.value
 }
 
 internal object SiteTools {
@@ -212,19 +215,19 @@ internal object SiteTools {
 
     private class Preview(private val b: SiteBackend) : BaseTool(
         SiteToolNames.PREVIEW,
-        "Show the site to the user in a live preview on the phone, and get its local URL. The preview reloads when files " +
+        "Show the site to the user in a live preview on the phone, and get its URL. The preview reloads when files " +
             "change. To check the page yourself, open the URL with browser_open.",
         schema { string("name", "Site id or name (default: the current site)") },
         Risk.Read,
     ) {
         override suspend fun exec(args: JsonObject, ctx: ToolContext): ToolResult {
             val id = siteFor(args, ctx, b)
-            val (url, opened) = b.preview(id)
+            val (url, opened) = b.preview(id, ctx.taskId)
             val title = withContext(Dispatchers.IO) { b.store.title(id) } ?: id
             return ToolResult.ok(
                 buildString {
                     append(if (opened) "The live preview of \"$title\" is open on the phone." else "The preview of \"$title\" is ready; the user can open it from the card in the chat.")
-                    append("\nURL: ").append(url).append(" (reachable only on this phone; it stops about a minute after the preview closes, call site_preview again then)")
+                    append("\nURL: ").append(url).append(" (served from the phone's storage; it opens only in Atom's preview and Atom's browsers, not in other apps)")
                     append("\nFiles: ").append(filesLine(b, id))
                     append("\nTo check it yourself, browser_open the URL.")
                     append('\n').append(SiteCards.MARKER).append(id)

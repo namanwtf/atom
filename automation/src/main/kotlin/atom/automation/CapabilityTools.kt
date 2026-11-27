@@ -74,6 +74,9 @@ object CapabilityTools {
         if (AUTOMATION_PREFIXES.any { name.startsWith(it) }) return ToolFamily.Automation
         if (name in ASSISTANT_NAMES) return ToolFamily.Assistant
         if (isTerminal(name)) return ToolFamily.Terminal
+        // Writing, deleting and creating a site's files changes local storage, like the file tools: never a "Web"
+        // capability. Reading and listing a site, and showing its preview, stay with the web tools.
+        if (name in SITE_WRITES) return ToolFamily.Terminal
         return when (origin) {
             ToolOrigin.Linux -> ToolFamily.Terminal
             ToolOrigin.Web -> ToolFamily.Web
@@ -96,6 +99,7 @@ object CapabilityTools {
     private val AUTOMATION_PREFIXES = listOf("scheduled_task_", "automation_")
     private val TERMINAL_PREFIXES = listOf("terminal_", "file_", "linux_")
     private val ASSISTANT_NAMES = setOf("history_search", "search_history", "release_phone_control")
+    private val SITE_WRITES = setOf("site_create", "site_write", "site_delete_file")
 
     /** Extend tools that reach the network. */
     private val NETWORK_EXTEND = setOf("skill_install_github")

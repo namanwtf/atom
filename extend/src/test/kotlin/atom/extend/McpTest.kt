@@ -258,6 +258,21 @@ class McpTest {
     }
 
     @Test
+    fun knownSecretsAreTheTokensAndTheUrlSecrets(): Unit = runBlocking {
+        val secrets = MemorySecrets()
+        val manager = McpManager(NioFiles.createTempDirectory("mcp").toFile(), { secrets }, FakeServer())
+        manager.add("A", "https://a.example/mcp?api_key=k3y-V4lue&x=1", "tok-ABCdef123")
+        manager.add("B", "https://bob:pa%24%24word@b.example/mcp", null)
+        val known = manager.knownSecrets()
+        assertTrue("tok-ABCdef123" in known, "$known")
+        assertTrue("k3y-V4lue" in known, "$known")
+        assertTrue("pa\$\$word" in known && "pa%24%24word" in known, "$known")
+        // A token that can no longer be decrypted is skipped, never read as empty.
+        secrets.unreadable = true
+        assertTrue("tok-ABCdef123" !in manager.knownSecrets())
+    }
+
+    @Test
     fun refreshKeepsEnabledToolsThatStillExist(): Unit = runBlocking {
         val dir = NioFiles.createTempDirectory("mcp").toFile()
         val manager = McpManager(dir, { MemorySecrets() }, FakeServer(pages = 2))

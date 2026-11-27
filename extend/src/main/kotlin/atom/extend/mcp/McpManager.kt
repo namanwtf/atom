@@ -120,6 +120,20 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
         runCatching { secrets().remove(tokenKey(id)) }
     }
 
+    /**
+     * What a saved server would leak if it showed up in text: each stored token (sent as `Authorization: Bearer`) and
+     * the secret parts of server URLs (a password before the host, query values such as `?key=`). For the problem
+     * report only, which removes each wherever it appears. Unreadable tokens are skipped.
+     */
+    suspend fun knownSecrets(): List<String> {
+        val out = ArrayList<String>()
+        for (server in _servers.value) {
+            if (server.hasToken) (runCatching { tokenState(server.id) }.getOrNull() as? SecretRead.Value)?.let { out += it.value }
+            out += urlSecrets(server.url)
+        }
+        return out.filter { it.isNotBlank() }.distinct()
+    }
+
     /** One tool call in its own session; an expired session is reopened once. */
     suspend fun call(id: String, tool: String, arguments: JsonObject): McpContent {
         val server = get(id) ?: throw McpException("That MCP server was removed.")
@@ -161,6 +175,24 @@ class McpManager(dir: File, private val secrets: () -> SecretStore, private val 
     private fun load(): List<McpServer> =
         Files.readOrNull(file)?.let { runCatching { McpProtocol.json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
 }
+
+/** The password in `https://user:password@host/` and every query value of [url]. */
+internal fun urlSecrets(url: String): List<String> {
+    val out = ArrayList<String>()
+    val authority = url.substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore('#')
+    if ('@' in authority) authority.substringBeforeLast('@').substringAfter(':', "").takeIf { it.isNotEmpty() }?.let { out += it; out += decode(it) }
+    val query = url.substringAfter('?', "").substringBefore('#')
+    for (pair in query.split('&')) {
+        val value = pair.substringAfter('=', "")
+        if (value.isNotEmpty()) {
+            out += value
+            out += decode(value)
+        }
+    }
+    return out.distinct()
+}
+
+private fun decode(s: String): String = runCatching { java.net.URLDecoder.decode(s, "UTF-8") }.getOrDefault(s)
 
 /** Pure rules for switching MCP tools on (unit-tested). */
 object McpToolRules {

@@ -6,8 +6,9 @@ plus a small AI model running on the same machine), never on a personal computer
 ## What 4.0.6 brings
 
 - **Make me a website.** "Make me a small website that tracks my water intake": Atom writes the page (HTML, CSS and
-  JavaScript), serves it on the phone only (127.0.0.1) and opens a live preview that reloads by itself when Atom
-  changes a file. The preview can be reopened from a card in the chat or from Settings > Tools > Sites, opened in
+  JavaScript) and opens a live preview that reloads by itself when Atom changes a file. Each site has its own private
+  address that only Atom's own screens can open; no other app on the phone can reach its files, and nothing listens
+  on the phone's network. The preview can be reopened from a card in the chat or from Settings > Tools > Sites, opened in
   Atom's browser and shared as a .zip. It needs no Linux and no internet. (#32)
 - **Report a problem.** Settings > About > Report a problem, and a small "Report a problem" under a failed run in the
   chat. It builds one text file on the phone (versions, device, the last run's steps without their contents, recent

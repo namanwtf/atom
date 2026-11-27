@@ -501,6 +501,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     /** The conversation run [runId] (a [ToolContext.taskId]) belongs to, e.g. for WebHost.conversationOf. */
     fun conversationOf(runId: String): String? = byRunId[runId]?.conversationId
 
+    /** Where run [runId] came from (chat, bubble, a schedule...); null for a run that is not found. */
+    fun sourceOf(runId: String): RunSource? = byRunId[runId]?.source
+
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
 
@@ -681,6 +684,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
         private val id = request.conversationId
         val conversationId: String get() = id
+        val source: RunSource get() = request.source
         private lateinit var conversation: Conversation
         private val stored = ArrayList<StoredMessage>()
         private val view = ArrayList<Int>()
@@ -811,7 +815,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 )
 
                 val images = loadTurnImages()
-                val history = ModelHistory.build(stored, images)
+                val history = ModelHistory.build(stored, images, replaysReasoning = engine.engine.capabilities.replaysReasoning)
                 view.clear()
                 view.addAll(history.storedIndex)
 

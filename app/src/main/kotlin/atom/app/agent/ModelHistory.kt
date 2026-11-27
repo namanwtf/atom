@@ -15,8 +15,16 @@ object ModelHistory {
     /**
      * Everything from the latest compaction summary on, notices left out, attachments described as paths. Tool calls
      * whose results never arrived are dropped from the view (the stored record keeps them) so providers accept it.
+     * A tool-call turn carries its stored reasoning only when [replaysReasoning] (the engine sends it back, see
+     * [atom.core.llm.EngineCapabilities.replaysReasoning]); otherwise it would only make the context look fuller.
+     * User messages that do not start a turn (Atom's nudges, steering sent mid-run) are marked
+     * [ChatMessage.midTurn].
      */
-    fun build(stored: List<StoredMessage>, images: Map<Int, List<ContentPart.Image>> = emptyMap()): View {
+    fun build(
+        stored: List<StoredMessage>,
+        images: Map<Int, List<ContentPart.Image>> = emptyMap(),
+        replaysReasoning: Boolean = false,
+    ): View {
         val start = stored.indexOfLast { it.kind == EntryKind.Summary }.coerceAtLeast(0)
         val messages = ArrayList<ChatMessage>()
         val index = ArrayList<Int>()
@@ -28,19 +36,20 @@ object ModelHistory {
                 Role.User -> {
                     val note = Attachments.describeForModel(s.attachments)
                     val text = listOfNotNull(msg.text.takeIf { it.isNotBlank() }, note).joinToString("\n\n")
-                    msg = msg.copy(parts = listOf(ContentPart.Text(text)) + images[i].orEmpty())
+                    msg = msg.copy(parts = listOf(ContentPart.Text(text)) + images[i].orEmpty(), midTurn = s.hidden || s.steering || msg.midTurn)
                 }
                 Role.Assistant -> if (msg.toolCalls.isNotEmpty()) {
                     val answered = answeredIds(stored, i)
                     val kept = msg.toolCalls.filter { it.id in answered }
                     if (kept.size != msg.toolCalls.size) msg = msg.copy(toolCalls = kept)
                     // Thinking vendors want each tool-call turn's reasoning back, also after the app restarted.
-                    s.reasoning?.takeIf { it.isNotBlank() }?.let { msg = msg.copy(reasoning = it) }
+                    val reasoning = if (replaysReasoning) (s.reasoning ?: msg.reasoning)?.takeIf { it.isNotBlank() } else null
+                    if (reasoning != msg.reasoning) msg = msg.copy(reasoning = reasoning)
                 }
                 Role.Tool -> {
                     val prev = messages.lastOrNull { it.role != Role.Tool }
                     if (prev == null || prev.role != Role.Assistant || prev.toolCalls.none { it.id == msg.toolCallId }) {
-                        msg = ChatMessage.user("[Earlier result of ${msg.toolName ?: "a tool"}]\n" + msg.text)
+                        msg = ChatMessage.user("[Earlier result of ${msg.toolName ?: "a tool"}]\n" + msg.text).copy(midTurn = true)
                     }
                 }
                 Role.System -> continue

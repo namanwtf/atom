@@ -3,4 +3,6 @@
     <files-path name="generated" path="atom4_generated_images/" />
     <cache-path name="shared" path="web_share/" />
     <cache-path name="previews" path="browser_previews/" />
+    <!-- The problem report and its screenshot (app), shared from where they are written. -->
+    <cache-path name="reports" path="reports/" />
 </paths>

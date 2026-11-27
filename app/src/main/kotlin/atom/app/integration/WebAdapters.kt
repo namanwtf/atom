@@ -18,6 +18,7 @@ import atom.web.PrivilegedScope
 import atom.web.ProviderKeys
 import atom.web.SecretStore
 import atom.web.WebHost
+import atom.ui.feature.RunSource
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -34,11 +35,20 @@ class AppWebHost(private val context: Context, private val graph: AppGraph, vaul
 
     override fun conversationOf(taskId: String): String? = graph.tasks.conversationOf(taskId)
 
-    /** Only while the app is in front: a background run never pulls the app up; the chat card opens it later. */
-    override fun openScreen(route: String): Boolean {
+    /**
+     * Only while the app is in front, and only for a run the user started and sees: a scheduled task, an automation
+     * or any other background run never pulls a screen up; the chat card opens it later.
+     */
+    override fun openScreen(route: String, taskId: String): Boolean {
         if (!graph.uiVisible) return false
+        val source = graph.tasks.sourceOf(taskId) ?: return false
+        if (source !in FOREGROUND_SOURCES) return false
         NavRequests.open(route)
         return true
+    }
+
+    private companion object {
+        val FOREGROUND_SOURCES = setOf(RunSource.Chat, RunSource.Bubble, RunSource.Assistant, RunSource.Voice)
     }
 
     /**

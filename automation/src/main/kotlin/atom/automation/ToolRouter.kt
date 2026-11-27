@@ -27,6 +27,18 @@ object ToolRouter {
     private const val MAKE = "(?:make|build|create|code|design|write|generate)"
     private const val WORDS = "(?: (?!(?:in|on|at|to|for|from|with|of|into|about)(?![\\w'-]))[\\w'-]+){0,3}"
 
+    /**
+     * After a bare "site", "app" or "game": the thing made ends there (end of the request, punctuation, or a word that
+     * starts a description: "a game for my kid", "a site that says hello"). "a game plan" or "a page in Notion" is
+     * not a website.
+     */
+    private const val THING_ENDS =
+        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|to|for|with|so|and|or|about|like|using|i|we|please|of|in|on|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
+
+    /** After a bare "page": as [THING_ENDS], but "in" / "on" / "to" name where a page goes (Notion, the wiki...). */
+    private const val PAGE_ENDS =
+        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|for|with|so|and|or|about|like|using|i|we|please|of|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
+
     private val RULES: List<Rule> = buildList {
         addAll(
             rules(
@@ -80,8 +92,9 @@ object ToolRouter {
             rules(
                 "sites", STRONG,
                 "$MAKE(?: me| us)?(?: an?| my| the| one| another| this)?$WORDS (?:web ?sites?|web ?pages?|web ?apps?|landing pages?|home ?pages?|html pages?)",
-                "$MAKE(?: me| us)? an?$WORDS (?:sites?|pages?|apps?|games?)",
-                "html(?: page| file| site)?", "css", "live preview",
+                "$MAKE(?: me| us)? an?$WORDS (?:(?:sites?|apps?|games?)$THING_ENDS|pages?$PAGE_ENDS)",
+                // HTML as what is made, not as a format mentioned in passing ("summarize this html email").
+                "html(?: pages?| files?| sites?| apps?| games?)", "(?:in|with|using|plain) html", "html(?:,| and| ?/) ?css", "css", "live preview",
                 "(?:erstell|bau|mach)\\w*(?: mir)? eine? (?:webseite|website|seite|web-?app|spiel)",
                 "(?:crea|haz|hazme|créame)\\w*(?: me)? una? (?:página|web|sitio|aplicación|juego)",
                 "(?:crée|créer|fais|fais-moi)(?: moi)? une? (?:site|page|application|jeu)",

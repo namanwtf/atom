@@ -129,6 +129,18 @@ class KeyVault(private val store: DataStore<Preferences>) {
         data object Unreadable : SecretRead
     }
 
+    /**
+     * Every value stored in the vault, whatever it belongs to: provider keys and sign-ins, the Hugging Face token and
+     * every feature module's secrets (web search and image keys, speech keys, and any namespace added later). For the
+     * problem report only, which removes each of them wherever it appears. Values that cannot be decrypted are left
+     * out (and left as they are).
+     */
+    suspend fun everyValue(): List<String> {
+        val prefs = data.first()
+        val blobs = storedNames(prefs.asMap().keys.map { it.name }).mapNotNull { prefs[stringPreferencesKey(it)] }
+        return withContext(Dispatchers.Default) { blobs.mapNotNull { runCatching { decrypt(it) }.getOrNull() } }
+    }
+
     suspend fun hfToken(): String? = read(HF_TOKEN)
 
     suspend fun setHfToken(token: String?) = write(HF_TOKEN, token)
@@ -209,16 +221,19 @@ class KeyVault(private val store: DataStore<Preferences>) {
         return generator.generateKey()
     }
 
-    private companion object {
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val ALIAS = "atom4.vault"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val TAG_BITS = 128
-        const val API_PREFIX = "api."
-        const val OAUTH_PREFIX = "oauth."
-        const val STALE_PREFIX = "stale."
+    companion object {
+        /** The vault entries that hold a value: all of them but the markers of values that could not be decrypted. */
+        internal fun storedNames(names: Collection<String>): List<String> = names.filter { !it.startsWith(STALE_PREFIX) }
+
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val ALIAS = "atom4.vault"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val TAG_BITS = 128
+        private const val API_PREFIX = "api."
+        private const val OAUTH_PREFIX = "oauth."
+        private const val STALE_PREFIX = "stale."
         /** Feature-module secrets (speech, web); never exported by the provider backup. */
-        const val MODULE_PREFIX = "mod."
-        val HF_TOKEN = stringPreferencesKey("hf.token")
+        private const val MODULE_PREFIX = "mod."
+        private val HF_TOKEN = stringPreferencesKey("hf.token")
     }
 }

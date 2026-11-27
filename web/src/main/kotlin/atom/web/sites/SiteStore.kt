@@ -43,6 +43,7 @@ class SiteStore(val root: File) {
         if (SitePaths.isLink(root) || SitePaths.isLink(d)) throw IOException("The sites folder is not usable")
         if (!d.mkdirs() && !SitePaths.isDirectory(d)) throw IOException("Cannot create the folder for $id")
         write(id, "index.html", placeholder(title))
+        originTag(id)
         return id to true
     }
 
@@ -105,6 +106,39 @@ class SiteStore(val root: File) {
             Files.delete(p.toPath())
             p = p.parentFile
         }
+    }
+
+    /**
+     * The random part of the site's web origin ([SiteOrigin]), made once when it is first needed and kept in the
+     * site's hidden `.origin` file (hidden names are never served, listed, packed or writable by the tools). A site
+     * made again after a delete gets a new one, so it starts with empty browser storage.
+     */
+    @Synchronized
+    fun originTag(id: String): String {
+        val d = dir(id)
+        if (!exists(id)) throw ToolArgumentException("There is no site $id.")
+        val f = File(d, ORIGIN_FILE)
+        readTag(f)?.let { return it }
+        if (SitePaths.isLink(f)) throw IOException("The site folder is not usable")
+        val random = java.security.SecureRandom()
+        val tag = String(CharArray(TAG_LENGTH) { TAG_CHARS[random.nextInt(TAG_CHARS.length)] })
+        val tmp = File(d, ".tmp-origin-${System.nanoTime()}")
+        try {
+            Files.write(tmp.toPath(), tag.toByteArray(Charsets.US_ASCII), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } finally {
+            runCatching { Files.deleteIfExists(tmp.toPath()) }
+        }
+        return tag
+    }
+
+    /** The tag if it was made already; never creates one (for requests, which only read). */
+    fun existingOriginTag(id: String): String? = if (exists(id)) readTag(File(dir(id), ORIGIN_FILE)) else null
+
+    private fun readTag(f: File): String? {
+        if (!SitePaths.isRegularFile(f)) return null
+        val t = runCatching { Files.readAllBytes(f.toPath()).toString(Charsets.US_ASCII).trim() }.getOrNull() ?: return null
+        return t.takeIf { it.length == TAG_LENGTH && it.all { c -> c in TAG_CHARS } }
     }
 
     /** Deletes the whole site, never following links. */
@@ -177,6 +211,9 @@ class SiteStore(val root: File) {
         const val MAX_SITE = 20L * 1024 * 1024
         const val MAX_FILES = 300
         const val MAX_SITES = 100
+        const val TAG_LENGTH = 6
+        private const val TAG_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
+        private const val ORIGIN_FILE = ".origin"
 
         fun placeholder(title: String): String {
             val safe = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

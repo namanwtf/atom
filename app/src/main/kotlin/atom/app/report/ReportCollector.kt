@@ -121,7 +121,8 @@ object ReportCollector {
         dir(app).listFiles { f -> f.name.startsWith("atom-report-") }?.forEach { it.delete() }
         val report = File(dir(app), "atom-report-$stamp.txt").apply { writeText(text) }
         val files = listOfNotNull(report, screenshotFile(app).takeIf { withScreenshot && it.isFile })
-        val uris = files.map { Share.uriFor(app, it) }
+        // Served from the reports folder itself: no copy lingers anywhere else.
+        val uris = Share.urisFor(app, files)
         val send = if (uris.size == 1) {
             Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0]).setType("text/plain")
         } else {
@@ -254,25 +255,44 @@ object ReportCollector {
         return atom to if (atom.isEmpty()) "${entries.size} entries readable, none from Atom's tags" else null
     }
 
-    /** The person's saved keys, sign-in tokens and header values: removed by exact match wherever they appear. */
+    /**
+     * The person's saved secrets, removed by exact match wherever they appear: every value in the key vault (all its
+     * namespaces, so a new feature's keys are covered without a change here), the providers' custom header values,
+     * and the MCP servers' tokens and URL secrets.
+     */
     private suspend fun knownSecrets(graph: AppGraph): List<String> {
+        val vault = runCatching { graph.vault.everyValue() }.getOrDefault(emptyList())
+        val headers = runCatching { graph.providers.all().flatMap { p -> p.headers.map { it.value } } }.getOrDefault(emptyList())
+        val mcp = runCatching { atom.extend.Extend.mcpSecrets() }.getOrDefault(emptyList())
+        return KnownSecrets.of(vault, headers, mcp)
+    }
+}
+
+/** Pure part of the report's exact-match list (unit-tested). */
+internal object KnownSecrets {
+    /**
+     * Every value, the strings inside a JSON value too (account sign-ins are stored as JSON: access and refresh
+     * tokens), the part after "Bearer " of a header, longest first so a token is replaced before a part of it.
+     */
+    fun of(vault: List<String>, headers: List<String>, mcp: List<String>): List<String> {
         val out = ArrayList<String>()
-        for (p in graph.providers.all()) {
-            graph.vault.apiKey(p.id)?.let { out += it }
-            graph.vault.oauthTokens(p.id)?.let { out += it; out += jsonStrings(it) }
-            p.headers.forEach { out += it.value }
+        for (v in vault + headers + mcp) {
+            out += v
+            out += jsonStrings(v)
+            Regex("(?i)^(?:bearer|basic|token)\\s+(.+)$").find(v.trim())?.let { out += it.groupValues[1] }
         }
-        graph.vault.hfToken()?.let { out += it }
-        return out.filter { it.length >= Redactor.MIN_KNOWN }
+        return out.map { it.trim() }.filter { it.length >= Redactor.MIN_KNOWN }.distinct().sortedByDescending { it.length }
     }
 
     private fun jsonStrings(text: String): List<String> {
+        val t = text.trim()
+        if (!t.startsWith("{") && !t.startsWith("[")) return emptyList()
         fun walk(e: JsonElement): List<String> = when (e) {
             is JsonPrimitive -> if (e.isString) listOf(e.content) else emptyList()
             is JsonObject -> e.values.flatMap(::walk)
             is JsonArray -> e.flatMap(::walk)
         }
-        return runCatching { walk(Json.parseToJsonElement(text)) }.getOrDefault(emptyList())
+        return runCatching { walk(Json.parseToJsonElement(t)) }.getOrDefault(emptyList())
     }
 }
 

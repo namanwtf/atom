@@ -65,10 +65,11 @@ interface WebHost {
     fun attachToComposer(context: Context, uri: Uri) {}
 
     /**
-     * Brings one of the app's screens forward (a route such as "web/sites/preview/<id>"), when the app is in front.
-     * Returns false when it could not (the app is in the background); callers then leave it to the chat card.
+     * Brings one of the app's screens forward (a route such as "web/sites/preview/<id>") for run [taskId], only when
+     * the app is in front and that run is one the user started and sees (chat, bubble, assistant, voice), never for a
+     * scheduled task or an automation. Returns false when it did not; callers then leave it to the chat card.
      */
-    fun openScreen(route: String): Boolean = false
+    fun openScreen(route: String, taskId: String): Boolean = false
 }
 
 internal object NoSecrets : SecretStore {

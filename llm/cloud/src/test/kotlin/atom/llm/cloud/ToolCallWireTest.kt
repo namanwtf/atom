@@ -33,10 +33,10 @@ class ToolCallWireTest {
 
     private val done = sseBody("""{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""", "[DONE]")
 
-    private fun sent(providerId: String, history: List<ChatMessage>, effort: ReasoningEffort? = null): List<JsonObject> {
+    private fun sent(providerId: String, history: List<ChatMessage>, effort: ReasoningEffort? = null, model: String = "m"): List<JsonObject> {
         server.enqueueSse(done)
-        CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", "m", server.url("/v1").toString())
-            .collect(LlmRequest("m", history, reasoning = effort))
+        CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", model, server.url("/v1").toString())
+            .collect(LlmRequest(model, history, reasoning = effort))
         return server.takeRequest().json()["messages"]!!.jsonArray.map { it.jsonObject }
     }
 
@@ -158,18 +158,86 @@ class ToolCallWireTest {
         }
     }
 
+    /** Models that think on every request (forced), per thinking vendor. */
+    private val thinkingModels = listOf("deepseek" to "deepseek-reasoner", "moonshot" to "kimi-k2-thinking")
+
     @Test
     fun anEarlierToolCallStoredWithoutReasoningGoesAsANote() {
-        for (provider in listOf("deepseek", "moonshot")) {
-            val messages = sent(provider, restarted(null).first)
+        for ((provider, model) in thinkingModels + listOf("deepseek" to "m")) {
+            // An unknown model counts as thinking only when an effort asks for it.
+            val effort = if (model == "m") ReasoningEffort.High else null
+            val messages = sent(provider, restarted(null).first, effort, model)
             // No tool-call turn without its reasoning_content: the vendor would reject the whole request.
-            assertTrue(callIds(messages).isEmpty() && resultIds(messages).isEmpty(), "$provider: $messages")
+            assertTrue(callIds(messages).isEmpty() && resultIds(messages).isEmpty(), "$provider/$model: $messages")
             val first = messages.first { it.str("role") == "user" }.str("content")!!
             assertTrue(first.startsWith("turn the volume down"), first)
             assertTrue(first.contains("[Earlier tool call: set_volume({\"level\":20})]\nVolume 20%"), first)
             assertEquals(listOf("user", "assistant", "user"), roles(messages), provider)
             assertTrue(messages.none { "_atom_note" in it }, "the internal mark never goes out")
         }
+    }
+
+    @Test
+    fun nonThinkingModelsKeepEarlierToolCallsAsToolCalls() {
+        // As in 4.0.5: deepseek-chat, Kimi K2 Instruct and Qwen Instruct do not think, so nothing is rewritten and no
+        // reasoning goes out, whatever the history holds.
+        for ((provider, model) in listOf(
+            "deepseek" to "deepseek-chat", "moonshot" to "kimi-k2-instruct", "qwen" to "qwen3-235b-a22b-instruct-2507",
+            "siliconflow" to "Qwen/Qwen3-235B-A22B-Instruct-2507", "deepseek" to "m",
+        )) {
+            for (reasoning in listOf(null, "stored thoughts")) {
+                val (history, id) = restarted(reasoning)
+                val messages = sent(provider, history, model = model)
+                assertEquals(listOf(id), callIds(messages), "$provider/$model")
+                assertEquals(listOf(id), resultIds(messages), "$provider/$model")
+                assertEquals(listOf("user", "assistant", "tool", "assistant", "user"), roles(messages), "$provider/$model")
+                if (model != "m") assertTrue(messages.none { "reasoning_content" in it }, "$provider/$model: $messages")
+                assertTrue(messages.none { it.str("content")?.contains("[Earlier tool call") == true }, "$provider/$model")
+            }
+        }
+    }
+
+    @Test
+    fun deepseekReasonerStillGetsItsReasoningBack() {
+        val (history, id) = restarted("The user wants it quieter; 20% is fine.")
+        val messages = sent("deepseek", history, model = "deepseek-reasoner")
+        val turn = messages.single { it["tool_calls"] != null }
+        assertEquals("The user wants it quieter; 20% is fine.", turn.str("reasoning_content"))
+        assertEquals(listOf(id), callIds(messages))
+        assertEquals(listOf("user", "assistant", "tool", "assistant", "user"), roles(messages))
+    }
+
+    @Test
+    fun nudgesAndSteeringDoNotStartATurn() {
+        // One turn: the user's request, a call made without reasoning, then Atom's nudge and a steering message the
+        // user sent mid-run. Both are user-role messages inside the turn: the call stays a tool call.
+        val call = ToolCall(ToolCallIds.fresh(), "set_volume", """{"level":20}""")
+        val history = listOf(
+            ChatMessage.user("turn the volume down"),
+            ChatMessage.assistant("", listOf(call)),
+            ChatMessage.toolResult(call, listOf(ContentPart.Text("Volume 20%"))),
+            ChatMessage.user("You called the same tool twice; check the result first.").copy(midTurn = true),
+            ChatMessage.user("a bit more, please").copy(midTurn = true),
+        )
+        for ((provider, model) in thinkingModels) {
+            val messages = sent(provider, history, model = model)
+            assertEquals(listOf(call.id), callIds(messages), "$provider/$model: $messages")
+            assertEquals(listOf(call.id), resultIds(messages), "$provider/$model")
+        }
+        // The same messages as real user turns make the call an earlier one.
+        val real = history.map { it.copy(midTurn = false) }
+        assertTrue(callIds(sent("deepseek", real, model = "deepseek-reasoner")).isEmpty())
+    }
+
+    @Test
+    fun theEngineSaysWhenItSendsReasoningBack() {
+        fun replays(provider: String, model: String) =
+            CloudEngines.create(Providers.byId(provider)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", model, "https://x.example/v1").capabilities.replaysReasoning
+        assertTrue(replays("deepseek", "deepseek-reasoner"))
+        assertTrue(replays("moonshot", "kimi-k2-thinking"))
+        assertTrue(replays("deepseek", "some-new-model"), "unknown: counted, to be safe")
+        assertTrue(!replays("deepseek", "deepseek-chat"))
+        assertTrue(!replays("openai", "gpt-4o"))
     }
 
     @Test

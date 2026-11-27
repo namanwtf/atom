@@ -77,7 +77,7 @@ Confirmations the agent asks for are approved, as the person at the phone would.
 | k | Battery fix: "Hey Atom" on (needs the on-device pack, which the job installs), screen off, then plugged in | Listening with the screen on, paused with the screen off on battery, listening again when plugged in |
 | m | Screen off mid-task: a shell command task, screen turned off after its first step | It completes with the screen off; the task wake lock and foreground service are held during it and the wake lock is released after |
 | n | Screen off mid-task: a task operating Settings, screen turned off after its first step | It neither fails nor spins (at most 2 tool calls while off), waits with "Waiting for the screen to be unlocked" in its notification without holding the task wake lock, and completes after unlocking |
-| p | Make a website: "Make a one-page site that says hello." (optional) | Site tools are called, `files/sites/<site>/index.html` says hello, `site_preview` returns its local URL and that server serves the page with the live reload script |
+| p | Make a website: "Make a one-page site that says hello." (optional) | Site tools are called, `files/sites/<site>/index.html` says hello, `site_preview` returns the site's own address (`https://<id>-<tag>.sites.invalid/`, its tag matching the site's stored `.origin`), and the app's preview screen for that site is open, shows that address and shows the page saying hello. Nothing listens on a port, so the page is checked through the app and the files, not over the network |
 | l | Battery fix: the emulator reboots | The receiver is still enabled and Atom's alarm is armed again |
 
 Bubble send (h): the mini chat moves up for the on-screen keyboard, and the accessibility bounds of its nodes can still

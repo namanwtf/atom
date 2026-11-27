@@ -14,21 +14,36 @@ class WebFileProvider : FileProvider(R.xml.web_file_paths)
 object Share {
     fun authority(context: Context) = context.packageName + ".web.files"
 
-    /** A content URI for [file]; files outside this module's folders are copied into the share cache first. */
-    fun uriFor(context: Context, file: File): Uri {
+    /** A content URI for [file]; see [urisFor]. */
+    fun uriFor(context: Context, file: File): Uri = urisFor(context, listOf(file)).single()
+
+    /**
+     * Content URIs for [files], shared together. Files in a folder this provider serves (generated images, browser
+     * previews, the problem report) are served where they are; any other file is copied into the share cache first.
+     * Whenever the share cache is used, everything else in it is deleted: only what is being shared now stays.
+     */
+    fun urisFor(context: Context, files: List<File>): List<Uri> {
         val app = context.applicationContext
-        val roots = listOf(File(app.filesDir, "atom4_generated_images"), File(app.cacheDir, "web_share"), File(app.cacheDir, "browser_previews"))
-        val canonical = file.canonicalFile
-        val served = if (roots.any { canonical.path.startsWith(it.canonicalPath + File.separator) }) canonical else {
-            val dir = File(app.cacheDir, "web_share").apply { mkdirs() }
-            dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24 * 3600_000L }?.forEach { it.delete() }
-            File(dir, file.name).also { file.copyTo(it, overwrite = true) }
+        val share = File(app.cacheDir, SHARE_DIR)
+        val roots = listOf(File(app.filesDir, "atom4_generated_images"), share, File(app.cacheDir, "browser_previews"), File(app.cacheDir, "reports"))
+        fun inside(f: File, dir: File) = f.path.startsWith(dir.canonicalPath + File.separator)
+        val served = files.map { file ->
+            val canonical = file.canonicalFile
+            if (roots.any { inside(canonical, it) }) canonical else {
+                share.mkdirs()
+                File(share, file.name).also { file.copyTo(it, overwrite = true) }.canonicalFile
+            }
         }
-        return FileProvider.getUriForFile(app, authority(app), served)
+        if (served.any { inside(it, share) }) {
+            share.listFiles()?.filter { f -> served.none { it.path == f.canonicalPath } }?.forEach { it.delete() }
+        }
+        return served.map { FileProvider.getUriForFile(app, authority(app), it) }
     }
 
+    private const val SHARE_DIR = "web_share"
+
     fun intent(context: Context, files: List<File>, mime: String? = null): Intent {
-        val uris = files.map { uriFor(context, it) }
+        val uris = urisFor(context, files)
         val type = mime ?: files.map { FileTools.mime(it.name) ?: "*/*" }.distinct().singleOrNull() ?: "*/*"
         val send = if (uris.size == 1) {
             Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])

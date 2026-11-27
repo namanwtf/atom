@@ -107,7 +107,12 @@ class ToolRouterTest {
         for (r in listOf(
             "write a message in the app to Sam", "make the app louder", "generate an image of a red fox", "create a calendar event",
             "write a python script that sorts a list", "make a call to mom", "set an alarm for 7",
-        )) assertTrue("sites" !in groups(r), r)
+            "make a game plan for tomorrow", "create a page in Notion", "summarize this html email",
+            "make a page on confluence for the team", "build an app icon", "make a site visit list",
+        )) {
+            assertTrue("sites" !in groups(r), r)
+            assertTrue("sites" !in groups(r, minScore = ToolRouter.STRONG - 1), r)
+        }
     }
 
     @Test

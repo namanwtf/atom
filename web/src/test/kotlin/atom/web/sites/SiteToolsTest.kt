@@ -28,6 +28,8 @@ class SiteToolsTest {
         val currents = HashMap<String, String>()
         val changes = ArrayList<String>()
         val previews = ArrayList<String>()
+        val previewTasks = ArrayList<String>()
+        var foreground = true
 
         override fun conversationOf(taskId: String) = "conv-$taskId"
         override fun current(conversation: String) = currents[conversation]?.takeIf { store.exists(it) }
@@ -37,9 +39,10 @@ class SiteToolsTest {
         override fun changed(id: String) {
             changes += id
         }
-        override suspend fun preview(id: String): Pair<String, Boolean> {
+        override suspend fun preview(id: String, taskId: String): Pair<String, Boolean> {
             previews += id
-            return "http://127.0.0.1:4321/" to true
+            previewTasks += taskId
+            return SiteOrigin.url(id, store.originTag(id)) to foreground
         }
         override fun previewing(id: String) = id in previews
     }
@@ -128,7 +131,10 @@ class SiteToolsTest {
 
         val preview = call(SiteToolNames.PREVIEW)
         assertFalse(preview.isError, preview.text)
-        assertTrue("http://127.0.0.1:4321/" in preview.text)
+        val tag = backend.store.originTag("water-tracker")
+        assertTrue("URL: https://water-tracker-$tag.sites.invalid/" in preview.text, preview.text)
+        assertTrue("open on the phone" in preview.text, preview.text)
+        assertEquals(listOf("t1"), backend.previewTasks, "the preview is opened for the calling run only")
         assertEquals("water-tracker", SiteCards.siteOf(preview.text))
         assertEquals("web/sites/preview/water-tracker", SiteCards.previewRoute("water-tracker"))
         assertTrue("The preview reloads" in call(SiteToolNames.WRITE, "path" to "app.js", "content" to "1").text)
@@ -203,5 +209,36 @@ class SiteToolsTest {
         assertEquals("New one", all.first().title)
         val list = call(SiteToolNames.LIST, ctx = Ctx("t9")).text
         assertTrue(list.startsWith("Sites:") && "old-one" in list && "new-one" in list, list)
+    }
+
+    @Test
+    fun aRunThePreviewCannotOpenForIsToldItIsReady() = runTest {
+        // A scheduled task or automation: the backend does not bring the preview up, and the result says so.
+        call(SiteToolNames.CREATE, "name" to "Quiet")
+        backend.foreground = false
+        val r = call(SiteToolNames.PREVIEW)
+        assertFalse(r.isError, r.text)
+        assertTrue("is ready; the user can open it from the card in the chat" in r.text, r.text)
+        assertFalse("open on the phone" in r.text, r.text)
+        assertEquals("quiet", SiteCards.siteOf(r.text))
+    }
+
+    @Test
+    fun eachSiteHasItsOwnOriginAndARemadeSiteANewOne() = runTest {
+        call(SiteToolNames.CREATE, "name" to "Shop")
+        call(SiteToolNames.CREATE, "name" to "Blog", ctx = Ctx("t2"))
+        val shop = backend.store.originTag("shop")
+        assertEquals(shop, backend.store.originTag("shop"), "stable while the site exists")
+        assertTrue(shop != backend.store.originTag("blog"))
+        // The tag file is hidden: never listed, packed, readable or writable through the tools.
+        assertEquals(listOf("index.html"), backend.store.files("shop").map { it.path })
+        assertTrue(call(SiteToolNames.READ, "path" to ".origin", "site" to "shop").isError)
+        assertTrue(call(SiteToolNames.WRITE, "path" to ".origin", "content" to "aaaaaa", "site" to "shop").isError)
+        val zip = backend.store.zip("shop", File(tmp, "shop.zip"))
+        ZipFile(zip).use { z -> assertEquals(listOf("shop/index.html"), z.entries().toList().map { it.name }) }
+        // Deleted and made again under the same name: a new origin, so nothing the old pages stored carries over.
+        assertTrue(backend.store.delete("shop"))
+        call(SiteToolNames.CREATE, "name" to "Shop")
+        assertTrue(backend.store.originTag("shop") != shop)
     }
 }

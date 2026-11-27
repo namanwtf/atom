@@ -10,6 +10,7 @@ import atom.core.llm.ToolCall
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 
 /** A tool-call turn's reasoning is stored with it and comes back with the history the model sees. */
@@ -25,7 +26,7 @@ class ReasoningHistoryTest {
 
     @Test
     fun theToolCallTurnCarriesItsStoredReasoning() {
-        val sent = ModelHistory.build(stored).messages
+        val sent = ModelHistory.build(stored, replaysReasoning = true).messages
         val turn = sent.single { it.toolCalls.isNotEmpty() }
         assertEquals("The user wants it quieter; 20% is fine.", turn.reasoning)
         // Only tool-call turns need it back; a plain answer goes without.
@@ -36,6 +37,23 @@ class ReasoningHistoryTest {
     fun itSurvivesSavingAndLoading() {
         // As the conversation file stores it, and as the app reads it back after a restart.
         val again = stored.map { s -> Json.decodeFromString(MessageDto.serializer(), Json.encodeToString(MessageDto.serializer(), s.toDto())).toModel()!! }
-        assertEquals("The user wants it quieter; 20% is fine.", ModelHistory.build(again).messages.single { it.toolCalls.isNotEmpty() }.reasoning)
+        assertEquals("The user wants it quieter; 20% is fine.", ModelHistory.build(again, replaysReasoning = true).messages.single { it.toolCalls.isNotEmpty() }.reasoning)
+    }
+
+    @Test
+    fun anEngineThatNeverSendsReasoningGetsNone() {
+        // Other wires ignore it, so it is not carried (and does not count against the context).
+        assertTrue(ModelHistory.build(stored).messages.all { it.reasoning == null })
+    }
+
+    @Test
+    fun nudgesAndSteeringAreMarkedAsInsideTheTurn() {
+        val more = stored + listOf(
+            StoredMessage(ChatMessage.user("You repeated the last step."), hidden = true),
+            StoredMessage(ChatMessage.user("make it 10% instead"), steering = true),
+            StoredMessage(ChatMessage.user("thanks, now mute it")),
+        )
+        val users = ModelHistory.build(more).messages.filter { it.role == atom.core.llm.Role.User }
+        assertEquals(listOf(false, true, true, false), users.map { it.midTurn })
     }
 }

@@ -282,10 +282,13 @@ class Agent(
             emit(AgentEvent.ModelCall(turn.stats))
             emit(AgentEvent.Usage(state.inTokens, state.outTokens))
 
-            val answer = ChatMessage.assistant(turn.text, turn.calls)
+            // A wire that sends a tool-call turn's reasoning back gets it with the turn, so the context counts it too.
+            val answer = ChatMessage.assistant(turn.text, turn.calls).let { a ->
+                if (turn.calls.isNotEmpty() && engine.capabilities.replaysReasoning && turn.reasoning != null) a.copy(reasoning = turn.reasoning) else a
+            }
             append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
-            // The provider's prompt count already holds the system prompt and every tool schema. Reasoning is not
-            // sent back, so the answer counts by what it adds to the next prompt rather than by output tokens.
+            // The provider's prompt count already holds the system prompt and every tool schema. The answer counts by
+            // what it adds to the next prompt (its text, calls and any reasoning sent back), not by output tokens.
             state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
             state.sinceReport = 0
             emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
@@ -319,7 +322,9 @@ class Agent(
                 break
             }
             // On the last step the wrap-up request below takes the place of a nudge.
-            if (verdict.nudge != null && step < config.maxSteps) append(state, ChatMessage.user(verdict.nudge), MessageInfo(internal = true))
+            if (verdict.nudge != null && step < config.maxSteps) {
+                append(state, ChatMessage.user(verdict.nudge).copy(midTurn = true), MessageInfo(internal = true))
+            }
         }
 
         val stuck = stuckAt != null
@@ -350,7 +355,7 @@ class Agent(
         state.toolTokens = 0
         maybeCompact(state)
         // The nudge joins the history only with the reply it produced; a failed wrap-up leaves no trace.
-        val nudge = ChatMessage.user(prompt)
+        val nudge = ChatMessage.user(prompt).copy(midTurn = true)
         val messages = ContextPacker.pack(config.systemPrompt, state.convo + nudge, config.packing)
         val request = LlmRequest(
             model = config.model,
@@ -421,7 +426,7 @@ class Agent(
 
     private suspend fun FlowCollector<AgentEvent>.deliverSteering(state: RunState, control: RunControl): Boolean {
         val messages = control.drainSteering()
-        for (m in messages) append(state, m, MessageInfo(steering = true))
+        for (m in messages) append(state, m.copy(midTurn = true), MessageInfo(steering = true))
         return messages.isNotEmpty()
     }
 

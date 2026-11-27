@@ -83,9 +83,14 @@ object ContextPacker {
 
     fun estimateTools(specs: List<ToolSpec>): Int = specs.sumOf { estimateTool(it) }
 
+    /**
+     * Rough tokens of one message as sent: its text and images, its tool calls, and the reasoning of a tool-call turn,
+     * which the history carries only when the wire sends it back ([atom.core.llm.EngineCapabilities.replaysReasoning]).
+     */
     fun estimate(message: ChatMessage): Int =
         message.parts.sumOf { if (it is ContentPart.Text) estimate(it.text) else IMAGE_TOKENS } +
-            message.toolCalls.sumOf { estimate(it.argumentsJson) + estimate(it.name) } + 4
+            message.toolCalls.sumOf { estimate(it.argumentsJson) + estimate(it.name) } +
+            (message.reasoning?.takeIf { message.toolCalls.isNotEmpty() && it.isNotBlank() }?.let(::estimate) ?: 0) + 4
 
     private fun shrinkToolResults(convo: List<ChatMessage>, policy: ContextPolicy): List<ChatMessage> {
         var seen = 0
@@ -131,7 +136,7 @@ object ContextPacker {
         }
         if (dropFrom == 0) return convo
 
-        val note = ChatMessage.user("[${dropFrom} earlier step(s) removed to save context. Re-check state if needed.]")
+        val note = ChatMessage.user("[${dropFrom} earlier step(s) removed to save context. Re-check state if needed.]").copy(midTurn = true)
         return head + note + groups.drop(dropFrom).flatten()
     }
 

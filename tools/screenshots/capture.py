@@ -508,13 +508,14 @@ def site_preview(p):
     run_tool("site_write", {"site": SITE_ID, "path": "style.css", "content": SITE_CSS})
     run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
     launch(wait=3)
-    # site_preview opens the preview itself while the app is in front, as it does for the agent.
+    # site_preview opens the preview itself only for a run the user sees in the foreground; this call comes from the
+    # debug hook (no run), so the preview is opened by its route below, as a tap on the chat card would.
     result = run_tool("site_preview", {"name": SITE_ID})
-    url = re.search(r"URL: (http://127\.0\.0\.1:\d+/)", result)
+    url = re.search(r"URL: (https://[a-z0-9-]+\.sites\.invalid/)", result)
     print(f"[capture] preview URL from site_preview: {url.group(1) if url else '(none)'}")
     time.sleep(5)
     if not find("^Close preview$"):
-        print("[capture] site_preview did not open the preview; opening its route")
+        print("[capture] opening the preview by its route")
         launch(f"web/sites/preview/{SITE_ID}", wait=5)
     time.sleep(2)
     shot(p + "16c_site_preview")

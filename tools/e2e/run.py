@@ -407,28 +407,33 @@ def s_site(res):
     res.check(re.search(r"hello", pages, re.I) is not None, "a page says hello")
     previews = [c for c in calls if c["name"] == "site_preview" and not c.get("isError")]
     res.check(bool(previews), "site_preview succeeded")
+    # The site's address: its own origin, answered by Atom's WebViews from the files. Nothing listens on a port, so
+    # there is no server to reach from outside the app; the page is checked through the app and the files instead.
     url = None
     for c in previews:
-        m = re.search(r"URL: http://127\.0\.0\.1:(\d+)/", c.get("result") or "")
+        m = re.search(r"URL: (https://([a-z0-9-]+)-([a-z0-9]{6})\.sites\.invalid/)", c.get("result") or "")
         if m:
             url = m
     if url is None:
-        res.check(False, "the preview URL was returned")
+        res.check(False, "site_preview returned the site's https://<id>-<tag>.sites.invalid/ address")
         return
-    port = url.group(1)
-    adb("forward", "tcp:18555", f"tcp:{port}")
-    try:
-        # The server only answers requests that name its own address (DNS rebinding guard), so the forwarded request
-        # carries the device-side Host.
-        req = urllib.request.Request("http://127.0.0.1:18555/", headers={"Host": f"127.0.0.1:{port}"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            body = r.read().decode(errors="replace")
-            res.check(r.status == 200 and re.search(r"hello", body, re.I) is not None, "the preview server serves the page")
-            res.check("__atom_reload" in body, "the page carries the live reload script")
-    except Exception as e:
-        res.check(False, f"the preview server answered ({e})")
-    finally:
-        adb("forward", "--remove", "tcp:18555")
+    site_id, tag = url.group(2), url.group(3)
+    log(f"  site address: {url.group(1)}")
+    stored_tag = sh(f"run-as {PKG} sh -c 'cat files/sites/{site_id}/.origin 2>/dev/null'").strip()
+    res.check(stored_tag == tag, f"the address is site {site_id}'s own origin (stored tag {stored_tag!r})")
+    page = sh(f"run-as {PKG} sh -c 'cat files/sites/{site_id}/index.html 2>/dev/null'")
+    res.check(re.search(r"hello", page, re.I) is not None, f"files/sites/{site_id}/index.html says hello")
+    # Through the app: the preview screen of that site (site_preview opened it in this foreground chat; if it was
+    # closed meanwhile, its route opens it again) loads the page from the site's files.
+    if not find("^Close preview$"):
+        log("  the preview is not on screen; opening its route")
+        launch(f"web/sites/preview/{site_id}", wait=6)
+    time.sleep(3)
+    res.check(find("^Close preview$") is not None, "the preview screen is open")
+    res.check(find(re.escape(f"{site_id}-{tag}.sites.invalid")) is not None, "the preview shows the site's own address")
+    shown = [t or d for _, t, d, _ in ui_nodes() if (t or d)]
+    log(f"  on screen: {shown[:40]!r}")
+    res.check(any(re.search(r"hello", x, re.I) for x in shown), "the preview shows the page (it says hello)")
     shot("e2e_p_preview")
 
 

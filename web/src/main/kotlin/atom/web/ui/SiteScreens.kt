@@ -77,12 +77,18 @@ import atom.web.files.Share
 import atom.web.files.Sizes
 import atom.web.sites.SiteCards
 import atom.web.sites.SiteInfo
+import atom.web.sites.SiteOrigin
 import atom.web.sites.SitePaths
+import atom.web.sites.SiteWeb
 import atom.web.sites.Sites
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -190,14 +196,13 @@ fun SitePreviewCard(toolText: String, onOpen: ((String) -> Unit)?, modifier: Mod
 }
 
 /**
- * The live preview of one site: a full-screen WebView on the site's local server, under a small top bar (name,
- * reload, open in Atom's browser, share as .zip, close).
+ * The live preview of one site: a full-screen WebView on the site's own address ([SiteOrigin]), under a small top
+ * bar (name, reload, open in Atom's browser, share as .zip, close).
  *
- * The WebView has no file or content access, no JavaScript bridge into the app and blocks mixed content; it loads only
- * the site's own http://127.0.0.1 address (other plain-http requests are refused), and a tapped link to another site
- * opens in Atom's browser. Every WebView call is made here, on the main thread; the server and the .zip run on IO.
- * The server is held only while this screen is started, so nothing runs once it is closed or the app is in the
- * background.
+ * The address is answered by the WebView itself from the site's files ([SiteWeb]); nothing listens on a port. The
+ * WebView has no file or content access, no JavaScript bridge into the app and blocks mixed content and every
+ * plain-http request; a tapped link to another site opens in Atom's browser. The page reloads when the site's files
+ * change. Every WebView call is made here, on the main thread; the .zip runs on IO.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -220,46 +225,46 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
     val lifeState by lifecycle.currentStateAsState()
     val started = lifeState.isAtLeast(Lifecycle.State.STARTED)
     var url by remember { mutableStateOf<String?>(null) }
-    var serverError by remember { mutableStateOf<String?>(null) }
+    var siteError by remember { mutableStateOf<String?>(null) }
     var title by remember { mutableStateOf(id) }
     var loading by remember { mutableStateOf(true) }
     var progress by remember { mutableIntStateOf(0) }
     var crashed by remember { mutableStateOf(false) }
     var generation by remember { mutableIntStateOf(0) }
-    var session by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    // Read by shouldInterceptRequest on a WebView worker thread: no WebView call there, only this value.
-    val origin = remember { AtomicReference<String?>(null) }
+    // Read by shouldInterceptRequest on a WebView worker thread: no WebView call there, only these values.
+    val site = remember { AtomicReference<Pair<String, String>?>(null) }
+    val siteWeb = remember { SiteWeb(app) }
 
-    // Holds the server while the screen is started; releasing it lets the server stop.
-    LaunchedEffect(started, id, exists) {
-        if (!started || exists != true) return@LaunchedEffect
-        // [held] is set where the hold is taken, so it is released even when the effect is cancelled right then.
-        var held = false
+    LaunchedEffect(id, exists) {
+        if (exists != true) return@LaunchedEffect
         try {
-            val server = withContext(Dispatchers.IO) { Sites.acquire(app, id).also { held = true } }
-            serverError = null
-            origin.set(server.url.trimEnd('/'))
-            url = server.url
-            // Load again after the app was in the background: the server may have restarted meanwhile.
-            session++
-            awaitCancellation()
+            val u = withContext(Dispatchers.IO) { Sites.url(app, id) }
+            site.set(SiteOrigin.parse(u))
+            siteError = null
+            url = u
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            serverError = e.message ?: "The preview could not start."
+            siteError = e.message ?: "The preview could not start."
+        }
+    }
+
+    // While the screen is started the site counts as shown: the agent then knows the preview reloads by itself.
+    LaunchedEffect(started, id, exists) {
+        if (!started || exists != true) return@LaunchedEffect
+        Sites.shown(id)
+        try {
+            awaitCancellation()
         } finally {
-            if (held) withContext(NonCancellable + Dispatchers.IO) { Sites.release(id) }
+            Sites.hidden(id)
         }
     }
 
     fun isLocal(u: String): Boolean {
-        val o = origin.get() ?: return false
-        val alt = o.replace("://127.0.0.1:", "://localhost:")
-        return listOf(o, alt).any { u == it || u.startsWith("$it/") || u.startsWith("$it?") }
+        val own = site.get() ?: return false
+        return SiteOrigin.parse(u) == own
     }
-
-    fun keepServerWarm() = Sites.running(id)?.touch()
 
     // The page's prefers-color-scheme follows Atom's look, not the system's: a new WebView when it changes.
     val dark = c.background.luminance() < 0.5f
@@ -276,7 +281,6 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
                     if (isLocal(u) || !request.isForMainFrame) return false
                     // Only a tap leaves the site; a page sending itself elsewhere is simply stopped.
                     if (!request.hasGesture()) return true
-                    keepServerWarm()
                     if (WebViewSecurity.isWeb(u)) {
                         nav.open(WebFeature.browserRoute(u))
                     } else if (!openExternally(context, u)) {
@@ -286,12 +290,17 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
                 }
 
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                    val u = request.url.toString()
-                    return if (request.url.scheme.equals("http", ignoreCase = true) && !isLocal(u)) blockedResponse() else null
+                    siteWeb.intercept(request)?.let { return it }
+                    return if (request.url.scheme.equals("http", ignoreCase = true)) blockedResponse() else null
                 }
 
                 override fun onPageStarted(view: WebView, u: String, favicon: Bitmap?) {
+                    siteWeb.onMainFrame(u)
                     loading = true
+                }
+
+                override fun doUpdateVisitedHistory(view: WebView, u: String, isReload: Boolean) {
+                    siteWeb.onMainFrame(u)
                 }
 
                 override fun onPageFinished(view: WebView, u: String) {
@@ -344,9 +353,16 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { if (!destroyed[0]) web.onPause() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (!destroyed[0]) web.onResume() }
-    LaunchedEffect(web, url, session) {
+    LaunchedEffect(web, url) {
         val u = url ?: return@LaunchedEffect
         if (!destroyed[0]) web.loadUrl(u)
+    }
+    // The site's files changed (the agent wrote one): the page reloads. Writes in a burst reload it once.
+    LaunchedEffect(web, id) {
+        Sites.versions.map { it[id] ?: 0L }.distinctUntilChanged().drop(1).collectLatest {
+            delay(250)
+            if (!destroyed[0] && !crashed && url != null) web.reload()
+        }
     }
 
     Column(Modifier.fillMaxSize().background(c.background)) {
@@ -359,9 +375,9 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
             Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = c.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    serverError ?: url?.removePrefix("http://")?.trimEnd('/') ?: "Starting…",
+                    siteError ?: url?.removePrefix("https://")?.trimEnd('/') ?: "Starting…",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (serverError != null) c.error else c.onSurfaceVariant,
+                    color = if (siteError != null) c.error else c.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -375,10 +391,7 @@ internal fun SitePreviewScreen(nav: FeatureNav, id: String) {
                 }
             }, size = 40.dp)
             CircleIconButton(WebIcons.OpenInNew, "Open in Atom's browser", {
-                url?.let {
-                    keepServerWarm()
-                    nav.open(WebFeature.browserRoute(it))
-                }
+                url?.let { nav.open(WebFeature.browserRoute(it)) }
             }, size = 40.dp)
             CircleIconButton(Icons.Filled.Share, "Share as .zip", {
                 scope.launch {

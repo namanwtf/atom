@@ -99,4 +99,26 @@ class CapabilityToolsTest {
         assertFalse(CapabilityTools.hostedSearch(null, webSearchToolOn = true, webEnabled = false))
         assertFalse(CapabilityTools.hostedSearch(setOf(Capability.Web), webSearchToolOn = true, webEnabled = false))
     }
+
+    @Test
+    fun aWebOnlyRunCannotWriteOrDeleteSiteFiles() {
+        val site = listOf(
+            T("site_create", ToolOrigin.Web, Risk.Act),
+            T("site_write", ToolOrigin.Web, Risk.Act),
+            T("site_delete_file", ToolOrigin.Web, Risk.Act),
+            T("site_read", ToolOrigin.Web),
+            T("site_list", ToolOrigin.Web),
+            T("site_preview", ToolOrigin.Web),
+        )
+        // Writing, deleting and creating change files on the phone: the Terminal (files) family.
+        for (name in listOf("site_create", "site_write", "site_delete_file")) {
+            assertEquals(ToolFamily.Terminal, family(site.first { it.name == name }), name)
+        }
+        val web = CapabilityTools.filter(site, setOf(Capability.Web), ::family).map { it.name }.toSet()
+        assertEquals(setOf("site_read", "site_list", "site_preview"), web)
+        val files = CapabilityTools.filter(site, setOf(Capability.Terminal), ::family).map { it.name }.toSet()
+        assertEquals(setOf("site_create", "site_write", "site_delete_file"), files)
+        // A scheduled task with the default capabilities (web and device reading) cannot change a site either.
+        assertTrue(CapabilityTools.filter(site, Capability.DEFAULT, ::family).none { it.name in setOf("site_create", "site_write", "site_delete_file") })
+    }
 }

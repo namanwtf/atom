@@ -112,6 +112,9 @@ object CapabilityDetector {
         rule("kimi-k2\\.[5-6]", ReasoningInfo.of(OFF), 262_144),
         rule("kimi-k2", ReasoningInfo.None, 131_072),
         rule("qwq|qvq", ReasoningInfo.forced(), 131_072),
+        // Qwen3 "Instruct" releases (e.g. qwen3-235b-a22b-instruct-2507) do not think; "Thinking" ones always do.
+        rule("qwen3.*instruct", ReasoningInfo.None, 262_144),
+        rule("qwen3.*thinking", ReasoningInfo.forced(), 262_144),
         rule("qwen3\\.[5-9]-(max|flash)", ReasoningInfo.of(OFF, L, M, X), 1_000_000),
         rule("qwen3", ReasoningInfo.of(OFF, L, M, H), 262_144),
         rule("grok-[4-9]", ReasoningInfo.of(L, M, H, X), 500_000),

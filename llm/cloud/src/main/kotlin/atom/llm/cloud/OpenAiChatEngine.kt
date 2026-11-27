@@ -52,7 +52,32 @@ internal class OpenAiChatEngine(
         vision = options.vision ?: visionLikely(provider, model),
         contextWindow = options.contextWindow ?: 128_000,
         onDevice = false,
+        // A thinking vendor sends tool-call turns' reasoning back, unless the model is known not to think at all.
+        replaysReasoning = ChatReasoning.interleaved(family) && reasoningInfo(model)?.supported != false,
     )
+
+    /** What the model accepts for reasoning: the configured info, else the family rules; null when unknown. */
+    private fun reasoningInfo(modelId: String): ReasoningInfo? = options.reasoning ?: CapabilityDetector.byFamily(modelId).reasoning
+
+    /**
+     * Whether [modelId] thinks on a request with [effort]: true for a forced-reasoning model, and for one that can
+     * think unless it is switched off (or off by default); false for a model that cannot think or with thinking off;
+     * null when the model is unknown and no effort says either way.
+     */
+    internal fun thinking(modelId: String, effort: ReasoningEffort?): Boolean? {
+        val info = reasoningInfo(modelId) ?: return when (effort) {
+            null -> null
+            ReasoningEffort.Off -> false
+            else -> true
+        }
+        return when {
+            !info.supported -> false
+            info.levels.isEmpty() -> true
+            effort == ReasoningEffort.Off -> false
+            effort == null -> info.serverDefault != ReasoningEffort.Off
+            else -> true
+        }
+    }
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
         val decoder = OpenAiStreamDecoder(errors)
@@ -85,7 +110,7 @@ internal class OpenAiChatEngine(
         put("model", modelId)
         put("stream", true)
         if (family != Family.MISTRAL) putJsonObject("stream_options") { put("include_usage", true) }
-        put("messages", messages(request.messages, request.reasoning))
+        put("messages", messages(request.messages, thinking(modelId, request.reasoning)))
         if (request.tools.isNotEmpty()) {
             putJsonArray("tools") {
                 for (tool in request.tools) addJsonObject {
@@ -106,9 +131,11 @@ internal class OpenAiChatEngine(
         if (temperature != null && !reasoningModel) put("temperature", temperature)
     }
 
-    private fun messages(history: List<ChatMessage>, effort: ReasoningEffort?): JsonArray = mergeNotes(buildJsonArray {
+    private fun messages(history: List<ChatMessage>, thinking: Boolean?): JsonArray = mergeNotes(buildJsonArray {
         val pendingImages = mutableListOf<ContentPart.Image>()
-        val replay = ChatReasoning.interleaved(family)
+        // Thinking vendors (DeepSeek, Kimi...) want each tool-call turn's reasoning back; a model known not to think
+        // gets none (it would only cost tokens).
+        val replay = ChatReasoning.interleaved(family) && thinking != false
         fun flushImages() {
             if (pendingImages.isEmpty()) return
             addJsonObject {
@@ -126,20 +153,22 @@ internal class OpenAiChatEngine(
         // Mistral takes only nine-letter-and-digit ids; ids made by other providers (or old builds) are mapped to
         // that form, deterministically so a call and its result still match.
         val wireId: (String) -> String = if (family == Family.MISTRAL) ToolCallIds::strict else ToolCallIds::safe
-        // Thinking vendors that need each tool-call turn's reasoning back (DeepSeek, Kimi...) reject a call turn
-        // without it. It comes from this process's cache or, after a restart, from the stored turn. A turn without
-        // any goes as a plain note instead: the run's own tool preload (it never had reasoning), and earlier turns
-        // (before the latest user message) that were stored without it, e.g. by a build that kept it in memory only.
-        // The current turn's calls keep their tool-call form: a model that is not thinking made them.
+        // A thinking model rejects a tool-call turn without its reasoning. It comes from this process's cache or,
+        // after a restart, from the stored turn. A turn without any goes as a plain note instead: the run's own tool
+        // preload (it never had reasoning, on every thinking vendor as in 4.0.5), and, only while the model really
+        // thinks, earlier exchanges (before the latest real user turn) that were stored without it, e.g. by a build
+        // that kept it in memory only. The current turn's calls keep their tool-call form, and so does everything for
+        // a model that is not thinking (deepseek-chat, Kimi K2 Instruct, Qwen Instruct, thinking switched off).
+        // Atom's own nudges and steering sent mid-run ([ChatMessage.midTurn]) do not start a turn.
         val reasoningOf = { m: ChatMessage ->
             ReplayCaches.chatReasoning.get(m.toolCalls.first().id) ?: m.reasoning?.takeIf { it.isNotBlank() }
         }
-        val lastUser = history.indexOfLast { it.role == Role.User }
-        val asNote: Map<String, ToolCall?> = if (!replay) emptyMap() else buildMap<String, ToolCall?> {
+        val lastUser = history.indexOfLast { it.role == Role.User && !it.midTurn }
+        val asNote: Map<String, ToolCall?> = if (!ChatReasoning.interleaved(family)) emptyMap() else buildMap<String, ToolCall?> {
             history.forEachIndexed { i, m ->
                 if (m.role != Role.Assistant || m.toolCalls.isEmpty() || reasoningOf(m) != null) return@forEachIndexed
                 val loaderOnly = m.toolCalls.all { it.name == ToolLoadout.LOADER }
-                val earlier = i < lastUser && effort != ReasoningEffort.Off
+                val earlier = thinking == true && i < lastUser
                 if (loaderOnly || earlier) m.toolCalls.forEach { put(it.id, if (loaderOnly) null else it) }
             }
         }

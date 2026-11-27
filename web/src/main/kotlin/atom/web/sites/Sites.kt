@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.io.File
 
 /** The chat card of a site preview: [site_preview]'s result ends with a `Site preview: <id>` line. */
@@ -17,21 +18,20 @@ object SiteCards {
 }
 
 /**
- * The app's website projects (`files/sites/<id>/`) and their preview servers.
+ * The app's website projects (`files/sites/<id>/`), the address each is shown at and which previews are open.
  *
- * A server starts on demand (the preview screen, or the agent's site_preview) and stops on its own: when the last
- * preview screen goes away and nothing asked for a page for a minute (see [SiteServer]). Each site keeps the port it
- * had while the app runs, so a reopened preview and the agent's browser see the same address.
+ * Nothing runs for a site: Atom's WebViews answer its address themselves from storage ([SiteWeb]), so there is no
+ * server to start, keep alive or stop, and no port other apps could reach.
  */
 object Sites {
     private const val PREFS = "atom4_sites"
 
     @Volatile
     private var store: SiteStore? = null
-    private val servers = HashMap<String, SiteServer>()
-    private val ports = HashMap<String, Int>()
+    private val shownCount = HashMap<String, Int>()
     private val _changes = MutableStateFlow(0L)
     private val _visible = MutableStateFlow<Set<String>>(emptySet())
+    private val _versions = MutableStateFlow<Map<String, Long>>(emptyMap())
 
     /** Bumped whenever a site's files change, for lists to refresh. */
     val changes: StateFlow<Long> = _changes.asStateFlow()
@@ -39,61 +39,52 @@ object Sites {
     /** Sites whose preview screen is showing. */
     val visible: StateFlow<Set<String>> = _visible.asStateFlow()
 
+    /** A counter per site, bumped when its files change: an open preview reloads. */
+    val versions: StateFlow<Map<String, Long>> = _versions.asStateFlow()
+
     fun store(context: Context): SiteStore = store ?: synchronized(this) {
         store ?: SiteStore(File(context.applicationContext.filesDir, "sites").apply { mkdirs() }).also { store = it }
     }
 
-    /** The running server of [id], started if needed. Call off the main thread (it binds a socket). */
-    fun serve(context: Context, id: String): SiteServer = synchronized(this) {
-        servers[id]?.takeIf { it.isRunning }?.let { return it }
+    /** The address of site [id] ("https://<id>-<tag>.sites.invalid/"). Reads (and the first time writes) a small file. */
+    fun url(context: Context, id: String): String {
         val s = store(context)
         if (!s.exists(id)) throw IllegalArgumentException("There is no site $id")
-        val server = SiteServer(s.dir(id), preferredPort = ports[id] ?: 0, onStopped = { stopped -> forget(id, stopped) })
-        server.start()
-        servers[id] = server
-        ports[id] = server.port
-        server
+        return SiteOrigin.url(id, s.originTag(id))
     }
 
-    private fun forget(id: String, server: SiteServer) = synchronized(this) {
-        if (servers[id] === server) servers.remove(id)
-    }
-
-    /** The running server of [id], if any (nothing is started). */
-    fun running(id: String): SiteServer? = synchronized(this) { servers[id]?.takeIf { it.isRunning } }
-
-    /** A preview screen shows [id]: its server runs until [release]. */
-    fun acquire(context: Context, id: String): SiteServer {
-        val server = serve(context, id)
-        server.acquire()
+    /** A preview screen shows [id] until [hidden]. */
+    fun shown(id: String) = synchronized(this) {
+        shownCount[id] = (shownCount[id] ?: 0) + 1
         _visible.value = _visible.value + id
-        return server
     }
 
-    fun release(id: String) {
-        val server = running(id)
-        if (server == null || server.holders <= 1) _visible.value = _visible.value - id
-        server?.release()
+    fun hidden(id: String) = synchronized(this) {
+        val n = (shownCount[id] ?: 0) - 1
+        if (n <= 0) {
+            shownCount.remove(id)
+            _visible.value = _visible.value - id
+        } else {
+            shownCount[id] = n
+        }
     }
 
-    /** Files of [id] changed: open pages reload, lists refresh. */
+    /** Files of [id] changed: open previews reload, lists refresh. */
     fun changed(id: String) {
-        running(id)?.changed()
+        _versions.update { it + (id to ((it[id] ?: 0L) + 1)) }
         _changes.value = _changes.value + 1
     }
 
-    fun stop(id: String) {
-        running(id)?.stop()
-    }
-
     fun delete(context: Context, id: String): Boolean {
-        stop(id)
-        val ok = store(context).delete(id)
+        val s = store(context)
+        val origin = s.existingOriginTag(id)?.let { SiteOrigin.origin(id, it) }
+        val ok = s.delete(id)
+        origin?.let { SiteWeb.forget(it) }
         val p = prefs(context)
         val editor = p.edit()
         p.all.filter { it.value == id }.keys.forEach { editor.remove(it) }
         editor.apply()
-        _changes.value = _changes.value + 1
+        changed(id)
         return ok
     }
 
