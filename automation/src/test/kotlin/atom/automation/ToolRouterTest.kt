@@ -92,6 +92,7 @@ class ToolRouterTest {
             "make me a small website that tracks my water intake", "Make a one-page site that says hello",
             "build me a snake game", "create a todo app", "make a landing page for my bakery", "write an html page with a clock",
             "erstelle mir eine Webseite für meinen Verein", "hazme una página web para mi tienda", "fais-moi un site pour mon club",
+            "make an app called Snake", "build me a game named Pong", "create a page called About me",
         )) {
             assertEquals("sites", top(r), r)
             // Small models get it too: one strong match is enough.
