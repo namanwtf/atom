@@ -349,6 +349,8 @@ def type_prompt(rec, prompt):
         return False
     tap_node(send)
     rec.mark("sent")
+    rec.wait(1.0)
+    hide_keyboard()  # so the steps are on screen while ATOM works
     for _ in range(10):
         rec.wait(1)
         if e2e.run_ids() - before:
@@ -426,9 +428,24 @@ def task(rec, prompt, timeout=RUN_WAIT):
 # ------------------------------------------------------------------ the website preview
 
 
-def open_preview(rec):
-    """The site's live preview in front (it opens by itself during a run; else the chat card's Open preview)."""
-    for _ in range(3):
+def site_id(run):
+    """The site the run worked on, from its tool results (site_create / site_write / site_preview)."""
+    for c in reversed((run or {}).get("toolCalls", [])):
+        m = re.search(r"(?:site|Created site) ([a-z0-9-]+)[ .]", c.get("result") or "")
+        if c["name"].startswith("site_") and m:
+            return m.group(1)
+    return None
+
+
+def open_preview(rec, run=None):
+    """The site's live preview in front: it opens by itself during a run; else the chat card's Open preview; else
+    the same screen through its route (what the card opens), when the card has scrolled out of view."""
+    sid = site_id(run)
+    for attempt in range(3):
+        if attempt == 2 and sid and not in_preview():
+            rec.mark(f"open preview (route {sid})")
+            launch(f"web/sites/preview/{sid}", wait=4)
+            continue
         ns = nodes()
         if in_preview(ns):
             return True
@@ -450,8 +467,10 @@ def open_preview(rec):
 def tour(rec, steps=7, pause=1.6):
     """Scrolls slowly down the page, as a person reading it, then back to the top."""
     rec.mark("tour")
-    for _ in range(steps):
-        swipe(540, 1850, 540, 1050, 1100)
+    xs = [540, 980, 540, 120]
+    for i in range(steps):
+        x = xs[i % len(xs)]
+        swipe(x, 1850, x, 1050, 1100)
         rec.wait(pause)
     rec.mark("tour end")
     rec.wait(1)
@@ -487,7 +506,7 @@ def clip_website():
     rec.wait(1.5)
     run = task(rec, PROMPTS["website"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_website_preview")
@@ -497,7 +516,7 @@ def clip_website():
     rec.mark("follow-up")
     run2 = task(rec, PROMPTS["website2"]) if run_ok(run) else None
     rec.wait(2)
-    if run_ok(run2) and open_preview(rec):
+    if run_ok(run2) and open_preview(rec, run2):
         rec.mark("preview 2")
         rec.wait(3)
         shot("demo_website2_preview")
@@ -554,7 +573,7 @@ def clip_game():
     rec.wait(1.5)
     run = task(rec, PROMPTS["game"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(2.5)
         shot("demo_game_preview")
@@ -600,7 +619,7 @@ def clip_bill():
     rec.wait(1.5)
     run = task(rec, PROMPTS["bill"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_bill_preview")
@@ -744,7 +763,7 @@ def clip_research():
     run = task(rec, PROMPTS["research"])
     rec.wait(3)
     shot("demo_research_done")
-    if run_ok(run) and "site_preview" in e2e.names(run) and open_preview(rec):
+    if run_ok(run) and "site_preview" in e2e.names(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_research_preview")
