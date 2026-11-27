@@ -20,7 +20,8 @@ object Share {
     /**
      * Content URIs for [files], shared together. Files in a folder this provider serves (generated images, browser
      * previews, the problem report) are served where they are; any other file is copied into the share cache first.
-     * Whenever the share cache is used, everything else in it is deleted: only what is being shared now stays.
+     * Whenever the share cache is used, earlier copies older than an hour are deleted, so nothing lingers for long
+     * while an app that reads a shared file a little later still finds it.
      */
     fun urisFor(context: Context, files: List<File>): List<Uri> {
         val app = context.applicationContext
@@ -35,12 +36,14 @@ object Share {
             }
         }
         if (served.any { inside(it, share) }) {
-            share.listFiles()?.filter { f -> served.none { it.path == f.canonicalPath } }?.forEach { it.delete() }
+            val cutoff = System.currentTimeMillis() - KEEP_MS
+            share.listFiles()?.filter { f -> f.lastModified() < cutoff && served.none { it.path == f.canonicalPath } }?.forEach { it.delete() }
         }
         return served.map { FileProvider.getUriForFile(app, authority(app), it) }
     }
 
     private const val SHARE_DIR = "web_share"
+    private const val KEEP_MS = 60 * 60_000L
 
     fun intent(context: Context, files: List<File>, mime: String? = null): Intent {
         val uris = urisFor(context, files)

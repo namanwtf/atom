@@ -118,7 +118,7 @@ internal object DebugLaunch {
             ToolCall("demoSite2", "site_write", "{\"path\":\"index.html\",\"content\":\"(debug sample)\"}") to
                 "Wrote index.html (1.2 KB) in site atom-demo. Show it with site_preview.",
             ToolCall("demoSite3", "site_preview", "{\"name\":\"atom-demo\"}") to
-                "The live preview of \"Water tracker\" is open on the phone.\nURL: https://atom-demo-sample.sites.invalid/ (debug sample)\n" +
+                "The live preview of \"Water tracker\" is open on the phone.\nURL: https://atom-demo-sample.invalid/ (debug sample)\n" +
                 "Site preview: atom-demo",
         )
         val messages = buildList {

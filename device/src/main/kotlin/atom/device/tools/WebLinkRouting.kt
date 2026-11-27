@@ -28,11 +28,16 @@ object WebLinkRouting {
      * is set, which the model does only when the user asked for their own browser or a specific app.
      */
     fun openUrlRefusal(raw: String, external: Boolean): String? {
+        if (atom.core.io.AtomOnlyUrls.isAtomOnly(withScheme(raw.trim()))) return SITE_REFUSAL
         val scheme = schemeOf(raw)
         if (scheme in BLOCKED_SCHEMES) return "Opening $scheme: links is not allowed."
         if (scheme in setOf("http", "https") && !external) return WEB_PAGE_REFUSAL
         return null
     }
+
+    const val SITE_REFUSAL =
+        "Not opened: this is the address of one of the user's own sites, which only Atom can open; another app would " +
+            "never reach it. Show it with site_preview, or open it in Atom's agent browser with browser_open."
 
     const val WEB_PAGE_REFUSAL =
         "Not opened: open_url would hand this web page to another app outside Atom (the user's external browser). " +

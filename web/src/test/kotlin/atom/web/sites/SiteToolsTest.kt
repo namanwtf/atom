@@ -132,7 +132,7 @@ class SiteToolsTest {
         val preview = call(SiteToolNames.PREVIEW)
         assertFalse(preview.isError, preview.text)
         val tag = backend.store.originTag("water-tracker")
-        assertTrue("URL: https://water-tracker-$tag.sites.invalid/" in preview.text, preview.text)
+        assertTrue("URL: https://water-tracker-$tag.invalid/" in preview.text, preview.text)
         assertTrue("open on the phone" in preview.text, preview.text)
         assertEquals(listOf("t1"), backend.previewTasks, "the preview is opened for the calling run only")
         assertEquals("water-tracker", SiteCards.siteOf(preview.text))

@@ -28,10 +28,12 @@ class SiteReply(
  * Answers the requests Atom's WebViews make for site URLs ([SiteOrigin]): the site's own files from [SiteStore],
  * read-only, and nothing else. Pure JVM, so every rule is unit tested.
  *
- * - Only `https://<id>-<tag>.sites.invalid` of a site that exists, with the tag it has now; anything else under
- *   `sites.invalid` is answered here too (with an error), so it never reaches the network.
+ * - Only `https://<id>-<tag>.invalid` of a site that exists, with the tag it has now; any other `.invalid` address
+ *   is answered here too (with an error), so it never reaches the network.
  * - Only to that site itself: a page of any other origin (another site, or the web) gets 403 for every file of it,
  *   in an iframe, a script tag or a fetch. Its top-level navigation is allowed; the site then runs in its own origin.
+ * - No service worker can be registered (its script request is refused), and the requests workers make are
+ *   refused too ([serviceWorker]).
  * - GET and HEAD only. Paths are decoded once, strictly; "..", backslashes and NUL are refused, hidden names are
  *   404, and a symbolic link anywhere on the way, or a path that resolves outside the site, is 403.
  * - Nothing is cached (`Cache-Control: no-store`), types are never sniffed, no referrer leaves the site.
@@ -53,6 +55,8 @@ object SiteRequests {
             if (fetchSite != null && fetchSite != "same-origin" && fetchSite != "none") return error(403, "Forbidden")
         }
         h["origin"]?.let { if (it != SiteOrigin.origin(id, tag)) return error(403, "Forbidden") }
+        // No service workers: a worker's own requests come with no page to check them against.
+        if (h["service-worker"] != null) return error(403, "Forbidden")
         if (!method.equals("GET", ignoreCase = true) && !method.equals("HEAD", ignoreCase = true)) {
             return error(405, "Method Not Allowed", extra = mapOf("Allow" to "GET, HEAD"))
         }
@@ -69,6 +73,13 @@ object SiteRequests {
             is Resolved.Found -> file(r.file, head)
         }
     }
+
+    /**
+     * The reply to a request a service worker makes, for `ServiceWorkerClient.shouldInterceptRequest`: null for every
+     * URL that is not a site's (the worker loads it as usual), a refusal for every site URL, which therefore never
+     * reaches the network either. A site cannot register a worker (see [handle]), so none should ask.
+     */
+    fun serviceWorker(url: String): SiteReply? = if (SiteOrigin.isSiteUrl(url)) error(403, "Forbidden") else null
 
     sealed interface Resolved {
         data class Found(val file: File) : Resolved

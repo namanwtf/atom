@@ -59,20 +59,24 @@ class SiteRequestsTest {
     @Test
     fun originsAreFixedPerSiteAndNeverResolve() {
         val tag = store.originTag("site")
-        assertEquals("https://site-$tag.sites.invalid/", SiteOrigin.url("site", tag))
-        assertEquals("site" to tag, SiteOrigin.parse("https://site-$tag.sites.invalid/a/b?c#d"))
-        assertEquals("water-tracker", SiteOrigin.siteOf("https://water-tracker-abc123.sites.invalid/"))
-        assertEquals("/a%20b/", SiteOrigin.rawPathOf("https://site-$tag.sites.invalid/a%20b/?x=1#y"))
-        assertEquals("/", SiteOrigin.rawPathOf("https://site-$tag.sites.invalid"))
+        assertEquals("https://site-$tag.invalid/", SiteOrigin.url("site", tag))
+        assertEquals("site" to tag, SiteOrigin.parse("https://site-$tag.invalid/a/b?c#d"))
+        assertEquals("water-tracker", SiteOrigin.siteOf("https://water-tracker-abc123.invalid/"))
+        assertEquals("/a%20b/", SiteOrigin.rawPathOf("https://site-$tag.invalid/a%20b/?x=1#y"))
+        assertEquals("/", SiteOrigin.rawPathOf("https://site-$tag.invalid"))
+        // Each site is a single label under the reserved top level: its own registrable domain, so no cookie set
+        // by one site (Domain= included) can reach another.
+        assertEquals(1, SiteOrigin.url("site", tag).removePrefix("https://").removeSuffix("/").count { it == '.' })
         // Not ours: other hosts, look-alikes.
-        for (u in listOf("https://example.com/", "https://sites.invalid.example.com/", "https://evilsites.invalid/", "about:blank", "", "x")) {
+        for (u in listOf("https://example.com/", "https://invalid.example.com/", "https://evilinvalid/", "https://x.invalidx/", "about:blank", "", "x")) {
             assertFalse(SiteOrigin.isSiteUrl(u), u)
             assertNull(SiteRequests.handle(store, u, "GET", emptyMap(), true, u), u)
         }
         // Ours but malformed: answered (refused) here, so it never goes to the network.
         for (u in listOf(
-            "http://site-$tag.sites.invalid/", "https://site-$tag.sites.invalid:8443/", "https://user@site-$tag.sites.invalid/",
-            "https://sites.invalid/", "https://site.sites.invalid/", "https://SITE-$tag.sites.invalid./x",
+            "http://site-$tag.invalid/", "https://site-$tag.invalid:8443/", "https://user@site-$tag.invalid/",
+            "https://invalid/", "https://site.invalid/", "https://SITE-$tag.invalid./x", "https://a.site-$tag.invalid/",
+            "https://atom.invalid/",
         )) {
             assertTrue(SiteOrigin.isSiteUrl(u), u)
             assertNull(SiteOrigin.parse(u), u)
@@ -80,6 +84,32 @@ class SiteRequestsTest {
             assertTrue(r.status >= 400, "$u -> ${r.status}")
             assertFalse("Hello" in r.text(), u)
         }
+    }
+
+    @Test
+    fun noServiceWorkers() {
+        // The registration's script request is refused, and so is every site request a worker makes.
+        assertEquals(403, get("/sw.js", headers = mapOf("Service-Worker" to "script")).status)
+        assertEquals(403, SiteRequests.serviceWorker("$origin/app.js")!!.status)
+        assertEquals(403, SiteRequests.serviceWorker("https://anything.invalid/x")!!.status)
+        assertNull(SiteRequests.serviceWorker("https://example.com/app.js"), "other addresses load as usual")
+    }
+
+    @Test
+    fun linksToASiteOpenInAtom() {
+        val tag = store.originTag("site")
+        assertEquals("web/sites/preview/site", SiteLinks.routeFor("https://site-$tag.invalid/"))
+        assertEquals("web/sites/preview/site", SiteLinks.routeFor("https://site-$tag.invalid"))
+        assertTrue(SiteLinks.routeFor("https://site-$tag.invalid/sub/page.html").startsWith("web/browser/open/"))
+        assertTrue(SiteLinks.routeFor("https://broken.invalid/").startsWith("web/browser/open/"))
+    }
+
+    @Test
+    fun cookiePathsCoverEveryFolderAndFile() {
+        assertEquals(
+            listOf("/", "/index.html", "/css", "/css/", "/css/a.css", "/css/deep", "/css/deep/", "/css/deep/b.css"),
+            SiteOrigin.cookiePaths(listOf("index.html", "css/a.css", "css/deep/b.css")),
+        )
     }
 
     @Test

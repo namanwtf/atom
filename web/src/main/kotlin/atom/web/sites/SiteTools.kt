@@ -33,7 +33,7 @@ object SiteToolNames {
             "site_* tools, not file_write or the terminal: site_create, then site_write index.html (plain HTML, CSS and " +
             "JavaScript, inline or in style.css / app.js; no build step; keep the user's data in localStorage), then " +
             "site_preview to show it. For a change, site_read the file and site_write it whole; the open preview reloads by " +
-            "itself. To check your work, browser_open the site's URL (https://<id>-<tag>.sites.invalid/, given by site_preview; " +
+            "itself. To check your work, browser_open the site's URL (https://<id>-<tag>.invalid/, given by site_preview; " +
             "it opens only in Atom's own preview and browsers): the result notes the page's console errors."
 }
 

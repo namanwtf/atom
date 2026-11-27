@@ -21,6 +21,16 @@ class WebLinkRoutingTest {
         assertNull(WebLinkRouting.openUrlRefusal("example.com", external = true))
     }
 
+    @Test fun theUsersOwnSitesNeverGoToAnotherApp() {
+        for (url in listOf("https://water-tracker-k3x9q2.invalid/", "water-tracker-k3x9q2.invalid", "http://x.invalid:80/a", "HTTPS://A-B.INVALID./")) {
+            val why = assertNotNull(WebLinkRouting.openUrlRefusal(url, external = true), url)
+            assertTrue("site_preview" in why && "browser_open" in why, why)
+        }
+        assertTrue(atom.core.io.AtomOnlyUrls.isAtomOnly("https://user@site-abc123.invalid:8443/x"))
+        assertFalse(atom.core.io.AtomOnlyUrls.isAtomOnly("https://invalid.example.com/"))
+        assertFalse(atom.core.io.AtomOnlyUrls.isAtomOnly("https://example.com/?next=https://a.invalid/"))
+    }
+
     @Test fun deepLinksStillOpenInTheirApps() {
         for (url in listOf("geo:0,0?q=coffee", "tel:+15551234", "mailto:a@b.c", "market://details?id=x", "spotify:track:1", "sms:123")) {
             assertNull(WebLinkRouting.openUrlRefusal(url, external = false), url)

@@ -46,7 +46,7 @@ object Sites {
         store ?: SiteStore(File(context.applicationContext.filesDir, "sites").apply { mkdirs() }).also { store = it }
     }
 
-    /** The address of site [id] ("https://<id>-<tag>.sites.invalid/"). Reads (and the first time writes) a small file. */
+    /** The address of site [id] ("https://<id>-<tag>.invalid/"). Reads (and the first time writes) a small file. */
     fun url(context: Context, id: String): String {
         val s = store(context)
         if (!s.exists(id)) throw IllegalArgumentException("There is no site $id")
@@ -78,8 +78,9 @@ object Sites {
     fun delete(context: Context, id: String): Boolean {
         val s = store(context)
         val origin = s.existingOriginTag(id)?.let { SiteOrigin.origin(id, it) }
+        val paths = runCatching { SiteOrigin.cookiePaths(s.files(id).map { it.path }) }.getOrDefault(listOf("/"))
         val ok = s.delete(id)
-        origin?.let { SiteWeb.forget(it) }
+        origin?.let { SiteWeb.forget(it, paths) }
         val p = prefs(context)
         val editor = p.edit()
         p.all.filter { it.value == id }.keys.forEach { editor.remove(it) }

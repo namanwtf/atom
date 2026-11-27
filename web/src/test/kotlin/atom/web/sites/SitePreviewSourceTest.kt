@@ -27,7 +27,7 @@ class SitePreviewSourceTest {
     @Test
     fun everyAtomWebViewThatCanOpenASiteServesIt() {
         // The preview, the agent browser (browser_open, and the take-over screen that shows the same WebView) and the
-        // user's own browser: each answers the site's https://<id>-<tag>.sites.invalid address itself.
+        // user's own browser: each answers the site's https://<id>-<tag>.invalid address itself.
         for (path in listOf("src/main/kotlin/atom/web/browser/Browser.kt", "src/main/kotlin/atom/web/ui/BrowserScreens.kt")) {
             val s = File(path).readText()
             assertTrue("shouldInterceptRequest" in s && "sites.intercept(request)" in s, path)
@@ -41,7 +41,8 @@ class SitePreviewSourceTest {
     @Test
     fun onlyTheUsersOwnSitesReportConsoleErrorsToTheAgent() {
         val s = File("src/main/kotlin/atom/web/browser/Browser.kt").readText()
-        assertTrue(Regex("""ConsoleMessage\.MessageLevel\.ERROR && atom\.web\.sites\.SiteOrigin\.siteOf\(webView\.url\) != null""").containsMatchIn(s))
+        assertTrue("ConsoleMessage.MessageLevel.ERROR && fromOwnSite(message)" in s)
+        assertTrue("SiteOrigin.parse(source) != null" in s, "judged by the file the error comes from")
     }
 
     @Test

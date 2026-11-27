@@ -145,7 +145,7 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
                 return true
             }
 
-            // The user's own sites open here at their https://<id>-<tag>.sites.invalid address, served from storage.
+            // The user's own sites open here at their https://<id>-<tag>.invalid address, served from storage.
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = sites.intercept(request)
 
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -193,7 +193,7 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
             // The JavaScript errors of the user's own sites reach the agent as notes on its next step (a few per
             // step), so it can check pages it made itself. Other pages' console output never reaches the model.
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR && atom.web.sites.SiteOrigin.siteOf(webView.url) != null) {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR && fromOwnSite(message)) {
                     consoleErrors++
                     if (consoleErrors <= MAX_CONSOLE_NOTES) {
                         val source = message.sourceId().orEmpty().substringAfterLast('/').substringBefore('?').take(60)
@@ -204,6 +204,12 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
                     }
                 }
                 return false
+            }
+
+            /** The error comes from a file of one of the user's sites (no source: the page itself, when it is one). */
+            private fun fromOwnSite(message: ConsoleMessage): Boolean {
+                val source = message.sourceId()
+                return if (source.isNullOrBlank()) atom.web.sites.SiteOrigin.parse(webView.url) != null else atom.web.sites.SiteOrigin.parse(source) != null
             }
 
             override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {

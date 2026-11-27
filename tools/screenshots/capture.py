@@ -511,7 +511,7 @@ def site_preview(p):
     # site_preview opens the preview itself only for a run the user sees in the foreground; this call comes from the
     # debug hook (no run), so the preview is opened by its route below, as a tap on the chat card would.
     result = run_tool("site_preview", {"name": SITE_ID})
-    url = re.search(r"URL: (https://[a-z0-9-]+\.sites\.invalid/)", result)
+    url = re.search(r"URL: (https://[a-z0-9-]+\.invalid/)", result)
     print(f"[capture] preview URL from site_preview: {url.group(1) if url else '(none)'}")
     time.sleep(5)
     if not find("^Close preview$"):

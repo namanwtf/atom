@@ -419,11 +419,11 @@ def s_site(res):
     # there is no server to reach from outside the app; the page is checked through the app and the files instead.
     url = None
     for c in previews:
-        m = re.search(r"URL: (https://([a-z0-9-]+)-([a-z0-9]{6})\.sites\.invalid/)", c.get("result") or "")
+        m = re.search(r"URL: (https://([a-z0-9-]+)-([a-z0-9]{6})\.invalid/)", c.get("result") or "")
         if m:
             url = m
     if url is None:
-        res.check(False, "site_preview returned the site's https://<id>-<tag>.sites.invalid/ address")
+        res.check(False, "site_preview returned the site's https://<id>-<tag>.invalid/ address")
         return
     site_id, tag = url.group(2), url.group(3)
     log(f"  site address: {url.group(1)}")
@@ -438,7 +438,7 @@ def s_site(res):
         launch(f"web/sites/preview/{site_id}", wait=6)
     time.sleep(3)
     res.check(find("^Close preview$") is not None, "the preview screen is open")
-    res.check(find(re.escape(f"{site_id}-{tag}.sites.invalid")) is not None, "the preview shows the site's own address")
+    res.check(find(re.escape(f"{site_id}-{tag}.invalid")) is not None, "the preview shows the site's own address")
     shown = [t or d for _, t, d, _ in ui_nodes() if (t or d)]
     log(f"  on screen: {shown[:40]!r}")
     res.check(any(re.search(r"hello", x, re.I) for x in shown), "the preview shows the page (it says hello)")
