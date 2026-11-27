@@ -138,7 +138,18 @@ def type_prompt(rec, prompt):
         time.sleep(1.2)
     before = e2e.run_ids()
     type_text(prompt)
-    rec.wait(1.5)
+    # Key events are injected faster than the emulator's text field takes them: wait for the whole sentence to be in
+    # the composer before tapping Send (an early tap sent only the first few words).
+    tail = prompt[-14:]
+    deadline = time.time() + 120
+    typed = False
+    while time.time() < deadline:
+        if any((t or "").rstrip().endswith(tail) for t, _, _ in dump()):
+            typed = True
+            break
+        rec.wait(2)
+    e2e.log(f"composer has the whole prompt: {typed}")
+    rec.wait(0.8)
     send = find("^Send$") or find("^Send")
     if send is None:
         e2e.log("no Send button found; tapping the send position")
