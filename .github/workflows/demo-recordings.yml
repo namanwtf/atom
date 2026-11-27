@@ -1,0 +1,129 @@
+# Launch demo clips: full-resolution screen recordings of real ATOM runs on an emulator, with DeepSeek as the model.
+# The app talks to a relay on this runner (tools/demo/key_proxy.py) that adds the DEEPSEEK_API_KEY secret and forwards
+# each request to api.deepseek.com, so the key never enters the emulator, the app, its logs or the recordings.
+# The clips are printed into the job log as base64 (tools/demo/record.py); cuts are made in editing, labelled.
+# Runs only for the media/launch-recordings-v4 pull request, which is never merged.
+name: Demo recordings
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/demo-recordings.yml"
+      - "tools/demo/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-recordings-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tried in order; the first one the API lists is used. Non-reasoning chat models.
+  DEMO_MODEL_CANDIDATES: "deepseek-chat deepseek-flash deepseek-v4-flash"
+  DEMO_CTX: "131072"
+  DEMO_MAX_TOKENS: "8192"
+
+jobs:
+  record:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'media/launch-recordings-v4'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      # First, so a missing secret fails in seconds.
+      - name: Check the DeepSeek key
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "::error::The DEEPSEEK_API_KEY repository secret is empty or not set. Add it under Settings > Secrets and variables > Actions, then re-run."
+            exit 1
+          fi
+          echo "::add-mask::$DEEPSEEK_API_KEY"
+          echo "DeepSeek key present."
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # The relay holds the key in its own memory; no other step or process gets it.
+      - name: Start the DeepSeek relay
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          echo "::add-mask::$DEEPSEEK_API_KEY"
+          nohup python3 tools/demo/key_proxy.py 8080 > "$RUNNER_TEMP/relay.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8080/health > /dev/null && break; sleep 1; done
+          models=$(curl -fsS http://127.0.0.1:8080/v1/models | jq -r '.data[].id')
+          echo "Models this key can use:"; echo "$models"
+          model=""
+          for c in $DEMO_MODEL_CANDIDATES; do
+            if echo "$models" | grep -qx "$c"; then model=$c; break; fi
+          done
+          if [ -z "$model" ]; then echo "::error::none of $DEMO_MODEL_CANDIDATES is listed"; cat "$RUNNER_TEMP/relay.log"; exit 1; fi
+          echo "DEMO_MODEL=$model" >> "$GITHUB_ENV"
+          echo "Using $model"
+          # A tool-calling check straight through the relay, so a key, model or wire problem shows here.
+          time curl -fsS http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' -d '{
+            "model": "'"$model"'",
+            "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+            "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city",
+              "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
+          }' | jq -c '.choices[0].message, .usage'
+          cat "$RUNNER_TEMP/relay.log"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install NDK and CMake
+        run: sdkmanager --install "ndk;30.0.16248370" "cmake;4.1.2"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The app (debug build: it carries the test hook the recorder drives).
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      # The emulator needs the runner's memory more than the idle Gradle and Kotlin daemons do.
+      - name: Free memory for the emulator
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Pillow
+        run: pip install --quiet pillow
+
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null && ffmpeg -version | head -n1
+
+      - name: Record
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 3
+          ram-size: 4096M
+          disk-size: 8G
+          disable-animations: false
+          emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            python3 tools/demo/record.py
+
+      - name: Relay log
+        if: always()
+        run: cat "$RUNNER_TEMP/relay.log" || true
