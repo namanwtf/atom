@@ -89,7 +89,7 @@ code,kbd,pre,.mono{font-family:var(--mono);font-size:.875em}
 .nav-gh svg{width:18px;height:18px}
 .nav-toggle{display:none;margin-left:auto;width:44px;height:44px;border:1px solid var(--rule-strong);border-radius:999px;background:transparent;color:var(--ink);align-items:center;justify-content:center;cursor:pointer}
 .nav-toggle svg{width:20px;height:20px}
-@media (max-width:899px){
+@media (max-width:1079px){
   .nav-toggle{display:inline-flex}
   .nav{position:fixed;inset:64px 0 auto 0;display:none;flex-direction:column;align-items:stretch;gap:0;background:var(--bg);border-bottom:1px solid var(--rule);padding:8px var(--gutter) 20px;max-height:calc(100dvh - 64px);overflow:auto}
   .nav.is-open{display:flex}
@@ -373,7 +373,7 @@ main[data-latest="4.0.5"] .if-406-live,main[data-latest="4.0.6"] .if-406-coming{
 .nav-toggle path{transition:transform .2s;transform-origin:10px 10px}
 .nav-toggle[aria-expanded="true"] .l1{transform:translateY(3px) rotate(45deg)}
 .nav-toggle[aria-expanded="true"] .l2{transform:translateY(-3px) rotate(-45deg)}
-@media (max-width:899px){.nav-links a[aria-current="page"]{font-weight:600}.nav-links a[aria-current="page"]::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-left:10px;vertical-align:middle}}
+@media (max-width:1079px){.nav-links a[aria-current="page"]{font-weight:600}.nav-links a[aria-current="page"]::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-left:10px;vertical-align:middle}}
 .when .status{margin-left:0;top:0}
 
 /* ===== v3: varied home sections, carousels ===== */
@@ -581,3 +581,16 @@ html:not(.js) body.home .brand-coin{opacity:1}
 .crop img{width:100%;height:auto;aspect-ratio:964/1044;display:block}
 @media (max-width:979px){.loop{max-width:320px}}
 @media (max-width:979px){.coin3d{margin-bottom:14px}.coin-hint{bottom:-14px}}
+
+/* ===== v6: ATOM wordmark, Fuel the octopus on Home ===== */
+.brand > span{letter-spacing:.05em;font-weight:800;font-stretch:118%}
+.foot-brand .brand > span{letter-spacing:.05em}
+.fuel-home{display:grid;gap:32px;align-items:center}
+.fuel-home h2{font-weight:850;font-stretch:125%;letter-spacing:-.035em;font-size:clamp(2rem,4.4vw,3.75rem);margin-bottom:18px}
+.fuel-home .caption{margin:0 0 12px}
+.fuel-art .cup{max-width:340px}
+@media (min-width:980px){.fuel-home{grid-template-columns:7fr 5fr;gap:64px}}
+@media (max-width:979px){.fuel-art{order:-1}.fuel-art .cup{max-width:240px}}
+.help-btns{gap:10px}
+.help-btns .btn{min-height:46px;padding:0 18px;font-size:.9375rem}
+@media (max-width:519px){.help-btns .btn{flex:1 1 100%}}

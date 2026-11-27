@@ -256,6 +256,19 @@
     mark();
   });
 
+  /* Share ATOM: the system share sheet where there is one, otherwise copy the link. */
+  d.querySelectorAll('[data-share]').forEach(function (b) {
+    var label = b.querySelector('span') || b;
+    var orig = label.textContent;
+    b.addEventListener('click', function () {
+      var url = b.getAttribute('data-url') || location.href, title = b.getAttribute('data-title') || d.title;
+      var done = function (t) { label.textContent = t; setTimeout(function () { label.textContent = orig; }, 1800); };
+      if (navigator.share) { navigator.share({ title: title, url: url }).catch(function () {}); return; }
+      if (navigator.clipboard) { navigator.clipboard.writeText(url).then(function () { done('Link copied'); }, function () { done(url); }); return; }
+      done(url);
+    });
+  });
+
   /* Copy buttons on code blocks and fingerprints. */
   d.querySelectorAll('pre, .fingerprint').forEach(function (el) {
     if (!navigator.clipboard) return;

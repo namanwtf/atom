@@ -1,6 +1,6 @@
 {
-  "name": "Atom: AI agent for Android",
-  "short_name": "Atom",
+  "name": "ATOM: AI agent for Android",
+  "short_name": "ATOM",
   "description": "A free, open-source AI agent for Android.",
   "start_url": "/atom/",
   "scope": "/atom/",
