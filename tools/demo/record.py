@@ -199,9 +199,25 @@ def record(name, prompt, show_shade):
     time.sleep(2)
 
 
+def terminal():
+    """A screenshot of the terminal after a few ordinary commands in its Android shell tab."""
+    launch("linux/terminal", wait=5)
+    for cmd in ("uname -sr", "getprop ro.build.version.release", "echo $((6*7))", "ls / | head -n 6"):
+        sh("input text " + shlex.quote(cmd.replace(" ", "%s")))
+        sh("input keyevent KEYCODE_ENTER")
+        time.sleep(1.5)
+    shot("demo_terminal")
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(2)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     setup()
+    try:
+        terminal()
+    except Exception as e:
+        e2e.log(f"terminal failed: {type(e).__name__}: {e}")
     warm_up()
     for name, prompt, shade in CLIPS:
         try:
