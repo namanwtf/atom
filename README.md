@@ -1,182 +1,219 @@
 <p align="center">
-  <img src="docs/assets/hero.png" alt="Atom: the AI agent that lives on your phone" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/hero-light.png">
+    <img src="docs/assets/hero-dark.png" width="100%" alt="Atom. Your phone finally has an agent of its own. It reads the screen, taps through apps, runs real Linux tools and works on a schedule, with the model you pick or fully offline. Shown, cropped from real runs with a local 3B model: the request 'Turn on Do Not Disturb.', Atom's reply 'Do Not Disturb is now set to total silence', and the phone's quick settings with the Do Not Disturb tile on, set by Atom.">
+  </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/namanwtf/atom/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/namanwtf/atom?label=Download&style=for-the-badge&color=4078EF"></a>
-  <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0-2b2b2b?style=for-the-badge"></a>
-  <img alt="Android 14+" src="https://img.shields.io/badge/Android-14%2B-2b2b2b?style=for-the-badge&logo=android&logoColor=white">
-  <img alt="No telemetry" src="https://img.shields.io/badge/Telemetry-none-2b2b2b?style=for-the-badge">
+  <a href="https://github.com/namanwtf/atom/releases/latest"><img src="docs/assets/badge-download.png" height="64" alt="Download the latest APK"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/namanwtf/atom"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" height="64" alt="Get it on Obtainium"></a>
+  <a href="https://github.com/namanwtf/atom/stargazers"><img src="docs/assets/badge-star.png" height="64" alt="Star Atom on GitHub"></a>
 </p>
-
-<p align="center"><b>Chat apps can tell you how to do something. Atom does it.</b><br>
-It reads your screen, taps through your apps, runs real Linux tools, remembers what matters to you,<br>and keeps working in the background while you get on with your day. On your phone, with the model you choose.</p>
-
----
 
 <p align="center">
-  <img src="docs/assets/showcase-everyday.png" alt="Atom home, the mini chat over any app, and the bubble's hold menu" width="100%">
+  <sub><b>Free&nbsp;and&nbsp;open&nbsp;source</b> &nbsp;·&nbsp; GPL&#8209;3.0 &nbsp;·&nbsp; Android&nbsp;14+ &nbsp;·&nbsp; ARM64 &nbsp;·&nbsp; 7&nbsp;MB &nbsp;·&nbsp; No&nbsp;account &nbsp;·&nbsp; No&nbsp;telemetry</sub>
 </p>
 
-## Why Atom
+<!-- DEMO VIDEO SLOT: put docs/assets/demo.gif here (linking to docs/assets/demo.mp4), centred, directly under the buttons. -->
 
-Every assistant you use today is a visitor: you open it, type, read the answer and then do the work yourself. Your phone is the one computer that is always with you and already knows your day, and it has no agent of its own.
+<br>
 
-Atom is that agent. Not a chat window with an API key, but a full agent runtime with real reach into the phone:
+**Chat apps tell you how to do something. Atom does it.** It reads the screen, taps and types through your apps, and checks the screen again before it says "done". It runs real Linux tools, remembers what matters to you and keeps working in the background. On your phone, with the model you choose.
 
-- 📱 **It operates apps for you.** It reads what's on screen, taps, types and scrolls, then checks the screen again before it says "done". If it can't confirm something worked, it tells you.
-- 🫧 **It's one tap away, everywhere.** A floating bubble sits over any app: tap it for a mini chat, hold it for quick actions, or make Atom your phone's assistant so the assistant gesture opens it already knowing what's on screen.
-- 🧠 **It knows your context, when you ask.** Notifications, messages and one-time codes, calendar, contacts, photos, files, location and more, each behind its own Android permission and read only when a task needs it.
-- 🐧 **It has a real workbench.** A full terminal and Alpine or Debian Linux on the phone, with Python, Node, git and SSH. Atom writes code, runs it, reads the errors and fixes them.
-- ⏰ **It works while you don't.** Scheduled tasks and phone-event automations run in the background and report back: a morning digest, a price watch, a weekly cleanup.
-- 🔒 **It stays yours.** No telemetry, no analytics, no accounts. API keys are encrypted with the phone's hardware-backed keystore. Your chats go only to the model you pick, or nowhere at all with an on-device model.
+### Tested on real tasks
 
-## See it
+Release candidates run these requests on an Android emulator in CI, against a small model (Qwen2.5 3B) on the runner's own CPU. No cloud, no API key. The checks look at the phone, not at the wording.
 
-<table>
-<tr>
-<td width="34%" align="center" valign="top">
-  <img src="docs/assets/bubble-demo.gif" alt="The floating bubble: hold for actions, drag anywhere, tap for a mini chat" width="260"><br>
-  <sub><b>The bubble.</b> Hold it for actions, drag it anywhere, tap it to chat over whatever you're doing. It remembers where you left it.</sub>
-</td>
-<td valign="top">
+| You say | What happened, checked on the phone |
+|---|---|
+| "Turn on Do Not Disturb." | Used its Do Not Disturb tool. DND was on afterwards. |
+| "What was my last notification about?" | Read the notifications. Answered: dinner at 8. |
+| "Every day at 9am remind me to drink water." | Created a daily scheduled task. |
+| "Use the agent browser to open example.com and tell me what it says." | Opened its own browser, read the page, summed it up. |
+| A task in Settings, with the screen turned off halfway | Waited for the unlock, then finished. |
 
-**Things you can just ask:**
+All scenarios, including the ones an emulator can't pass: [docs/TESTING.md](docs/TESTING.md).
 
-> "Open WhatsApp and tell Rahul I'll be 10 minutes late."
+<br>
 
-> "What's the OTP that just came in?"
+## What it does
 
-> "Turn on Do Not Disturb until 7 and set an alarm for 6:45."
+### 01 &nbsp;It uses your phone the way you do
 
-> "Summarize today's tech news and send me the three most interesting links."
+Atom opens apps, reads the screen, taps, types and scrolls, then looks again to confirm the result. If it can't confirm that something worked, it tells you. A bubble floats over any app: tap it for a mini chat, hold it for quick actions, or make Atom your phone's assistant. When a task needs your context (notifications, messages and one-time codes, calendar, contacts, files, location), Atom asks for that one permission the first time.
 
-> "Every weekday at 7:45, give me my calendar, the weather and anything urgent in my notifications."
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-hands-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-hands-light.png">
+  <img src="docs/assets/plate-hands-dark.png" width="100%" alt="Close-ups of the floating bubble on the home screen, its hold menu with voice, chat and close, and the mini chat with a question typed in.">
+</picture>
 
-> "Clone this repo, run its tests and tell me why they fail."
+### 02 &nbsp;A real workbench in your pocket
 
-> "Look at my screen and explain this error."
+A terminal with several sessions, and Linux on the phone: **Alpine or Debian**, in PRoot (no root needed) or a chroot (with root). Git, SSH, curl, jq and ripgrep come with the base install, and Python and Node are added on request. Atom writes code, runs it, reads the errors and fixes them. Its own browser shows every step, and you can take over. Scheduled tasks and phone-event automations run in the background and report back.
 
-</td>
-</tr>
-</table>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-bench-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-bench-light.png">
+  <img src="docs/assets/plate-bench-dark.png" width="100%" alt="Cropped from real runs: shell commands and their output in Atom's terminal, a daily reminder created from one sentence, and the agent browser's steps on example.com with a Take over button.">
+</picture>
 
-## Where Atom fits
+### 03 &nbsp;Any model. Or no cloud at all.
 
-| You want to… | Typical chat app | Atom |
+**14 providers built in:** OpenAI, Anthropic, Gemini (AI Studio and Vertex AI), DeepSeek, Qwen (Alibaba Bailian), Kimi, MiMo, MiniMax, StepFun, SiliconFlow, OpenRouter, xAI, Groq and Mistral. Plus **any OpenAI- or Anthropic-compatible endpoint**, such as llama.cpp or Ollama on your own computer. You can sign in with a ChatGPT or Grok subscription instead of an API key. Or go **fully offline** with on-device models (LiteRT-LM and llama.cpp) from an optional 32 MB pack.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-models-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-models-light.png">
+  <img src="docs/assets/plate-models-dark.png" width="100%" alt="The per-chat model picker, the list of model providers, and on-device models ready to download.">
+</picture>
+
+### 04 &nbsp;It grows with you
+
+**Memory** you can read and edit. **Skills** installed from any public GitHub repo. **MCP** servers, with a switch for each tool. **Subagents** (explore, coder, plan, or your own) that work in parallel. **Voice**: dictation, spoken answers and an on-device "Hey Atom" wake word. **Images**: generate and edit them with the image model you choose.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-extend-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-extend-light.png">
+  <img src="docs/assets/plate-extend-dark.png" width="100%" alt="Memory, Skills and Subagents screens.">
+</picture>
+
+<br>
+
+## Things you can just ask
+
+```text
+"What's the OTP that just came in?"
+"Open WhatsApp and tell Rahul I'll be 10 minutes late."
+"Turn on Do Not Disturb and set an alarm for 6:45."
+"Every weekday at 7:45, give me my calendar and anything urgent in my notifications."
+"Look at my screen and explain this error."
+"Clone this repo, run its tests and tell me why they fail."
+```
+
+## Atom next to a typical chat app
+
+| | Typical chat app | Atom |
 |---|---|---|
-| Get an answer | ✅ | ✅ |
-| Have it *done* on your phone (send, book, toggle, fill in) | ❌ you do the taps | ✅ it taps for you and checks the result |
-| Use what's already on your phone (messages, codes, calendar, files) | ❌ copy and paste | ✅ reads it when you ask, with your permission |
-| Run code and tools | ❌ or only in a remote sandbox | ✅ a real terminal and Linux on the phone |
-| Work while you're away | ❌ | ✅ schedules and phone-event automations |
-| Pick your model, or none online | rarely | ✅ any provider, subscriptions or on-device |
-| Keep your data private | depends on their servers | ✅ no telemetry, no Atom server |
+| Gets it done on your phone (send, toggle, fill in) | You do the taps | Taps for you, then checks the screen |
+| Uses what's on your phone | Copy and paste | Reads it when you ask, one permission at a time |
+| Runs code | In a remote sandbox, if at all | A terminal and Linux on the phone |
+| Works while you're away | No | Schedules and phone-event automations |
+| Model | Theirs | 14 providers, any compatible endpoint, or on-device |
+| Your data | On their servers | On your phone, plus the provider you pick |
 
-## Bring any model
+## Private by design
 
-<p align="center">
-  <img src="docs/assets/showcase-models.png" alt="Model providers, the per-chat model picker and settings" width="100%">
-</p>
+| Stays on your phone | Leaves your phone |
+|---|---|
+| Chats, memory, files, schedules and the Linux environment | Your messages, to the model provider **you** pick (nothing, with an on-device model) |
+| API keys, encrypted with a key held in the Android Keystore | Web searches, to the search engine you set (DuckDuckGo, Bing or Mojeek by default) |
+| Notifications, messages, calendar and other context Atom reads | An update check to GitHub, only when you open About or tap Check for updates |
 
-- **Built in:** OpenAI, Anthropic, Gemini (AI Studio and Vertex AI), DeepSeek, Qwen (Alibaba Bailian), Kimi, MiMo, MiniMax, StepFun, SiliconFlow, OpenRouter, xAI, Groq and Mistral.
-- **Anything compatible:** any OpenAI- or Anthropic-compatible endpoint, including your own server on the local network, plus the models.dev catalog.
-- **Use plans you already pay for:** sign in with a ChatGPT (Codex) or Grok subscription instead of an API key.
-- **Fully offline:** on-device models via LiteRT-LM and llama.cpp, with an optional cloud fallback.
-- **Think harder when it matters:** reasoning effort per conversation, from Off to Max, limited to what the model supports.
+No telemetry, no analytics, no account and no Atom server. Every line of code is here to read.
 
-## A workbench in your pocket
+## You stay in control
 
-<p align="center">
-  <img src="docs/assets/showcase-power.png" alt="Terminal, Linux environment and scheduled tasks" width="100%">
-</p>
+- **Approvals.** Optional "ask before taps and typing". Shell commands ask first, and one tap allows them for the rest of that task.
+- **Stop always works:** from the chat, the floating run capsule or the notification.
+- **Undo.** Every change Atom makes to the device goes into a change history, with one-tap undo.
+- **Locked means locked.** Over the lock screen Atom shows only that a task finished. To approve anything, you unlock first.
+- **Per-tool switches.** Turn off any tool at any time.
 
-- A real terminal with multiple sessions, and **Linux on the phone**: Alpine or Debian, in PRoot (no root) or in a chroot (with root).
-- Python, Node, SSH, git, ripgrep, jq and APK tools on request. Background commands keep running and notify you when they finish.
-- **Device control** with before → after checks: volume, Do Not Disturb, sound mode, flashlight, brightness, toggles, media, alarms and timers. With root or Shizuku it goes deeper: freeze apps, protected settings, logs. Every change lands in an **undo journal**, so you can see what changed and put it back.
+## Honest limits
 
-## Grows with you
+- **Small models are weak agents.** On-device models from 0.6B to 4B handle chat and simple tool calls. For long, multi-step app tasks, use a strong cloud model.
+- **Operating apps goes through Android's accessibility service.** It's slower than your thumb, and apps that hide their screen from accessibility can't be operated.
+- **Linux runs in PRoot** when the phone isn't rooted. It's slower than native, and some software won't run.
+- **Tested on emulators.** CI covers every change, but battery life and smoothness on real phones aren't measured there. Please [tell us what you see](https://github.com/namanwtf/atom/issues).
+- **ARM64 phones on Android 14 or newer**, English interface only.
 
-<p align="center">
-  <img src="docs/assets/showcase-extend.png" alt="Skills, MCP servers and characters" width="100%">
-</p>
+## What's new
 
-- **Memory:** a long-term memory you can read and edit, which Atom keeps up to date itself.
-- **Skills:** installable capability packs, from any public GitHub repository.
-- **MCP:** connect Model Context Protocol servers and choose exactly which tools Atom may use.
-- **Subagents:** Explore, Coder and Plan, plus your own, working in parallel with their own context.
-- **Voice:** dictation, hold-to-talk, spoken answers with many voices, and an on-device **"Hey Atom"** wake word.
-- **Browser and images:** an agent browser you can take over, web search and page reading, and AI image generation and editing.
-- **Characters:** persona chats with character cards, worldbooks and story memory.
+**4.0.5, the current release**
 
-## Safe by design
+- A frosted side menu.
+- Longer tasks: runs keep going while they make progress, and **Continue** picks up a run that reached its step limit.
+- One approval per task for shell commands.
+- Offline model fixes: prompts that fit small context windows, and no more runaway output.
+- Better built-in search: DuckDuckGo Lite, Bing and Mojeek before it gives up, then the agent browser.
+- Keeps working with the screen off. Screen tasks wait for you to unlock.
 
-Giving an AI real control of a phone only works if you can trust it, so Atom is built around that:
+**Coming in 4.0.6**
 
-- **You stay in charge.** Optional "ask before taps and typing", approvals for sensitive actions, per-tool switches that take effect even mid-task, and a Stop button that always works.
-- **Locked means locked.** Answers never pop up over the lock screen, and approving an action from there needs your fingerprint or PIN.
-- **Honest results.** Atom reports what it confirmed, not what it hoped happened.
-- **Open source.** Every line is here to read, under the GPL.
+- **Report a problem:** one tap builds a report on the phone, with keys, tokens and personal data removed. You read it and share it yourself.
+- **Ready-made routines:** Morning brief, Price watch, Weekly phone cleanup and Evening wrap-up. Pick one and tap Save.
+- **Make me a website:** Atom writes the page and opens a live preview that reloads as it edits.
+- **One-tap add key:** tap "add key" on the home screen to go straight to that provider's key screen.
 
-## Permissions and devices
+<details>
+<summary><b>See 4.0.6 in screenshots</b></summary>
+<br>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/plate-next-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-next-light.png">
+  <img src="docs/assets/plate-next-dark.png" width="100%" alt="Ready-made routines on the Scheduled tasks screen, the Report a problem screen, and the live preview of a sample site.">
+</picture>
+<sub>From the 4.0.6 test build. The sample site in the preview was written by the screenshot script.</sub>
+</details>
 
-Atom asks for each permission only when a feature first needs it, and works without the optional ones. The full list, with what uses each one and when it is asked, is in [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
+## Install in 3 steps
+
+1. **Get it.** Download `atom-<version>.apk` from **[Releases](https://github.com/namanwtf/atom/releases/latest)**, or add Atom to **[Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/namanwtf/atom)** so it picks up new releases for you.
+2. **Add a model.** Open Atom and paste an API key, sign in with a subscription, or download an on-device model.
+3. **Let it act (optional).** Turn on Atom's accessibility service so it can operate apps, and switch on the floating bubble.
+
+Updates also arrive inside the app (**Settings → About → Check for updates**). Each one is checked against its published SHA-256 and Atom's signing certificate before it installs. Atom isn't on Google Play, on purpose; an IzzyOnDroid listing is planned.
+
+<details>
+<summary><b>Permissions</b></summary>
+<br>
+
+Atom asks for each permission the first time a feature needs it, and works without the optional ones. The full list, with what uses each one and when it's asked, is in [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
 
 | Feature | What it needs |
 |---|---|
 | Chat, memory, skills, MCP, subagents, schedules, terminal, Linux, web | Nothing beyond the app |
 | Operating apps, reading the screen | Accessibility service |
 | Floating bubble and run capsule | Display over other apps |
-| Personal context (messages, calendar, photos, location…) | Each source's own Android permission, asked on first use |
+| Personal context (messages, calendar, location…) | That source's own Android permission, asked on first use |
 | Deeper device control (freeze apps, system settings, logs) | Root (Magisk, KernelSU, APatch) or Shizuku |
 | Hidden-screen tasks, system assistant extras | Root or the LSPosed module |
 
-Works on Android 14+ (ARM64). Tested on emulators in CI on every change.
+</details>
 
-## Get started
+<details>
+<summary><b>FAQ</b></summary>
+<br>
 
-1. Download `atom-<version>.apk` from **[Releases](https://github.com/namanwtf/atom/releases/latest)** and install it (Android may ask you to allow installs from your browser).
-2. Open Atom, add a model (an API key, a subscription sign-in or an on-device model) and say hello.
-3. Optional: turn on the accessibility service so Atom can operate apps, and enable the floating bubble.
+**Do I need root?** No. Root, Shizuku or LSPosed only add extras, such as freezing apps or running tasks on a hidden screen.
 
-Updates arrive inside the app under **Settings → About → Check for updates**, verified before they install.
+**Does it cost anything?** Atom is free. You pay your model provider, use a subscription you already have, or run a free on-device model.
 
-| | |
-|---|---|
-| **Android** | 14 or newer |
-| **CPU** | ARM64 |
-| **Optional extras** | Root (Magisk, KernelSU or APatch), Shizuku or the LSPosed module unlock deeper device control |
+**Will it drain my battery?** Atom works only when you give it something to do. Schedules wake it briefly, and animations stop when it's idle.
 
-Chat, memory, skills, MCP, subagents, scheduled tasks, the terminal, Linux, files and the web need nothing beyond the app.
+**Why isn't it on Google Play?** That's deliberate. Atom ships from here: GitHub Releases, the in-app updater and Obtainium, with IzzyOnDroid planned.
 
-## FAQ
+**Where does my data go?** See [Private by design](#private-by-design).
 
-**Do I need root?** No. Root, Shizuku or LSPosed only add extras such as freezing apps or running cross-app tasks on a hidden screen.
+</details>
 
-**Does it cost anything?** Atom is free and open source. You pay your model provider (or use a subscription you already have, or a free on-device model).
+<details>
+<summary><b>Building and contributing</b></summary>
+<br>
 
-**Will it drain my battery?** Atom only works when you give it something to do. Background schedules wake it briefly, and animations stop when it's idle.
+Atom is built and tested only on GitHub's runners. Every pull request runs the unit tests, builds the app and takes screenshots on an Android emulator, so you can see your change running without a phone (see [`.github/workflows`](.github/workflows)). Please use CI rather than building on a personal machine.
 
-**Where does my data go?** It stays on your phone, except the messages sent to the model provider you choose. There is no telemetry and no Atom server.
+Issues and pull requests are welcome. More docs: [IMPORT.md](docs/IMPORT.md) (moving from an earlier install), [UPDATES.md](docs/UPDATES.md) (releases and in-app updates), [TESTING.md](docs/TESTING.md) and [PARITY_SPEC.md](docs/PARITY_SPEC.md) (the full feature checklist).
 
-## Building
-
-Atom is built and tested only on GitHub's runners: every pull request runs the unit tests, builds the app and takes screenshots on an Android emulator (see [`.github/workflows`](.github/workflows)). Please don't run the build or tests on a personal machine; use CI.
-
-## Documentation
-
-- [docs/IMPORT.md](docs/IMPORT.md): what Atom brings over from an earlier install
-- [docs/UPDATES.md](docs/UPDATES.md): releases, versions and in-app updates
-- [docs/PARITY_SPEC.md](docs/PARITY_SPEC.md): the full feature checklist
-
-## Contributing
-
-Issues and pull requests are welcome. Every pull request is built, unit-tested and screenshotted on an Android emulator by CI, so you can see your change running without a phone.
+</details>
 
 ## License and credits
 
 Atom is free software under the [GNU General Public License v3.0 or later](LICENSE). The license grants no rights to the "Atom" name or logo (GPL-3.0 §7(e)): modified versions must use their own name and branding. See [NOTICE](NOTICE).
 
-Built on great open-source work, including llama.cpp/ggml, LiteRT-LM, OkHttp, Kotlin and kotlinx, Jetpack Compose, Miuix, Shizuku, PRoot, JetBrains Mono and Lobe Icons. Full list with licences in [NOTICE](NOTICE).
+Built on great open-source work, including llama.cpp/ggml, LiteRT-LM, OkHttp, Kotlin and kotlinx, Jetpack Compose, Miuix, Haze, Shizuku, PRoot, JetBrains Mono and Lobe Icons. The full list, with licences, is in [NOTICE](NOTICE).
 
-<p align="center"><b>If Atom saves you a few taps, a ⭐ helps more people find it.</b></p>
+<p align="center"><br><img src="docs/assets/atom-mark.png" width="52" alt=""><br><sub>If Atom saves you a few taps, a star helps other people find it.</sub></p>
