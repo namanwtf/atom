@@ -48,7 +48,7 @@ PROMPTS = {
     "website": ("Make me a one-page website for a specialty coffee shop called Ember: a striking full-screen hero, "
                 "a menu with prices, opening hours, a map link, a warm dark theme and smooth scroll animations."),
     "website2": "Add a table booking form and make the menu two columns.",
-    "game": ("Build me a neon Snake game I can play with swipes anywhere on the screen, with a glowing snake "
+    "game": ("Build me a neon Snake game I can play with swipes on my phone's touchscreen, with a glowing snake "
              "and a high score."),
     "bill": ("Make me a bill-splitting app for a dinner with friends: enter the total, tip and number of people, "
              "show each person's share, glassy dark design."),
@@ -130,7 +130,7 @@ class Recorder:
         # Full size, 30 fps, real time. Cuts are made in editing, and labelled there.
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst,
-             "-vf", "fps=30,scale=1080:-2:flags=lanczos", "-c:v", "libx264", "-crf", "22", "-preset", "medium",
+             "-vf", "fps=30,scale=1080:-2:flags=lanczos", "-c:v", "libx264", "-crf", "21", "-preset", "veryfast",
              "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", out],
             check=False,
         )
@@ -349,6 +349,8 @@ def type_prompt(rec, prompt):
         return False
     tap_node(send)
     rec.mark("sent")
+    rec.wait(1.0)
+    hide_keyboard()  # so the steps are on screen while ATOM works
     for _ in range(10):
         rec.wait(1)
         if e2e.run_ids() - before:
@@ -426,9 +428,24 @@ def task(rec, prompt, timeout=RUN_WAIT):
 # ------------------------------------------------------------------ the website preview
 
 
-def open_preview(rec):
-    """The site's live preview in front (it opens by itself during a run; else the chat card's Open preview)."""
-    for _ in range(3):
+def site_id(run):
+    """The site the run worked on, from its tool results (site_create / site_write / site_preview)."""
+    for c in reversed((run or {}).get("toolCalls", [])):
+        m = re.search(r"(?:site|Created site) ([a-z0-9-]+)[ .]", c.get("result") or "")
+        if c["name"].startswith("site_") and m:
+            return m.group(1)
+    return None
+
+
+def open_preview(rec, run=None):
+    """The site's live preview in front: it opens by itself during a run; else the chat card's Open preview; else
+    the same screen through its route (what the card opens), when the card has scrolled out of view."""
+    sid = site_id(run)
+    for attempt in range(3):
+        if attempt == 2 and sid and not in_preview():
+            rec.mark(f"open preview (route {sid})")
+            launch(f"web/sites/preview/{sid}", wait=4)
+            continue
         ns = nodes()
         if in_preview(ns):
             return True
@@ -450,8 +467,10 @@ def open_preview(rec):
 def tour(rec, steps=7, pause=1.6):
     """Scrolls slowly down the page, as a person reading it, then back to the top."""
     rec.mark("tour")
-    for _ in range(steps):
-        swipe(540, 1850, 540, 1050, 1100)
+    xs = [540, 980, 540, 120]
+    for i in range(steps):
+        x = xs[i % len(xs)]
+        swipe(x, 1850, x, 1050, 1100)
         rec.wait(pause)
     rec.mark("tour end")
     rec.wait(1)
@@ -487,7 +506,7 @@ def clip_website():
     rec.wait(1.5)
     run = task(rec, PROMPTS["website"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_website_preview")
@@ -497,7 +516,7 @@ def clip_website():
     rec.mark("follow-up")
     run2 = task(rec, PROMPTS["website2"]) if run_ok(run) else None
     rec.wait(2)
-    if run_ok(run2) and open_preview(rec):
+    if run_ok(run2) and open_preview(rec, run2):
         rec.mark("preview 2")
         rec.wait(3)
         shot("demo_website2_preview")
@@ -506,41 +525,88 @@ def clip_website():
     finish(rec)
 
 
+def ocr_words(min_y=260):
+    """Words on screen with their boxes, read by tesseract from a screenshot (the preview's page has no
+    accessibility nodes the recorder can see). Light-on-dark text is inverted first."""
+    from PIL import Image, ImageOps
+    png = adb("exec-out", "screencap", "-p", timeout=60)
+    raw = os.path.join(OUT, "_ocr_raw.png")
+    with open(raw, "wb") as f:
+        f.write(png)
+    img = ImageOps.autocontrast(ImageOps.invert(Image.open(raw).convert("L")))
+    path = os.path.join(OUT, "_ocr.png")
+    img.save(path)
+    try:
+        r = subprocess.run(["tesseract", path, "-", "--psm", "11", "tsv"], capture_output=True, text=True, timeout=90)
+    except Exception as e:
+        log(f"ocr failed: {e}")
+        return []
+    words = []
+    for line in r.stdout.splitlines()[1:]:
+        p = line.split("\t")
+        if len(p) < 12 or not p[11].strip():
+            continue
+        try:
+            conf = float(p[10])
+        except ValueError:
+            continue
+        x, y, w, h = (int(v) for v in p[6:10])
+        if conf > 20 and y > min_y:
+            words.append(dict(text=p[11].strip(), desc="", bounds=(x, y, x + w, y + h), conf=conf))
+    log("ocr: " + " | ".join(f"{w['text']}@{w['bounds'][0]},{w['bounds'][1]}" for w in words)[:900])
+    return words
+
+
+def dump_site(run, name):
+    """The site's files as written, printed into the log (debug build: run-as reads the app's own storage)."""
+    sid = site_id(run)
+    if not sid:
+        return
+    files = sh(f"run-as {PKG} ls files/sites/{sid}").split()
+    for fn in files[:6]:
+        body = adb("exec-out", "run-as", PKG, "cat", f"files/sites/{sid}/{fn}", timeout=60).decode(errors="replace")
+        print(f"=====SITEFILE {name}/{fn}=====")
+        print(body[:40000])
+        print("=====END=====")
+    sys.stdout.flush()
+
+
 SWIPES = {
-    "up": (540, 1500, 540, 1050),
-    "down": (540, 1100, 540, 1550),
-    "left": (760, 1300, 320, 1300),
-    "right": (320, 1300, 760, 1300),
+    "up": (540, 1650, 540, 950),
+    "down": (540, 950, 540, 1650),
+    "left": (880, 1300, 200, 1300),
+    "right": (200, 1300, 880, 1300),
 }
 
 
 def play_snake(rec, seconds):
-    """Plays with real swipes: loops of changing size around the board's middle, restarting after a game over."""
+    """Plays with real swipes in loops around the board's middle; two swipe speeds; restarts after a game over."""
     rec.mark("play")
     order = ["up", "left", "down", "right"]
     sides = [0.55, 0.7, 0.9, 0.6, 1.1, 0.75, 0.5, 0.95]
     end = time.time() + seconds
+    half = time.time() + seconds / 2
     i = 0
     last_check = time.time()
     while time.time() < end:
         x1, y1, x2, y2 = SWIPES[order[i % 4]]
-        swipe(x1, y1, x2, y2, 70)
+        swipe(x1, y1, x2, y2, 90 if time.time() < half else 260)
         rec.wait(sides[i % len(sides)])
         i += 1
-        if time.time() - last_check > 6:
+        if time.time() - last_check > 5:
             last_check = time.time()
-            ns = page_nodes()
-            if match(ns, r"game\s*over|you (died|lost)|crashed"):
+            ws = ocr_words()
+            if match(ws, r"^(game|over|crashed)$"):
                 rec.mark("game over")
                 shot("demo_game_over")
-                rec.wait(1.5)
-                again = match(ns, r"^(play again|restart|try again|start|play|new game|tap to (start|play|restart))")
+                rec.wait(1.2)
+                again = match(ws, r"again|restart|^play$|^start$")
                 if again:
                     tap_node(again)
                 else:
                     sh("input tap 540 1300")
                 rec.mark("restart")
-                rec.wait(1)
+                rec.wait(0.8)
                 i = 0
 
 
@@ -554,22 +620,23 @@ def clip_game():
     rec.wait(1.5)
     run = task(rec, PROMPTS["game"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(2.5)
         shot("demo_game_preview")
-        start = match(page_nodes(), r"^(start|play|start game|tap to (start|play)|press start|swipe to start)")
+        start = match(ocr_words(), r"^(play|start|tap)$")
         if start:
-            rec.mark("start (button)")
+            rec.mark(f"start (tap {start['text']})")
             tap_node(start)
         else:
-            rec.mark("start (tap)")
+            rec.mark("start (tap middle)")
             sh("input tap 540 1300")
         rec.wait(0.8)
         play_snake(rec, 40)
         shot("demo_game_played")
         rec.wait(2)
     finish(rec)
+    dump_site(run, name)
 
 
 def fields():
@@ -600,39 +667,30 @@ def clip_bill():
     rec.wait(1.5)
     run = task(rec, PROMPTS["bill"])
     rec.wait(2)
-    if run_ok(run) and open_preview(rec):
+    if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_bill_preview")
-        first = fields()
-        log(f"bill: {len(first)} fields: " + " | ".join(f"{e['text'][:20]!r}@{e['bounds']}" for e in first))
-        plan = ["186.40", "18", "4"] if len(first) >= 3 else ["186.40", None, "4"]
-        k = 0
-        for value in plan:
-            if value is None:
-                tip = match(page_nodes(), r"^\s*(18|20)\s*%\s*$")
-                if tip:
-                    hide_keyboard()
-                    rec.mark("tip button")
-                    tap_node(match(page_nodes(), r"^\s*(18|20)\s*%\s*$") or tip)
-                    rec.wait(1)
-                continue
-            fs = fields()
-            if k >= len(fs):
-                break
-            if fs[k]["bounds"][3] > 1450 and ime_shown():
-                hide_keyboard()
-                fs = fields()
-            rec.mark(f"field {k}")
-            fill(fs[k], value, rec)
-            k += 1
-        log(f"bill: filled {k} fields")
-        hide_keyboard()
-        rec.wait(1)
-        btn = match(page_nodes(), r"^(split|calculate|split it|split the bill|split bill)\b")
-        if btn:
-            rec.mark("calculate (tap)")
-            tap_node(btn)
+        ws = ocr_words()
+        # The total: the first amount on the page (e.g. "120" or "$120"); then a tip chip; then "+" for one more person.
+        total = next((w for w in ws if re.fullmatch(r"\$?\d{2,4}([.,]\d\d)?", w["text"])), None)
+        if total:
+            rec.mark(f"field total ({total['text']})")
+            fill(total, "186.40", rec)
+            hide_keyboard()
+            rec.wait(1)
+        ws = ocr_words()
+        tip = match(ws, r"^20\s?%$")
+        if tip:
+            rec.mark("tip 20%")
+            tap_node(tip)
+            rec.wait(1.2)
+        plus = match(ws, r"^[+＋]$")
+        if plus:
+            rec.mark("one more person (+)")
+            tap_node(plus)
+            rec.wait(1.2)
+        log(f"bill: total={bool(total)} tip={bool(tip)} plus={bool(plus)}")
         rec.wait(3)
         shot("demo_bill_result")
         swipe(540, 1700, 540, 1200, 900)
@@ -716,8 +774,14 @@ def clip_multiapp():
     rec = Recorder(name)
     rec.start()
     rec.wait(1.5)
-    task(rec, PROMPTS["multiapp"])
-    rec.wait(4)
+    run = task(rec, PROMPTS["multiapp"])
+    rec.wait(3)
+    sent = sh("content query --uri content://sms/sent --projection address:body").strip()
+    if run_ok(run) and "?" in e2e.answer(run)[-200:] and "address=" not in sent:
+        # ATOM asks before sending a message for you; answered the way a person would.
+        rec.mark("confirm")
+        task(rec, "Yes, send it.")
+        rec.wait(4)
     shot("demo_multiapp_end")
     sent = sh("content query --uri content://sms --projection address:body:type").strip()
     log("sms after run: " + sent[:800])
@@ -744,7 +808,7 @@ def clip_research():
     run = task(rec, PROMPTS["research"])
     rec.wait(3)
     shot("demo_research_done")
-    if run_ok(run) and "site_preview" in e2e.names(run) and open_preview(rec):
+    if run_ok(run) and "site_preview" in e2e.names(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(3)
         shot("demo_research_preview")

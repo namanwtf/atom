@@ -2,7 +2,8 @@
 # The app talks to a relay on this runner (tools/demo/key_proxy.py) that adds the DEEPSEEK_API_KEY secret and forwards
 # each request to api.deepseek.com, so the key never enters the emulator, the app, its logs or the recordings.
 # The clips are printed into the job log as base64 (tools/demo/record.py); cuts are made in editing, labelled.
-# Runs only for the media/launch-recordings-v4 pull request, which is never merged.
+# Runs only for the media/launch-recordings-v4 and -v4-web pull requests, which are never merged; -v4-web records the
+# website alone and ends right after it.
 name: Demo recordings
 
 on:
@@ -24,10 +25,11 @@ env:
   DEMO_MODEL_CANDIDATES: "deepseek-chat deepseek-flash deepseek-v4-flash"
   DEMO_CTX: "131072"
   DEMO_MAX_TOKENS: "8192"
+  DEMO_CLIPS: ${{ github.head_ref == 'media/launch-recordings-v4-web' && 'website' || 'game bill multiapp' }}
 
 jobs:
   record:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'media/launch-recordings-v4'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'media/launch-recordings-v4' || github.head_ref == 'media/launch-recordings-v4-web'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -105,8 +107,8 @@ jobs:
       - name: Pillow
         run: pip install --quiet pillow
 
-      - name: ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null && ffmpeg -version | head -n1
+      - name: ffmpeg and tesseract
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr > /dev/null && ffmpeg -version | head -n1 && tesseract --version | head -n1
 
       - name: Record
         uses: reactivecircus/android-emulator-runner@v2
@@ -123,6 +125,14 @@ jobs:
           script: |
             adb install -r -g app/build/outputs/apk/debug/app-debug.apk
             python3 tools/demo/record.py
+
+      - name: Upload the clips
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-recordings
+          path: demo-out/*.mp4
+          retention-days: 7
 
       - name: Relay log
         if: always()
