@@ -1,29 +1,27 @@
 Fonts in this folder
 ====================
 
-Both families are used under the SIL Open Font License, Version 1.1.
-Mona Sans is the unmodified Fontsource WOFF2 build (Latin). JetBrains Mono is a Latin subset converted to WOFF2.
+All three families are used under the SIL Open Font License, Version 1.1.
+They are the unmodified Fontsource WOFF2 builds (Latin subset). Reserved Font
+Names are not used for these files.
 
-mona-sans-var.woff2 (variable: width 75-125, weight 200-900)
-  Mona Sans
-  Copyright 2022 The Mona Sans Project Authors (https://github.com/github/mona-sans),
-  with Reserved Font Name "Mona"
+ibm-plex-serif-400.woff2, ibm-plex-serif-500.woff2
+  IBM Plex Serif
+  Copyright 2020 IBM Corp. All rights reserved.
+  (https://github.com/IBM/plex)
 
-jetbrains-mono-400.woff2
-  JetBrains Mono
-  Copyright 2020 The JetBrains Mono Project Authors
-  (https://github.com/JetBrains/JetBrainsMono)
+inter-var.woff2 (variable: weight 100-900)
+  Inter
+  Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+roboto-mono-400.woff2
+  Roboto Mono
+  Copyright 2015 The Roboto Mono Project Authors
+  (https://github.com/googlefonts/robotomono)
 
 The full licence text follows.
 
 -----------------------------------------------------------------------------
-Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-https://scripts.sil.org/OFL
-
-
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 -----------------------------------------------------------
