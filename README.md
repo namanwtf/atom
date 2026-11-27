@@ -132,7 +132,18 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 
 ## What's new
 
-**4.0.5, the current release**
+**4.0.6, the current release**
+
+- **Report a problem:** one tap builds a report on the phone, with keys, tokens and personal data removed. You read it and share it yourself.
+- **Ready-made routines:** Morning brief, Price watch, Weekly phone cleanup and Evening wrap-up. Pick one and tap Save.
+- **Make me a website:** Atom writes the page and opens a live preview that reloads as it edits. Each site has its own private address that only Atom can open.
+- **One-tap add key:** tap "add key" on the home screen to go straight to that provider's key screen.
+- **"Allow all commands for this task" works:** terminal and shell commands show the whole command and offer it, so one tap covers the rest of the task.
+- **A closer bubble menu:** hold the bubble and its three buttons sit right next to it.
+- Thinking models such as DeepSeek and Kimi keep working with earlier tool steps after the app restarts.
+
+<details>
+<summary><b>Earlier: 4.0.5</b></summary>
 
 - A frosted side menu.
 - Longer tasks: runs keep going while they make progress, and **Continue** picks up a run that reached its step limit.
@@ -141,12 +152,7 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 - Better built-in search: DuckDuckGo Lite, Bing and Mojeek before it gives up, then the agent browser.
 - Keeps working with the screen off. Screen tasks wait for you to unlock.
 
-**Coming in 4.0.6**
-
-- **Report a problem:** one tap builds a report on the phone, with keys, tokens and personal data removed. You read it and share it yourself.
-- **Ready-made routines:** Morning brief, Price watch, Weekly phone cleanup and Evening wrap-up. Pick one and tap Save.
-- **Make me a website:** Atom writes the page and opens a live preview that reloads as it edits.
-- **One-tap add key:** tap "add key" on the home screen to go straight to that provider's key screen.
+</details>
 
 <details>
 <summary><b>See 4.0.6 in screenshots</b></summary>
@@ -156,7 +162,7 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/plate-next-light.png">
   <img src="docs/assets/plate-next-dark.png" width="100%" alt="Ready-made routines on the Scheduled tasks screen, the Report a problem screen, and the live preview of a sample site.">
 </picture>
-<sub>From the 4.0.6 test build. The sample site in the preview was written by the screenshot script.</sub>
+<sub>From the 4.0.6 build. The sample site in the preview was written by the screenshot script.</sub>
 </details>
 
 ## Install in 3 steps
