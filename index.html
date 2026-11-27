@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="/atom/apple-touch-icon.png">
 <link rel="manifest" href="/atom/site.webmanifest">
 <link rel="preload" href="/atom/assets/fonts/mona-sans-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/atom/assets/css/site.css?v=3">
+<link rel="stylesheet" href="/atom/assets/css/site.css?v=4">
 <meta property="og:site_name" content="Atom: AI agent for Android">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Atom: AI agent for Android, free, open source and private">
@@ -38,14 +38,14 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://namanwtf.github.io/atom/#app","name":"Atom","alternateName":"Atom: AI agent for Android","description":"A free, open-source AI agent for Android. It reads the screen, taps and types through apps and checks the result, runs a real Linux terminal, works on a schedule, and uses the model you choose, including fully offline on-device models.","applicationCategory":"UtilitiesApplication","applicationSubCategory":"AI assistant","operatingSystem":"Android 14 or newer","processorRequirements":"ARM64 (arm64-v8a)","fileSize":"7.2 MB","downloadUrl":"https://github.com/namanwtf/atom/releases/latest","installUrl":"https://github.com/namanwtf/atom/releases/latest","url":"https://namanwtf.github.io/atom/","image":"https://namanwtf.github.io/atom/assets/og/atom-og-1200x630.png","screenshot":["https://namanwtf.github.io/atom/assets/img/shots/task-steps-540.webp","https://namanwtf.github.io/atom/assets/img/shots/bubble-hold-540.webp","https://namanwtf.github.io/atom/assets/img/shots/reminder-540.webp","https://namanwtf.github.io/atom/assets/img/shots/ondevice-540.webp"],"license":"https://www.gnu.org/licenses/gpl-3.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"author":{"@type":"Person","name":"namanwtf","url":"https://github.com/namanwtf"},"sameAs":["https://github.com/namanwtf/atom"],"inLanguage":"en"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","@id":"https://namanwtf.github.io/atom/#website","url":"https://namanwtf.github.io/atom/","name":"Atom: AI agent for Android","inLanguage":"en","about":{"@id":"https://namanwtf.github.io/atom/#app"}}</script>
 <script>document.documentElement.classList.add('js')</script>
-<script src="/atom/assets/js/site.js?v=3" defer></script>
+<script src="/atom/assets/js/site.js?v=4" defer></script>
 </head>
-<body>
+<body class="home">
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-head">
   <div class="wrap head-row">
     <a class="brand" href="/atom/" aria-label="Atom home">
-      <img src="/atom/assets/img/atom-coin-64.webp" width="32" height="32" alt="">
+      <img class="brand-coin" src="/atom/assets/img/atom-coin-64.webp" width="32" height="32" alt="">
       <span>Atom</span><small>AI agent for Android</small>
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Menu"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="l1" d="M3 7h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path class="l2" d="M3 13h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
@@ -60,7 +60,7 @@
 <section class="hero" aria-labelledby="hero-title">
   <div class="wrap hero-top">
     <div class="hero-text">
-      <a class="news fade" href="/atom/changelog/"><b>4.0.6</b>Ready-made routines, Report a problem, Make me a website</a>
+      <a class="news fade" href="/atom/changelog/"><b>4.0.6</b><span class="news-long">Ready-made routines, Report a problem, Make me a website</span><span class="news-short">Routines, reports, websites</span></a>
       <h1 id="hero-title"><span class="word" style="--i:0">Your</span> <span class="word" style="--i:1">phone</span> <span class="word" style="--i:2">has</span> <span class="word" style="--i:3">an</span> <span class="word" style="--i:4">agent</span> <span class="word" style="--i:5">of</span> <span class="word" style="--i:6">its</span> <span class="word" style="--i:7">own.</span></h1>
       <p class="lede fade">Atom is a free, open-source <strong>AI agent for Android</strong>. It taps through your apps and checks the result. It works offline with on-device models, and it sends no telemetry.</p>
       <div class="btns fade">
@@ -75,8 +75,11 @@
       </ul>
     </div>
     <div class="coin3d" data-base="/atom/assets/coin/">
-      <img class="coin-static" src="/atom/assets/coin/coin-static-880.webp" width="880" height="880" alt="The Atom emblem: a silver coin engraved with an octopus whose head is a brain ringed by atom orbits." fetchpriority="high">
-      <canvas aria-hidden="true"></canvas>
+      <div class="coin-fly">
+        <img class="coin-static" src="/atom/assets/coin/coin-static-880.webp" width="880" height="880" alt="The Atom emblem: a silver coin engraved with an octopus whose head is a brain ringed by atom orbits." fetchpriority="high">
+        <canvas aria-hidden="true"></canvas>
+      </div>
+      <p class="coin-hint" aria-hidden="true">drag to spin</p>
     </div>
   </div>
 
@@ -136,7 +139,16 @@
 
 <section class="section" id="bubble" aria-labelledby="bubble-title">
   <div class="wrap duo reveal">
-    <div class="duo-media"><div class="phone"><img src="/atom/assets/img/shots/bubble-hold-540.webp" srcset="/atom/assets/img/shots/bubble-hold-300.webp 300w, /atom/assets/img/shots/bubble-hold-540.webp 540w" sizes="(min-width: 980px) 320px, 72vw" width="540" height="1200" alt="Android home screen with the Atom bubble held: three round actions around it for voice, chat and close." loading="lazy" decoding="async"></div></div>
+    <figure class="duo-media">
+      <div class="loop">
+        <video autoplay muted loop playsinline preload="none" width="640" height="694" poster="/atom/assets/video/bubble-loop-poster.webp"
+          aria-label="Screen recording of the Atom bubble on an Android emulator: it floats over the Clock app, is dragged to a new spot, held to show voice, chat and close, then tapped to open the mini chat with the keyboard.">
+          <source src="/atom/assets/video/bubble-loop-640.mp4" type='video/mp4; codecs="avc1.64001f"'>
+          <source src="/atom/assets/video/bubble-loop-640.webm" type='video/webm; codecs="vp9"'>
+        </video>
+      </div>
+      <figcaption class="shot-cap">Real recording: over the Clock app, the hold menu, then the mini chat.</figcaption>
+    </figure>
     <div class="duo-copy">
       <h2 id="bubble-title">Over any app.</h2>
       <dl class="keys">

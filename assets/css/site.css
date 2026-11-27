@@ -541,3 +541,43 @@ strong,.lede strong{font-weight:650}
 }
 .run + figure .screen{box-shadow:var(--shadow);border-top-color:var(--rule)}
 em,i{font-style:normal}.prose em{font-weight:600;color:var(--ink)}
+
+/* ===== v5: one coin that docks in the header, drag to spin ===== */
+.coin-fly{position:absolute;inset:0}
+.coin-fly img,.coin-fly canvas{position:absolute;inset:0;width:100%;height:100%}
+.coin3d canvas{cursor:grab;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.coin3d.dragging canvas{cursor:grabbing}
+.coin3d.is-live .coin-fly canvas{opacity:1}
+.coin3d.is-live .coin-fly img{opacity:0;transition:opacity .6s ease .1s}
+.coin-hint{position:absolute;left:0;right:0;bottom:-6px;margin:0;text-align:center;font-family:var(--mono);font-size:.75rem;letter-spacing:.06em;color:var(--muted);opacity:0;transition:opacity .4s;pointer-events:none}
+.coin3d.is-live:not(.touched) .coin-hint{opacity:1}
+html.scrolled .coin-hint{opacity:0!important}
+
+/* The morph: the coin layer is fixed and moved from the hero box to the header slot. */
+html.coin-morph .coin-fly{position:fixed;left:0;top:0;right:auto;bottom:auto;width:var(--cw,400px);height:var(--cw,400px);transform-origin:0 0;z-index:60;will-change:transform;transform:translate3d(var(--x0,0),var(--y0,0),0)}
+html.coin-morph.sda .coin-fly{animation:coinfly linear both;animation-timeline:scroll(root);animation-range:0px var(--D,400px)}
+@keyframes coinfly{from{transform:translate3d(var(--x0),var(--y0),0) scale(1)}to{transform:translate3d(var(--x1),var(--y1),0) scale(var(--k))}}
+html.coin-morph.coin-docked .coin-fly{visibility:hidden}
+body.home .brand-coin{opacity:0;transition:none}
+html.coin-docked body.home .brand-coin,html.no-morph-docked body.home .brand-coin{opacity:1}
+html.no-morph-docked body.home .brand-coin{transition:opacity .3s}
+html.coin-morph body.home .brand > span,html.coin-morph body.home .brand > small{transform:translateX(calc((1 - var(--dock,0)) * -42px))}
+html.coin-morph.sda body.home .brand > span,html.coin-morph.sda body.home .brand > small{animation:wordshift linear both;animation-timeline:scroll(root);animation-range:0px var(--D,400px)}
+@keyframes wordshift{from{transform:translateX(-42px)}to{transform:none}}
+html:not(.js) body.home .brand-coin{opacity:1}
+
+/* 4.0.6 pill on phones: one short line */
+.news{max-width:100%;white-space:nowrap;overflow:hidden}
+.news span{overflow:hidden;text-overflow:ellipsis}
+.news-short{display:none}
+@media (max-width:560px){.news-long{display:none}.news-short{display:inline}}
+
+/* bubble loop and cropped stills: real footage, no device frame */
+.duo-media{margin:0}
+.loop{max-width:400px;margin:0 auto;border-radius:22px;overflow:hidden;background:#000;border:1px solid var(--rule);aspect-ratio:640/694;box-shadow:var(--shadow)}
+.loop video{width:100%;height:100%;object-fit:cover;display:block}
+.duo-media .shot-cap{text-align:center}
+.crop{border-radius:18px;overflow:hidden;background:#000;border:1px solid var(--rule);box-shadow:var(--shadow)}
+.crop img{width:100%;height:auto;aspect-ratio:964/1044;display:block}
+@media (max-width:979px){.loop{max-width:320px}}
+@media (max-width:979px){.coin3d{margin-bottom:14px}.coin-hint{bottom:-14px}}

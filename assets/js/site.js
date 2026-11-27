@@ -58,6 +58,80 @@
     ro.observe(run);
   }
 
+  /* One coin: on Home the hero coin flies into the header logo slot as you scroll. */
+  var host = d.querySelector('.coin3d');
+  var slot = d.querySelector('body.home .brand-coin');
+  var root = d.documentElement;
+  if (host && slot) {
+    var fly = host.querySelector('.coin-fly');
+    var useMorph = !reduceMotion;
+    var sda = window.CSS && CSS.supports && CSS.supports('animation-timeline: scroll()');
+    var D = 400, geo = null, docked = null;
+    var measure = function () {
+      var prevT = fly.style.transform;
+      var r = host.getBoundingClientRect();
+      var sr = slot.getBoundingClientRect();
+      var sy = window.scrollY, sx = window.scrollX;
+      geo = { x0: r.left + sx, y0: r.top + sy, w: r.width, x1: sr.left, y1: sr.top, k: sr.width / r.width };
+      D = Math.max(160, Math.round(geo.y0 + geo.w * 0.55 - geo.y1));
+      root.style.setProperty('--cw', geo.w + 'px');
+      root.style.setProperty('--x0', geo.x0 + 'px');
+      root.style.setProperty('--y0', geo.y0 + 'px');
+      root.style.setProperty('--x1', geo.x1 + 'px');
+      root.style.setProperty('--y1', geo.y1 + 'px');
+      root.style.setProperty('--k', geo.k.toFixed(4));
+      root.style.setProperty('--D', D + 'px');
+      fly.style.transform = prevT;
+    };
+    var setDock = function (on) {
+      if (on === docked) return;
+      docked = on;
+      root.classList.toggle(useMorph ? 'coin-docked' : 'no-morph-docked', on);
+      host.dispatchEvent(new Event(on ? 'coin:dock' : 'coin:undock'));
+    };
+    if (useMorph) {
+      root.classList.add('coin-morph');
+      if (sda) root.classList.add('sda');
+      measure();
+      var queued = false;
+      var update = function () {
+        queued = false;
+        var y = window.scrollY;
+        var p = Math.max(0, Math.min(1, y / D));
+        if (!sda) {
+          var x = geo.x0 + (geo.x1 - geo.x0) * p - window.scrollX * (1 - p);
+          var yy = (geo.y0 - y) + (geo.y1 - (geo.y0 - y)) * p;
+          var k = 1 + (geo.k - 1) * p;
+          fly.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + yy.toFixed(1) + 'px,0) scale(' + k.toFixed(4) + ')';
+          root.style.setProperty('--dock', p.toFixed(3));
+        }
+        setDock(p >= 0.999);
+        root.classList.toggle('scrolled', y > 40);
+      };
+      window.addEventListener('scroll', function () { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
+      window.addEventListener('resize', function () {
+        root.classList.remove('coin-morph', 'sda');
+        fly.style.transform = '';
+        requestAnimationFrame(function () { root.classList.add('coin-morph'); if (sda) root.classList.add('sda'); measure(); update(); });
+      });
+      update();
+    } else if ('IntersectionObserver' in window) {
+      /* Reduced motion: no flight. The header coin fades in once the hero coin is out of view. */
+      new IntersectionObserver(function (es) { setDock(!es[0].isIntersecting); }, { threshold: 0 }).observe(host);
+    }
+    host.addEventListener('pointerdown', function () { host.classList.add('touched'); });
+  }
+
+  /* Short footage loops: play only while visible; never autoplay with reduced motion. */
+  d.querySelectorAll('.loop video').forEach(function (v) {
+    v.removeAttribute('autoplay');
+    if (reduceMotion) { v.setAttribute('controls', ''); return; }
+    if (!('IntersectionObserver' in window)) { v.play(); return; }
+    new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } else v.pause(); });
+    }, { threshold: 0.25 }).observe(v);
+  });
+
   /* Scroll reveals and counters. */
   var reveals = d.querySelectorAll('.reveal');
   var countUp = function (el) {
