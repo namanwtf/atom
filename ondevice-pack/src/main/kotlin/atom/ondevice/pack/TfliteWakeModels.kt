@@ -1,5 +1,6 @@
 package atom.ondevice.pack
 
+import atom.core.ondevice.TfliteModelFile
 import atom.core.ondevice.WakeModels
 import atom.core.ondevice.WakeModelsLoad
 import atom.core.ondevice.WakeShapes
@@ -23,8 +24,8 @@ import org.tensorflow.lite.Interpreter
  *
  * Shapes are validated at load time against openWakeWord's front-end (dscripka/openWakeWord,
  * `openwakeword/utils.py` AudioFeatures and `openwakeword/model.py`):
- *  - melspectrogram: input [1, N] float32 raw PCM16 values (dynamic, stored as [1, 1]), resized to [1, 1760] before
- *    its tensors are allocated; output 8 x 32 (e.g. [1,1,8,32])
+ *  - melspectrogram: input [1, N] float32 raw PCM16 values (dynamic, stored as [1, 1]), set to [1, 1760] before
+ *    its tensors are first allocated; output 8 x 32 (e.g. [1,1,8,32])
  *  - embedding: input [1, 76, 32, 1] float32; output 96 values (e.g. [1,1,1,96])
  *  - classifier: input [1, F, 96] float32 (F = 16 for openWakeWord models); output 1 value
  */
@@ -126,15 +127,17 @@ internal class TfliteWakeModels private constructor(
         }
 
         /**
-         * Opens a model, gives its input the shape the pipeline feeds ([inputShape], null keeps the model's own),
-         * and only then allocates its tensors. The melspectrogram model's input is dynamic ([-1, -1]) and is stored
-         * as [1, 1]: allocated at that size, its first CONV_2D (a 512-sample STFT window) has no valid output and
-         * fails to prepare ("Node number 2 (CONV_2D) failed to prepare", or "XNNPack delegate failed to reshape"
-         * with XNNPack), so the input must be resized first. XNNPack is used when the phone's runtime can prepare
-         * the model, else the plain CPU kernels, which are fast enough for 80 ms audio frames. A failure names the
-         * model file ([name]).
+         * Opens a model at the input shape the pipeline feeds ([inputShape], null keeps the model's own). The Java
+         * interpreter allocates its tensors in its constructor, at the shapes stored in the file, and the
+         * melspectrogram model's dynamic input is stored as [1, 1]: at one sample its first CONV_2D (a 512-sample
+         * STFT window) has no valid output, so the constructor failed with "Node number 2 (CONV_2D) failed to
+         * prepare" ("XNNPack delegate failed to reshape" with XNNPack) before any resize. So the shape is written
+         * into the model's stored shape first ([TfliteModelFile]), and set again with resizeInput when that was not
+         * possible. XNNPack is used when the phone's runtime can prepare the model, else the plain CPU kernels, which
+         * are fast enough for 80 ms audio frames. A failure names the model file ([name]).
          */
         private fun open(name: String, model: ByteBuffer, inputShape: IntArray?): Interpreter {
+            if (inputShape != null) TfliteModelFile.setStoredInputShape(model, inputShape)
             fun create(xnnpack: Boolean): Interpreter {
                 val interpreter = Interpreter(
                     model.duplicate().order(ByteOrder.nativeOrder()),

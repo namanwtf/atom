@@ -76,6 +76,10 @@ embedding_model.tflite  in [1, 76, 32, 1] (sig [-1,76,32,1]) out [1, 1, 1, 96] (
 hey_atom.tflite         in [1, 16, 96]                       out [1, 1]
 ```
 
+The melspectrogram input is stored as `[1, 1]`. LiteRT's Java interpreter allocates at the stored shapes in its
+constructor, and at one sample the STFT convolution cannot be prepared, so the app writes `[1, 1760]` into the stored
+input shape of its in-memory copy before opening it (`core/.../ondevice/TfliteModelFile.kt`); the file stays as built.
+
 File sizes: melspectrogram 1,090,836 B; embedding_model 1,327,688 B; hey_atom 48,796 B.
 SHA-256: melspectrogram `69f3097c…4cbb`, embedding_model `b2945a1f…4ba8`, hey_atom `8aa96e82…f5a7`.
 
