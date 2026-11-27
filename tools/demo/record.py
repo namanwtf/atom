@@ -129,6 +129,17 @@ def type_text(text):
     sh("input text " + shlex.quote(text.replace(" ", "%s")))
 
 
+def type_words(text):
+    """One word at a time: a long `input text` loses characters in the emulator's text field."""
+    words = text.split(" ")
+    for i, w in enumerate(words):
+        if w:
+            sh("input text " + shlex.quote(w))
+        if i < len(words) - 1:
+            sh("input keyevent 62")
+        time.sleep(0.25)
+
+
 def type_prompt(rec, prompt):
     """Types the request into the composer and taps Send, as a person would. False if that did not work."""
     if not tap("^Ask Atom to do something", wait=1.2):
@@ -137,11 +148,11 @@ def type_prompt(rec, prompt):
         sh("input tap 420 2140")
         time.sleep(1.2)
     before = e2e.run_ids()
-    type_text(prompt)
+    type_words(prompt)
     # Key events are injected faster than the emulator's text field takes them: wait for the whole sentence to be in
     # the composer before tapping Send (an early tap sent only the first few words).
     tail = prompt[-14:]
-    deadline = time.time() + 120
+    deadline = time.time() + 40
     typed = False
     while time.time() < deadline:
         if any((t or "").rstrip().endswith(tail) for t, _, _ in dump()):
@@ -149,6 +160,11 @@ def type_prompt(rec, prompt):
             break
         rec.wait(2)
     e2e.log(f"composer has the whole prompt: {typed}")
+    if not typed:
+        # Clear what did arrive, so the fallback (the voice-command intent) is the only thing sent.
+        sh("input keyevent KEYCODE_MOVE_END")
+        sh("input keyevent " + " ".join(["67"] * (len(prompt) + 10)))
+        return False
     rec.wait(0.8)
     send = find("^Send$") or find("^Send")
     if send is None:
