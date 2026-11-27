@@ -13,7 +13,8 @@
 </p>
 
 <p align="center">
-  <sub><b>Free&nbsp;and&nbsp;open&nbsp;source</b> &nbsp;·&nbsp; GPL&#8209;3.0 &nbsp;·&nbsp; Android&nbsp;14+ &nbsp;·&nbsp; ARM64 &nbsp;·&nbsp; 7&nbsp;MB &nbsp;·&nbsp; No&nbsp;account &nbsp;·&nbsp; No&nbsp;telemetry</sub>
+  <sub><b>Free&nbsp;and&nbsp;open&nbsp;source</b> &nbsp;·&nbsp; GPL&#8209;3.0 &nbsp;·&nbsp; Android&nbsp;14+ &nbsp;·&nbsp; ARM64 &nbsp;·&nbsp; 7&nbsp;MB &nbsp;·&nbsp; No&nbsp;account &nbsp;·&nbsp; No&nbsp;telemetry</sub><br>
+  <sub>Website: <a href="https://namanwtf.github.io/atom/">namanwtf.github.io/atom</a></sub>
 </p>
 
 <!-- DEMO VIDEO SLOT: put docs/assets/demo.gif here (linking to docs/assets/demo.mp4), centred, directly under the buttons. -->
