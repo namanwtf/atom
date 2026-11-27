@@ -101,6 +101,11 @@ internal class RootLayout(context: Context, private val onBack: (() -> Boolean)?
 /** Overlay contexts are not activities, so links must open in a new task. */
 private class NewTaskUriHandler(private val context: Context) : UriHandler {
     override fun openUri(uri: String) {
+        // A link to one of the user's sites opens in Atom, never in another app.
+        if (atom.core.io.AtomOnlyUrls.isAtomOnly(uri)) {
+            atom.core.io.AtomOnlyUrls.open(uri)
+            return
+        }
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: ActivityNotFoundException) {
