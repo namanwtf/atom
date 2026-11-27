@@ -176,6 +176,9 @@ class Watch:
         self.known = set(known)
         self.source = source
         self.approve = approve
+        # Every approval prompt the run showed, with the tool that asked.
+        self.approvals = []
+        self.approval_ids = set()
         self.run = None
         self.seen_calls = 0
         self.mid_shot = False
@@ -197,8 +200,11 @@ class Watch:
             log(f"  tool {c['name']} {c.get('args', '')[:160]} -> {'ERROR ' if c.get('isError') else ''}{res}")
             self.seen_calls += 1
         pending = run.get("pending")
+        if pending and pending["id"] not in self.approval_ids:
+            self.approval_ids.add(pending["id"])
+            self.approvals.append(dict(pending, tool=run.get("currentTool")))
         if pending and self.approve:
-            log(f"  approving: {pending['action'][:200]}")
+            log(f"  approving ({run.get('currentTool')}, allow-all offered: {pending.get('taskGrantable')}): {pending['action'][:200]}")
             call("approve", pending["id"])
         return run
 
@@ -303,6 +309,7 @@ def agent_task(res, prompt, timeout, source=None, background=False):
     if run is None:
         res.check(False, "no run started")
         return None
+    run["approvals"] = w.approvals
     res.tools = names(run)
     res.check(
         not run.get("timedOut") and not run["active"],
@@ -345,6 +352,7 @@ def s_vibe(res):
     # The answer alone could be the model's arithmetic; the script must really have printed it.
     ran = [c for c in run.get("toolCalls", []) if c["name"] in terminal and re.search(r"(?m)^\s*5\s*$", c.get("result") or "")]
     res.check(bool(ran), "a terminal result shows the script printing 5")
+    check_shell_approvals(res, run.get("approvals", []))
 
 
 def s_browser(res):
@@ -784,6 +792,21 @@ def service_foreground():
     return "AgentService" in out and "isForeground=true" in out
 
 
+SHELL_TOOLS = ("terminal_run", "terminal_session", "terminal_job_start", "shell")
+
+
+def check_shell_approvals(res, approvals):
+    """A shell-type command's prompt is the tool's own: the whole command ("Run in ...") with the button that allows
+    all commands for this task. (4.0.5's tool wrapper dropped it: raw "terminal_run({...})" and no button.)"""
+    shell = [a for a in approvals if a.get("tool") in SHELL_TOOLS]
+    if not shell:
+        res.notes.append("no shell approval was shown")
+        return
+    bad = [a for a in shell if not (a.get("taskGrantable") and a.get("action", "").startswith("Run in"))]
+    res.check(not bad, "shell approvals show the command and offer allow-all-for-this-task"
+              + (f": {bad[0].get('tool')} {bad[0].get('action', '')[:120]!r} grantable={bad[0].get('taskGrantable')}" if bad else ""))
+
+
 def first_activity(w, name, timeout=480):
     return w.wait(timeout, name, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
 
@@ -813,6 +836,7 @@ def s_screen_off_background(res):
     res.check(held, "partial wake lock held while the screen was off")
     res.check(fg, "foreground service running during the task")
     res.check(released, "wake lock released after the run")
+    check_shell_approvals(res, w.approvals)
 
 
 def notification_texts():

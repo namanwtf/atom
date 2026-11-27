@@ -1,9 +1,6 @@
 package atom.app.agent
 
 import atom.device.switches.ToolSwitches
-import atom.device.switches.asksBeforeTaps
-import atom.device.switches.switchChecked
-import atom.device.switches.withoutSwitchedOff
 import android.app.Application
 import atom.app.AppGraph
 import atom.app.data.Attachment
@@ -986,11 +983,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
-            val wrapped = base.withoutSwitchedOff()
-                .map { if (it.asksBeforeTaps(confirmAct)) ConfirmingTool(it) else it }
-                .map(LongTools::apply)
-                // Each call re-checks the tool's own switch, so turning it off on the Tool list stops it mid-run.
-                .map { it.switchChecked() }
+            val wrapped = RunTools.wrap(base, confirmAct)
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk; toolOf[it.spec.name] = it }
