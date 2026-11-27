@@ -44,6 +44,15 @@ data class ModelConfig(
             ReasoningMode.Auto -> autoCapabilities.reasoning ?: ReasoningInfo.None
         }
 
+    /**
+     * What the engine is told about reasoning: [reasoning], except that in Auto mode a model nothing knows (no
+     * catalog entry, no metadata, no family rule) is unknown (null), not "cannot think". The engine then snaps
+     * nothing and, on a thinking vendor's wire, sends tool-call turns' reasoning back to be safe, as 4.0.5 did: a
+     * new thinking model rejects a tool loop without it.
+     */
+    val engineReasoning: ReasoningInfo?
+        get() = if (reasoningMode == ReasoningMode.Auto && autoCapabilities.reasoning == null) null else reasoning
+
     val effectiveContextWindow: Int? get() = contextWindow ?: autoCapabilities.contextWindow
 
     val vision: Boolean? get() = autoCapabilities.vision

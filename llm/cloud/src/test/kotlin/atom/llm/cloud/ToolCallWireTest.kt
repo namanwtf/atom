@@ -33,9 +33,15 @@ class ToolCallWireTest {
 
     private val done = sseBody("""{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""", "[DONE]")
 
-    private fun sent(providerId: String, history: List<ChatMessage>, effort: ReasoningEffort? = null, model: String = "m"): List<JsonObject> {
+    private fun sent(
+        providerId: String,
+        history: List<ChatMessage>,
+        effort: ReasoningEffort? = null,
+        model: String = "m",
+        options: EngineOptions = EngineOptions(),
+    ): List<JsonObject> {
         server.enqueueSse(done)
-        CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", model, server.url("/v1").toString())
+        CloudEngines.create(Providers.byId(providerId)!!.copy(wire = Wire.OpenAiChat), "key-abcdef", model, server.url("/v1").toString(), options)
             .collect(LlmRequest(model, history, reasoning = effort))
         return server.takeRequest().json()["messages"]!!.jsonArray.map { it.jsonObject }
     }
@@ -195,6 +201,23 @@ class ToolCallWireTest {
                 assertTrue(messages.none { it.str("content")?.contains("[Earlier tool call") == true }, "$provider/$model")
             }
         }
+    }
+
+    @Test
+    fun aModelNothingKnowsGetsItsReasoningBackAsTheAppConfiguresIt() {
+        // The app's options come from the saved model (ModelConfig): in Auto mode with nothing detected that is
+        // "unknown", so a brand-new thinking model still gets reasoning_content, as in 4.0.5.
+        for (provider in listOf("deepseek", "moonshot")) {
+            val model = ModelConfig("brand-new-model-2027")
+            val (history, id) = restarted("Thinking about the volume.")
+            val messages = sent(provider, history, model = model.id, options = EngineOptions(reasoning = model.engineReasoning))
+            assertEquals("Thinking about the volume.", messages.single { it["tool_calls"] != null }.str("reasoning_content"), provider)
+            assertEquals(listOf(id), callIds(messages), provider)
+        }
+        // "Off" chosen by hand: none.
+        val off = ModelConfig("brand-new-model-2027", reasoningMode = ReasoningMode.Off)
+        val messages = sent("deepseek", restarted("x").first, model = off.id, options = EngineOptions(reasoning = off.engineReasoning))
+        assertTrue(messages.none { "reasoning_content" in it })
     }
 
     @Test
