@@ -259,6 +259,19 @@ def dismiss_anr(ns):
     return False
 
 
+def dismiss_result_card():
+    """ATOM's "Result ready" card covers the bottom of the screen for a while after a run; a person taps Done."""
+    for _ in range(2):
+        ns = nodes()
+        if not match(ns, "^Result ready$"):
+            return
+        done = match_last(ns, "^Done$")
+        if done:
+            log("dismissing the Result ready card (Done)")
+            tap_node(done)
+        time.sleep(1.5)
+
+
 def ensure_chat():
     """ATOM's chat screen in front with its composer; True when so. Never presses Back outside ATOM."""
     for attempt in range(5):
@@ -315,6 +328,7 @@ def type_words(text):
 
 def type_prompt(rec, prompt):
     """Types the request into ATOM's composer and taps Send, as a person would. False if that could not be done."""
+    dismiss_result_card()
     if not ensure_chat():
         log("type_prompt: ATOM's chat is not in front; not typing")
         return False
@@ -441,6 +455,7 @@ def open_preview(rec, run=None):
     """The site's live preview in front: it opens by itself during a run; else the chat card's Open preview; else
     the same screen through its route (what the card opens), when the card has scrolled out of view."""
     sid = site_id(run)
+    dismiss_result_card()
     for attempt in range(3):
         if attempt == 2 and sid and not in_preview():
             rec.mark(f"open preview (route {sid})")
@@ -579,6 +594,19 @@ SWIPES = {
 }
 
 
+def swipe_events(x1, y1, x2, y2, steps=5):
+    """One swipe as explicit touch events (DOWN, MOVEs, UP) in a single shell call."""
+    pts = [(x1 + (x2 - x1) * k // steps, y1 + (y2 - y1) * k // steps) for k in range(1, steps + 1)]
+    cmds = [f"input motionevent DOWN {x1} {y1}"] + [f"input motionevent MOVE {x} {y}" for x, y in pts] + [f"input motionevent UP {x2} {y2}"]
+    sh("; ".join(cmds))
+
+
+def preview_top():
+    for _ in range(3):
+        swipe(540, 700, 540, 2000, 150)
+        time.sleep(0.4)
+
+
 def play_snake(rec, seconds):
     """Plays with real swipes in loops around the board's middle; two swipe speeds; restarts after a game over."""
     rec.mark("play")
@@ -590,8 +618,11 @@ def play_snake(rec, seconds):
     last_check = time.time()
     while time.time() < end:
         x1, y1, x2, y2 = SWIPES[order[i % 4]]
-        swipe(x1, y1, x2, y2, 90 if time.time() < half else 260)
-        rec.wait(sides[i % len(sides)])
+        if time.time() < half:
+            swipe_events(x1, y1, x2, y2)
+        else:
+            swipe(x1, y1, x2, y2, 260)
+        rec.wait(sides[i % len(sides)] * 0.5)
         i += 1
         if time.time() - last_check > 5:
             last_check = time.time()
@@ -623,6 +654,7 @@ def clip_game():
     if run_ok(run) and open_preview(rec, run):
         rec.mark("preview")
         rec.wait(2.5)
+        dismiss_result_card()
         shot("demo_game_preview")
         start = match(ocr_words(), r"^(play|start|tap)$")
         if start:
@@ -671,9 +703,14 @@ def clip_bill():
         rec.mark("preview")
         rec.wait(3)
         shot("demo_bill_preview")
+        dismiss_result_card()
+        preview_top()
+        rec.wait(1)
         ws = ocr_words()
-        # The total: the first amount on the page (e.g. "120" or "$120"); then a tip chip; then "+" for one more person.
-        total = next((w for w in ws if re.fullmatch(r"\$?\d{2,4}([.,]\d\d)?", w["text"])), None)
+        # The total: the first amount above the tip chips (e.g. "120" or "$120"); then a tip chip; then "+".
+        tip_y = min([w["bounds"][1] for w in ws if w["text"].endswith("%")] or [2400])
+        amounts = [w for w in ws if re.fullmatch(r"\$?\d{2,4}([.,]\d\d)?", w["text"]) and w["bounds"][1] < tip_y]
+        total = min(amounts, key=lambda w: (w["bounds"][1], w["bounds"][0])) if amounts else None
         if total:
             rec.mark(f"field total ({total['text']})")
             fill(total, "186.40", rec)
