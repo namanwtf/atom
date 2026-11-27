@@ -14,7 +14,8 @@ import java.util.Locale
  * The agent's operating instructions, ordered for provider prompt caches: the fixed instructions first, then the
  * feature hints, then the device facts, then today's date. Nothing in it changes during a day, so a conversation's
  * prefix stays cached from turn to turn; the clock time rides on the latest user message instead ([withTime]).
- * On-device gets a shorter variant: every prompt token there is prefill on the phone's own silicon.
+ * On-device gets a shorter variant: every prompt token there is prefill on the phone's own silicon. A tiny on-device
+ * model gets its own, much shorter prompt instead ([atom.core.agent.TinyModel]).
  *
  * Guidance for tools the run loads on demand is not here: it goes out with those tools (see [ToolFamilies]).
  */
@@ -45,6 +46,9 @@ object SystemPrompt {
         append("\n- Today: ").append(dateFormat.format(now)).append(", time zone ").append(now.zone.id)
         append(". The current time is on the latest user message.")
     }
+
+    /** Today's date as the system prompt writes it ("Friday 27 November 2026"). */
+    fun today(now: ZonedDateTime = ZonedDateTime.now()): String = dateFormat.format(now)
 
     /** The clock time, appended to the latest user message as the model sees it (the stored message is unchanged). */
     fun withTime(messages: List<ChatMessage>, now: ZonedDateTime = ZonedDateTime.now()): List<ChatMessage> {

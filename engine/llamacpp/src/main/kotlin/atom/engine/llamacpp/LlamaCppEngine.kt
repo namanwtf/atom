@@ -68,8 +68,9 @@ class LlamaCppEngine(
             val maxTokens = request.maxOutputTokens.coerceAtLeast(1)
 
             // Thinking models (Qwen3) write <think>…</think> as text: that part goes out as reasoning, and stray
-            // chat-format markers (<|im_end|>…) never reach the answer.
-            val splitter = ThinkTagSplitter()
+            // chat-format markers (<|im_end|>…) and stray think tags never reach the answer. A template that opens
+            // the reasoning itself (the prompt ends in "<think>\n") makes the output start inside it.
+            val splitter = ThinkTagSplitter(startsInThinking = ThinkTagSplitter.endsInsideThinking(String(prompt, Charsets.UTF_8)))
             val generation = async(worker) {
                 val job = coroutineContext.job
                 nativeCall("generation failed", retryable = true) {

@@ -20,6 +20,7 @@
     <string name="run_continue_prompt">Continue where you left off.</string>
     <string name="run_model_gone">%1$s is no longer available, so this conversation uses %2$s.</string>
     <string name="run_small_model_agent">Heads-up: this is a very small on-device model. Tiny models often can\'t do multi-step tasks like using the browser or operating the phone, and may answer from memory instead. For tasks like this, pick a larger model.</string>
+    <string name="run_tiny_model_task">Heads-up: this on-device model is very small. It can chat and do one-step actions such as alarms, timers and quick settings, but not tasks like this one. For browsing or operating apps, pick a larger model such as Gemma 4 E2B in Settings &gt; LLM providers &gt; On-device models.</string>
     <string name="run_window_unknown">This model\'s context window is unknown, so automatic compaction is off.</string>
     <string name="run_compaction_failed">Context could not be compacted: %1$s</string>
     <string name="run_pause">Pause</string>
