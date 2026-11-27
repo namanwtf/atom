@@ -132,7 +132,14 @@ private fun InlineText(inlines: List<MdInline>, style: TextStyle, color: Color, 
                     is MdInline.Code -> withStyle(SpanStyle(fontFamily = atom.linux.ui.MonoFont.JetBrainsMono, fontSize = style.fontSize * 0.88f, background = codeBg)) {
                         append(" " + node.code + " ")
                     }
-                    is MdInline.Link -> withLink(LinkAnnotation.Url(node.url, linkStyle)) { add(node.children) }
+                    // A link to one of the user's sites opens in Atom; handing it to another app would leak it.
+                    is MdInline.Link -> withLink(
+                        if (atom.core.io.AtomOnlyUrls.isAtomOnly(node.url)) {
+                            LinkAnnotation.Url(node.url, linkStyle) { atom.core.io.AtomOnlyUrls.open(node.url) }
+                        } else {
+                            LinkAnnotation.Url(node.url, linkStyle)
+                        },
+                    ) { add(node.children) }
                     is MdInline.Math -> {
                         val id = "m${n++}"
                         val box = math.layout(node.tex, sizePx, display = false)

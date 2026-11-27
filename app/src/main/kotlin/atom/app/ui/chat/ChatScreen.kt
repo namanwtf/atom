@@ -2,6 +2,9 @@
 
 package atom.app.ui.chat
 
+import atom.app.report.ReportCollector
+import atom.app.report.findActivity
+import atom.app.ui.report.ReportRoutes
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -158,7 +161,8 @@ import kotlinx.coroutines.withContext
  */
 
 /**
- * The home chat. The model capsule opens the per-conversation model picker ([onPickModel] replaces it).
+ * The home chat. The model capsule opens the per-conversation model picker ([onPickModel] replaces it), or, when the
+ * selected provider only lacks its key ("DeepSeek Flash · add key"), that provider's key screen ([onOpenProviderKey]).
  * [micSlot] replaces the default dictation button. [onOpenRoute] opens feature routes (Tools, Skills, Scheduled
  * Tasks, voice settings, the browser take-over); without it those links are hidden.
  */
@@ -177,6 +181,7 @@ fun ChatScreen(
     onReadAloud: ((String) -> Unit)? = null,
     permissionsNeedAttention: Boolean = false,
     onOpenRoute: ((String) -> Unit)? = null,
+    onOpenProviderKey: ((String) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val rows by vm.drawer.collectAsStateWithLifecycle()
@@ -203,6 +208,12 @@ fun ChatScreen(
     var showPath by remember { mutableStateOf(false) }
     var exportId by remember { mutableStateOf<String?>(null) }
     val pickModel = onPickModel ?: { showPicker = true }
+    // One tap from "DeepSeek Flash · add key" to that provider's key screen.
+    val capsuleTap = {
+        val engine = state.engine
+        val providerId = engine.providerId
+        if (onOpenProviderKey != null && providerId != null && engine.opensKey) onOpenProviderKey(providerId) else pickModel()
+    }
     val permissions = onOpenPermissions ?: onOpenSetup
 
     LaunchedEffect(prefill) {
@@ -324,6 +335,16 @@ fun ChatScreen(
         editingIndex = editing?.index,
         onContinueEditing = { path -> vm.reattachImage(context, path) },
         conversationId = state.conversationId,
+        // Captures the chat as it looks now (the failed run), then opens the report with that run.
+        onReportProblem = onOpenRoute?.let { open ->
+            {
+                scope.launch {
+                    context.findActivity()?.let { runCatching { ReportCollector.captureScreen(it) } }
+                    open(ReportRoutes.forConversation(state.conversationId))
+                }
+            }
+        },
+        onOpenRoute = onOpenRoute,
     )
 
     val mic: @Composable () -> Unit = micSlot ?: {
@@ -394,7 +415,7 @@ fun ChatScreen(
                 onToggleAutoRead = { on -> Speech.update { it.copy(autoReadAloud = on) } },
                 showDrawerButton = !wide,
                 onOpenDrawer = { scope.launch { drawer.animateTo(true) } },
-                onPickModel = pickModel,
+                onPickModel = capsuleTap,
                 onOpenModels = onOpenModels,
                 onOpenSetup = onOpenSetup,
                 onOpenSettings = onOpenSettings,
@@ -881,7 +902,7 @@ private fun BrandMark(info: EngineInfo, size: androidx.compose.ui.unit.Dp) {
 private fun ModelCapsule(info: EngineInfo, enabled: Boolean, onClick: () -> Unit) {
     val ink = homeInk()
     val shape = RoundedCornerShape(20.dp)
-    val description = stringResource(R.string.home_choose_model)
+    val description = capsuleDescription(info)
     Row(
         Modifier
             .heightIn(min = 40.dp)
@@ -915,6 +936,11 @@ private fun ModelCapsule(info: EngineInfo, enabled: Boolean, onClick: () -> Unit
 @Composable
 private fun capsuleLabel(info: EngineInfo): String = engineLabel(info)
 
+/** What a screen reader says the capsule does: choose a model, or add the missing key. */
+@Composable
+private fun capsuleDescription(info: EngineInfo): String =
+    if (info.opensKey) stringResource(R.string.home_add_key_cd, info.providerName ?: info.name.orEmpty()) else stringResource(R.string.home_choose_model)
+
 /** The capsule's and the drawer's model label: the same [ModelStatus] that Settings shows. */
 @Composable
 internal fun engineLabel(info: EngineInfo): String =
@@ -943,7 +969,7 @@ private fun TitleBlock(
     onOpenCharacter: (() -> Unit)?,
 ) {
     val ink = homeInk()
-    val description = stringResource(R.string.home_choose_model)
+    val description = capsuleDescription(info)
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (character != null) {
             val ring = if (ink.dark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.08f)

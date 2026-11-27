@@ -87,6 +87,38 @@ class ToolRouterTest {
     }
 
     @Test
+    fun makingAWebsiteLoadsTheSiteTools() {
+        for (r in listOf(
+            "make me a small website that tracks my water intake", "Make a one-page site that says hello",
+            "build me a snake game", "create a todo app", "make a landing page for my bakery", "write an html page with a clock",
+            "erstelle mir eine Webseite für meinen Verein", "hazme una página web para mi tienda", "fais-moi un site pour mon club",
+            "make an app called Snake", "build me a game named Pong",
+        )) {
+            assertEquals("sites", top(r), r)
+            // Small models get it too: one strong match is enough.
+            assertTrue("sites" in groups(r, minScore = ToolRouter.STRONG - 1), r)
+        }
+        // The agent browser comes along to check the page.
+        assertEquals(listOf("sites", "browser"), groups("make me a small website that tracks my water intake").take(2))
+        assertEquals(setOf("sites"), ToolGroups.groupsOf("site_preview"))
+    }
+
+    @Test
+    fun otherThingsMadeAreNotWebsites() {
+        for (r in listOf(
+            "write a message in the app to Sam", "make the app louder", "generate an image of a red fox", "create a calendar event",
+            "write a python script that sorts a list", "make a call to mom", "set an alarm for 7",
+            "make a game plan for tomorrow", "create a page in Notion", "summarize this html email",
+            "make a page on confluence for the team", "build an app icon", "make a site visit list",
+            "create a page called Roadmap in Notion", "make a new page named Trip notes on Confluence",
+            "write a page called Intro in the wiki",
+        )) {
+            assertTrue("sites" !in groups(r), r)
+            assertTrue("sites" !in groups(r, minScore = ToolRouter.STRONG - 1), r)
+        }
+    }
+
+    @Test
     fun plainChatAndScreenWorkLoadNothing() {
         // Chat needs no tools; screen work, opening apps and web search are in the core set that is always sent.
         for (r in listOf(
@@ -136,6 +168,7 @@ class ToolRouterTest {
         "scheduled_task_create", "scheduled_task_list", "scheduled_task_manage", "scheduled_task_delete", "automation_create",
         "terminal_run", "terminal_session", "terminal_job_start", "terminal_job_info", "terminal_job_stop", "shell",
         "set_alarm", "set_timer", "alarms_and_timers", "change_alarm",
+        "site_create", "site_write", "site_read", "site_list", "site_delete_file", "site_preview",
     )).map { Fake(it, "Does $it on the phone for the owner and reports the result in a short line, or why it could not.") }
 
     private fun loadout() = ToolLoadout(tools, { ToolGroups.groupsOf(it.spec.name) }, ToolGroups.SUMMARIES)
@@ -148,6 +181,7 @@ class ToolRouterTest {
             "In Atom's built-in agent browser, search for today's top technology news and summarize it",
             "Turn on Do Not Disturb and set the volume to 20%, then remind me every day at 9 to check my messages",
             "In the terminal, create hello.py that prints the sum of 2 and 3, run it, and tell me the output.",
+            "Make me a small website that tracks my water intake",
         )) {
             val loadout = loadout()
             val routed = ToolRouter.route(request, minScore = ToolRouter.STRONG - 1)
@@ -201,5 +235,26 @@ class ToolRouterTest {
         assertEquals(listOf("Use the agent browser."), loadout.preloadGroups(listOf("browser")).notes)
         val later = loadout.load(listOf("browser"))
         assertTrue("Use the agent browser." !in later.text, later.text)
+    }
+
+    @Test
+    fun aWebsiteRequestPreloadsTheSiteToolsThenTheBrowser() {
+        val request = "Make me a small website that tracks my water intake"
+        // Cloud: the site tools and the browser to check the page, as one preload exchange.
+        val cloud = loadout()
+        val pre = ToolPreload.apply(cloud, ToolRouter.route(request), AgentConfig("m", "s", contextWindow = 200_000))
+        assertEquals(listOf("sites", "browser"), pre.groups.take(2))
+        assertTrue(ToolGroups.SUMMARIES.getValue("sites").isNotBlank())
+        assertTrue(cloud.specs().any { it.name == "site_write" } && cloud.specs().any { it.name == "browser_open" })
+        // The exchange carries an id every provider takes (Mistral: nine letters and digits) and names the group.
+        val (call, result) = pre.asExchange(cloud)!!
+        assertTrue(atom.core.llm.ToolCallIds.isStrict(call.id), call.id)
+        assertEquals(ToolLoadout.LOADER, call.name)
+        assertTrue("sites" in call.argumentsJson && "site_preview" in result.text, result.text)
+        // A small on-device window still gets the site tools first, within its budget.
+        val tight = loadout()
+        val onDevice = ToolPreload.apply(tight, ToolRouter.route(request, minScore = ToolRouter.STRONG - 1), small)
+        assertEquals("sites", onDevice.groups.first())
+        assertTrue(small.toolTokens(tight.specs()) + small.maxOutputTokens + ContextPolicy.SHARED_MARGIN + ToolPreload.MESSAGE_ROOM <= 4_096)
     }
 }

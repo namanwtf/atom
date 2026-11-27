@@ -63,6 +63,13 @@ interface WebHost {
 
     /** Attaches [uri] (a generated image) to the chat composer for a follow-up edit. */
     fun attachToComposer(context: Context, uri: Uri) {}
+
+    /**
+     * Brings one of the app's screens forward (a route such as "web/sites/preview/<id>") for run [taskId], only when
+     * the app is in front and that run is one the user started and sees (chat, bubble, assistant, voice), never for a
+     * scheduled task or an automation. Returns false when it did not; callers then leave it to the chat card.
+     */
+    fun openScreen(route: String, taskId: String): Boolean = false
 }
 
 internal object NoSecrets : SecretStore {

@@ -1,9 +1,6 @@
 package atom.app.agent
 
 import atom.device.switches.ToolSwitches
-import atom.device.switches.asksBeforeTaps
-import atom.device.switches.switchChecked
-import atom.device.switches.withoutSwitchedOff
 import android.app.Application
 import atom.app.AppGraph
 import atom.app.data.Attachment
@@ -501,6 +498,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     /** The conversation run [runId] (a [ToolContext.taskId]) belongs to, e.g. for WebHost.conversationOf. */
     fun conversationOf(runId: String): String? = byRunId[runId]?.conversationId
 
+    /** Where run [runId] came from (chat, bubble, a schedule...); null for a run that is not found. */
+    fun sourceOf(runId: String): RunSource? = byRunId[runId]?.source
+
     /** The model run [runId] actually uses. */
     fun selectionOf(runId: String): EngineSelection? = byRunId[runId]?.selectionInUse
 
@@ -681,6 +681,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
         private val id = request.conversationId
         val conversationId: String get() = id
+        val source: RunSource get() = request.source
         private lateinit var conversation: Conversation
         private val stored = ArrayList<StoredMessage>()
         private val view = ArrayList<Int>()
@@ -811,7 +812,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 )
 
                 val images = loadTurnImages()
-                val history = ModelHistory.build(stored, images)
+                val history = ModelHistory.build(stored, images, replaysReasoning = engine.engine.capabilities.replaysReasoning)
                 view.clear()
                 view.addAll(history.storedIndex)
 
@@ -982,11 +983,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
             val caps = request.capabilities
             val base = if (caps == null) gathered else CapabilityTools.filter(gathered, caps) { t -> familyOf(t, origin[t] ?: ToolOrigin.Other) }
-            val wrapped = base.withoutSwitchedOff()
-                .map { if (it.asksBeforeTaps(confirmAct)) ConfirmingTool(it) else it }
-                .map(LongTools::apply)
-                // Each call re-checks the tool's own switch, so turning it off on the Tool list stops it mid-run.
-                .map { it.switchChecked() }
+            val wrapped = RunTools.wrap(base, confirmAct)
             val runScoped = listOf(HistorySearch.tool { ModelHistory.searchable(stored.toList()) }, releaseTool())
                 .let { list -> if (caps == null) list else CapabilityTools.filter(list, caps) { familyOf(it, ToolOrigin.Other) } }
             return (runScoped + wrapped).distinctBy { it.spec.name }.onEach { riskOf[it.spec.name] = it.risk; toolOf[it.spec.name] = it }

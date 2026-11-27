@@ -17,8 +17,13 @@ import atom.web.image.ImageTools
 import atom.web.search.WebServices
 import atom.web.search.WebSettings
 import atom.web.search.WebTools
+import atom.web.sites.SiteCards
+import atom.web.sites.SiteToolNames
+import atom.web.sites.SiteTools
 import atom.web.ui.GalleryScreen
 import atom.web.ui.ImageSettingsScreen
+import atom.web.ui.SitePreviewScreen
+import atom.web.ui.SitesScreen
 import atom.web.ui.TakeOverScreen
 import atom.web.ui.UserBrowserScreen
 import atom.web.ui.WebIcons
@@ -33,6 +38,8 @@ object WebFeature : AtomFeature {
     const val ROUTE_IMAGES = "web/images"
     const val ROUTE_GALLERY = "web/gallery"
     const val ROUTE_BROWSER = "web/browser"
+    const val ROUTE_SITES = "web/sites"
+    private const val ROUTE_SITE_PREVIEW = "web/sites/preview/"
     private const val ROUTE_OPEN = "web/browser/open/"
     private const val ROUTE_SESSION = "web/browser/session/"
 
@@ -104,7 +111,7 @@ object WebFeature : AtomFeature {
             if (web.value.enabled && web.value.browserEnabled) null else "The agent browser is turned off in Settings > Web search and reading."
         }
         val imageGate = { if (images.value.enabled) null else "AI image generation is turned off in Settings." }
-        return WebToolSet.assemble(WebToolSet.groups(web.value, images.value.enabled)) { group ->
+        val grouped = WebToolSet.assemble(WebToolSet.groups(web.value, images.value.enabled)) { group ->
             when (group) {
                 WebToolGroup.Files -> FileTools.create(app, priv) + ViewImage.create(app, priv)
                 WebToolGroup.Web -> WebTools.create(services(app), webGate)
@@ -112,7 +119,14 @@ object WebFeature : AtomFeature {
                 WebToolGroup.Images -> ImageTools.create(app, generator(app), imageGate)
             }
         }
+        // Websites with a live preview: no setting, no network; they work on every phone.
+        return grouped + runCatching { SiteTools.create(app) }.getOrDefault(emptyList())
     }
+
+    override fun toolNotes(context: Context): Map<String, String> = mapOf(SiteToolNames.CREATE to SiteToolNames.NOTE)
+
+    /** Route of the live preview of site [id]. */
+    fun sitePreviewRoute(id: String) = SiteCards.previewRoute(id)
 
     override fun promptHint(context: Context): String {
         val web = WebSettings.of(context).value
@@ -130,6 +144,7 @@ object WebFeature : AtomFeature {
             FeatureEntry(FeatureSection.Tools, R.string.web_entry_images, R.string.web_entry_images_sub, WebIcons.Image, ROUTE_IMAGES),
             FeatureEntry(FeatureSection.Tools, R.string.web_entry_gallery, R.string.web_entry_gallery_sub, WebIcons.Gallery, ROUTE_GALLERY),
             FeatureEntry(FeatureSection.Tools, R.string.web_entry_browser, R.string.web_entry_browser_sub, WebIcons.Browser, ROUTE_BROWSER),
+            FeatureEntry(FeatureSection.Tools, R.string.web_entry_sites, R.string.web_entry_sites_sub, WebIcons.Code, ROUTE_SITES),
         )
 
     @Composable
@@ -139,6 +154,8 @@ object WebFeature : AtomFeature {
             route == ROUTE_IMAGES -> ImageSettingsScreen(nav)
             route == ROUTE_GALLERY -> GalleryScreen(nav)
             route == ROUTE_BROWSER -> UserBrowserScreen(nav, null)
+            route == ROUTE_SITES -> SitesScreen(nav)
+            route.startsWith(ROUTE_SITE_PREVIEW) -> SitePreviewScreen(nav, route.removePrefix(ROUTE_SITE_PREVIEW))
             route.startsWith(ROUTE_OPEN) -> UserBrowserScreen(nav, decodeRouteUrl(route.removePrefix(ROUTE_OPEN)))
             route.startsWith(ROUTE_SESSION) -> TakeOverScreen(nav, route.removePrefix(ROUTE_SESSION))
         }

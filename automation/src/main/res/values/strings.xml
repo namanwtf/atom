@@ -10,4 +10,37 @@
     <string name="automation_channel_alerts_desc">Failures, auto-pause and tasks waiting for you to unlock</string>
     <string name="automation_channel_listening">Automations listening</string>
     <string name="automation_channel_listening_desc">Shown while automations wait for phone events</string>
+
+    <!-- Ready-made routines: each opens the scheduled-task editor filled in; the person only taps Save. -->
+    <string name="routines_section">Ready-made routines</string>
+    <string name="routines_footer">Each one opens filled in: check it, then tap Save. You can change anything first.</string>
+    <string name="routines_empty_title">No scheduled tasks yet</string>
+    <string name="routines_empty_body">Start with a ready-made routine. It opens filled in, so you only need to tap Save.</string>
+
+    <string name="routine_morning_title">Morning brief</string>
+    <string name="routine_morning_when">Weekdays at 7:45</string>
+    <string name="routine_morning_blurb">Calendar, weather and urgent notifications</string>
+    <string name="routine_morning_prompt">Give me my morning brief. 1) Today\'s calendar events with times and places. 2) The weather where I am today: high and low, and rain or wind worth knowing about. 3) Notifications since last night that need action from me (messages from people, deliveries, bills, security alerts); skip promotions and routine app updates. Lead with anything urgent. Keep it under 12 lines.</string>
+
+    <string name="routine_price_title">Price watch</string>
+    <string name="routine_price_when">Every day at 10:00</string>
+    <string name="routine_price_blurb">Tells you when a price drops</string>
+    <string name="routine_price_name">Price watch: %1$s</string>
+    <string name="routine_price_prompt">Check the current price of %1$s at %2$s. Use the shop\'s own page and read the price for the item itself, not shipping or add-ons. If there is no previous result to compare with, reply with the current price, the currency and the link. If there is one, compare: when the price is now lower, reply starting with \"Price drop:\" and give the old price, the new price and the link. When it is the same or higher, or the price cannot be found, reply with exactly %3$s.</string>
+    <string name="routine_price_ask_title">What should Atom watch?</string>
+    <string name="routine_price_ask_summary">Atom checks once a day and tells you only when the price drops.</string>
+    <string name="routine_price_what">Item, for example a model of headphones</string>
+    <string name="routine_price_where">Where: a shop name or a link</string>
+    <string name="routine_price_continue">Continue</string>
+    <string name="routine_cancel">Cancel</string>
+
+    <string name="routine_cleanup_title">Weekly phone cleanup</string>
+    <string name="routine_cleanup_when">Sundays at 19:30</string>
+    <string name="routine_cleanup_blurb">Large files, unused apps and downloads, as a report</string>
+    <string name="routine_cleanup_prompt">Make my weekly phone cleanup report. This is a report only: do not delete, move, uninstall or change anything, and do not offer to do it in this run. List: 1) The largest files on the phone (up to 10, with size and folder). 2) Apps I have not opened in the last 30 days, with how much space each uses. 3) What is in Downloads: how many files, their total size and the oldest ones. 4) Free storage left. End with a short list of what I could remove; I will decide and ask you myself.</string>
+
+    <string name="routine_evening_title">Evening wrap-up</string>
+    <string name="routine_evening_when">Every day at 20:30</string>
+    <string name="routine_evening_blurb">Missed notifications and tomorrow\'s first event</string>
+    <string name="routine_evening_prompt">Give me my evening wrap-up. 1) Notifications from today I may have missed, grouped by app, with the people who wrote to me first; skip promotions. 2) Tomorrow\'s first calendar event, with its time and place. Keep it short.</string>
 </resources>

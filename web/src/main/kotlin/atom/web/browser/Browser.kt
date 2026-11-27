@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -23,6 +24,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
@@ -109,6 +111,8 @@ internal object WebViewSecurity {
     }
 }
 
+private const val MAX_CONSOLE_NOTES = 5
+
 /** One conversation's off-screen browser. All members must be used on the main thread. */
 class BrowserSession internal constructor(val key: String, context: Context, private val owner: BrowserSessions) {
     internal val contextWrapper = MutableContextWrapper(context.applicationContext)
@@ -119,12 +123,14 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
     internal var navigations = 0
     internal var lastError: String? = null
     internal val notices = ArrayList<String>()
+    private var consoleErrors = 0
     private var waiter: CompletableDeferred<Unit>? = null
     private var previewSeq = 0
     internal var lastUsed = System.currentTimeMillis()
     @Volatile
     internal var attached = false
     internal var dead = false
+    private val sites = atom.web.sites.SiteWeb(context)
 
     init {
         WebViewSecurity.apply(webView)
@@ -139,7 +145,15 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
                 return true
             }
 
+            // The user's own sites open here at their https://<id>-<tag>.invalid address, served from storage.
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = sites.intercept(request)
+
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                sites.onMainFrame(url)
+            }
+
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                sites.onMainFrame(url)
                 navigations++
                 lastError = null
                 state.update { it.copy(url = url, loading = true, progress = 5) }
@@ -174,6 +188,28 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
 
             override fun onReceivedTitle(view: WebView, title: String?) {
                 state.update { it.copy(title = title.orEmpty()) }
+            }
+
+            // The JavaScript errors of the user's own sites reach the agent as notes on its next step (a few per
+            // step), so it can check pages it made itself. Other pages' console output never reaches the model.
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR && fromOwnSite(message)) {
+                    consoleErrors++
+                    if (consoleErrors <= MAX_CONSOLE_NOTES) {
+                        val source = message.sourceId().orEmpty().substringAfterLast('/').substringBefore('?').take(60)
+                        notices += "Console error: ${message.message().orEmpty().take(300)}" +
+                            (if (source.isNotEmpty()) " ($source:${message.lineNumber()})" else "")
+                    } else if (consoleErrors == MAX_CONSOLE_NOTES + 1) {
+                        notices += "More console errors were left out."
+                    }
+                }
+                return false
+            }
+
+            /** The error comes from a file of one of the user's sites (no source: the page itself, when it is one). */
+            private fun fromOwnSite(message: ConsoleMessage): Boolean {
+                val source = message.sourceId()
+                return if (source.isNullOrBlank()) atom.web.sites.SiteOrigin.parse(webView.url) != null else atom.web.sites.SiteOrigin.parse(source) != null
             }
 
             override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
@@ -234,7 +270,10 @@ class BrowserSession internal constructor(val key: String, context: Context, pri
         webView.layout(0, 0, w, h)
     }
 
-    fun takeNotices(): List<String> = notices.toList().also { notices.clear() }
+    fun takeNotices(): List<String> = notices.toList().also {
+        notices.clear()
+        consoleErrors = 0
+    }
 
     suspend fun load(url: String, timeoutMs: Long = 25_000) = onMain { view ->
         waiter = CompletableDeferred()

@@ -88,6 +88,12 @@ object Extend {
     @Volatile var toolScope: ToolScope? = null
         private set
 
+    /**
+     * The saved MCP servers' tokens and the secret parts of their URLs, for the problem report's redaction only.
+     * Empty when the extend runtime is not set up yet.
+     */
+    suspend fun mcpSecrets(): List<String> = runCatching { ExtendRuntime.mcp.knownSecrets() }.getOrDefault(emptyList())
+
     fun install(
         contextWindow: ContextWindowProvider? = null,
         secrets: SecretStore? = null,

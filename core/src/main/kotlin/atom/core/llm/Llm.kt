@@ -35,6 +35,18 @@ data class ChatMessage(
     val toolCalls: List<ToolCall> = emptyList(),
     val toolCallId: String? = null,
     val toolName: String? = null,
+    /**
+     * The model's own reasoning for an assistant turn, as stored with the conversation. Only wires that need it
+     * back with a tool-call turn (DeepSeek and Kimi thinking, see `ChatReasoning.interleaved`) send it; everything
+     * else ignores it.
+     */
+    val reasoning: String? = null,
+    /**
+     * A user-role message inside a turn rather than one that starts it: Atom's own nudges and notes, an earlier result
+     * shown as text, and what the user sent to steer a run while it worked. Wires that tell the current turn from
+     * earlier ones (thinking replay) look past it.
+     */
+    val midTurn: Boolean = false,
 ) {
     val text: String get() = parts.filterIsInstance<ContentPart.Text>().joinToString("") { it.text }
 
@@ -120,6 +132,11 @@ data class EngineCapabilities(
     val vision: Boolean,
     val contextWindow: Int,
     val onDevice: Boolean,
+    /**
+     * The engine sends an assistant tool-call turn's [ChatMessage.reasoning] back to the model (DeepSeek and Kimi
+     * thinking need it), so it counts against the context. False: reasoning is never sent and the history drops it.
+     */
+    val replaysReasoning: Boolean = false,
 )
 
 /**

@@ -1,150 +1,105 @@
-# Atom 4.0.5 release scorecard
+# Atom 4.0.6 release scorecard
 
 Written for the owner, in plain words. Everything below ran on GitHub's test machines (an Android phone emulator
 plus a small AI model running on the same machine), never on a personal computer. Links go to the runs.
 
-## What 4.0.5 brings
+## What 4.0.6 brings
 
-- **Side menu fixed.** In 4.0.4 the side menu's frosted glass switched on only after the menu stopped moving, so it
-  jumped and flashed when opening and closing. Now the menu is frosted from the first frame to the last, opening and
-  closing, with one glass style shared by the menu, the chat's top bar and the typing area. Phones without the blur
-  (older Android, battery saver, Blur turned off) get the same colours as a see-through tint.
-- **One honest model label everywhere.** On a fresh install, Settings said "DeepSeek Flash" while home said "Not
-  selected". Home, the side menu, Settings and the floating assistant now all say the same thing, for example
-  "DeepSeek Flash · add key" or "Not set".
-- **Screen turning off during a task.** A task that does not need the screen (a command, a web search) keeps going
-  with the screen off. A task that operates apps now waits, shows "Waiting for the screen to be unlocked" in its
-  notification and on its capsule, and carries on by itself once you unlock. Before, it kept tapping a locked screen.
-- **On-device models (the optional download).** Fixes for small offline models such as Qwen3 0.6B writing garbage:
-  the app now plans for the model's real memory size, keeps each step within budget, gives small models a shorter
-  tool list, shows their "thinking" separately, stops made-up tool results and runaway output, and warns that tiny
-  models are weak at phone tasks.
-- **Tasks finish properly.** Long tasks are no longer cut off at 30 steps; a run that stops early always ends with a
-  written reply. The right tools are loaded for each request, so small models find them. Shell commands that could
-  change things ask first, with "Allow all commands for this task" for long jobs. Built-in web search falls back to
-  other search pages before giving up, and the agent browser no longer crashes from background threads.
-- **Release safety.** Every release pull request (not only the first one) now waits for this scorecard to be
-  approved before it can merge.
+- **Make me a website.** "Make me a small website that tracks my water intake": Atom writes the page (HTML, CSS and
+  JavaScript) and opens a live preview that reloads by itself when Atom changes a file. Each site has its own private
+  address that only Atom's own screens can open; no other app on the phone can reach its files, and nothing listens
+  on the phone's network. The preview can be reopened from a card in the chat or from Settings > Tools > Sites, opened in
+  Atom's browser and shared as a .zip. It needs no Linux and no internet. (#32)
+- **Report a problem.** Settings > About > Report a problem, and a small "Report a problem" under a failed run in the
+  chat. It builds one text file on the phone (versions, device, the last run's steps without their contents, recent
+  crashes and freezes, Atom's own log lines) with keys, tokens and personal data removed. You read it first and share
+  it yourself; nothing is sent automatically. (#31)
+- **Ready-made routines.** On the Scheduled tasks screen: Morning brief, Price watch, Weekly phone cleanup (report
+  only) and Evening wrap-up. Each opens the usual editor filled in; you only tap Save. (#31)
+- **"· add key" is one tap.** When home says "DeepSeek Flash · add key", tapping it opens DeepSeek's key screen
+  directly instead of the model list. Back returns to the chat.
+- **Thinking models after a restart.** DeepSeek and Kimi in thinking mode refused to continue a conversation with
+  earlier tool steps once the app had been restarted, because the model's reasoning was kept in memory only. It is
+  now taken from the saved conversation and counts against the context, so a long conversation still fits. While a
+  model really thinks, an old step saved without its reasoning is sent as a plain note; models that do not think
+  (deepseek-chat, Kimi K2 Instruct, Qwen Instruct) keep their tool steps exactly as in 4.0.5, and a new thinking model
+  nothing knows yet still gets its reasoning back.
+- **"Allow all commands for this task" works.** In 4.0.5 every terminal and shell command asked again and showed raw
+  "terminal_run({...})" text: a wrapper that every tool passes through dropped the command's own prompt. Prompts now
+  show the whole command ("Run in the Linux terminal: ...") and offer the button, and one tap covers the rest of the
+  task (plainly destructive commands still ask).
+- **The bubble's hold menu is closer.** Its three buttons sit 28dp from the bubble's edge instead of about 76dp.
+- **The launcher icon has new resource names** (atom_launcher), so a phone that cached the old app's icon stops
+  showing it. (The commit that renamed it also added density bitmaps; they were never used, because the adaptive icon
+  always wins on Android 11 and newer, and a later commit removed them.)
+- **Smaller fixes from review.** Website tools that write or delete files count as file tools, so a scheduled task
+  limited to the web cannot change files; the problem report also removes web search, image, speech and MCP keys;
+  "make a game plan" or "a page in Notion" no longer loads the website tools; only the user's own sites report page
+  errors to the agent; a scheduled task never opens the preview on screen.
+- **Tests.** The end-to-end tests warm up the model once, run every task on the same device clock, check results more
+  strictly (the script really printed 5, the page really loaded), stop tasks that run out of time, and still print
+  their results if the emulator dies. The floating bubble test now taps Send where it really is (it used to hit the
+  keyboard's Enter key).
 
-## Final review
+## Checks on the release branch
 
-An independent review of the whole 4.0.5 change said **SHIP, no blockers**. Its findings from the earlier rounds were
-fixed before that: every shell command asks again (as in 4.0.4), with "Allow all commands for this task" for long jobs;
-files that start programs are protected from being overwritten; the screen-off wait no longer counts against a step's
-time limit and holds no wake lock; approvals with long or multi-line text must be read in the app instead of allowed
-from the notification. The last four tidy-ups (safe file paths, no nudge for waiting steps, the notification's first
-line, the tool note folded into the user's message) are included.
+| Check | Result |
+|---|---|
+| Unit tests, debug and release builds, release-hygiene checks (CI) | pass on 07d5563, the final code ([run 45937912893](https://github.com/namanwtf/atom/actions/runs/45937912893)); the last step, Release readiness, holds this pull request on purpose until the owner approves it |
+| Screenshots, dark and light | pass on 07d5563 ([run 45937912882](https://github.com/namanwtf/atom/actions/runs/45937912882)): the website preview at its new address before and after an edit, the preview card in the chat, Settings > Sites, "Report a problem", the routines, the key screen from "· add key", and the closer hold menu on both sides of the screen |
+| End-to-end tasks | 12 of 15 core tasks on the final code, and the optional website task; every failure is an emulator limit or the small test model's wording (below) |
 
-## Old Atom (3.4.5) vs new Atom, same phone emulator, same AI model
+## End-to-end tasks (new app, small local model)
 
-Both apps were set up through their own settings screens and given the same tasks, one after the other
-([run 45867500321](https://github.com/namanwtf/atom/actions/runs/45867500321)). The new app in that run was an
-evening build without the new tool routing and screen-off fix; a re-run on the final code
-([45888323991](https://github.com/namanwtf/atom/actions/runs/45888323991)) had not finished when this was written.
+[Run 45937912909](https://github.com/namanwtf/atom/actions/runs/45937912909) on 07d5563, the final code (later commits
+change only this scorecard): **12 of 15 core tasks passed, and the optional website task passed**. The run before it,
+[45931347563](https://github.com/namanwtf/atom/actions/runs/45931347563) on 9a40e71 (before the last review round),
+also passed 12 of 15 core tasks and the website task.
 
-| What was measured | Old Atom 3.4.5 | New Atom | Who wins |
-|---|---|---|---|
-| Download size (the app itself) | 9.2 MB | 7.2 MB as published (6.8 MB before signing) | new |
-| AI words ("tokens") in the first request of a task | 19,355, carrying 59 tools | 4,224 for "hi", carrying 18 tools | new (about 4.6 times smaller) |
-| Time for that first request on the test machine | 859 seconds | 264 seconds | new (mostly the test machine reading the longer request) |
-| Tasks done correctly (8 tasks) | 2 (open Settings, stop a task) | 1 ("hi") | old, in this run: the new app's model locked the screen during the Do Not Disturb task and the later tasks never reached it; the old app's "hi" never reached the model |
-| Crashes in the crash log | 0 | 0 | tie |
-| Freezes ("isn't responding") | on its first start in 3 of 3 earlier runs | none | new |
-| Idle battery, 10 minutes, screen off: wake locks, wake-up alarms, CPU | 0, 0, 1 ms | 0, 0, 1 ms | tie |
-
-The task line is the weak spot of this comparison: a 3-billion-parameter test model on a CPU, through screens it
-taps blindly, decides most of it. The end-to-end tasks below, on the final code, are the better guide to what works.
-
-## End-to-end tasks (new app, final code, small local model)
-
-[Run 45888323904](https://github.com/namanwtf/atom/actions/runs/45888323904) on 56a2860 (the reviewed code; the last
-tidy-ups came after it): **11 of 15 passed**.
-
-| | Task | Result | Notes |
-|---|---|---|---|
-| g | Open the Lumen character | pass | no crash |
-| c | Turn on Do Not Disturb | pass | used the Do Not Disturb tool; it was on afterwards |
-| d | What was my last notification about? | pass | answered "Dinner, Pizza at 8" |
-| e | Remind me every day at 9am to drink water | pass | a daily 09:00 task was created |
-| b | Summarize the top story on example.com in the agent browser | pass | |
-| o | Read a web page in the agent browser | pass | no browser threading errors |
-| f | Stop a task halfway | pass | ended as stopped, history kept, app alive |
-| i | Automation start-up switch turns on with the first task | pass | off before any automation, on once a task existed |
-| j | Normal notifications still saved after the battery fix | pass | |
-| m | Screen turned off during a command task | pass | it finished with the screen off; wake lock and background service were on during it |
-| n | Screen turned off while operating Settings | pass | 0 actions while off, "Waiting for the screen to be unlocked" in the notification, finished after unlocking |
-| a | Write and run a small script in the terminal | fail | the Linux install never finishes on this emulator (its PRoot process crashes in the emulator's ARM translator) |
-| h | Floating bubble mini chat | fail | the message typed into the mini chat did not start a task in the test; needs a check on a phone |
-| k | "Hey Atom" pauses on battery and listens when charging | could not test | the wake-word model does not load on this emulator |
-| l | After a reboot: start-up switch, Atom started by the boot, alarm re-armed | pass in substance | Atom was started by the boot and its alarm was armed again, which only happens with the switch on; the test's own switch check read the wrong list (fixed for the next run) |
-
-Earlier runs for comparison: [before tool routing](https://github.com/namanwtf/atom/actions/runs/45860990063) the
-Do Not Disturb, notification, reminder and web tasks failed (the small model never loaded the right tools); the 4.0.4
-run ([45849080166](https://github.com/namanwtf/atom/actions/runs/45849080166)) passed 1 of 8 because the model ran at
-0.4 words per second next to the emulator.
-
-## Battery-fix checks (from 4.0.4)
-
-- Automation start-up switch: off while there is no automation, on as soon as a task exists (test i), and still
-  working after a reboot: Atom was started by the boot and re-armed its alarm (test l).
-- Notification history: normal notifications are kept (test j passed); only progress-bar updates are skipped.
-- "Hey Atom" while charging: code review only. It listens again on the plug-in signal and reads the battery state at
-  that moment. The emulator cannot load the wake-word model, so this needs a real phone.
-
-## Looks (screenshots, dark and light)
-
-- Home and side menu logo: transparent, no black patch, in both themes.
-- Chat top bar: frosted.
-- Side menu: slowed-down frames of opening and closing, over the empty home and over a long chat, in both themes,
-  show the frosted pane in every frame and no flash ([run](https://github.com/namanwtf/atom/actions/runs/45867496843)).
-- Start-up with the on-device download installed: 1.8 to 4.5 seconds in every timed start across eight runs
-  (final code: 3.9, 3.7 and 3.1 seconds, [run 45888323976](https://github.com/namanwtf/atom/actions/runs/45888323976)).
-  One early freeze happened while the emulator was translating the app from ARM; it did not come back.
-- The screenshot runs on the final code passed, dark and light.
+| | Task | Final code | Run before | Notes |
+|---|---|---|---|---|
+| g | Open the Lumen character | pass | pass | |
+| c | Turn on Do Not Disturb | pass | pass | |
+| d | What was my last notification about? | fail | pass | the small model asked the notification tool for an app named "unknown" and then said it found nothing; the tool itself worked. Model wording, not Atom |
+| e | Remind me every day at 9am to drink water | pass | pass | |
+| b | Summarize the top story on example.com in the agent browser | pass | pass | |
+| o | Read a web page in the agent browser | pass | pass | |
+| f | Stop a task halfway | pass | pass | |
+| h | Floating bubble mini chat | pass | pass | |
+| i | Automation start-up switch on while a task exists | pass | pass | |
+| j | Normal notifications still saved | pass | pass | |
+| m | Screen turned off during a command task | pass | pass | new check, passed both times: the command's approval showed "Run in Android's shell: ..." and offered "Allow all commands for this task" |
+| n | Screen turned off while operating Settings | pass | fail (crash log only) | in the run before, the crash log held a crash of the Linux installer's PRoot process inside the emulator's ARM translator; Atom itself did not crash |
+| l | After a reboot: start-up switch, boot start, alarm | pass | pass | |
+| a | Write and run a small script in the terminal | fail | fail | emulator limit, as in 4.0.5: the Linux install does not finish on this emulator (and its PRoot process crashed in the ARM translator). The approval check passed: "Run in the Linux terminal: ..." with "Allow all commands for this task" |
+| k | "Hey Atom" pauses on battery, listens when charging | fail | fail | emulator limit, as in 4.0.5: the wake-word model does not load on the emulator's CPU |
+| p | Make a one-page site that says hello (optional) | **pass** | **pass** | the model made the site; site_preview gave its own address (https://hello-site-rf2gbh.invalid/), which matched the site's stored tag, and Atom's preview screen showed that address and the page saying hello. Nothing listens on a port any more, so the check goes through the app and the files |
 
 ## What was not tested, and what an emulator cannot tell
 
-- Real battery drain, heat, mobile data and GPS: an emulator has no real battery or radio.
-- Smoothness at 60/120 Hz on a real phone: the emulator draws in software. The frosted side menu blurs the chat on
-  every frame of the slide; on older mid-range phones this may drop a few frames.
-- On-device models on a phone's GPU/NPU, and the exact "#1 1 #111" garbage the owner saw: the fixes were checked on
-  the test machine's CPU only, where that exact output was not reproduced.
-- "Hey Atom" wake word and the Linux terminal: neither runs on this emulator (ARM translation; the terminal's PRoot
-  process crashed inside the emulator's translator).
-- Floating menus (the ⋮ menu, model picker, approval sheet) still use solid backgrounds, not glass. They are separate
-  windows and need Android's window blur; that comes after 4.0.5.
-
-## Found tonight
-
-Bugs:
-- Small models rarely load hidden tool groups. Since 4.0.4 most tools are loaded on demand, and the test model never
-  asked for the "settings" or "messages" tools, so it tapped around instead (fixed in this release: the likely tool
-  groups are now loaded for each request; Do Not Disturb, notification and reminder tasks pass since).
-- A runaway loop: in one task the model saved the same memory note dozens of times, and nothing stopped it before the
-  step limit (addressed in this release: a loop guard ends runs that repeat themselves without new information, and
-  every run that stops early ends with a written reply).
-- The model locked the screen by itself ("lock screen") in four different tasks. Idea: ask before locking.
-- On a fresh install, home said "Not selected" while Settings showed a model (fixed in this release).
-- The side menu flashed when opening and closing (fixed in this release).
-- Release pull requests after the first could have merged without a scorecard (fixed in this release).
-
-Feature ideas:
-- A one-tap "add key" from the home model label when it says "· add key".
-- Window blur for the floating menus, so every surface is the same glass.
-- An x86 build of the Linux tool for emulators and Chromebooks, which would also make these tests faster.
+- Real phones: smoothness, battery, heat, mobile data.
+- DeepSeek and Kimi themselves: the thinking fix is checked against the exact requests Atom sends (unit tests), not
+  against the live services, which need paid keys.
+- The website preview on a real phone's WebView version, and sharing the .zip into other apps. The new private
+  address was checked on the emulator's WebView (screenshots and the website task).
+- "Report a problem" on phones whose system restricts reading the app's own log (some ROMs): the report then says the
+  log is empty and why.
 
 ## Verdict
 
-The new app wins on size (7.2 MB vs 9.2 MB), on request size (about 4.6 times fewer AI words per request, so
-cheaper and faster with paid models) and on freezes; it ties on crashes and idle battery. It loses on tasks done in
-the one finished side-by-side run (1 vs 2 of 8), which used an evening build without the tool routing and the
-screen-off fix and was derailed when the test model locked the screen; on the final code the end-to-end tasks pass
-11 of 15, and the rest are emulator limits (terminal, "Hey Atom") or need a phone check (the bubble mini chat).
+The new features build, pass their unit tests and show correctly on screen in both themes. On the final code the
+end-to-end tasks pass 12 of 15 and the website task passes; the failures are the two emulator limits known from 4.0.5
+(the terminal's Linux install and "Hey Atom") and one answer worded badly by the small test model. The review fixes
+are in: websites no longer listen on a port, "Allow all commands for this task" works again for terminal and shell
+commands (now checked end to end), thinking models keep their reasoning where the vendors need it, and the bubble's
+menu sits next to it.
 
-Bubble mini chat (end-to-end scenario h): not a 4.0.5 regression. It never passed in any earlier run. The test taps the
-Send button where the screen reader reports it, which lags behind the panel when the keyboard is open, so the tap lands
-on the keyboard's Enter key. The test is fixed in the next update; a person tapping the button reaches it.
+A last independent check of the final review round found it safe to ship and named two small follow-ups, both fixed
+in the final commit with unit tests: the bubble's hold menu now picks the nearest button under the finger (the
+closer buttons made their touch areas overlap, so the first match could be the wrong one), and "a page called ... in
+Notion" no longer loads the website tools. The end-to-end run above is on the last code before those two changes;
+the commits after it change only the README, this scorecard, those two functions and their tests.
 
-Shipped at the owner's request: they asked for these fixes this morning and turned on auto-merge for this release.
+Shipped at the owner's request: "Ship it as soon as review passes."
 
 Result: ready

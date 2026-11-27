@@ -48,6 +48,7 @@ object ToolGroups {
             "browser_scroll", "browser_screenshot", "browser_navigate", "browser_wait", "browser_close",
         )
         group("images", "generate_image", "edit_image")
+        group("sites", "site_create", "site_write", "site_read", "site_list", "site_delete_file", "site_preview")
         group("background", "background_open_app", "background_look", "background_act", "present_to_main_screen", "background_close")
         group("memory", "memory_update", "memory_clear")
         group("skills", "skill_write", "skill_install_github")
@@ -68,6 +69,7 @@ object ToolGroups {
         "files" to "read, write, edit and search files; look at local images",
         "browser" to "a real off-screen browser for pages needing JavaScript, sign-in, clicks or forms",
         "images" to "generate or edit images",
+        "sites" to "make websites, web apps and games (HTML, CSS, JS) with a live preview on the phone",
         "background" to "run another app on a hidden display while the user keeps the screen",
         "memory" to "rewrite or clear long-term memory",
         "skills" to "write or install skills",
@@ -89,6 +91,7 @@ object ToolGroups {
             name.startsWith("scheduled_task_") || name.startsWith("automation_") -> setOf("automation")
             name.startsWith("calendar_") -> setOf("calendar")
             name.startsWith("browser_") -> setOf("browser")
+            name.startsWith("site_") -> setOf("sites")
             else -> emptySet()
         }
     }

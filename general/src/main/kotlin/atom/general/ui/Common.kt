@@ -115,6 +115,14 @@ internal object GeneralIcons {
         )
     }
 
+    /** Material "feedback" (a speech bubble with an exclamation mark). */
+    val Report: ImageVector by lazy {
+        icon(
+            "Report",
+            "M20,2L4,2c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2L22,4c0,-1.1 -0.9,-2 -2,-2zM20,16L5.17,16l-0.59,0.59 -0.58,0.58L4,4h16v12zM11,12h2v2h-2zM11,6h2v4h-2z",
+        )
+    }
+
     private fun icon(name: String, path: String): ImageVector =
         ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
             .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black))

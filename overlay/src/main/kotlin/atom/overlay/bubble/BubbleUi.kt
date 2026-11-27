@@ -392,8 +392,16 @@ internal class MenuState(val bubble: Offset, val centers: List<Offset>) {
 }
 
 internal val MENU_BUTTON = 52.dp
-internal val MENU_WINDOW = 344.dp
-internal val MENU_RADIUS = 132.dp
+
+/**
+ * From the bubble's centre to each button's centre. The face is 60dp across and a button 52dp, so 84dp leaves 28dp
+ * between the face's edge and each button's edge (84 - 30 - 26), close to the bubble as the owner asked; at the
+ * fan's 52° step neighbouring buttons keep 2 * 84 * sin 26° - 52 = 21.6dp between their edges.
+ */
+internal val MENU_RADIUS = 84.dp
+
+/** The square menu window: the arc and a button on each side (2 * (84 + 26) = 220dp) plus room for the hover lift. */
+internal val MENU_WINDOW = 248.dp
 private const val MENU_PULSES = 3
 
 /** The halo around the bubble and the three icon-only actions on their arc. Taps anywhere else close it. */
@@ -419,11 +427,12 @@ internal fun HoldMenu(state: MenuState, onAction: (MenuAction) -> Unit, onDismis
     ) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }) {
             val c = state.bubble
-            val halo = 84.dp.toPx()
+            val halo = 60.dp.toPx()
             drawCircle(Brush.radialGradient(listOf(Warm.Bolt.copy(alpha = 0.22f), Color.Transparent), center = c, radius = halo), radius = halo, center = c)
             drawCircle(
                 Warm.Bolt.copy(alpha = 0.45f * (1f - ring)),
-                radius = 38.dp.toPx() + ring * 70.dp.toPx(),
+                // From just outside the face out to the buttons' arc.
+                radius = 34.dp.toPx() + ring * 50.dp.toPx(),
                 center = c,
                 style = Stroke(2.dp.toPx()),
             )

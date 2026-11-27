@@ -37,6 +37,8 @@ SERVER = os.environ.get("E2E_SERVER", "http://127.0.0.1:8080")
 APP_BASE_URL = os.environ.get("E2E_APP_BASE_URL", "http://10.0.2.2:8080/v1")
 # Each poll makes the app serialize its runs; on an emulator that translates the app from ARM, keep it light.
 POLL_S = 5
+# Set by setup() when the device clock can be fixed (adb root); toybox `date` format MMDDhhmmCCYY.ss.
+FIXED_TIME = None
 
 
 def log(msg):
@@ -115,7 +117,23 @@ def state():
             if attempt == 4:
                 log(f"state unreadable: {e}")
             time.sleep(2)
+    check_device()
     return {"runs": [], "scheduledTasks": [], "unreadable": True}
+
+
+class DeviceGone(Exception):
+    """The emulator itself stopped answering: nothing after this can be measured."""
+
+
+def check_device():
+    try:
+        r = subprocess.run(["adb", "get-state"], capture_output=True, timeout=20)
+        if r.stdout.decode(errors="replace").strip() == "device":
+            return
+        detail = (r.stdout + r.stderr).decode(errors="replace").strip()
+    except subprocess.TimeoutExpired:
+        detail = "adb get-state timed out"
+    raise DeviceGone(f"the emulator stopped answering ({detail})")
 
 
 def run_ids():
@@ -158,6 +176,9 @@ class Watch:
         self.known = set(known)
         self.source = source
         self.approve = approve
+        # Every approval prompt the run showed, with the tool that asked.
+        self.approvals = []
+        self.approval_ids = set()
         self.run = None
         self.seen_calls = 0
         self.mid_shot = False
@@ -170,13 +191,20 @@ class Watch:
         run = max(runs, key=lambda r: r["startedAt"])
         self.run = run
         calls = run.get("toolCalls", [])
-        for c in calls[self.seen_calls :]:
-            res = (c.get("result") or "").replace("\n", " ")[:160]
+        # Each call is logged once its result is in (or the run ended without one).
+        while self.seen_calls < len(calls):
+            c = calls[self.seen_calls]
+            if c.get("result") is None and run["active"]:
+                break
+            res = (c.get("result") or "(no result)").replace("\n", " ")[:200]
             log(f"  tool {c['name']} {c.get('args', '')[:160]} -> {'ERROR ' if c.get('isError') else ''}{res}")
-        self.seen_calls = len(calls)
+            self.seen_calls += 1
         pending = run.get("pending")
+        if pending and pending["id"] not in self.approval_ids:
+            self.approval_ids.add(pending["id"])
+            self.approvals.append(dict(pending, tool=run.get("currentTool")))
         if pending and self.approve:
-            log(f"  approving: {pending['action'][:200]}")
+            log(f"  approving ({run.get('currentTool')}, allow-all offered: {pending.get('taskGrantable')}): {pending['action'][:200]}")
             call("approve", pending["id"])
         return run
 
@@ -200,6 +228,16 @@ class Watch:
                 shot(f"{name}_mid")
             time.sleep(POLL_S)
         log(f"  timed out after {timeout}s")
+        if self.run and self.run["active"] and until is None:
+            # Free the single model slot for the next scenario: an abandoned run would keep the server busy.
+            log("  stopping the run: " + call("stop", self.run["conversationId"]))
+            end = time.time() + 60
+            while time.time() < end:
+                run = self.poll()
+                if run and not run["active"]:
+                    break
+                time.sleep(POLL_S)
+            self.run["timedOut"] = True
         return self.run
 
 
@@ -220,17 +258,63 @@ class Result:
         return ok
 
 
-def agent_task(res, prompt, timeout, source=None):
+A11Y = f"{PKG}/atom.device.AtomAccessibilityService"
+
+
+def ensure_accessibility(wait_s=30):
+    """Atom's accessibility service, as a user enables it in Settings. It does not always connect on the first
+    try on a fresh emulator, so it is switched off and on again until the app reports it connected."""
+    for attempt in range(3):
+        end = time.time() + wait_s
+        while time.time() < end:
+            if state().get("accessibility"):
+                return True
+            time.sleep(3)
+        log(f"accessibility service not connected; enabling it again (attempt {attempt + 1})")
+        sh("settings put secure enabled_accessibility_services ''")
+        time.sleep(2)
+        sh(f"settings put secure enabled_accessibility_services {A11Y}")
+        sh("settings put secure accessibility_enabled 1")
+    log("accessibility service still not connected; screen tools will fail")
+    return False
+
+
+def freeze_clock():
+    """Sets the device clock to the same minute (09:00 today) before every run, so each task sees the same time:
+    the user turn that carries the time is then the same from run to run, and the server's prompt cache matches
+    across re-runs of a scenario."""
+    if FIXED_TIME:
+        sh(f"date {FIXED_TIME} >/dev/null")
+
+
+def post_notification(args):
+    """`cmd notification post` as the shell user: adb may be root here, and a notification needs a package behind it."""
+    post = f"cmd notification post {args}"
+    out = sh(f"su 2000 {post}" if FIXED_TIME else post)
+    if out.strip():
+        log(f"  notification post: {out.strip()[:200]}")
+
+
+def agent_task(res, prompt, timeout, source=None, background=False):
     known = run_ids()
     w = Watch(known, source=source)
+    freeze_clock()
     send_prompt(prompt)
+    if background:
+        # The chat keeps running in the task service; off screen the emulator stops drawing and leaves the CPU
+        # to the model server.
+        time.sleep(5)
+        sh("input keyevent KEYCODE_HOME")
     run = w.wait(timeout, res.key)
     if run is None:
         res.check(False, "no run started")
         return None
+    run["approvals"] = w.approvals
     res.tools = names(run)
-    ended = not run["active"]
-    res.check(ended, f"run ended ({run['phase']}, outcome {run.get('outcome')})")
+    res.check(
+        not run.get("timedOut") and not run["active"],
+        f"run finished within {timeout}s ({run['phase']}, outcome {run.get('outcome')})",
+    )
     if run.get("error"):
         res.notes.append(f"error: {run['error'][:300]}")
     if run.get("notice"):
@@ -239,6 +323,15 @@ def agent_task(res, prompt, timeout, source=None):
     if run.get("availableTools"):
         log(f"  tools offered to the model: {len(run['availableTools'])}")
     return run
+
+
+def s_warm_up(res):
+    """Not a test: the first request carries Atom's whole system prompt and every core tool schema, which takes the
+    runner's CPU minutes to read. Done once here, with the app in the background; every scenario after it reuses
+    the server's cached prompt."""
+    run = agent_task(res, "Reply with just the word OK.", 1500, background=True)
+    if run is not None:
+        res.check(bool(answer(run)), "an answer came back")
 
 
 def s_vibe(res):
@@ -256,6 +349,10 @@ def s_vibe(res):
     terminal = [n for n in names(run) if n.startswith("terminal_") or n in ("shell", "file_write")]
     res.check(bool(terminal), f"terminal/shell tools called: {terminal or 'none'}")
     res.check(re.search(r"\b5\b", answer(run)) is not None, "answer contains 5")
+    # The answer alone could be the model's arithmetic; the script must really have printed it.
+    ran = [c for c in run.get("toolCalls", []) if c["name"] in terminal and re.search(r"(?m)^\s*5\s*$", c.get("result") or "")]
+    res.check(bool(ran), "a terminal result shows the script printing 5")
+    check_shell_approvals(res, run.get("approvals", []))
 
 
 def s_browser(res):
@@ -268,6 +365,9 @@ def s_browser(res):
     if offered:
         res.notes.append(f"browser tools offered: {sorted(t for t in offered if t.startswith('browser_')) or 'none'}")
     res.check("browser_open" in n, "browser_open called")
+    opened = [c for c in run.get("toolCalls", []) if c["name"] == "browser_open"]
+    if opened:
+        res.check(any(not c.get("isError") for c in opened), "browser_open loaded the page (no error result)")
     res.check("open_url" not in n, "open_url not called")
     res.check(bool(answer(run)), "non-empty answer")
 
@@ -296,6 +396,55 @@ def s_browser_read(res):
     res.check(re.search(r"example|illustrative|domain", answer(run), re.I) is not None, "the answer summarizes the page")
 
 
+def s_site(res):
+    """p (optional). Make a website: a file is written through the site tools and its live preview loads."""
+    run = agent_task(res, "Make a one-page site that says hello.", 900)
+    if run is None:
+        return
+    calls = run.get("toolCalls", [])
+    site_calls = [c["name"] for c in calls if c["name"].startswith("site_")]
+    res.check(bool(site_calls), f"site tools called: {site_calls or 'none'}")
+    wrote = [c for c in calls if c["name"] == "site_write" and not c.get("isError")]
+    created = [c for c in calls if c["name"] == "site_create" and not c.get("isError")]
+    res.check(bool(wrote or created), "a site file was written")
+    # The files themselves, read from the app's private storage (debug builds allow run-as).
+    listing = sh(f"run-as {PKG} sh -c 'ls -R files/sites 2>/dev/null'").strip()
+    log(f"  files/sites: {listing[:400]!r}")
+    pages = sh(f"run-as {PKG} sh -c 'cat files/sites/*/index.html 2>/dev/null'")
+    res.check("index.html" in listing, "files/sites/<site>/index.html exists")
+    res.check(re.search(r"hello", pages, re.I) is not None, "a page says hello")
+    previews = [c for c in calls if c["name"] == "site_preview" and not c.get("isError")]
+    res.check(bool(previews), "site_preview succeeded")
+    # The site's address: its own origin, answered by Atom's WebViews from the files. Nothing listens on a port, so
+    # there is no server to reach from outside the app; the page is checked through the app and the files instead.
+    url = None
+    for c in previews:
+        m = re.search(r"URL: (https://([a-z0-9-]+)-([a-z0-9]{6})\.invalid/)", c.get("result") or "")
+        if m:
+            url = m
+    if url is None:
+        res.check(False, "site_preview returned the site's https://<id>-<tag>.invalid/ address")
+        return
+    site_id, tag = url.group(2), url.group(3)
+    log(f"  site address: {url.group(1)}")
+    stored_tag = sh(f"run-as {PKG} sh -c 'cat files/sites/{site_id}/.origin 2>/dev/null'").strip()
+    res.check(stored_tag == tag, f"the address is site {site_id}'s own origin (stored tag {stored_tag!r})")
+    page = sh(f"run-as {PKG} sh -c 'cat files/sites/{site_id}/index.html 2>/dev/null'")
+    res.check(re.search(r"hello", page, re.I) is not None, f"files/sites/{site_id}/index.html says hello")
+    # Through the app: the preview screen of that site (site_preview opened it in this foreground chat; if it was
+    # closed meanwhile, its route opens it again) loads the page from the site's files.
+    if not find("^Close preview$"):
+        log("  the preview is not on screen; opening its route")
+        launch(f"web/sites/preview/{site_id}", wait=6)
+    time.sleep(3)
+    res.check(find("^Close preview$") is not None, "the preview screen is open")
+    res.check(find(re.escape(f"{site_id}-{tag}.invalid")) is not None, "the preview shows the site's own address")
+    shown = [t or d for _, t, d, _ in ui_nodes() if (t or d)]
+    log(f"  on screen: {shown[:40]!r}")
+    res.check(any(re.search(r"hello", x, re.I) for x in shown), "the preview shows the page (it says hello)")
+    shot("e2e_p_preview")
+
+
 def zen_mode():
     return sh("settings get global zen_mode").strip()
 
@@ -317,7 +466,7 @@ def s_dnd(res):
 
 def s_notification(res):
     """d. Context: read the last notification."""
-    sh("cmd notification post -S bigtext -t 'Dinner' tag1 'Pizza at 8'")
+    post_notification("-S bigtext -t 'Dinner' tag1 'Pizza at 8'")
     time.sleep(3)
     run = agent_task(res, "What was my last notification about?", 480)
     if run is None:
@@ -351,6 +500,18 @@ def tap_notification_stop():
     sh("cmd statusbar expand-notifications")
     time.sleep(2.5)
     ok = tap("^Stop$|^STOP$", wait=1.5)
+    if not ok:
+        # A collapsed notification hides its buttons: tap its Expand (the one nearest the task's text), look again.
+        nodes = capture.dump()
+        task = next((b for t, d, b in nodes if b and re.match(r"Check the device status", t or "")), None)
+        expands = [b for t, d, b in nodes if b and (t == "Expand" or d == "Expand")]
+        if task and expands:
+            cy = (task[1] + task[3]) // 2
+            tap_bounds(min(expands, key=lambda b: abs((b[1] + b[3]) // 2 - cy)))
+            time.sleep(1.5)
+            ok = tap("^Stop$|^STOP$", wait=1.5)
+        if not ok:
+            shot("f_shade")
     sh("cmd statusbar collapse")
     return ok
 
@@ -359,6 +520,7 @@ def s_stop(res):
     """f. Stop mid-task: after the first tool call, stop; the partial run must be kept."""
     known = run_ids()
     w = Watch(known)
+    freeze_clock()
     send_prompt(
         "Check the device status, then list my installed apps, then read the screen, then check the time and location, "
         "and finally write a detailed report about everything you found."
@@ -393,12 +555,86 @@ def s_stop(res):
 def s_character(res):
     """g. Character library: open Lumen."""
     launch("characters/library", wait=4)
-    found = find("^Lumen$") or find("Lumen")
+    found = None
+    for _ in range(8):  # the library loads its cards after the screen appears
+        found = find("^Lumen$") or find(r"^Lumen\b")
+        if found:
+            break
+        time.sleep(2)
     if not res.check(found is not None, "Lumen listed"):
+        shot(f"{res.key}_library")
         return
     tap_bounds(found)
     time.sleep(5)
     res.check(app_alive(), "app process alive after opening Lumen")
+    shot(f"{res.key}_lumen")
+    # Back to the chat, so the next tasks do not start on this screen.
+    capture.back()
+    capture.back()
+
+
+def keyboard_shown():
+    return "mInputShown=true" in sh("dumpsys input_method | grep mInputShown")
+
+
+def ui_nodes():
+    """The current UI hierarchy as (class, text, desc, bounds) tuples (capture.dump without the class)."""
+    import xml.etree.ElementTree as ET
+
+    for _ in range(3):
+        sh("uiautomator dump /sdcard/ui.xml >/dev/null 2>&1")
+        try:
+            root = ET.fromstring(adb("exec-out", "cat", "/sdcard/ui.xml"))
+            break
+        except ET.ParseError:
+            time.sleep(1)
+    else:
+        return []
+    out = []
+    for n in root.iter("node"):
+        b = re.findall(r"\d+", n.get("bounds", ""))
+        out.append((n.get("class", ""), n.get("text", ""), n.get("content-desc", ""), tuple(int(x) for x in b) if len(b) == 4 else None))
+    return out
+
+
+def composer_and_send():
+    """The mini chat's composer field while it holds the typed text (an EditText; the sent message in the list is
+    plain text) and its Send button, from a fresh dump."""
+    nodes = ui_nodes()
+    field = next((b for c, t, d, b in nodes if b and "EditText" in c and re.search(r"2 plus 2", t or "")), None)
+    send = next((b for c, t, d, b in nodes if b and (d == "Send" or t == "Send")), None)
+    return field, send
+
+
+def bubble_send(res):
+    """Taps the mini chat's Send. The overlay moves up for the keyboard, and the accessibility bounds of its nodes can
+    still be the ones from before the move: a tap there lands on the keyboard's Enter key (scenario h never passed
+    for this; a run showed the composer's bounds lagging as well). So the keyboard is closed first (the first Back
+    closes only the keyboard; the panel stays), the panel is given a moment to settle, and Send is found again from a
+    fresh dump, on the composer field's row (both are bottom-aligned 46 dp). If the message is still in the composer
+    after the tap, Send is found and tapped once more. Every tap logs the bounds it used."""
+    if keyboard_shown():
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(2.5)
+        log(f"  keyboard closed before tapping Send (shown now: {keyboard_shown()})")
+    for attempt in ("keyboard closed", "again"):
+        field, send = composer_and_send()
+        ime = keyboard_shown()
+        if field is None or send is None:
+            log(f"  {attempt}: composer with the typed text {field}, Send {send}, keyboard shown {ime}; cannot send")
+            res.notes.append(f"{attempt}: composer {field}, Send {send}")
+            return False
+        x = (send[0] + send[2]) // 2
+        y = (field[1] + field[3]) // 2
+        log(f"  tapping Send at ({x},{y}) [{attempt}]: Send node {send}, composer node {field}, keyboard shown {ime}")
+        res.notes.append(f"Send tap ({attempt}) at ({x},{y}); Send {send}, composer {field}, keyboard shown {ime}")
+        sh(f"input tap {x} {y}")
+        time.sleep(2.5)
+        field_after, _ = composer_and_send()
+        if field_after is None:
+            return True
+        log(f"  the message is still in the composer after the tap ({field_after})")
+    return False
 
 
 def s_bubble(res):
@@ -429,12 +665,11 @@ def s_bubble(res):
     shot(f"{res.key}_typed")
     known = run_ids()
     w = Watch(known)
-    send = find("^Send$")
-    if not res.check(send is not None, "send button found"):
-        return
-    tap_bounds(send)
-    time.sleep(2)
+    freeze_clock()
+    sent = bubble_send(res)
     shot(f"{res.key}_sent")
+    if not res.check(sent, "Send tapped and the message left the composer"):
+        return
     run = w.wait(480, res.key)
     if not res.check(run is not None, "bubble run started"):
         return
@@ -471,7 +706,7 @@ def s_receiver(res):
 
 def s_notification_history(res):
     """j. Battery fix check: skipping progress updates must not lose ordinary notifications in the history."""
-    sh("cmd notification post -t 'Parcel' tag2 'Your parcel arrives today'")
+    post_notification("-t 'Parcel' tag2 'Your parcel arrives today'")
     found = None
     for _ in range(10):
         time.sleep(2)
@@ -557,6 +792,21 @@ def service_foreground():
     return "AgentService" in out and "isForeground=true" in out
 
 
+SHELL_TOOLS = ("terminal_run", "terminal_session", "terminal_job_start", "shell")
+
+
+def check_shell_approvals(res, approvals):
+    """A shell-type command's prompt is the tool's own: the whole command ("Run in ...") with the button that allows
+    all commands for this task. (4.0.5's tool wrapper dropped it: raw "terminal_run({...})" and no button.)"""
+    shell = [a for a in approvals if a.get("tool") in SHELL_TOOLS]
+    if not shell:
+        res.notes.append("no shell approval was shown")
+        return
+    bad = [a for a in shell if not (a.get("taskGrantable") and a.get("action", "").startswith("Run in"))]
+    res.check(not bad, "shell approvals show the command and offer allow-all-for-this-task"
+              + (f": {bad[0].get('tool')} {bad[0].get('action', '')[:120]!r} grantable={bad[0].get('taskGrantable')}" if bad else ""))
+
+
 def first_activity(w, name, timeout=480):
     return w.wait(timeout, name, until=lambda r: bool(r.get("toolCalls")) or bool(r.get("currentTool")))
 
@@ -565,6 +815,7 @@ def s_screen_off_background(res):
     """m. Screen off mid-task, no screen needed: the run keeps going (foreground service, wake lock) and finishes."""
     known = run_ids()
     w = Watch(known)
+    freeze_clock()
     send_prompt("Run the shell command 'sleep 20; echo screen-off-ok' and tell me exactly what it printed.")
     run = first_activity(w, res.key)
     if not res.check(run is not None and run["active"], "run started and is working"):
@@ -585,6 +836,7 @@ def s_screen_off_background(res):
     res.check(held, "partial wake lock held while the screen was off")
     res.check(fg, "foreground service running during the task")
     res.check(released, "wake lock released after the run")
+    check_shell_approvals(res, w.approvals)
 
 
 def notification_texts():
@@ -597,6 +849,7 @@ def s_screen_off_ui(res):
     spinning, says so in its notification, and carries on after unlocking."""
     known = run_ids()
     w = Watch(known)
+    freeze_clock()
     send_prompt("Open the Settings app, read its first screen and tell me three of the items listed there.")
     run = first_activity(w, res.key)
     if not res.check(run is not None and run["active"], "run started and is working"):
@@ -663,6 +916,8 @@ SETUP = {}
 SCENARIOS = [
     # Ordered so the Linux install (queued at setup) has time to finish before the terminal task.
     ("g", "Character: open Lumen", s_character),
+    # Not scored: reads Atom's first request once, so the scenarios after it reuse the server's prompt cache.
+    ("0", "Warm-up: prompt cache (not scored)", s_warm_up, False),
     ("c", "Phone control: Do Not Disturb", s_dnd),
     ("d", "Context: last notification", s_notification),
     ("e", "Scheduling: daily reminder", s_schedule),
@@ -679,6 +934,8 @@ SCENARIOS = [
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
     ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),
+    # Optional: a small model may not manage a whole site; a failure is reported but does not fail the job.
+    ("p", "Make a website: one page that says hello", s_site, False),
     ("l", "Reboot: receiver, boot start and alarm survive", s_reboot),
 ]
 
@@ -700,11 +957,25 @@ def setup():
         "settings put global window_animation_scale 0.5",
         "settings put system screen_off_timeout 1800000",
         "svc power stayon true",
+        # No lock screen: an agent may lock the phone (global_action lock_screen), and the next task needs the screen.
+        "locksettings set-disabled true",
     ):
         out = sh(cmd).strip()
         log(f"$ {cmd}" + (f" -> {out[:200]}" if out else ""))
     sh("input keyevent KEYCODE_WAKEUP")
     sh("wm dismiss-keyguard")
+    # A fixed clock (see freeze_clock) needs root; google_apis emulator images allow adb root.
+    global FIXED_TIME
+    out = subprocess.run(["adb", "root"], capture_output=True, timeout=60).stdout.decode(errors="replace").strip()
+    subprocess.run(["adb", "wait-for-device"], timeout=120)
+    time.sleep(3)
+    if sh("id -u").strip() == "0":
+        sh("settings put global auto_time 0")
+        FIXED_TIME = time.strftime("%m%d0900%Y.00")
+        freeze_clock()
+        log(f"adb root: {out}; device clock fixed at 09:00 for every run: {sh('date').strip()}")
+    else:
+        log(f"adb root unavailable ({out}); the clock runs as usual")
     launch(wait=6)
     options = {
         "base_url": APP_BASE_URL,
@@ -722,6 +993,7 @@ def setup():
     launch(wait=4)
     # The terminal task needs Linux, as a user would have installed it; it downloads while other scenarios run.
     log("linux: " + call("linux_install", "Alpine"))
+    ensure_accessibility()
     st = state()
     SETUP["receiver_before"] = st.get("systemEventReceiver")
     log(f"selection={st.get('selection')} onboarded={st.get('onboarded')} accessibility={st.get('accessibility')} "
@@ -735,58 +1007,87 @@ def main():
     only = set(a.lower() for a in sys.argv[1:]) or set(filter(None, os.environ.get("E2E_ONLY", "").lower().split(",")))
     setup()
     results = []
-    for key, title, fn in SCENARIOS:
-        if only and key not in only:
+    gone = None
+    for key, title, fn, *flags in SCENARIOS:
+        if only and key not in only and key != "0":
             continue
-        res = Result(key, title)
-        log(f"===== {key}. {title} =====")
-        # A run the previous scenario left going (it timed out) would hold phone control and make this one wait.
-        leftover = [r for r in state().get("runs", []) if r.get("active")]
-        if leftover:
-            log(f"  stopping {len(leftover)} run(s) left from the previous scenario")
-            call("stop")
-            for _ in range(20):
-                time.sleep(3)
-                if not any(r.get("active") for r in state().get("runs", [])):
-                    break
-        call("clear")
-        clear_crashes()
-        m0 = server_metrics()
-        t0 = time.time()
-        try:
-            fn(res)
-        except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
-            res.check(False, f"harness error: {type(e).__name__}: {e}")
-        res.duration = time.time() - t0
-        res.speed = speed(m0, server_metrics())
-        crash = crash_log()
-        if res.check(not crash, "no crash in logcat -b crash") is False:
-            print("=====CRASH " + key + "=====")
-            # The head carries the exception and the app's own frames; Compose's layout frames follow.
-            print("\n".join(crash.splitlines()[:80]))
-            print("=====END=====")
-        res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
-        try:
-            shot(f"e2e_{key}_end")
-        except Exception as e:
-            log(f"screenshot failed: {e}")
-        log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
-        for n in res.notes:
-            log("  " + n)
+        res = Result(key, title, core=flags[0] if flags else True)
         results.append(res)
-        # Leave the next scenario a clean home chat.
-        sh("input keyevent KEYCODE_HOME")
-        time.sleep(1)
+        if gone:
+            res.check(False, "not run: " + gone)
+            continue
+        try:
+            run_one(res, fn)
+        except DeviceGone as e:
+            gone = str(e)
+            res.check(False, gone)
+            res.passed = False
+            log(f"{key}: FAIL; {gone}. The remaining scenarios cannot run.")
     scorecard(results)
     failed = [r for r in results if r.core and not r.passed]
     sys.exit(1 if failed else 0)
+
+
+def run_one(res, fn):
+    key = res.key
+    log(f"===== {key}. {res.title} =====")
+    # A run the previous scenario left going (it timed out) would hold phone control and make this one wait.
+    leftover = [r for r in state().get("runs", []) if r.get("active")]
+    if leftover:
+        log(f"  stopping {len(leftover)} run(s) left from the previous scenario")
+        call("stop")
+        for _ in range(20):
+            time.sleep(3)
+            if not any(r.get("active") for r in state().get("runs", [])):
+                break
+    call("clear")
+    # Whatever the last task did to the screen (locked it, left a panel or the shade open), start awake and home.
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh("cmd statusbar collapse")
+    sh("input keyevent KEYCODE_HOME")
+    if not ensure_accessibility(wait_s=10):
+        res.notes.append("accessibility service not connected")
+    clear_crashes()
+    m0 = server_metrics()
+    t0 = time.time()
+    try:
+        fn(res)
+    except DeviceGone:
+        raise
+    except (Exception, SystemExit) as e:  # a harness problem in one scenario must not hide the others
+        res.check(False, f"harness error: {type(e).__name__}: {e}")
+    res.duration = time.time() - t0
+    res.speed = speed(m0, server_metrics())
+    try:
+        crash = crash_log()
+    except subprocess.TimeoutExpired:
+        check_device()
+        crash = ""
+    if res.check(not crash, "no crash in logcat -b crash") is False:
+        print("=====CRASH " + key + "=====")
+        # The head carries the exception and the app's own frames; Compose's layout frames follow.
+        print("\n".join(crash.splitlines()[:80]))
+        print("=====END=====")
+    res.passed = all(n.startswith("ok: ") for n in res.notes if n.startswith(("ok: ", "FAIL: ")))
+    try:
+        shot(f"e2e_{key}_end")
+    except Exception as e:
+        log(f"screenshot failed: {e}")
+    log(f"{key}: {'PASS' if res.passed else 'FAIL'} in {res.duration:.0f}s; {res.speed}")
+    for n in res.notes:
+        log("  " + n)
+    # Leave the next scenario a clean home chat.
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(1)
 
 
 def scorecard(results):
     rows = [("", "Scenario", "Result", "Tool calls", "Time", "Model speed")]
     for r in results:
         tools = ", ".join(r.tools) if r.tools else "-"
-        rows.append((r.key, r.title, "PASS" if r.passed else "FAIL", tools[:70], f"{r.duration:.0f}s", r.speed or "-"))
+        verdict = "PASS" if r.passed else ("FAIL" if r.core else "FAIL (optional)")
+        rows.append((r.key, r.title, verdict, tools[:70], f"{r.duration:.0f}s", r.speed or "-"))
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     line = "+".join("-" * (w + 2) for w in widths)
     print("=====SCORECARD=====")
@@ -801,15 +1102,21 @@ def scorecard(results):
             for n in r.notes:
                 print("    " + n)
     print("=====END=====")
-    passed = sum(r.passed for r in results)
-    print(f"{passed}/{len(results)} scenarios passed")
+    core = [r for r in results if r.core]
+    optional = [r for r in results if not r.core and r.key != "0"]
+    passed = sum(r.passed for r in core)
+    tally = f"{passed}/{len(core)} core scenarios passed" + (
+        f", {sum(r.passed for r in optional)}/{len(optional)} optional" if optional else ""
+    )
+    print(tally)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as f:
             f.write("## End-to-end tasks\n\n| | Scenario | Result | Tool calls | Time | Model speed |\n|---|---|---|---|---|---|\n")
             for r in results:
-                f.write(f"| {r.key} | {r.title} | {'PASS' if r.passed else 'FAIL'} | {', '.join(r.tools) or '-'} | {r.duration:.0f}s | {r.speed or '-'} |\n")
-            f.write(f"\n{passed}/{len(results)} passed\n")
+                verdict = "PASS" if r.passed else ("FAIL" if r.core else "FAIL (optional)")
+                f.write(f"| {r.key} | {r.title} | {verdict} | {', '.join(r.tools) or '-'} | {r.duration:.0f}s | {r.speed or '-'} |\n")
+            f.write(f"\n{tally}\n")
             for r in results:
                 if not r.passed:
                     f.write(f"\n**{r.key}. {r.title}**\n\n" + "".join(f"- {n}\n" for n in r.notes))

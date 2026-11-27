@@ -23,6 +23,25 @@ object ToolRouter {
     private fun rules(group: String, weight: Int, vararg phrases: String): List<Rule> =
         phrases.map { Rule(group, weight, Regex("(?<![\\p{L}\\p{N}])(?:$it)(?![\\p{L}\\p{N}])")) }
 
+    /** Verbs of making something, and up to three describing words that are not a preposition ("in the app"). */
+    private const val MAKE = "(?:make|build|create|code|design|write|generate)"
+    private const val WORDS = "(?: (?!(?:in|on|at|to|for|from|with|of|into|about)(?![\\w'-]))[\\w'-]+){0,3}"
+
+    /**
+     * After a bare "site", "app" or "game": the thing made ends there (end of the request, punctuation, or a word that
+     * starts a description: "a game for my kid", "a site that says hello"). "a game plan" or "a page in Notion" is
+     * not a website.
+     */
+    private const val THING_ENDS =
+        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|to|for|with|so|and|or|about|like|using|called|named|i|we|please|of|in|on|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
+
+    /**
+     * After a bare "page": as [THING_ENDS], but "in" / "on" / "to" name where a page goes (Notion, the wiki...), and
+     * "called" / "named" are left out because "a page called Roadmap in Notion" is a note, not a website.
+     */
+    private const val PAGE_ENDS =
+        "(?=$|[^\\p{L}\\p{N} '-]| (?:that|which|where|who|for|with|so|and|or|about|like|using|i|we|please|of|from|my|our|me|us)(?![\\p{L}\\p{N}]))"
+
     private val RULES: List<Rule> = buildList {
         addAll(
             rules(
@@ -71,6 +90,19 @@ object ToolRouter {
             ),
         )
         addAll(rules("browser", 1, "search", "news", "look up", "google", "noticias", "actualités", "suche"))
+        // Making a website, web app or game: the site tools (they come before the browser, which checks the page).
+        addAll(
+            rules(
+                "sites", STRONG,
+                "$MAKE(?: me| us)?(?: an?| my| the| one| another| this)?$WORDS (?:web ?sites?|web ?pages?|web ?apps?|landing pages?|home ?pages?|html pages?)",
+                "$MAKE(?: me| us)? an?$WORDS (?:(?:sites?|apps?|games?)$THING_ENDS|pages?$PAGE_ENDS)",
+                // HTML as what is made, not as a format mentioned in passing ("summarize this html email").
+                "html(?: pages?| files?| sites?| apps?| games?)", "(?:in|with|using|plain) html", "html(?:,| and| ?/) ?css", "css", "live preview",
+                "(?:erstell|bau|mach)\\w*(?: mir)? eine? (?:webseite|website|seite|web-?app|spiel)",
+                "(?:crea|haz|hazme|créame)\\w*(?: me)? una? (?:página|web|sitio|aplicación|juego)",
+                "(?:crée|créer|fais|fais-moi)(?: moi)? une? (?:site|page|application|jeu)",
+            ),
+        )
         addAll(
             rules(
                 "terminal", STRONG,

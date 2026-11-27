@@ -4,7 +4,11 @@ import atom.overlay.bubble.Area
 import atom.overlay.bubble.BubbleGeometry
 import atom.overlay.bubble.DismissMath
 import atom.overlay.bubble.Docked
+import atom.overlay.bubble.FACE
 import atom.overlay.bubble.HoldMenuLayout
+import atom.overlay.bubble.MENU_BUTTON
+import atom.overlay.bubble.MENU_RADIUS
+import atom.overlay.bubble.MENU_WINDOW
 import atom.overlay.bubble.Pt
 import atom.overlay.bubble.Range
 import atom.overlay.bubble.Side
@@ -187,14 +191,25 @@ class BubbleGeometryTest {
     }
 
     @Test
+    fun theHoldMenuSitsCloseToTheBubble() {
+        val r = MENU_RADIUS.value
+        val button = MENU_BUTTON.value
+        val gap = r - FACE.value / 2f - button / 2f
+        assertTrue(gap in 24f..32f, "gap from the face's edge to a button's edge: $gap dp")
+        val between = 2f * r * kotlin.math.sin(Math.toRadians(HoldMenuLayout.STEP_DEG / 2.0)).toFloat() - button
+        assertTrue(between >= 16f, "gap between neighbouring buttons: $between dp")
+        assertTrue(MENU_WINDOW.value >= 2f * (r + button / 2f), "the window holds the whole fan")
+    }
+
+    @Test
     fun menuButtonsStayInsideTheMenuWindow() {
         val density = 2.625f
-        val window = 344f * density
+        val window = MENU_WINDOW.value * density
         for (center in listOf(Pt(990f, 1890f), Pt(90f, 1890f), Pt(990f, 300f), Pt(90f, 300f))) {
             val side = if (center.x < 540f) Side.Left else Side.Right
             val origin = HoldMenuLayout.window(center, window, 1080f, 2400f)
-            val points = HoldMenuLayout.place(center, side, 3, radius = 132f * density, button = 52f * density, area = area)
-            val half = 26f * density
+            val points = HoldMenuLayout.place(center, side, 3, radius = MENU_RADIUS.value * density, button = MENU_BUTTON.value * density, area = area)
+            val half = MENU_BUTTON.value / 2f * density
             for (p in points) {
                 assertTrue(p.x - half >= origin.x - 0.5f && p.x + half <= origin.x + window + 0.5f, "x outside the window: $p for $center")
                 assertTrue(p.y - half >= origin.y - 0.5f && p.y + half <= origin.y + window + 0.5f, "y outside the window: $p for $center")
@@ -240,5 +255,16 @@ class BubbleGeometryTest {
         assertTrue(HoldMenuLayout.place(Pt(0f, 0f), Side.Left, 0, 100f, 50f, area).isEmpty())
         val one = HoldMenuLayout.place(Pt(70f, 1200f), Side.Left, 1, radius = 200f, button = 100f, area = area)
         assertEquals(Pt(270f, 1200f), one.single())
+    }
+
+    @Test
+    fun slideAndLiftPicksTheNearestButtonNotTheFirst() {
+        // Two buttons 60 px apart with a 41.6 px reach: their circles overlap between them.
+        val centers = listOf(Pt(0f, 0f), Pt(60f, 0f), Pt(120f, 0f))
+        assertEquals(1, HoldMenuLayout.hovered(centers, 35f, 0f, reach = 41.6f))
+        assertEquals(0, HoldMenuLayout.hovered(centers, 25f, 0f, reach = 41.6f))
+        assertEquals(2, HoldMenuLayout.hovered(centers, 125f, 5f, reach = 41.6f))
+        assertEquals(-1, HoldMenuLayout.hovered(centers, 60f, 80f, reach = 41.6f))
+        assertEquals(-1, HoldMenuLayout.hovered(emptyList(), 0f, 0f, reach = 41.6f))
     }
 }

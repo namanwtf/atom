@@ -293,6 +293,7 @@ private val ROUTE_LOOKS: Map<String, RouteLook> = mapOf(
     "linux/home" to RouteLook(R.string.set_linux, Icons.Rounded.Inventory2, true),
     "web/gallery" to RouteLook(null, Icons.Rounded.PhotoLibrary, false),
     "web/browser" to RouteLook(null, Icons.Rounded.Public, false),
+    "web/sites" to RouteLook(null, Icons.Rounded.Code, false),
     "linux/workspace" to RouteLook(null, Icons.Rounded.FolderOpen, false),
     "linux/terminal" to RouteLook(null, Icons.Rounded.Terminal, false),
     "vdisplay/system" to RouteLook(R.string.set_system, Icons.Rounded.Security, true),

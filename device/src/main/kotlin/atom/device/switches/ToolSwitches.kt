@@ -139,24 +139,19 @@ object ToolSwitches {
         "The tool \"$name\" is turned off in Settings → Tool list. Tell the user it is off; do not try to work around it."
 }
 
-/** Wraps [inner] so each call first checks [requires] and the tool's own switch; a switched-off tool explains itself. */
-class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool {
-    override val spec: ToolSpec get() = inner.spec
-    override val risk: Risk get() = inner.risk
-    override val usesPhoneUi: Boolean get() = inner.usesPhoneUi
-    override val needsUnlockedScreen: Boolean get() = inner.needsUnlockedScreen
-    override val timeoutMs: Long? get() = inner.timeoutMs
-
+/**
+ * Wraps [inner] so each call first checks [requires] and the tool's own switch; a switched-off tool explains itself.
+ * Everything else is [inner]'s own, by delegation: its approval prompt ([Tool.approvalRequest]: the shell's reason,
+ * "allow all commands for this task" and its always-ask flag), per-call risk, approval text, phone and screen needs
+ * and time limit.
+ */
+class GatedTool(val inner: Tool, val requires: Set<ToolSwitch>) : Tool by inner {
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult {
         if (!ToolSwitches.isToolOn(spec.name)) return ToolResult.error(ToolSwitches.toolOffMessage(spec.name))
         val off = requires.filterNot(ToolSwitches::isOn)
         if (off.isNotEmpty()) return ToolResult.error(ToolSwitches.offMessage(off))
         return inner.run(args, ctx)
     }
-
-    override suspend fun approvalText(args: JsonObject): String? = inner.approvalText(args)
-
-    override fun riskFor(args: JsonObject): Risk = inner.riskFor(args)
 }
 
 fun Tool.gated(vararg switches: ToolSwitch): Tool {

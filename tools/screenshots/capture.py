@@ -11,8 +11,10 @@ checked without opening the image.
 
 import base64
 import io
+import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -96,6 +98,16 @@ def find(pattern):
         if bounds and (rx.search(text or "") or rx.search(desc or "")):
             return bounds
     return None
+
+
+def find_last(pattern):
+    """Like find, but the last match in the hierarchy (a list row below a card with the same title)."""
+    rx = re.compile(pattern, re.I)
+    hit = None
+    for text, desc, bounds in dump():
+        if bounds and (rx.search(text or "") or rx.search(desc or "")):
+            hit = bounds
+    return hit
 
 
 def tap_bounds(b):
@@ -332,6 +344,77 @@ def crash_log():
     sys.stdout.flush()
 
 
+def type_into(label_pattern, text):
+    """Taps the field labelled `label_pattern` and types `text` (spaces as %s, as `input text` needs)."""
+    if not tap(label_pattern, wait=1.2):
+        return False
+    sh("input text " + text.replace(" ", "%s"))
+    time.sleep(1)
+    return True
+
+
+def failed_run_report(p):
+    """A sample failed run (debug only): its "Report a problem" action, then the report it opens."""
+    # From a cold start, so the chat is the only screen and the sample opens in front.
+    sh(f"am force-stop {PKG}")
+    launch(wait=6)
+    if not demo("failed"):
+        return
+    shot(p + "08_chat_failed_run")
+    if tap("^Report a problem$", wait=4.0):
+        shot(p + "08b_report_from_chat")
+        if tap("^Screenshot$", wait=2.0):
+            shot(p + "08c_report_with_screenshot")
+        for i in range(1, 3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(1)
+            shot(p + f"08d_report_preview_{i}")
+        back()
+    if tap("^More options$", wait=1.2):
+        tap("^New conversation$", wait=1.5)
+    demo("clear", wait=2)
+
+
+def routines(p):
+    """Ready-made routines: the empty list's card, a routine opened in the editor and saved, the list with it, Price
+    watch's question, then the saved task deleted again so the next pass starts from an empty list."""
+    launch("automation/tasks", wait=3)
+    shot(p + "21b_routines_empty")
+    if not tap("^Morning brief$", wait=3.0):
+        return
+    shot(p + "21c_routine_editor")
+    sh("input swipe 540 1800 540 700 300")
+    time.sleep(1)
+    shot(p + "21c_routine_editor_scrolled")
+    if not tap("^Save$", wait=3.0):
+        back()
+        return
+    # A notification permission ask may follow the first save; the runner granted it, so usually nothing shows.
+    shot(p + "21d_routines_list")
+    if tap("^Price watch$", wait=2.0):
+        shot(p + "21e_price_watch_ask")
+        type_into("^Item, for example", "Example headphones")
+        type_into("^Where: a shop name", "example.com")
+        shot(p + "21f_price_watch_filled")
+        if tap("^Continue$", wait=3.0):
+            shot(p + "21g_price_watch_editor")
+            back()
+        else:
+            back()
+    # Delete the saved Morning brief (the row under the routine card of the same name).
+    b = find_last("^Morning brief$")
+    if b:
+        tap_bounds(b)
+        time.sleep(2.5)
+        for _ in range(3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(0.8)
+        if tap("^Delete scheduled task$", wait=1.5):
+            tap("^Delete$", wait=2.0)
+    shot(p + "21h_routines_after_delete")
+    back()
+
+
 def character_detail(p):
     """Opens the built-in character from the library: its detail screen once crashed the whole app."""
     try:
@@ -365,6 +448,95 @@ def pack_missing():
         time.sleep(1)
     shot("pack_02_hey_atom_missing")
     back()
+
+
+SITE_ID = "atom-demo"
+
+# A small hand-written site for the preview shots (no model on the CI emulator). It follows the phone's dark or
+# light mode, like the pages the agent is told to write.
+SITE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Water tracker</h1>
+<p class="count">{count} of 8 glasses today</p>
+<div class="glasses">{glasses}</div>
+<button>Add a glass</button>
+<p class="note">Debug sample site, written by the screenshot script.</p>
+</main>
+</body>
+</html>
+"""
+
+SITE_CSS = """:root { color-scheme: light dark; --accent: #1e88e5; }
+body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #f4f8fc; color: #12202e; }
+@media (prefers-color-scheme: dark) { body { background: #0f1720; color: #e3edf7; } }
+h1 { font-size: 28px; margin: 8px 0; }
+.count { font-size: 20px; color: var(--accent); }
+.glasses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0; }
+.glass { height: 64px; border-radius: 12px; border: 2px solid var(--accent); }
+.glass.full { background: var(--accent); }
+button { font-size: 18px; padding: 12px 20px; border-radius: 24px; border: 0; background: var(--accent); color: white; }
+.note { opacity: .6; font-size: 13px; margin-top: 24px; }
+"""
+
+
+def site_page(count):
+    glasses = "".join(f'<div class="glass{" full" if i < count else ""}"></div>' for i in range(8))
+    return SITE_PAGE.replace("{count}", str(count)).replace("{glasses}", glasses)
+
+
+def run_tool(name, args):
+    """Debug builds only: runs one of the app's tools the way the agent would (E2eProvider's run_tool)."""
+    spec = json.dumps({"name": name, "args": args}, separators=(",", ":"))
+    out = sh(f"content call --uri content://{PKG}.e2e --method run_tool --arg {shlex.quote(spec)}", timeout=90).strip()
+    m = re.search(r"result=(.*)\}\]\s*$", out, re.S)
+    text = (m.group(1) if m else out).strip()
+    print(f"[capture] {name}: {text[:300]}")
+    return text
+
+
+def site_preview(p):
+    """The website feature: a site made through the agent's own tools, its live preview, and the reload after an edit."""
+    run_tool("site_create", {"name": "Atom demo"})
+    run_tool("site_write", {"site": SITE_ID, "path": "style.css", "content": SITE_CSS})
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
+    launch(wait=3)
+    # site_preview opens the preview itself only for a run the user sees in the foreground; this call comes from the
+    # debug hook (no run), so the preview is opened by its route below, as a tap on the chat card would.
+    result = run_tool("site_preview", {"name": SITE_ID})
+    url = re.search(r"URL: (https://[a-z0-9-]+\.invalid/)", result)
+    print(f"[capture] preview URL from site_preview: {url.group(1) if url else '(none)'}")
+    time.sleep(5)
+    if not find("^Close preview$"):
+        print("[capture] opening the preview by its route")
+        launch(f"web/sites/preview/{SITE_ID}", wait=5)
+    time.sleep(2)
+    shot(p + "16c_site_preview")
+    print(f"[capture] preview shows the page: {find('1 of 8 glasses') is not None}")
+    # Edit a file the way the agent does: the open preview reloads by itself.
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(5)})
+    time.sleep(6)
+    shot(p + "16d_site_preview_reloaded")
+    print(f"[capture] reloaded preview shows the edit: {find('5 of 8 glasses') is not None}")
+    back(wait=2)
+    # The chat card a site_preview call leaves, and opening the preview from it.
+    if demo("site", wait=5):
+        shot(p + "16e_site_chat_card")
+        if tap("^Open preview$", wait=5):
+            shot(p + "16f_site_preview_from_card")
+            back(wait=2)
+        if tap("^More options$", wait=1.2):
+            tap("^New conversation$", wait=1.5)
+        demo("site_clear", wait=2)
+    # Back to the first version, so the next pass shows the edit again.
+    run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
 
 
 def main():
@@ -406,10 +578,16 @@ def main():
         shot(p + "04_overflow")
         back()
 
-    # Model picker sheet from the model capsule.
+    # Model picker sheet from the model capsule. On a fresh install the capsule says "DeepSeek Flash · add key", and
+    # one tap opens that provider's key screen instead; back returns to the chat.
     if tap("^Choose model$", wait=1.5):
         shot(p + "05_model_picker")
         back()
+    elif tap("^Add the API key for ", wait=3.0):
+        shot(p + "05_add_key")
+        back()
+        if not find("^Add the API key for "):
+            print("[capture] back from the key screen did not return to the chat")
 
     # A long sample conversation: the frosted top bar and composer band over scrolled text, then the glass drawer
     # over it. Afterwards the chat goes back to a new conversation and the sample is deleted, so later shots and the
@@ -429,6 +607,12 @@ def main():
             tap("^New conversation$", wait=1.5)
         demo("clear", wait=2)
 
+    try:
+        site_preview(p)
+    except Exception as e:  # a failure here must not lose the other screenshots
+        print(f"[capture] site preview pass failed: {e}")
+    crash_log()
+
     routes = [
         ("10_settings", "settings"),
         ("11_models", "models"),
@@ -439,6 +623,7 @@ def main():
         ("14_voice_settings", "voice/settings"),
         ("15_permissions", "device/permissions"),
         ("16_tools", "device/tools"),
+        ("16b_sites", "web/sites"),
         ("17_memory", "extend/memory"),
         ("18_skills", "extend/skills"),
         ("19_mcp", "extend/mcp"),
@@ -450,10 +635,11 @@ def main():
         ("25_web_search", "web/search"),
         ("26_images", "web/images"),
         ("27_about", "general/about"),
+        ("27b_report", "report"),
         ("28_backup", "general/backup"),
         ("29_system", "vdisplay/system"),
     ]
-    EXTRA_SCROLLS = {"10_settings": 4, "16_tools": 2, "15_permissions": 1}
+    EXTRA_SCROLLS = {"10_settings": 4, "16_tools": 2, "15_permissions": 1, "27_about": 1, "27b_report": 2}
     only = os.environ.get("SHOT_ROUTES")
     for name, route in routes:
         if only and route not in only.split(","):
@@ -471,6 +657,9 @@ def main():
         back()
 
     character_detail(p)
+    if not only:
+        failed_run_report(p)
+        routines(p)
 
     if mode != "dark":
         return

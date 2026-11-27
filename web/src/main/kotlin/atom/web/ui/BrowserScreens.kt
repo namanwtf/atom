@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -71,9 +72,17 @@ import atom.ui.feature.FeatureNav
 import atom.web.browser.BrowserSessions
 import atom.web.browser.UrlInput
 import atom.web.browser.WebViewSecurity
+import atom.web.sites.SiteOrigin
+import atom.web.sites.SiteWeb
+import atom.core.io.AtomOnlyUrls
 import java.net.URLDecoder
 
-private fun openExternally(context: Context, url: String): Boolean {
+/**
+ * Hands [url] to another app. Never a link to one of the user's sites ([AtomOnlyUrls]): another app would only look
+ * the name up and learn the address; those open in Atom. Returns false when nothing was opened.
+ */
+internal fun openExternally(context: Context, url: String): Boolean {
+    if (AtomOnlyUrls.isAtomOnly(url)) return false
     val intent = runCatching {
         if (url.startsWith("intent:")) {
             Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {
@@ -85,6 +94,7 @@ private fun openExternally(context: Context, url: String): Boolean {
             Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
         }
     }.getOrNull() ?: return false
+    if (AtomOnlyUrls.isAtomOnly(intent.dataString)) return false
     return try {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true
@@ -111,11 +121,15 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
     var confirmClear by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
+    // The user's own sites open here too, at their https://<id>-<tag>.invalid address, served from storage.
+    val sites = remember { SiteWeb(context) }
     val web = remember {
         WebView(context).apply {
             WebViewSecurity.apply(this)
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = sites.intercept(request)
+
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
                     if (WebViewSecurity.isWeb(u)) return false
@@ -124,6 +138,7 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
                 }
 
                 override fun onPageStarted(view: WebView, u: String, favicon: Bitmap?) {
+                    sites.onMainFrame(u)
                     loading = true
                     url = u
                 }
@@ -136,6 +151,7 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, u: String, isReload: Boolean) {
+                    sites.onMainFrame(u)
                     canBack = view.canGoBack()
                     canForward = view.canGoForward()
                 }
@@ -145,7 +161,14 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
                     progress = newProgress
                 }
             }
-            setDownloadListener { dl, _, _, _, _ -> openExternally(context, dl) }
+            setDownloadListener { dl, _, _, _, _ ->
+                // A file from one of the user's own sites is not handed to another app (that would leak its address).
+                if (SiteOrigin.isSiteUrl(dl) || SiteOrigin.isSiteUrl(url)) {
+                    Toast.makeText(context, "Files from your own sites are not downloaded. Share the site as a .zip from its preview.", Toast.LENGTH_LONG).show()
+                } else {
+                    openExternally(context, dl)
+                }
+            }
             if (!startUrl.isNullOrBlank()) loadUrl(UrlInput.resolve(startUrl))
         }
     }
@@ -217,7 +240,8 @@ internal fun UserBrowserScreen(nav: FeatureNav, startUrl: String?) {
             Box {
                 CircleIconButton(Icons.Filled.MoreVert, "More options", { menu = true }, size = 40.dp)
                 AtomMenu(expanded = menu, onDismiss = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Open in another app") }, enabled = url.isNotBlank(), onClick = {
+                    // A page of one of the user's own sites opens only in Atom: no other app can show it.
+                    if (!SiteOrigin.isSiteUrl(url)) DropdownMenuItem(text = { Text("Open in another app") }, enabled = url.isNotBlank(), onClick = {
                         menu = false
                         if (!openExternally(context, url)) Toast.makeText(context, "No app can open this webpage", Toast.LENGTH_SHORT).show()
                     })

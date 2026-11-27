@@ -49,4 +49,17 @@ class ModelStatusTest {
         val live = EngineInfo("Qwen 3B", onDevice = false, missing = false, live = true, ready = true)
         assertEquals(ModelStatus.Ready("Qwen 3B"), live.status)
     }
+
+    /** "DeepSeek Flash · add key" on home: one tap opens DeepSeek's key screen, not the model picker. */
+    @Test fun aMissingKeyOpensTheProvidersKeyScreen() {
+        val home = EngineInfo("DeepSeek Flash", onDevice = false, missing = false, ready = false, reason = NotReady.NeedsKey, providerName = "DeepSeek", providerId = "deepseek")
+        assertTrue(home.opensKey)
+        assertTrue(home.copy(reason = NotReady.KeyUnreadable).opensKey)
+        // Without a provider id (on-device, nothing selected) or for any other state the capsule opens the picker.
+        assertFalse(home.copy(providerId = null).opensKey)
+        assertFalse(home.copy(ready = true, reason = null).opensKey)
+        assertFalse(home.copy(reason = NotReady.SignIn).opensKey)
+        assertFalse(home.copy(reason = NotReady.Configure).opensKey)
+        assertFalse(home.copy(live = true, ready = true).opensKey)
+    }
 }

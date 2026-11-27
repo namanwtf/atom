@@ -267,7 +267,13 @@ class E2eProvider : ContentProvider() {
             put("inputTokens", run.inputTokens)
             put("outputTokens", run.outputTokens)
             put("streamText", run.stream.text.take(TEXT_CAP))
-            put("pending", run.pending?.let { JSONObject().put("id", it.id).put("action", it.action.take(TEXT_CAP)) } ?: JSONObject.NULL)
+            put(
+                "pending",
+                run.pending?.let {
+                    JSONObject().put("id", it.id).put("action", it.action.take(TEXT_CAP))
+                        .put("reason", it.reason ?: JSONObject.NULL).put("taskGrantable", it.taskGrantable)
+                } ?: JSONObject.NULL,
+            )
             put("finalText", run.finalText ?: answer?.message?.text ?: JSONObject.NULL)
             put("toolCalls", calls)
             put("messages", transcript)

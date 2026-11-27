@@ -25,7 +25,7 @@ internal class UiTools(private val context: Context) {
         .map { ScreenTool(it) }
 
     /** The screen tools wait for an unlocked screen before they run (see [atom.core.tool.PhoneScreen]). */
-    private class ScreenTool(inner: Tool) : Tool by inner {
+    internal class ScreenTool(inner: Tool) : Tool by inner {
         override val needsUnlockedScreen: Boolean get() = true
     }
 

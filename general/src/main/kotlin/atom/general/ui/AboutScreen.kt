@@ -41,6 +41,9 @@ import kotlinx.coroutines.launch
 /** Route of the app's existing open-source licenses screen. */
 const val LICENSES_ROUTE = "licenses"
 
+/** Route of the app's Report a problem screen (a report the person previews and shares). */
+const val REPORT_ROUTE = "report"
+
 @Composable
 internal fun AboutScreen(nav: FeatureNav) {
     val context = LocalContext.current
@@ -174,6 +177,17 @@ internal fun AboutScreen(nav: FeatureNav) {
                         )
                     }
                 }
+            }
+        }
+        item(key = "g-report") {
+            Group(Modifier.padding(top = 18.dp)) {
+                GroupRow(
+                    title = stringResource(R.string.about_report),
+                    subtitle = stringResource(R.string.about_report_sub),
+                    icon = GeneralIcons.Report,
+                    onClick = { nav.open(REPORT_ROUTE) },
+                    trailing = { RowChevron() },
+                )
             }
         }
         item(key = "g-licenses") {

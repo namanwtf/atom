@@ -41,7 +41,7 @@ jobs:
       (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'e2e') || startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/'))) ||
       (github.event.action == 'labeled' && github.event.label.name == 'e2e')
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:

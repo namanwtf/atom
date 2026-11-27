@@ -111,6 +111,10 @@ internal object Integration {
 
         // Web: provider keys, own secrets, root / Linux file access, run -> conversation, image -> composer.
         Web.install(AppWebHost(app, graph, graph.vault))
+        // Links to the user's own sites open in Atom (preview or Atom's browser), never in another app.
+        atom.core.io.AtomOnlyUrls.opener = { url ->
+            app.startActivity(atom.app.ui.MainActivity.routeIntent(app, atom.web.sites.SiteLinks.routeFor(url)))
+        }
 
         // Background virtual display: accessibility reads, screenshots and gestures by display id.
         DisplayRouter.accessibility = DisplayUiAccessibility
