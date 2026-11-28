@@ -241,11 +241,19 @@ def launch(route=None, wait=4):
     try:
         r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
-        # Print why the app did not come up (main-thread stack, log, crash buffer) before failing.
+        # Print why the app did not come up (main-thread stack, log, crash buffer), then try once more: on these
+        # emulators a cold start right after a Home key press can lose the race to the launcher and never finish.
         from startup_check import diagnose
 
         diagnose("launch_timeout")
-        fail(f"launch of {ACTIVITY} {route or ''} did not complete within 60 s")
+        print(f"[capture] launch of {ACTIVITY} {route or ''} timed out; starting the app again once")
+        sh(f"am force-stop {PKG}")
+        time.sleep(3)
+        try:
+            r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            diagnose("launch_timeout_again")
+            fail(f"launch of {ACTIVITY} {route or ''} did not complete within 60 s, twice")
     text = (r.stdout + r.stderr).decode(errors="replace")
     if r.returncode != 0 or "Error" in text:
         fail(f"launch of {ACTIVITY} {route or ''} failed: {text.strip()[:400]}")
@@ -539,6 +547,118 @@ def site_preview(p):
     run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
 
 
+def hey_overlay(event, **fields):
+    """Debug builds only: drives the "Hey ATOM" overlay through E2eProvider's hey_overlay (no microphone)."""
+    spec = json.dumps(dict(event=event, **fields), separators=(",", ":"))
+    out = sh(f"content call --uri content://{PKG}.e2e --method hey_overlay --arg {shlex.quote(spec)}", timeout=60).strip()
+    print(f"[capture] hey_overlay {event} {fields.get('stage', '')}: {out[-200:]}")
+    return out
+
+
+def hey_e2e(method, arg=None):
+    cmd = f"content call --uri content://{PKG}.e2e --method {method}"
+    if arg is not None:
+        cmd += f" --arg {shlex.quote(arg)}"
+    out = sh(cmd, timeout=60).strip()
+    print(f"[capture] {method} {arg or ''}: {out[-200:]}")
+    return out
+
+
+def hey_host():
+    """Opens the app the overlay shots sit on and returns its name for the screen chip."""
+    sh("am start -W -a android.intent.action.VIEW -t vnd.android.document/root "
+       "-d content://com.android.externalstorage.documents/root/primary")
+    time.sleep(3)
+    top = sh("dumpsys activity activities | grep -E 'topResumedActivity' | head -1")
+    print(f"[capture] overlay host: {top.strip()[:160]}")
+    if "documentsui" in top:
+        return "Files"
+    launch("settings", wait=3)
+    return "Settings"
+
+
+HEY_STAGES = [
+    "listening",
+    "partial",
+    "partial_screen_off",
+    "heard",
+    "working",
+    "approval",
+    "done",
+    "failed",
+    "missed",
+    # The chat bar: a misheard command opened in the keyboard, and a follow-up typed under the result.
+    "typing",
+    "followup",
+    # The light while ATOM operates the phone: the same light, from the run overlay.
+    "run_glow",
+]
+
+
+def hey_atom_overlay(p):
+    """The "Hey ATOM" overlay over the Files app (light or dark with the pass) and the Clock app: each stage as a sample (debug hook, no microphone or model),
+    a still border under "Remove animations", and the Speech settings rows with and without the overlay permission."""
+    # The bubble would show with the permission allowed; keep it off these shots (the bubble section below turns it on).
+    launch("overlay/settings", wait=3)
+    if switch_checked("Floating bubble"):
+        tap("^Floating bubble$", wait=2)
+    # Speech settings with "Hey ATOM" on: first without "display over other apps" (the row asks for it).
+    launch("voice/settings", wait=3)
+    hey_e2e("hey_atom", "on")
+    time.sleep(2)
+    for _ in range(3):
+        sh("input swipe 540 1800 540 500 300")
+        time.sleep(1)
+    shot(p + "50_hey_settings_needs_permission")
+    # The "Hey ATOM" notification in the shade, with ATOM's own coin as its picture.
+    sh("cmd statusbar expand-notifications")
+    time.sleep(2.5)
+    shot(p + "50b_hey_notification")
+    sh("cmd statusbar collapse")
+    time.sleep(1.5)
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    try:
+        launch("voice/settings", wait=3)
+        for _ in range(3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(1)
+        shot(p + "51_hey_settings_allowed")
+        hey_e2e("hey_atom", "off")
+        # A normal app below the overlay that follows dark and light mode: the Files app. Not the Settings app: it
+        # hides other apps' overlay windows. ATOM's own settings page if Files does not open.
+        host = hey_host()
+        for i, stage in enumerate(HEY_STAGES):
+            hey_overlay("sample", stage=stage, app=host)
+            # The keyboard needs a moment to rise for the typing stages.
+            time.sleep(3.0 if stage in ("typing", "followup") else 1.8)
+            shot(f"{p}52_hey_{i:02d}_{stage}")
+            window_frames()
+        # "Remove animations": the border is still and nothing fades.
+        sh("settings put global animator_duration_scale 0")
+        time.sleep(1)
+        hey_overlay("sample", stage="partial", app=host)
+        time.sleep(1.5)
+        shot(p + "53_hey_still_border")
+        # The same light over an app that is always dark (Clock).
+        sh("settings put global animator_duration_scale 1")
+        sh("am start -W -a android.intent.action.SHOW_ALARMS")
+        time.sleep(3)
+        for stage in ("partial", "run_glow"):
+            hey_overlay("sample", stage=stage, app="Clock")
+            time.sleep(1.8)
+            shot(f"{p}53b_hey_clock_{stage}")
+        sh("settings put global animator_duration_scale 1")
+        hey_overlay("sample", stage="hide")
+        time.sleep(1.5)
+        shot(p + "54_hey_after_hide")
+    finally:
+        sh("settings put global animator_duration_scale 1")
+        hey_e2e("hey_atom", "off")
+        sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
+        sh("input keyevent KEYCODE_HOME")
+        time.sleep(1)
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
@@ -556,6 +676,8 @@ def main():
     # Start each pass from a cold app, so the light pass does not resume on the dark pass's last screen.
     sh(f"am force-stop {PKG}")
     sh("input keyevent KEYCODE_HOME")
+    # Let the launcher settle before the cold start, so the two do not race for the front.
+    time.sleep(2)
     p = f"{mode}_"
 
     launch(wait=8)
@@ -615,6 +737,8 @@ def main():
 
     routes = [
         ("10_settings", "settings"),
+        # Settings > Advanced: the power-user limits, all on Auto in a fresh install.
+        ("10b_advanced", "settings-advanced"),
         ("11_models", "models"),
         # With the debug on-device AI pack installed (tools/screenshots/install_pack.py): "Ready" and its engines.
         ("11b_on_device", "models-on-device"),
@@ -660,6 +784,10 @@ def main():
     if not only:
         failed_run_report(p)
         routines(p)
+        try:
+            hey_atom_overlay(p)
+        except Exception as e:  # a failure here must not lose the bubble shots
+            print(f"[capture] Hey ATOM overlay pass failed: {e}")
 
     if mode != "dark":
         return

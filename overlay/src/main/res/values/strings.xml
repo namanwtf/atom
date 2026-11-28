@@ -141,4 +141,30 @@
     <string name="overlay_voice_no_match">Didn’t catch that.</string>
     <string name="overlay_voice_network">Speech recognition needs a connection.</string>
     <string name="overlay_voice_failed">Speech recognition stopped.</string>
+
+    <!-- "Hey ATOM" overlay -->
+    <string name="hey_atom_listening">Listening…</string>
+    <string name="hey_atom_listening_hint">Say what ATOM should do</string>
+    <string name="hey_atom_got_it">Got it</string>
+    <string name="hey_atom_working">ATOM is on it</string>
+    <string name="hey_atom_done">Done</string>
+    <string name="hey_atom_done_empty">Finished.</string>
+    <string name="hey_atom_failed">Couldn’t finish</string>
+    <string name="hey_atom_open_hint">Tap to open in ATOM</string>
+    <string name="hey_atom_missed_title">Didn’t catch that.</string>
+    <string name="hey_atom_missed_hint">Say “Hey ATOM” to try again.</string>
+    <string name="hey_atom_opening">Continuing in ATOM…</string>
+    <string name="hey_atom_cancel">Cancel</string>
+    <string name="hey_atom_stop">Stop</string>
+    <string name="hey_atom_close">Close</string>
+    <string name="hey_atom_typing">Type your request</string>
+    <string name="hey_atom_type_hint">Type to ATOM</string>
+    <string name="hey_atom_speak">Speak instead</string>
+    <string name="hey_atom_screen_chip">Using what’s on screen</string>
+    <string name="hey_atom_screen_chip_app">Using what’s on screen · %1$s</string>
+    <string name="hey_atom_screen_chip_off">Not using the screen</string>
+    <string name="hey_atom_screen_chip_cd_on">Using what’s on screen. Tap to leave it out of this request.</string>
+    <string name="hey_atom_screen_chip_cd_off">Not using the screen. Tap to include it in this request.</string>
+    <string name="hey_atom_screen_note">ATOM used what was on screen for this request</string>
+    <string name="hey_atom_screen_note_app">ATOM used what was on screen in %1$s for this request</string>
 </resources>

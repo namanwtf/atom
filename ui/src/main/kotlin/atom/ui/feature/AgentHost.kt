@@ -50,6 +50,13 @@ data class HostRun(
 )
 
 /**
+ * Context for a run's first turn that the model sees but the conversation does not keep, e.g. what was on screen when
+ * the user said "Hey ATOM". [text] follows the prompt; [imageJpeg] goes with it as a picture when the model can see
+ * images. The stored conversation keeps only [note]. Held in memory for that run only.
+ */
+class TurnContext(val text: String, val imageJpeg: ByteArray?, val note: String)
+
+/**
  * The single entry point for starting and controlling agent runs from anywhere in the app: the bubble, the
  * assistant overlay, voice, automations and scheduled tasks all go through this, so every run gets the same
  * tools, approvals, phone-control lease and battery behaviour as a chat run.
@@ -68,6 +75,12 @@ interface AgentHost {
         source: RunSource = RunSource.Chat,
         attachments: List<String> = emptyList(),
     ): String?
+
+    /**
+     * Starts a run in a new conversation whose first turn also carries [context]. A host that cannot carry it
+     * starts the run without it.
+     */
+    fun start(prompt: String, source: RunSource, context: TurnContext): String? = start(prompt, null, source)
 
     /** Queues [text] for a running conversation; it is delivered at the next safe point without cancelling. */
     fun steer(conversationId: String, text: String)

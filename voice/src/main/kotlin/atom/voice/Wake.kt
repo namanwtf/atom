@@ -75,6 +75,13 @@ object Wake {
     @Volatile
     var openPackSettings: (() -> Unit)? = null
 
+    /**
+     * Shows the command capture after the wake word on screen (the overlay feature sets it). Null keeps the old
+     * behaviour: a haptic tick, then the app opens with the command.
+     */
+    @Volatile
+    var presenter: WakePresenter? = null
+
     /** Whether the wake-word models can load, kept current (the pack can be downloaded or removed at any time). */
     val modelAvailable: StateFlow<Boolean> get() = modelSource?.available ?: noSource
     internal const val REASON_BACKGROUND_START =
@@ -120,6 +127,24 @@ object Wake {
             mainHandler.post { applyEnabled(app, enabled) }
         }
     }
+
+    /**
+     * Stops a command capture that is listening now, without a result, and goes back to listening for the wake word.
+     * Does nothing when no capture runs. Safe to call from any thread.
+     */
+    fun cancelCapture() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            service?.cancelCapture()
+        } else {
+            mainHandler.post { service?.cancelCapture() }
+        }
+    }
+
+    /**
+     * Starts a command capture again without the wake word (the overlay's mic button), shown by [presenter]. Main
+     * thread only. False when "Hey ATOM" is not running or a capture already runs.
+     */
+    fun listenAgain(): Boolean = service?.listenAgain() == true
 
     /** The activity the assist gesture opens (with [AssistantRole.EXTRA_FROM_ASSIST] = true). Call it from `Application.onCreate`. */
     fun setAssistLaunchComponent(component: ComponentName) {

@@ -73,6 +73,9 @@ object Routes {
     /** The Auto-generate titles page (part of the Models flow). */
     const val TITLES = "settings-titles"
 
+    /** Settings > Advanced: limits for power users. */
+    const val ADVANCED = atom.app.ui.settings.ADVANCED_ROUTE
+
     /** One provider's page in the Models flow, where its key goes ("models-provider/<id>"). */
     const val PROVIDER = "models-provider/"
 }
@@ -226,6 +229,10 @@ fun AtomRoot(settings: AppSettings) {
                     },
                 )
                 Routes.LICENSES -> LicensesScreen(onBack = ::pop)
+                Routes.ADVANCED -> atom.app.ui.settings.AdvancedScreen(
+                    vm = graphViewModel { atom.app.ui.settings.SettingsViewModel(context.applicationContext, it) },
+                    onBack = ::pop,
+                )
                 else -> if (route.startsWith(Routes.PROVIDER)) {
                     ModelsScreen(
                         vm = graphViewModel { ModelsViewModel(context.applicationContext, it) },

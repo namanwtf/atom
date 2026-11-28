@@ -27,6 +27,26 @@ internal object CloudHttp {
             .retryOnConnectionFailure(true)
             .build()
     }
+
+    /** [client] for requests that may think: the same pool, a longer wait between bytes. */
+    val reasoningClient: OkHttpClient by lazy { client.newBuilder().readTimeout(REASONING_READ_TIMEOUT_S, TimeUnit.SECONDS).build() }
+}
+
+/** How long a stream may go quiet while the model thinks; some providers send nothing until the thinking is done. */
+internal const val REASONING_READ_TIMEOUT_S = 300L
+
+/**
+ * The client for [request]: one that waits up to [REASONING_READ_TIMEOUT_S] between bytes unless thinking is off
+ * (a request with a null effort may think, by the model's default). The connection pool is shared, so this costs
+ * nothing; a dead connection is still noticed by the connect timeout and the TCP stack.
+ */
+internal fun OkHttpClient.forRequest(request: atom.core.llm.LlmRequest): OkHttpClient {
+    if (request.reasoning == atom.core.llm.ReasoningEffort.Off) return this
+    if (readTimeoutMillis.toLong() >= REASONING_READ_TIMEOUT_S * 1_000) return this
+    // A client built with a shorter read timeout on purpose (tests, the Stop checks) keeps it.
+    if (readTimeoutMillis.toLong() < 120_000) return this
+    if (this === CloudHttp.client) return CloudHttp.reasoningClient
+    return newBuilder().readTimeout(REASONING_READ_TIMEOUT_S, TimeUnit.SECONDS).build()
 }
 
 internal data class SseEvent(val type: String?, val data: String)

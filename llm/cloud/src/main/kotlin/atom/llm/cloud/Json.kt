@@ -40,3 +40,13 @@ internal fun argumentsObject(argumentsJson: String): JsonObject =
     parseJsonOrNull(argumentsJson) as? JsonObject ?: JsonObject(emptyMap())
 
 internal fun normalizeArguments(raw: String): String = raw.trim().ifEmpty { "{}" }
+
+/**
+ * Tool arguments as they go back to the provider in the history: a call whose arguments are not a JSON object (one
+ * the output limit cut off mid-way) goes as `{}`, because providers refuse the whole request over invalid JSON there
+ * (DeepSeek answers HTTP 400). The call's result already tells the model what happened to it.
+ */
+internal fun wireArguments(raw: String): String {
+    val normalized = normalizeArguments(raw)
+    return if (parseJsonOrNull(normalized) is JsonObject) normalized else "{}"
+}

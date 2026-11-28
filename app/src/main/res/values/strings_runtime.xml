@@ -15,6 +15,8 @@
     <string name="run_stuck">Stopped because the last steps kept repeating without new results.</string>
     <string name="run_step_limit_banner">Reached this run\'s step limit. Continue to pick up where it stopped.</string>
     <string name="run_stuck_banner">The run stopped because it was going in circles. Continue to try again from here.</string>
+    <string name="run_output_limit">The model ran out of room before it finished answering.</string>
+    <string name="run_output_limit_banner">The model ran out of room before it finished answering, even after ATOM asked it to wrap up. Continue to get the rest.</string>
     <string name="run_continue">Continue</string>
     <!-- Sent as the user's message when they tap Continue after a run stopped at its step limit. -->
     <string name="run_continue_prompt">Continue where you left off.</string>

@@ -10,6 +10,7 @@ import android.os.Looper
 import atom.overlay.assistant.AssistantController
 import atom.overlay.assistant.AssistantUi
 import atom.overlay.bubble.Bubble
+import atom.overlay.hey.HeyAtomOverlay
 import atom.overlay.panel.MiniChat
 import atom.overlay.run.RunOverlays
 import atom.overlay.window.Windows
@@ -17,6 +18,7 @@ import atom.ui.feature.AgentHost
 import atom.ui.feature.Atom
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunPhase
+import atom.voice.Wake
 import atom.voice.assist.AssistOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,7 +58,8 @@ object Overlay {
             RunOverlays.markDriving(conversationId)
             val hidMiniChat = MiniChat.hideForAgent(conversationId)
             val hidAssistant = AssistantController.hideForAgent(conversationId)
-            if (hidMiniChat || hidAssistant) delay(SETTLE_MS)
+            val hidHeyAtom = HeyAtomOverlay.hideForAgent(conversationId)
+            if (hidMiniChat || hidAssistant || hidHeyAtom) delay(SETTLE_MS)
         }
     }
 
@@ -105,6 +108,8 @@ internal object OverlayRuntime {
         app = context.applicationContext
         Windows.init(app)
         AssistOverlay.factory = { AssistantUi() }
+        // "Hey ATOM" shows its capture and runs the command over the app in front (it declines without the permission).
+        Wake.presenter = HeyAtomOverlay
         (app as? Application)?.registerActivityLifecycleCallbacks(AppVisibility)
         ready = true
         // After Application.onCreate returns, so the agent host is installed by then.
@@ -115,13 +120,22 @@ internal object OverlayRuntime {
         }
     }
 
+    /** True while one of Atom's own activities is started (on screen). */
+    val appInFront: Boolean get() = startedActivities > 0
+    private var startedActivities = 0
+
     /** Returns to Atom bring a hidden bubble back. */
     private object AppVisibility : Application.ActivityLifecycleCallbacks {
-        override fun onActivityStarted(activity: Activity) = Bubble.onAppOpened()
+        override fun onActivityStarted(activity: Activity) {
+            startedActivities++
+            Bubble.onAppOpened()
+        }
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
         override fun onActivityResumed(activity: Activity) {}
         override fun onActivityPaused(activity: Activity) {}
-        override fun onActivityStopped(activity: Activity) {}
+        override fun onActivityStopped(activity: Activity) {
+            startedActivities = (startedActivities - 1).coerceAtLeast(0)
+        }
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
         override fun onActivityDestroyed(activity: Activity) {}
     }
@@ -153,8 +167,10 @@ internal object RunHub {
         for (run in finished) {
             val chat = MiniChat.onFinished(run)
             val assistant = AssistantController.onFinished(run)
-            RunOverlays.onFinished(run, presentedElsewhere = chat || assistant)
+            val heyAtom = HeyAtomOverlay.onFinished(run)
+            RunOverlays.onFinished(run, presentedElsewhere = chat || assistant || heyAtom)
         }
+        HeyAtomOverlay.onRuns(runs)
         RunOverlays.onRuns(runs)
         Bubble.onRuns(runs)
     }

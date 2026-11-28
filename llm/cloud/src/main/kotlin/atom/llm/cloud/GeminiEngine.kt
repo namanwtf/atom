@@ -53,7 +53,7 @@ internal class GeminiEngine(
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
         val decoder = GeminiStreamDecoder(errors)
-        sseEvents(http, httpRequest(request), errors).collect { event ->
+        sseEvents(http.forRequest(request), httpRequest(request), errors).collect { event ->
             decoder.onData(event.data).forEach { emit(it) }
         }
         decoder.finish().forEach { emit(it) }

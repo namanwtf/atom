@@ -115,6 +115,11 @@ data class SpeechConfig(
     val wakeEnabled: Boolean = false,
     val wakeScreenOff: Boolean = false,
     val wakeWhileCharging: Boolean = true,
+    /**
+     * "Use what's on screen": after the wake word, the overlay reads the app in front once and sends it with the
+     * command (never protected screens or visible password fields).
+     */
+    val wakeScreenContext: Boolean = true,
 ) {
     /** True when a spoken-answer service is configured (the auto read-aloud toggle is hidden otherwise). */
     val ttsConfigured: Boolean get() = tts != TtsServiceId.Off

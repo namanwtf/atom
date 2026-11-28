@@ -14,22 +14,33 @@ import android.speech.SpeechRecognizer
  * if it fails before any speech was heard (e.g. language pack missing) it falls back once to a system
  * recognizer. Stops right after end-of-speech and always finishes within [TIMEOUT_MS], so the microphone is
  * never held longer than needed. Main thread only.
+ *
+ * With a [Progress] (only while the command shows on screen) it also asks for partial results and forwards the
+ * input level; without one both stay off, as before.
  */
 internal class CommandCapture(private val context: Context, private val handler: Handler) {
     private companion object {
         const val TIMEOUT_MS = 10_000L
     }
 
+    /** What the recognizer reports while the user speaks. Main thread. */
+    interface Progress {
+        fun onLevel(level: Float)
+        fun onPartial(text: String)
+    }
+
     private var recognizer: SpeechRecognizer? = null
     private var onFinished: ((String?) -> Unit)? = null
+    private var progress: Progress? = null
     private var heardSpeech = false
     private val timeout = Runnable { finish(null) }
 
     val isActive: Boolean get() = onFinished != null
 
-    fun start(onFinished: (String?) -> Unit) {
+    fun start(progress: Progress? = null, onFinished: (String?) -> Unit) {
         cancel()
         this.onFinished = onFinished
+        this.progress = progress
         heardSpeech = false
         handler.postDelayed(timeout, TIMEOUT_MS)
         val onDevice = Build.VERSION.SDK_INT >= 31 && runCatching {
@@ -42,6 +53,7 @@ internal class CommandCapture(private val context: Context, private val handler:
     fun cancel() {
         val sr = recognizer
         onFinished = null
+        progress = null
         if (sr != null) runCatching { sr.cancel() }
         release()
     }
@@ -57,7 +69,9 @@ internal class CommandCapture(private val context: Context, private val handler:
             override fun onBeginningOfSpeech() {
                 heardSpeech = true
             }
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onRmsChanged(rmsdB: Float) {
+                if (recognizer === sr) progress?.onLevel(CaptureLevel.fromRms(rmsdB))
+            }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {
                 if (recognizer === sr) runCatching { sr.stopListening() }
@@ -76,13 +90,17 @@ internal class CommandCapture(private val context: Context, private val handler:
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                 finish(text?.trim()?.takeIf { it.isNotEmpty() })
             }
-            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {
+                if (recognizer !== sr) return
+                val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()
+                if (!text.isNullOrEmpty()) progress?.onPartial(text)
+            }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, progress != null)
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         try {
@@ -103,6 +121,7 @@ internal class CommandCapture(private val context: Context, private val handler:
     private fun finish(text: String?) {
         val callback = onFinished ?: return
         onFinished = null
+        progress = null
         release()
         callback(text)
     }
@@ -115,5 +134,16 @@ internal class CommandCapture(private val context: Context, private val handler:
     private fun destroyRecognizer() {
         recognizer?.let { runCatching { it.destroy() } }
         recognizer = null
+    }
+}
+
+/** Maps the recognizer's input level (roughly -2 dB in silence to 10 dB for loud speech) to 0..1. */
+internal object CaptureLevel {
+    private const val FLOOR_DB = -2f
+    private const val CEILING_DB = 10f
+
+    fun fromRms(rmsdB: Float): Float {
+        if (rmsdB.isNaN()) return 0f
+        return ((rmsdB - FLOOR_DB) / (CEILING_DB - FLOOR_DB)).coerceIn(0f, 1f)
     }
 }

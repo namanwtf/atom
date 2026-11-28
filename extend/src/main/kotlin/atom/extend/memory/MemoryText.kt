@@ -10,7 +10,10 @@ object MemoryText {
     const val MAX_BYTES = 1 shl 20
 
     /** Core memory goes out with every request; the rest stays one memory_read away. */
-    const val MAX_CORE_TOKENS = 1_200
+    const val MAX_CORE_TOKENS = atom.core.agent.ModelLimits.SMALL_MEMORY_TOKENS
+
+    /** The cap for windows of 128K tokens or more. */
+    const val MAX_CORE_TOKENS_LARGE = atom.core.agent.ModelLimits.MAX_MEMORY_TOKENS
 
     val TEMPLATE = """
         |# Core memory
@@ -47,10 +50,13 @@ object MemoryText {
         return text.lines().subList(s.startLine + 1, s.endLine).joinToString("\n").trim()
     }
 
-    /** Characters of Core memory sent with every request: about 3% of the window, between 200 and 1200 tokens. */
+    /**
+     * Characters of Core memory sent with every request: about 3% of the window, between 200 and 1,200 tokens, and up
+     * to 8,000 tokens for windows of 128K or more ([atom.core.agent.ModelLimits.memoryTokens]).
+     */
     fun budgetChars(contextWindow: Int?): Int {
         val window = contextWindow?.takeIf { it > 0 } ?: ContextWindowProvider.DEFAULT_CONTEXT_WINDOW
-        return (window * 0.03).toInt().coerceIn(200, MAX_CORE_TOKENS) * 4
+        return atom.core.agent.ModelLimits(window = window).memoryTokens * 4
     }
 
     /** Core memory cut to [budgetChars] at a line boundary, plus whether anything was cut. */

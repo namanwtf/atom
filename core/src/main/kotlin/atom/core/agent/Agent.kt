@@ -57,6 +57,19 @@ data class AgentConfig(
     val wrapUpPrompt: String? = Agent.WRAP_UP,
     /** Whether the loop guard may end a run that keeps repeating itself without new information. */
     val stopWhenStuck: Boolean = true,
+    /**
+     * When an answer is cut off by the output limit, one more request without tools before the run ends with
+     * [StopReason.OutputLimit]: a model that spent the whole budget thinking is asked for its answer now
+     * ([ANSWER_NOW][Agent.ANSWER_NOW]), and a cut-off answer is continued once ([Agent.CONTINUE_CUT]).
+     */
+    val recoverOutputLimit: Boolean = true,
+    /**
+     * Reasoning for that request: thinking off, or the lightest level, where the model allows it, so the answer gets
+     * the room the reasoning took. Null sends the model default.
+     */
+    val briefReasoning: ReasoningEffort? = null,
+    /** Size limits that follow the model (compaction summary, its transcript); see [ModelLimits]. */
+    val limits: ModelLimits = ModelLimits.Default,
 ) {
     /**
      * What one prompt may actually use: the model window minus room for the answer, or the policy's deliberate
@@ -107,6 +120,21 @@ data class AgentConfig(
     }
 
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
+
+    /**
+     * The wait before retry [attempt]: what the provider asked for in Retry-After (never shorter than the usual
+     * backoff, never longer than [MAX_RETRY_AFTER_MS]), else the usual backoff.
+     */
+    fun retryWait(attempt: Int, retryAfterMs: Long?): Long {
+        val backoff = retryDelay(attempt)
+        val asked = retryAfterMs?.takeIf { it > 0 } ?: return backoff
+        return asked.coerceIn(backoff, maxOf(backoff, MAX_RETRY_AFTER_MS))
+    }
+
+    companion object {
+        /** The longest single wait a Retry-After header can ask for; a longer one is cut to this. */
+        const val MAX_RETRY_AFTER_MS = 60_000L
+    }
 }
 
 enum class StopReason {
@@ -245,6 +273,8 @@ class Agent(
         val state = RunState(history)
         val guard = LoopGuard()
         var stuckAt: Int? = null
+        // Steps in a row whose tool call the output limit cut off.
+        var cutCalls = 0
 
         // Internal: kept for the model (and the prompt cache) but not a step the user sees, so no tool events.
         preloaded?.let { (call, result) ->
@@ -270,30 +300,58 @@ class Agent(
                 maxOutputTokens = config.maxOutputTokens,
                 reasoning = config.reasoning,
             )
-            val turn = try {
+            var turn = try {
                 streamWithRetry(request)
             } catch (e: LlmException) {
                 val failure = LlmErrors.classify(e)
                 emit(AgentEvent.Failed(LlmErrors.explain(e), state.appended.toList(), failure, e.message))
                 return@flow
             }
-            state.inTokens += turn.stats.inputTokens
-            state.outTokens += turn.stats.outputTokens
-            emit(AgentEvent.ModelCall(turn.stats))
-            emit(AgentEvent.Usage(state.inTokens, state.outTokens))
+            count(state, turn)
 
-            // A wire that sends a tool-call turn's reasoning back gets it with the turn, so the context counts it too.
-            val answer = ChatMessage.assistant(turn.text, turn.calls).let { a ->
-                if (turn.calls.isNotEmpty() && engine.capabilities.replaysReasoning && turn.reasoning != null) a.copy(reasoning = turn.reasoning) else a
+            // The output limit cut the turn off in the middle of a tool call: that call does not run, and it never goes
+            // back to the provider with half-written arguments (DeepSeek refuses the whole request over them).
+            val cut = if (turn.finish == FinishReason.Length) turn.calls.filterNot { completeArguments(it.argumentsJson) } else emptyList()
+            if (cut.isNotEmpty()) turn = turn.copy(calls = turn.calls - cut.toSet())
+            cutCalls = if (cut.isEmpty()) 0 else cutCalls + 1
+
+            val cutOff = turn.finish == FinishReason.Length && turn.calls.isEmpty() && cut.isEmpty() && config.recoverOutputLimit
+            if (cutOff && turn.text.isBlank()) {
+                // A thinking model spent the whole output budget reasoning and never started the answer: its thoughts
+                // stay with the turn, and it is asked once, thinking off where possible, for the answer itself.
+                record(state, turn)
+                val nudge = ChatMessage.user(ANSWER_NOW).copy(midTurn = true)
+                val answered = withoutTools(state, state.convo + nudge, config.briefReasoning)?.takeIf { it.text.isNotBlank() }
+                if (answered == null) {
+                    if (deliverSteering(state, control)) continue
+                    emit(AgentEvent.Done("", StopReason.OutputLimit, step, state.appended.toList()))
+                    return@flow
+                }
+                // The nudge joins the history only with the reply it produced. Tool calls made anyway are dropped:
+                // none were offered.
+                append(state, nudge, MessageInfo(internal = true))
+                record(state, answered.copy(calls = emptyList()))
+                if (deliverSteering(state, control)) continue
+                val reason = if (answered.finish == FinishReason.Length) StopReason.OutputLimit else StopReason.Completed
+                emit(AgentEvent.Done(answered.text, reason, step, state.appended.toList()))
+                return@flow
             }
-            append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
-            // The provider's prompt count already holds the system prompt and every tool schema. The answer counts by
-            // what it adds to the next prompt (its text, calls and any reasoning sent back), not by output tokens.
-            state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
-            state.sinceReport = 0
-            emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
+            if (cutOff) {
+                // The answer itself was cut off: it is continued once, and the two parts are kept as one answer.
+                val partial = ChatMessage.assistant(turn.text)
+                val nudge = ChatMessage.user(CONTINUE_CUT).copy(midTurn = true)
+                withoutTools(state, state.convo + partial + nudge, config.briefReasoning)
+                    ?.takeIf { it.text.isNotBlank() }
+                    ?.let { more -> turn = turn.continuedBy(more) }
+            }
+
+            record(state, turn)
 
             if (turn.calls.isEmpty()) {
+                if (cut.isNotEmpty() && cutCalls < MAX_CUT_CALLS) {
+                    append(state, ChatMessage.user(cutCallNote(cut)).copy(midTurn = true), MessageInfo(internal = true))
+                    continue
+                }
                 if (deliverSteering(state, control)) continue
                 val reason = if (turn.finish == FinishReason.Length) StopReason.OutputLimit else StopReason.Completed
                 emit(AgentEvent.Done(turn.text, reason, step, state.appended.toList()))
@@ -315,6 +373,7 @@ class Agent(
                 )
                 results += result
             }
+            if (cut.isNotEmpty()) append(state, ChatMessage.user(cutCallNote(cut)).copy(midTurn = true), MessageInfo(internal = true))
 
             val verdict = guard.after(turn.calls, results)
             if (verdict.stuck && config.stopWhenStuck) {
@@ -356,13 +415,29 @@ class Agent(
         maybeCompact(state)
         // The nudge joins the history only with the reply it produced; a failed wrap-up leaves no trace.
         val nudge = ChatMessage.user(prompt).copy(midTurn = true)
-        val messages = ContextPacker.pack(config.systemPrompt, state.convo + nudge, config.packing)
+        val turn = withoutTools(state, state.convo + nudge, config.reasoning) ?: return null
+        if (turn.text.isBlank()) return null
+        append(state, nudge, MessageInfo(internal = true))
+        record(state, turn.copy(calls = emptyList()))
+        return turn.text
+    }
+
+    /**
+     * One request on [conversation] that offers no tools, so the model can only reply. Null when it failed: the
+     * caller then keeps what it already has.
+     */
+    private suspend fun FlowCollector<AgentEvent>.withoutTools(
+        state: RunState,
+        conversation: List<ChatMessage>,
+        reasoning: ReasoningEffort?,
+    ): Turn? {
+        val messages = ContextPacker.pack(config.systemPrompt, conversation, config.packing)
         val request = LlmRequest(
             model = config.model,
             messages = messages,
             tools = emptyList(),
             maxOutputTokens = config.maxOutputTokens,
-            reasoning = config.reasoning,
+            reasoning = reasoning,
         )
         val turn = try {
             streamWithRetry(request)
@@ -376,18 +451,30 @@ class Agent(
                 return null
             }
         }
+        count(state, turn)
+        return turn
+    }
+
+    /** Adds a model call's cost to the run's totals. */
+    private suspend fun FlowCollector<AgentEvent>.count(state: RunState, turn: Turn) {
         state.inTokens += turn.stats.inputTokens
         state.outTokens += turn.stats.outputTokens
         emit(AgentEvent.ModelCall(turn.stats))
         emit(AgentEvent.Usage(state.inTokens, state.outTokens))
-        if (turn.text.isBlank()) return null
-        append(state, nudge, MessageInfo(internal = true))
-        val answer = ChatMessage.assistant(turn.text)
+    }
+
+    /** Appends the model's turn to the conversation and reports how much of the window it now uses. */
+    private suspend fun FlowCollector<AgentEvent>.record(state: RunState, turn: Turn) {
+        // A wire that sends a tool-call turn's reasoning back gets it with the turn, so the context counts it too.
+        val answer = ChatMessage.assistant(turn.text, turn.calls).let { a ->
+            if (turn.calls.isNotEmpty() && engine.capabilities.replaysReasoning && turn.reasoning != null) a.copy(reasoning = turn.reasoning) else a
+        }
         append(state, answer, MessageInfo(turn.reasoning, turn.reasoningMs, searchSuggestions = turn.suggestions))
+        // The provider's prompt count already holds the system prompt and every tool schema. The answer counts by
+        // what it adds to the next prompt (its text, calls and any reasoning sent back), not by output tokens.
         state.lastReported = if (turn.reportedInput > 0) turn.reportedInput + ContextPacker.estimate(answer) else 0
         state.sinceReport = 0
         emit(AgentEvent.ContextUsage(state.used(), config.usableWindow))
-        return turn.text
     }
 
     private inner class RunState(history: List<ChatMessage>) {
@@ -448,9 +535,13 @@ class Agent(
             model = config.model,
             prefix = state.convo.subList(0, cut).toList(),
             sensitive = { state.sensitive[it] },
-            maxOutputTokens = (window / 8).coerceIn(400, 2_000),
-            transcriptBudgetChars = (window * 3).coerceAtLeast(8_000),
-            reasoning = if (config.reasoning == ReasoningEffort.Off) ReasoningEffort.Off else null,
+            maxOutputTokens = config.limits.compactionSummaryTokens(window),
+            transcriptBudgetChars = config.limits.compactionTranscriptChars(window),
+            // A summary needs no deep thought: thinking off or the lightest level where the model allows it, so the
+            // reasoning does not use up the summary's room.
+            reasoning = if (config.reasoning == ReasoningEffort.Off) ReasoningEffort.Off else config.briefReasoning,
+            toolResultChars = config.limits.compactionToolResultChars,
+            argumentChars = config.limits.compactionArgumentChars,
         )
         val result = try {
             Compactor.summarize(engine, request)
@@ -476,7 +567,7 @@ class Agent(
         emit(AgentEvent.ContextUsage(after, window))
     }
 
-    private class Turn(
+    private data class Turn(
         val text: String,
         val calls: List<ToolCall>,
         val finish: FinishReason,
@@ -486,7 +577,35 @@ class Agent(
         val reportedOutput: Int,
         val stats: ModelCallStats,
         val suggestions: SearchSuggestions? = null,
-    )
+    ) {
+        /** This cut-off answer followed by [more], its continuation, as one answer. */
+        fun continuedBy(more: Turn): Turn = copy(
+            text = text + more.text,
+            calls = emptyList(),
+            finish = more.finish,
+            reasoning = listOfNotNull(reasoning, more.reasoning).joinToString("\n\n").ifBlank { null },
+            reasoningMs = if (reasoningMs == null && more.reasoningMs == null) null else (reasoningMs ?: 0) + (more.reasoningMs ?: 0),
+            reportedInput = more.reportedInput,
+            reportedOutput = reportedOutput + more.reportedOutput,
+            suggestions = more.suggestions ?: suggestions,
+        )
+    }
+
+    /** Whether a tool call's arguments are complete: a JSON object, or nothing at all. */
+    private fun completeArguments(argumentsJson: String): Boolean {
+        if (argumentsJson.isBlank()) return true
+        return try {
+            Json.parseToJsonElement(argumentsJson) is JsonObject
+        } catch (e: IllegalArgumentException) {
+            false
+        }
+    }
+
+    private fun cutCallNote(cut: List<ToolCall>): String {
+        val names = cut.joinToString(", ") { it.name.ifBlank { "a tool" } }
+        return "Your last tool call ($names) was cut off by the output limit before its arguments were complete, so it " +
+            "did not run. Make it again with shorter arguments; split long content into several smaller calls."
+    }
 
     private suspend fun FlowCollector<AgentEvent>.streamWithRetry(request: LlmRequest): Turn {
         var attempt = 0
@@ -557,7 +676,7 @@ class Agent(
                 )
             } catch (e: LlmException) {
                 if (!e.retryable || attempt >= config.maxRetries) throw e
-                val wait = config.retryDelay(attempt)
+                val wait = config.retryWait(attempt, e.retryAfterMs)
                 emit(AgentEvent.Retrying(attempt + 1, config.maxRetries, wait, LlmErrors.explain(e), discardPartial = emittedAny))
                 delay(wait)
                 attempt++
@@ -625,6 +744,19 @@ class Agent(
         const val STUCK_REASON =
             "This run is stopping because its last steps repeated earlier actions without bringing new information, " +
                 "so no more tools will run."
+
+        /** Sent when the model used its whole output budget thinking and wrote no answer. */
+        const val ANSWER_NOW =
+            "You used up this reply's output limit while thinking, before writing any answer. Do not think it through " +
+                "again: answer now, briefly and directly, from what you have already worked out."
+
+        /** Sent when the answer itself was cut off by the output limit. */
+        const val CONTINUE_CUT =
+            "Your last reply was cut off by the output limit. Continue it exactly where it stopped, without repeating " +
+                "anything or starting over."
+
+        /** Steps in a row whose only tool call was cut off before the run ends at the output limit. */
+        private const val MAX_CUT_CALLS = 2
 
         private const val KEEP_RECENT_SHARE = 0.3
 

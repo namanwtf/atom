@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
@@ -18,6 +19,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import atom.core.agent.LimitOverrides
 import atom.core.llm.ReasoningEffort
 import atom.llm.cloud.PresetCatalog
 import atom.ui.theme.ThemeMode
@@ -75,6 +77,8 @@ data class AppSettings(
     val keepScreenOn: Boolean = true,
     /** Android 16+: show a running task as a Live Update (status-bar chip). Older Androids ignore it. */
     val liveUpdates: Boolean = true,
+    /** Settings > Advanced: limits the user raised or lowered; everything else follows the model. */
+    val limits: LimitOverrides = LimitOverrides(),
 ) {
     companion object {
         val DEFAULT_SELECTION = EngineSelection.Cloud(PresetCatalog.DEFAULT_PROVIDER, PresetCatalog.DEFAULT_MODEL)
@@ -138,6 +142,23 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         store.edit { it[WIFI_ONLY] = value }
     }
 
+    /** Saves the Advanced limits; a null value goes back to Auto. */
+    suspend fun setLimits(limits: LimitOverrides) {
+        store.edit { p ->
+            fun put(key: androidx.datastore.preferences.core.Preferences.Key<Int>, value: Int?) {
+                if (value == null) p.remove(key) else p[key] = value
+            }
+            put(ADV_MAX_OUTPUT, limits.maxOutputTokens)
+            put(ADV_MAX_STEPS, limits.maxSteps)
+            put(ADV_TOOL_RESULT, limits.toolResultChars)
+            put(ADV_SUBAGENT_MIN, limits.subagentMinutes)
+            put(ADV_APPROVAL_MIN, limits.approvalWaitMinutes)
+            put(ADV_TASK_MIN, limits.taskMinutes)
+            put(ADV_IMAGES, limits.imagesKept)
+            p[ADV_APPROVAL_PAUSES] = limits.approvalPausesRun
+        }
+    }
+
     suspend fun setConfirmActTools(value: Boolean) {
         store.edit { it[CONFIRM_ACT] = value }
     }
@@ -174,6 +195,16 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         autoCompaction = p[AUTO_COMPACTION] ?: true,
         keepScreenOn = p[KEEP_SCREEN_ON] ?: true,
         liveUpdates = p[LIVE_UPDATES] ?: true,
+        limits = LimitOverrides(
+            maxOutputTokens = p[ADV_MAX_OUTPUT],
+            maxSteps = p[ADV_MAX_STEPS],
+            toolResultChars = p[ADV_TOOL_RESULT],
+            subagentMinutes = p[ADV_SUBAGENT_MIN],
+            approvalWaitMinutes = p[ADV_APPROVAL_MIN],
+            approvalPausesRun = p[ADV_APPROVAL_PAUSES] ?: true,
+            taskMinutes = p[ADV_TASK_MIN],
+            imagesKept = p[ADV_IMAGES],
+        ),
     )
 
     private fun <T> decode(serializer: KSerializer<T>, raw: String): T? =
@@ -194,5 +225,13 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val AUTO_COMPACTION = booleanPreferencesKey("auto_compaction")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val LIVE_UPDATES = booleanPreferencesKey("live_update_notification")
+        val ADV_MAX_OUTPUT = intPreferencesKey("adv_max_output_tokens")
+        val ADV_MAX_STEPS = intPreferencesKey("adv_max_steps")
+        val ADV_TOOL_RESULT = intPreferencesKey("adv_tool_result_chars")
+        val ADV_SUBAGENT_MIN = intPreferencesKey("adv_subagent_minutes")
+        val ADV_APPROVAL_MIN = intPreferencesKey("adv_approval_wait_minutes")
+        val ADV_APPROVAL_PAUSES = booleanPreferencesKey("adv_approval_pauses_run")
+        val ADV_TASK_MIN = intPreferencesKey("adv_task_minutes")
+        val ADV_IMAGES = intPreferencesKey("adv_images_kept")
     }
 }

@@ -1,6 +1,11 @@
 package atom.voice.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.ui.components.AtomMenu
 import atom.ui.components.AtomMenuItem
@@ -283,12 +290,12 @@ private fun LazyListScope.overview(
             )
         }
     }
-    item(key = "wake") { WakeGroup() }
+    item(key = "wake") { WakeGroup(draft, set) }
     item(key = "try") { TryGroup(draft, set, resolver) }
 }
 
 @Composable
-private fun WakeGroup() {
+private fun WakeGroup(draft: SpeechConfig, set: (SpeechConfig) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val wakePreferences = Speech.wakePreferences
@@ -346,7 +353,46 @@ private fun WakeGroup() {
                 onClick = { apply(p.copy(screenOff = !p.screenOff)) },
                 trailing = { AtomSwitch(p.screenOff, { apply(p.copy(screenOff = it)) }) },
             )
+            if (Wake.presenter != null) {
+                GroupDivider(inset = 18.dp)
+                OverlayRow()
+                GroupDivider(inset = 18.dp)
+                GroupRow(
+                    title = stringResource(R.string.speech_set_hey_atom_screen),
+                    subtitle = stringResource(R.string.speech_set_hey_atom_screen_sub),
+                    onClick = { set(draft.copy(wakeScreenContext = !draft.wakeScreenContext)) },
+                    trailing = { AtomSwitch(draft.wakeScreenContext, { set(draft.copy(wakeScreenContext = it)) }) },
+                )
+            }
         }
+    }
+}
+
+/**
+ * The on-screen "Hey ATOM" overlay: the glow and the live words need "display over other apps". Without that
+ * permission the command opens ATOM instead, and this row says so with a button that asks for it.
+ */
+@Composable
+private fun OverlayRow() {
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { allowed = Settings.canDrawOverlays(context) }
+    val ask: () -> Unit = { openOverlayPermission(context) }
+    val allow: @Composable () -> Unit = { CompactButton(stringResource(R.string.speech_set_hey_atom_overlay_allow), onClick = ask) }
+    GroupRow(
+        title = stringResource(R.string.speech_set_hey_atom_overlay),
+        subtitle = stringResource(if (allowed) R.string.speech_set_hey_atom_overlay_on else R.string.speech_set_hey_atom_overlay_needs),
+        onClick = if (allowed) null else ask,
+        trailing = if (allowed) null else allow,
+    )
+}
+
+private fun openOverlayPermission(context: Context) {
+    val exact = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+    try {
+        context.startActivity(exact)
+    } catch (e: ActivityNotFoundException) {
+        runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
     }
 }
 

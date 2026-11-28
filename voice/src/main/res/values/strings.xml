@@ -2,10 +2,10 @@
 <resources>
     <string name="atom_voice_assistant_label">Atom</string>
     <string name="atom_speech_recognition_label">Atom speech recognition</string>
-    <string name="atom_voice_title">Atom</string>
-    <string name="atom_voice_listening">Listening for “Hey Atom”</string>
-    <string name="atom_voice_paused">“Hey Atom” paused: %1$s</string>
+    <string name="atom_voice_title">ATOM</string>
+    <string name="atom_voice_listening">Listening for “Hey ATOM”</string>
+    <string name="atom_voice_paused">“Hey ATOM” paused: %1$s</string>
     <string name="atom_voice_turn_off">Turn off</string>
-    <string name="atom_voice_channel_name">“Hey Atom” listening</string>
-    <string name="atom_voice_channel_description">Shown while Atom can hear the wake word.</string>
+    <string name="atom_voice_channel_name">“Hey ATOM” listening</string>
+    <string name="atom_voice_channel_description">Shown while ATOM can hear the wake word.</string>
 </resources>

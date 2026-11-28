@@ -43,6 +43,12 @@ interface ToolContext {
 
     /** Ask the user to approve [request]; contexts that show more than a line of text override this. */
     suspend fun approve(request: ApprovalRequest): Boolean = confirm(request.action)
+
+    /**
+     * Size limits of the model this run uses (how much terminal output, screen outline or search history a tool
+     * returns). Contexts outside a run keep the defaults ATOM always used.
+     */
+    val limits: atom.core.agent.ModelLimits get() = atom.core.agent.ModelLimits.Default
 }
 
 /**

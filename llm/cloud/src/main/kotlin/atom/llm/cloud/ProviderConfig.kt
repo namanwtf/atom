@@ -55,6 +55,9 @@ data class ModelConfig(
 
     val effectiveContextWindow: Int? get() = contextWindow ?: autoCapabilities.contextWindow
 
+    /** The model's own output limit, when known. */
+    val maxOutput: Int? get() = autoCapabilities.maxOutput
+
     val vision: Boolean? get() = autoCapabilities.vision
 }
 

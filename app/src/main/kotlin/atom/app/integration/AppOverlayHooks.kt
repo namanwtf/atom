@@ -17,6 +17,7 @@ import atom.core.llm.Role
 import atom.overlay.ModelChipState
 import atom.overlay.OverlayHooks
 import atom.overlay.OverlayMessage
+import atom.overlay.ScreenCapture
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunSource
 import atom.voice.ui.VoiceRoutes
@@ -131,6 +132,29 @@ class AppOverlayHooks(private val appContext: Context, private val graph: AppGra
     }
 
     override val assistantModelRoute: String get() = Routes.MODELS
+
+    /** "Hey ATOM": one read of the app in front through Atom's accessibility service, and one small screenshot. */
+    override suspend fun captureScreen(): ScreenCapture? {
+        val glance = atom.device.screen.ScreenGlance.take() ?: return null
+        val label = glance.packageName?.let { pkg ->
+            runCatching {
+                val pm = appContext.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            }.getOrNull()
+        }
+        return ScreenCapture(label, glance.packageName, glance.text, glance.passwordShown, glance.secure, glance.screenshotJpeg)
+    }
+
+    /** Whether the model for [source] is known to take images (a cloud model with vision); unknown is no. */
+    override suspend fun seesImages(source: RunSource): Boolean {
+        val role = roleFor(source)
+        val selection = if (role != null) {
+            runCatching { graph.modelRoles.resolve(role, null) }.getOrNull()
+        } else {
+            graph.settings.current().selection
+        }
+        return runCatching { graph.modelInfo.vision(selection) }.getOrNull() == true
+    }
 
     private companion object {
         const val MAX_TRANSCRIPT = 30

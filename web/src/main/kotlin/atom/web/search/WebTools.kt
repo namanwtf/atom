@@ -12,6 +12,9 @@ import atom.web.BaseTool
 import kotlinx.serialization.json.JsonObject
 
 internal object WebTools {
+    /** Results one web_search may return. */
+    const val MAX_RESULTS = 20
+
     fun create(services: WebServices, gate: () -> String?): List<Tool> = listOf(Search(services, gate), ReadPage(services, gate))
 
     private class Search(private val services: WebServices, gate: () -> String?) : BaseTool(
@@ -19,7 +22,7 @@ internal object WebTools {
         "Search the web. Returns titles, links and snippets. Use for facts, news, prices, docs; then read_page on the best links.",
         schema {
             string("query", "Search terms", required = true)
-            integer("count", "Number of results, 1-10 (default 8)")
+            integer("count", "Number of results, 1-20 (default 8)")
         },
         Risk.Read,
         gate,
@@ -30,7 +33,7 @@ internal object WebTools {
         override suspend fun exec(args: JsonObject, ctx: ToolContext): ToolResult {
             val query = args.string("query").trim()
             if (query.isEmpty()) return ToolResult.error("Empty query")
-            val out = services.search(query, (args.optInt("count") ?: 8).coerceIn(1, 10))
+            val out = services.search(query, (args.optInt("count") ?: 8).coerceIn(1, MAX_RESULTS))
             if (out.results.isEmpty()) return ToolResult.ok("No results for \"$query\" (${out.source}).")
             val text = buildString {
                 append("Results for \"").append(query).append("\" (").append(out.source).append("):\n")

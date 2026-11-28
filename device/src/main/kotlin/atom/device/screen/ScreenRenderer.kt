@@ -68,6 +68,10 @@ internal object ScreenRenderer {
 
     private class Line(val body: String, val depth: Int, val handle: Int)
 
+    /** True when a visible password field is anywhere in [node]'s tree. */
+    fun showsPassword(node: UiNode): Boolean =
+        node.visible && (node.password || node.children.any { showsPassword(it) })
+
     fun render(roots: List<UiNode>, screen: Box, maxChars: Int = 6_000): RenderResult {
         val lines = mutableListOf<Line>()
         val absorbed = HashSet<Int>()

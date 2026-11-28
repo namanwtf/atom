@@ -21,6 +21,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -771,6 +772,218 @@ def s_hey_atom_charging(res):
         log("  " + call("hey_atom", "off"))
 
 
+def hey_overlay(event, **fields):
+    spec = json.dumps(dict(event=event, **fields), separators=(",", ":"))
+    out = call("hey_overlay", spec)
+    log(f"  hey_overlay {event}: {out}")
+    return out
+
+
+def hey_state():
+    return state().get("heyOverlay") or {}
+
+
+def wait_hey(pattern, timeout=15, gap=1.0):
+    """Polls the overlay's stage until it matches; returns (matched, last state)."""
+    end = time.time() + timeout
+    hs = hey_state()
+    while time.time() < end:
+        hs = hey_state()
+        if re.search(pattern, hs.get("stage", "")):
+            return True, hs
+        time.sleep(gap)
+    return False, hs
+
+
+def hey_windows():
+    """Titles of the overlay's windows that exist now (dumpsys window)."""
+    out = sh("dumpsys window windows")
+    return sorted(set(re.findall(r"AtomHeyAtom(?:Glow)?\b", out)))
+
+
+def resumed_activity():
+    out = sh("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | head -2")
+    return out.strip()
+
+
+def s_hey_atom_overlay(res):
+    """r. "Hey ATOM" overlay: the wake word shows the light and the panel over another app (Clock), reads that app once, shows
+    the words as they come, runs the command in place (ATOM stays in the background), shows the result and goes away.
+    A miss and a cancel close it too. Driven through the debug hook the wake-word service would call (no microphone)."""
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    # The Clock app below (not Settings: it hides other apps' overlay windows).
+    sh("am start -W -a android.intent.action.SHOW_ALARMS")
+    time.sleep(3)
+    out = hey_overlay("wake")
+    if not res.check("shown=true" in out, f"wake word: the overlay takes it ({out})"):
+        return
+    time.sleep(2)
+    hs = hey_state()
+    res.notes.append(f"after wake: {hs}")
+    res.check(hs.get("stage") == "listening", f"listening ({hs.get('stage')})")
+    wins = hey_windows()
+    res.check("AtomHeyAtom" in wins and "AtomHeyAtomGlow" in wins, f"glow and panel windows shown ({wins})")
+    res.check(bool(hs.get("screenApp")) or (hs.get("screenChars") or 0) > 0, f"the app in front was read once at the wake word (app {hs.get('screenApp')}, {hs.get('screenChars')} chars)")
+    hey_overlay("level", value=0.7)
+    hey_overlay("partial", text="What is")
+    hey_overlay("partial", text="What is 2 plus 2")
+    ok, hs = wait_hey(r"^partial$", timeout=5)
+    res.check(ok and hs.get("words") == "What is 2 plus 2", f"live words shown ({hs.get('words')!r})")
+    # A real capture reports its final words within its 10 s limit, and the overlay ends a capture that stays silent
+    # longer (its guard). The screenshot below can take the emulator longer than the guard, so while it is taken the
+    # words keep coming every few seconds, as a recognizer sends partial results while someone is still speaking.
+    still_speaking = threading.Event()
+
+    def keep_speaking():
+        while not still_speaking.wait(4):
+            hey_overlay("partial", text="What is 2 plus 2")
+
+    speaker = threading.Thread(target=keep_speaking, daemon=True)
+    speaker.start()
+    try:
+        shot(f"e2e_{res.key}_listening")
+        known = run_ids()
+        freeze_clock()
+    finally:
+        still_speaking.set()
+        speaker.join()
+    hey_overlay("partial", text="What is 2 plus 2?")
+    out = hey_overlay("final", text="What is 2 plus 2?")
+    if not res.check("taken=true" in out, f"the command runs in place ({out})"):
+        return
+    hs = hey_state()
+    res.notes.append(f"screen context sent: {hs.get('sentScreen')}")
+    res.check(str(hs.get("sentScreen", "")).startswith("app="), f"what was on screen went with the command ({hs.get('sentScreen')})")
+    shot(f"e2e_{res.key}_working")
+    seen, run, top = set(), None, ""
+    end = time.time() + 480
+    while time.time() < end:
+        st = state()
+        seen.add((st.get("heyOverlay") or {}).get("stage"))
+        runs = [r for r in st.get("runs", []) if r["runId"] not in known and r.get("source") == "Voice"]
+        if runs:
+            run = max(runs, key=lambda r: r["startedAt"])
+            if not top:
+                top = resumed_activity()
+            if not run["active"]:
+                break
+        time.sleep(1.5)
+    if not res.check(run is not None, "a Voice run started"):
+        return
+    res.tools = names(run)
+    res.notes.append(f"resumed while working: {top}")
+    res.check(PKG not in top, "ATOM did not jump to the front while working")
+    res.check(not run["active"], f"run ended ({run['phase']})")
+    log(f"  answer: {answer(run)[:300]!r}")
+    res.check(bool(answer(run)), "an answer")
+    notices = " ".join(run.get("savedNotices") or [])
+    res.check("used what was on screen" in notices, f"the conversation keeps only a note about the screen ({notices[:160]!r})")
+    ok, hs = wait_hey(r"^done$", timeout=4, gap=0.5)
+    if ok:
+        seen.add("done")
+        shot(f"e2e_{res.key}_done")
+        res.notes.append(f"result line: {hs.get('result')!r}")
+    res.notes.append(f"stages seen while it ran: {sorted(x for x in seen if x)}")
+    res.check("working" in seen or "handed_off" in seen, "showed ATOM working")
+    res.check("done" in seen, "showed the result")
+    ok, hs = wait_hey(r"^hidden$", timeout=15)
+    time.sleep(1)
+    res.check(ok and not hey_windows(), f"faded after a few seconds ({hs.get('stage')}, windows {hey_windows()})")
+    # Didn't catch that.
+    hey_overlay("wake")
+    time.sleep(2)
+    hey_overlay("missed")
+    ok, _ = wait_hey(r"^missed$", timeout=4, gap=0.5)
+    res.check(ok, "a miss says it didn't catch that")
+    shot(f"e2e_{res.key}_missed")
+    ok, _ = wait_hey(r"^hidden$", timeout=10)
+    time.sleep(1)
+    res.check(ok and not hey_windows(), "and goes away")
+    # Cancel while listening.
+    hey_overlay("wake")
+    time.sleep(2)
+    hey_overlay("cancel")
+    ok, _ = wait_hey(r"^hidden$", timeout=4, gap=0.5)
+    time.sleep(1)
+    res.check(ok and not hey_windows(), f"cancel closes it ({hey_windows()})")
+
+
+def wait_voice_run(known, conversation=None, timeout=480):
+    """Polls for the newest Voice run not in [known] (in [conversation] when given) until it ends; returns it and the
+    overlay stages seen meanwhile. Polls fast, so the overlay's short result stage is caught."""
+    seen, run = set(), None
+    end = time.time() + timeout
+    while time.time() < end:
+        st = state()
+        seen.add((st.get("heyOverlay") or {}).get("stage"))
+        runs = [r for r in st.get("runs", []) if r["runId"] not in known and r.get("source") == "Voice"
+                and (conversation is None or r["conversationId"] == conversation)]
+        if runs:
+            run = max(runs, key=lambda r: r["startedAt"])
+            if not run["active"]:
+                break
+        time.sleep(0.5)
+    return run, seen
+
+
+def s_hey_atom_type(res):
+    """s. "Hey ATOM" chat bar: typing instead of speaking stops listening and keeps the words heard so far in the field,
+    the keyboard types into it, the typed command runs in place like a spoken one, and a follow-up typed under the
+    result continues the same conversation."""
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    sh("am start -W -a android.intent.action.SHOW_ALARMS")
+    time.sleep(3)
+    out = hey_overlay("wake")
+    if not res.check("shown=true" in out, f"wake word: the overlay takes it ({out})"):
+        return
+    time.sleep(2)
+    hey_overlay("partial", text="What is 3")
+    hey_overlay("type")
+    ok, hs = wait_hey(r"^typing$", timeout=5, gap=0.5)
+    res.check(ok, f"the bar's field: typing ({hs.get('stage')})")
+    res.check(hs.get("draft") == "What is 3", f"the words heard so far fill the field ({hs.get('draft')!r})")
+    res.check(hs.get("panelMode") == "Typing", f"the panel takes the keyboard only now ({hs.get('panelMode')})")
+    time.sleep(2)
+    res.notes.append(f"keyboard shown: {keyboard_shown()}")
+    sh("input text '%splus%s3'")
+    time.sleep(2)
+    hs = hey_state()
+    res.check("plus 3" in (hs.get("draft") or ""), f"typed through the keyboard into the field ({hs.get('draft')!r})")
+    shot(f"e2e_{res.key}_typing")
+    known = run_ids()
+    freeze_clock()
+    out = hey_overlay("send")
+    if not res.check("taken=true" in out, f"Send runs the typed command in place ({out})"):
+        return
+    top = resumed_activity()
+    run, seen = wait_voice_run(known)
+    if not res.check(run is not None, "a Voice run started"):
+        return
+    res.tools = names(run)
+    res.check(PKG not in top, f"ATOM stayed in the background ({top[:120]})")
+    res.check(not run["active"] and bool(answer(run)), f"run ended with an answer ({run['phase']}: {answer(run)[:120]!r})")
+    first = run["conversationId"]
+    ok, hs = wait_hey(r"^done$", timeout=4, gap=0.5)
+    if not res.check(ok, f"the result shows ({hs.get('stage')}; seen {sorted(x for x in seen if x)})"):
+        return
+    hey_overlay("type")
+    ok, hs = wait_hey(r"^typing$", timeout=4, gap=0.5)
+    res.check(ok and hs.get("continueIn") == first, f"the bar on the result asks a follow-up in the same conversation ({hs.get('continueIn')})")
+    shot(f"e2e_{res.key}_followup")
+    known = run_ids()
+    freeze_clock()
+    out = hey_overlay("send", text="And what is that times 2?")
+    res.check("taken=true" in out, f"the follow-up runs in place ({out})")
+    run2, _ = wait_voice_run(known, conversation=first)
+    res.check(run2 is not None and run2["conversationId"] == first, "the follow-up continued the same conversation")
+    if run2:
+        res.check(not run2["active"] and bool(answer(run2)), f"follow-up answered ({run2['phase']}: {answer(run2)[:120]!r})")
+    hey_overlay("cancel")
+    ok, _ = wait_hey(r"^hidden$", timeout=4, gap=0.5)
+    time.sleep(1)
+    res.check(ok and not hey_windows(), "closed")
+
+
 def screen_off():
     sh("svc power stayon false")
     sh("input keyevent KEYCODE_SLEEP")
@@ -942,6 +1155,8 @@ SCENARIOS = [
     ("j", "Notification history keeps ordinary notifications", s_notification_history),
     ("q", "Hey Atom models: every stage loads and runs on silence", s_wake_models),
     ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
+    ("r", "Hey ATOM overlay: listens, runs in place with the screen, shows the result, goes away", s_hey_atom_overlay),
+    ("s", "Hey ATOM chat bar: typed command runs in place, follow-up continues the conversation", s_hey_atom_type),
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
     ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),

@@ -116,6 +116,26 @@ internal object UiController {
         }
     }
 
+    /** What [glance] read: the app in front, its outline, and whether a password field is on screen. */
+    class GlanceText(val packageName: String?, val text: String, val passwordShown: Boolean)
+
+    /**
+     * One read of the app in front for "Hey ATOM", with read_screen's own walk and outline. Unlike [read] it keeps
+     * no node: the agent's element ids from its latest read_screen stay valid.
+     */
+    suspend fun glance(svc: AtomAccessibilityService, maxChars: Int): GlanceText? = withContext(ui) {
+        val root = svc.rootInActiveWindow ?: return@withContext null
+        val raw = ArrayList<AccessibilityNodeInfo>()
+        try {
+            val tree = snapshot(root, raw, 0)
+            val result = ScreenRenderer.render(listOf(tree), screenBox(svc), maxChars)
+            GlanceText(root.packageName?.toString(), result.text, ScreenRenderer.showsPassword(tree))
+        } finally {
+            if (raw.isEmpty()) root.release()
+            raw.forEach { runCatching { it.release() } }
+        }
+    }
+
     private fun snapshot(n: AccessibilityNodeInfo, raw: MutableList<AccessibilityNodeInfo>, depth: Int): UiNode {
         val handle = raw.size
         raw += n

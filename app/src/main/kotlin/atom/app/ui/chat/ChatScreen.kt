@@ -1064,8 +1064,15 @@ private fun Banners(
             onAction = onOpenModels,
         )
     }
-    // The last run stopped at its step limit: offer to carry on in a new run of the same conversation.
-    val stopTexts = setOf(stringResource(R.string.run_step_limit), stringResource(R.string.run_stuck))
+    // The last run stopped at its step limit, or ran out of output room: offer to carry on in a new run of the same
+    // conversation. The output-limit notice that earlier builds stored gets the same offer.
+    val stepLimitText = stringResource(R.string.run_step_limit)
+    val stuckText = stringResource(R.string.run_stuck)
+    val outputLimitTexts = setOf(
+        stringResource(R.string.run_output_limit),
+        atom.core.llm.LlmErrors.LEGACY_OUTPUT_LIMIT,
+    )
+    val stopTexts = setOf(stepLimitText, stuckText) + outputLimitTexts
     val stepLimit = (state.items.lastOrNull() as? atom.app.agent.ChatItem.Notice)?.takeIf { !it.error && !state.running && it.text in stopTexts }
     var dismissedStepLimit by remember(stepLimit?.key) { mutableStateOf(false) }
     if (stepLimit != null && !dismissedStepLimit) {
@@ -1073,7 +1080,13 @@ private fun Banners(
         QuietBanner(
             AtomIcons.Bolt,
             colors.primary,
-            stringResource(if (stepLimit.text == stopTexts.first()) R.string.run_step_limit_banner else R.string.run_stuck_banner),
+            stringResource(
+                when (stepLimit.text) {
+                    stepLimitText -> R.string.run_step_limit_banner
+                    stuckText -> R.string.run_stuck_banner
+                    else -> R.string.run_output_limit_banner
+                },
+            ),
             onDismiss = { dismissedStepLimit = true },
             action = stringResource(R.string.run_continue),
             onAction = { if (onContinue(prompt)) dismissedStepLimit = true },
@@ -1281,6 +1294,10 @@ private fun AccessibilityNudge(onOpenSetup: () -> Unit) {
 
 // ---------------------------------------------------------------- Approval
 
+/** "9:58" for a wait of a minute or more, "42 s" below that. */
+private fun formatWait(seconds: Long): String =
+    if (seconds >= 60) "%d:%02d".format(seconds / 60, seconds % 60) else "$seconds s"
+
 @Composable
 private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit, onAllowTask: () -> Unit) {
     val remaining = rememberCountdown(pending.expiresAtMillis)
@@ -1313,6 +1330,11 @@ private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit
             Text(stringResource(R.string.confirm_allow_task_hint), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.confirm_countdown, remaining), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+        val countdown = when {
+            pending.parked -> stringResource(R.string.confirm_parked)
+            pending.pausesOnTimeout -> stringResource(R.string.confirm_countdown_pause, formatWait(remaining))
+            else -> stringResource(R.string.confirm_countdown, remaining)
+        }
+        Text(countdown, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
     }
 }

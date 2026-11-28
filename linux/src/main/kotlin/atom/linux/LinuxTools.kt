@@ -53,12 +53,31 @@ object LinuxTools {
         "\"android\" (the phone's /system/bin/sh as the app user) or \"root\" (Android root shell via su)."
 
     /** Keeps the head and the tail: errors and summaries usually sit at the end. */
+    /**
+     * [s] cut to about [max] characters: the start and the end, which hold the command's setup and its result. When
+     * there is room, error lines from the cut middle (a failed test, a compiler error) are kept too, so the line that
+     * explains a failure is not the part that goes.
+     */
     internal fun cap(s: String, max: Int): String {
         if (s.length <= max) return s
         val head = max * 2 / 5
         val tail = max - head
-        return s.take(head) + "\n… [${s.length - max} chars cut] …\n" + s.takeLast(tail)
+        val budget = if (max >= 1_000) max / 5 else 0
+        val errors = if (budget == 0) emptyList() else s.substring(head, s.length - tail).lineSequence()
+            .filter { ERROR_LINE.containsMatchIn(it) }.map { it.trim().take(300) }.filter { it.isNotEmpty() }.toList()
+        if (errors.isEmpty()) return s.take(head) + "\n… [${s.length - max} chars cut] …\n" + s.takeLast(tail)
+        val kept = StringBuilder()
+        for (line in errors) {
+            if (kept.length + line.length + 1 > budget) break
+            kept.append(line).append('\n')
+        }
+        val room = max - kept.length
+        val h = room * 2 / 5
+        val t = room - h
+        return s.take(h) + "\n… [${s.length - h - t} chars cut; error lines from that part:]\n" + kept + "… […] …\n" + s.takeLast(t)
     }
+
+    private val ERROR_LINE = Regex("(?i)\\b(error|fail(ed|ure)?|fatal|exception|traceback|panic|denied|not found|cannot|undefined)\\b")
 
     internal fun linuxProblem(env: LinuxEnv): String? = when (val s = env.state.value) {
         is LinuxState.Ready -> if (s.rootLost) {
@@ -106,14 +125,14 @@ object LinuxTools {
         ShellEnv.Root -> "a root shell"
     }
 
-    internal fun blockText(command: String, b: SimpleBlock?): String = buildString {
+    internal fun blockText(command: String, b: SimpleBlock?, max: Int = CAP): String = buildString {
         append("$ ").append(command).append('\n')
         if (b == null) {
             append("(no output yet)")
             return@buildString
         }
         val out = b.outputText()
-        if (out.isNotEmpty()) append(cap(out, CAP)).append('\n')
+        if (out.isNotEmpty()) append(cap(out, max)).append('\n')
         append(if (b.running) "[still running: send input with action=send, or read again later]" else "[exit ${b.exitCode}]")
     }
 }
@@ -161,8 +180,10 @@ private class RunTool(private val app: Context) : Tool, PerCallRisk {
             append("$ ").append(command).append("   [").append(env.label).append("]\n")
             append("exit ").append(r.exitCode)
             if (r.timedOut) append(" (timed out after ${timeout / 1000}s; killed)")
-            if (r.stdout.isNotBlank()) append("\nstdout:\n").append(LinuxTools.cap(r.stdout.trimEnd(), if (r.stderr.isBlank()) 3_900 else 2_900))
-            if (r.stderr.isNotBlank()) append("\nstderr:\n").append(LinuxTools.cap(r.stderr.trimEnd(), 1_000))
+            // The model's window decides how much output it sees (3,900 and 1,000 characters for small ones).
+            val stdoutMax = ctx.limits.terminalStdoutChars.let { if (r.stderr.isBlank()) it else it - 1_000 }
+            if (r.stdout.isNotBlank()) append("\nstdout:\n").append(LinuxTools.cap(r.stdout.trimEnd(), stdoutMax))
+            if (r.stderr.isNotBlank()) append("\nstderr:\n").append(LinuxTools.cap(r.stderr.trimEnd(), ctx.limits.terminalStderrChars))
             if (r.stdout.isBlank() && r.stderr.isBlank()) append(" (no output)")
         }
         return ToolResult(body, isError = r.exitCode != 0)
@@ -243,11 +264,11 @@ private class SessionTool(private val app: Context) : Tool, PerCallRisk {
                 val blockId = simple.send(input)
                 return if (blockId != null) {
                     val b = simple.awaitBlock(blockId, wait)
-                    ToolResult(LinuxTools.blockText(input, b), isError = b?.exitCode?.let { it != 0 } == true)
+                    ToolResult(LinuxTools.blockText(input, b, ctx.limits.terminalLogChars), isError = b?.exitCode?.let { it != 0 } == true)
                 } else {
                     simple.awaitQuiet(800, wait)
                     val b = simple.blocks.value.lastOrNull()
-                    ToolResult.ok("(input sent to the running command)\n" + LinuxTools.blockText(b?.command ?: input, b))
+                    ToolResult.ok("(input sent to the running command)\n" + LinuxTools.blockText(b?.command ?: input, b, ctx.limits.terminalLogChars))
                 }
             }
             "close" -> {
@@ -287,12 +308,12 @@ private class SessionReadTool : Tool {
         val simple = entry.simple
         if (simple == null) {
             val text = entry.terminal?.screen?.value?.text().orEmpty()
-            return ToolResult.ok("Screen of ${entry.title}:\n" + LinuxTools.cap(text, LinuxTools.CAP))
+            return ToolResult.ok("Screen of ${entry.title}:\n" + LinuxTools.cap(text, ctx.limits.terminalLogChars))
         }
         val wait = (args.optInt("wait_s") ?: 0).coerceIn(0, 120) * 1_000L
         val last = simple.blocks.value.lastOrNull() ?: return ToolResult.ok("No commands run in $id yet.")
         val b = if (last.running && wait > 0) simple.awaitBlock(last.id, wait) else last
-        return ToolResult.ok(LinuxTools.blockText(b?.command ?: "", b))
+        return ToolResult.ok(LinuxTools.blockText(b?.command ?: "", b, ctx.limits.terminalLogChars))
     }
 }
 
@@ -343,7 +364,7 @@ private class JobInfoTool(private val app: Context) : Tool {
         parameters = schema {
             string("id", "Job id.")
             string("name", "Daemon name.")
-            integer("log_chars", "How much of the log end to return, 0-4000. Default 2000.")
+            integer("log_chars", "How much of the log end to return (up to 4000, more for models with large context windows). Default 2000.")
         },
     )
 
@@ -356,7 +377,7 @@ private class JobInfoTool(private val app: Context) : Tool {
             if (list.isEmpty()) return ToolResult.ok("No background jobs or daemons.")
             return ToolResult.ok(list.sortedByDescending { it.startedAtMs }.take(30).joinToString("\n") { line(it) })
         }
-        val chars = (args.optInt("log_chars") ?: 2_000).coerceIn(0, LinuxTools.CAP)
+        val chars = (args.optInt("log_chars") ?: 2_000).coerceIn(0, ctx.limits.terminalLogChars)
         val log = jobs.log(r.id).let { if (it.length > chars) "…" + it.takeLast(chars) else it }
         return ToolResult.ok("${line(r)}\n$ ${r.command}\n--- log ---\n$log")
     }
