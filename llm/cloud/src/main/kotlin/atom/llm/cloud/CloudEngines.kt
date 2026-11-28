@@ -100,8 +100,9 @@ object CloudEngines {
             else -> null
         }
         val inputs = row.obj("architecture")?.arr("input_modalities")?.mapNotNull { (it as? JsonPrimitive)?.content }
+        val maxOutput = row.obj("top_provider")?.int("max_completion_tokens")?.takeIf { it > 0 }
         val caps = if (context != null || reasoning != null || inputs != null) {
-            DetectedCapabilities(reasoning, context, inputs?.contains("image"), CapabilitySource.Remote)
+            DetectedCapabilities(reasoning, context, inputs?.contains("image"), CapabilitySource.Remote, maxOutput)
         } else {
             null
         }
@@ -138,7 +139,9 @@ object CloudEngines {
                 RemoteModel(
                     id,
                     row.str("display_name"),
-                    context?.let { DetectedCapabilities(contextWindow = it, source = CapabilitySource.Remote) },
+                    context?.let {
+                        DetectedCapabilities(contextWindow = it, source = CapabilitySource.Remote, maxOutput = row.int("max_tokens")?.takeIf { n -> n > 0 })
+                    },
                 )
             }
             after = page.str("last_id")
@@ -179,6 +182,7 @@ object CloudEngines {
                         reasoning = thinking?.let { if (it) CapabilityDetector.byFamily(id).reasoning ?: ReasoningInfo.forced() else ReasoningInfo.None },
                         contextWindow = model.int("inputTokenLimit"),
                         source = CapabilitySource.Remote,
+                        maxOutput = model.int("outputTokenLimit")?.takeIf { it > 0 },
                     ),
                 )
             }

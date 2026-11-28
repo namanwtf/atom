@@ -221,7 +221,7 @@ internal class OpenAiChatEngine(
                                     put("type", "function")
                                     putJsonObject("function") {
                                         put("name", call.name)
-                                        put("arguments", normalizeArguments(call.argumentsJson))
+                                        put("arguments", wireArguments(call.argumentsJson))
                                     }
                                 }
                             }

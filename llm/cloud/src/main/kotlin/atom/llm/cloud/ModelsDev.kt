@@ -77,7 +77,7 @@ object ModelsDev {
     private class MdOption(val type: String = "", val values: List<String>? = null)
 
     @Serializable
-    private class MdLimit(val context: Long? = null)
+    private class MdLimit(val context: Long? = null, val output: Long? = null)
 
     @Serializable
     private class MdModalities(val input: List<String>? = null)
@@ -251,7 +251,13 @@ object ModelsDev {
         return CatalogModelEntry(
             id = id,
             name = m.name?.takeIf { it.isNotBlank() } ?: id,
-            capabilities = DetectedCapabilities(reasoning, context, vision, CapabilitySource.Catalog),
+            capabilities = DetectedCapabilities(
+                reasoning,
+                context,
+                vision,
+                CapabilitySource.Catalog,
+                maxOutput = m.limit?.output?.takeIf { it > 0 }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(),
+            ),
             toolCall = m.toolCall ?: true,
         )
     }

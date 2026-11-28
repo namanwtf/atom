@@ -855,10 +855,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val registry = ToolRegistry(if (tiny) tinyTools else loadout.all)
                 val exposure: ToolExposure = if (tiny) ToolExposure.All(registry) else loadout
                 val autoCompact = settings.autoCompaction
-                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools)
+                // A thinking request gets room for its reasoning as well as the answer (RoutedEngine.cloudOutputTokens).
+                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools, effort = reasoningSetting)
                     .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
                     .let { c -> if (tiny) c.copy(maxSteps = minOf(c.maxSteps, TinyModel.MAX_STEPS)) else c }
-                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                    .copy(contextWindow = window, autoCompact = autoCompact)
                 // The groups the request most likely needs are loaded now, so the model rarely has to call
                 // enable_tools first (small models almost never do). The load goes into the conversation as an
                 // enable_tools call with its result (and the groups' notes): it persists with the conversation and
@@ -1319,7 +1320,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 RunOutcome.Cancelled -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_stopped))
                 RunOutcome.Failed -> stored += StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true)
                 RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(if (stuck) atom.app.R.string.run_stuck else atom.app.R.string.run_step_limit))
-                RunOutcome.OutputLimit -> stored += StoredMessage.notice(LlmErrors.explain(atom.core.llm.LlmFailure.OutputLimit))
+                // Reached only after the agent's own retry also ran out of room; the chat offers Continue for it.
+                RunOutcome.OutputLimit -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_output_limit))
                 else -> Unit
             }
             val final = request.regenerate?.let { regenerated(it) } ?: snapshot()

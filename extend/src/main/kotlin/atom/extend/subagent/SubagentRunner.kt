@@ -84,8 +84,9 @@ class SubagentRunner(private val env: SubagentEnvironment) {
             systemPrompt = systemPrompt(def, tools),
             // The time budget is the real bound; the step cap and the loop guard catch runaway loops.
             maxSteps = if (engine.onDevice) 16 else 60,
-            maxOutputTokens = if (engine.onDevice) 768 else 2048,
+            maxOutputTokens = engine.outputTokens(settings.reasoning) ?: if (engine.onDevice) 768 else 2048,
             reasoning = settings.reasoning,
+            briefReasoning = engine.briefReasoning,
             contextWindow = window,
             // Cloud: the model's own window (compaction near 85% of it). On-device every prompt token is prefill on the
             // phone, so a deliberate cap stays.

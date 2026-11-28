@@ -33,6 +33,8 @@ data class DetectedCapabilities(
     val contextWindow: Int? = null,
     val vision: Boolean? = null,
     val source: CapabilitySource = CapabilitySource.Unknown,
+    /** The model's own output limit in tokens (reasoning included), when its catalog entry or model list says it. */
+    val maxOutput: Int? = null,
 )
 
 object Reasoning {
@@ -142,6 +144,6 @@ object CapabilityDetector {
         val reasoning = metadata.reasoning ?: family.reasoning
         val context = metadata.contextWindow ?: family.contextWindow
         val source = if (metadata.reasoning != null || metadata.contextWindow != null) metadata.source else family.source
-        return DetectedCapabilities(reasoning, context, metadata.vision ?: family.vision, source)
+        return DetectedCapabilities(reasoning, context, metadata.vision ?: family.vision, source, metadata.maxOutput)
     }
 }

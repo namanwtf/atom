@@ -33,6 +33,8 @@ class SubagentBridge(private val graph: AppGraph) : ToolScope, SubagentEnginePro
             contextWindow = routed.contextWindow,
             onDevice = routed.onDevice,
             release = { graph.router.release(routed) },
+            outputTokens = { effort -> if (routed.onDevice) null else routed.cloudOutputTokens(effort) },
+            briefReasoning = routed.briefReasoning(),
         )
     }
 

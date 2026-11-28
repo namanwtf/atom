@@ -2,6 +2,7 @@ package atom.extend
 
 import atom.core.agent.RunControl
 import atom.core.llm.LlmEngine
+import atom.core.llm.ReasoningEffort
 import atom.core.tool.Tool
 
 /** Context window of the model the next run will use. */
@@ -39,6 +40,13 @@ class SubagentEngine(
     /** True for on-device engines: parallel subagents then run one after another. */
     val onDevice: Boolean = engine.capabilities.onDevice,
     val release: suspend () -> Unit = {},
+    /**
+     * Output tokens a request with the given reasoning may use (more when the model thinks, so the reasoning does not
+     * crowd out the answer); null keeps the runner's default.
+     */
+    val outputTokens: (ReasoningEffort?) -> Int? = { null },
+    /** Reasoning for the retry after a cut-off answer ([atom.core.agent.AgentConfig.briefReasoning]). */
+    val briefReasoning: ReasoningEffort? = null,
 )
 
 /** Supplies the model a subagent runs on. */
