@@ -1,69 +1,83 @@
-# ATOM 4.0.7 release scorecard
+# ATOM 4.0.8 release scorecard
 
 Written for the owner, in plain words. Everything below ran on GitHub's test machines (an Android phone emulator
 plus a small AI model running on the same machine), never on a personal computer. Links go to the runs.
 
-## What 4.0.7 brings
+## What 4.0.8 brings
 
-Two fixes for bugs the owner found on a real phone with 4.0.6. (#39)
+"Hey ATOM" you can see and type to, and models that get the room they need. (#40, #41)
 
-- **"Hey Atom" loads again.** Speech settings showed "Wake-word model failed to load: ... Node number 2 (CONV_2D)
-  failed to prepare." The melspectrogram model's input is stored in the file as one sample, and LiteRT's interpreter
-  prepares the model at that stored size as soon as it is opened, before ATOM could give it the real size (1,760
-  samples). Its first convolution needs a 512-sample window, so it could not be prepared. ATOM now writes the real
-  input size into its in-memory copy of the model before opening it (two bytes; the file on disk and the computation
-  are unchanged, and the output matches the resized original exactly). A load error now names the model file. The
-  end-to-end "Hey Atom" task had been failing with this same message since 4.0.5; it was this bug, not an emulator
-  limit.
-- **Tiny offline models answer cleanly.** Qwen3 0.6B answered "set an alarm for 8:00" with stray `</think>` tags and
-  fragments of ATOM's own prompt. Two causes:
-  - The model writes `</think>` again after its chat template has already closed the thinking block, and the
-    LiteRT-LM engine passed it on as text. The answer text of both on-device engines now goes through the think-tag
-    filter, which drops a closing tag with nothing open and a second opening tag.
-  - The full agent prompt (about 2,100 of its 4,096 tokens: instructions, memory and skills notes, 17 core tools and
-    the tool catalog) overwhelmed a 0.6B model. A model under 1.5B parameters now gets a short prompt of its own
-    (about 370 tokens), only the tools of the one-step group the request needs (alarms and timers, or quick
-    settings), and at most 4 steps; plain chat gets no tools. A task it has no tools for says that a larger model is
-    needed and suggests Gemma 4 E2B, and the on-device models screen says what a tiny model can do.
+- **"Hey ATOM" on screen.** After the wake word, a silver and cool-blue light glows around the screen edge and a
+  small panel shows "Listening…" and the words as they are heard. The command then runs right there, as a voice run
+  on the same path as the bubble; when the run needs to work the phone, the panel steps aside and the run capsule
+  takes over with the same light. "Got it", "Working", "Done" and "Didn't catch that" are shown, so nobody has to
+  guess what happens after the chime.
+- **Screen context.** Once per wake, ATOM reads what is on screen (the accessibility outline, cut to 4,000
+  characters, plus a screenshot for models that can see), so "summarise this" or "reply to this" works without
+  Circle to Search. It is skipped for secure windows, visible password fields and ATOM's own screens. A chip in the
+  panel and a switch in Speech settings turn it off.
+- **Type instead of speaking.** The panel has a "Type to ATOM" bar like the app's composer. Tapping it stops
+  listening at once (the microphone is released) and opens the keyboard, with any words already heard filled in so a
+  misheard command can be fixed. Send runs it in place exactly like a spoken command. On the answer, the same bar
+  takes a follow-up in the same conversation, and its mic listens again without the wake word.
+- **A calmer panel.** The ATOM coin sits at the top centre and swells gently with the voice; live words are 17 sp
+  (at most three lines, newest words kept), status 13 sp, answer 15 sp, all following the phone's font size.
+- **One light everywhere.** "Hey ATOM", the run glow and the assistant entry share one edge light: a bright
+  ice-white core, a saturated blue halo about 36 dp deep and a deep-blue keyline, so it reads on white as well as on
+  dark screens. It animates only while listening; with animations off it is drawn still.
+- **Notifications** carry the silver octopus and the name "ATOM" instead of the old cached picture.
+- **Deep Think finishes its answers.** Every cloud model used to get 2,048 output tokens, so DeepSeek Flash with
+  Deep Think reasoned until the limit and never answered. Thinking requests now get room for reasoning and answer:
+  64K for Claude, GPT and Gemini, 32K for DeepSeek (64K at Max effort) and Kimi, and the provider's own figure when
+  it reports a larger one (up to 128K), never more than a third of the model's window. An answer that still hits the
+  limit gets one "answer now" retry, then a Continue button; a tool call cut off mid-way is never sent back.
+- **Limits follow the model.** One place now sets every size limit from the model in use: how much of the
+  conversation is kept, how many screenshots and images, how long tool, web, file and memory results may be, sub-task
+  steps, and timeouts (thinking requests wait up to 5 minutes; a "slow down" answer from the provider is waited out
+  as it asks). Large models get much more, small and on-device models stay light. Settings > LLM providers >
+  Advanced lets a power user change them.
 
 ## Checks on the release branch
 
 | Check | Result |
 |---|---|
-| Unit tests, debug and release builds, release-hygiene checks (CI) | pass on e5e0194 ([run 46045568569](https://github.com/namanwtf/atom/actions/runs/46045568569)); only the last step, Release readiness, held the pull request until this scorecard |
-| On-device model workflow | pass ([run 46045568443](https://github.com/namanwtf/atom/actions/runs/46045568443)): the new wake-word job loads all three "Hey Atom" models with LiteRT 2.4.0, with and without XNNPack, and runs each once on silence; it also reproduces the 4.0.6 error with the old loading. Qwen3 0.6B on the runner: 4.0.6's prompt never called `set_alarm` and wrote a made-up result; the new prompt called `set_alarm` (hour 8, minute 0) and answered "Set your alarm for 8:00". Plain chat was clean, and a task without tools got "A larger model can." |
-| Side-by-side comparison | pass ([run 46045568505](https://github.com/namanwtf/atom/actions/runs/46045568505)) |
-| Screenshots, dark and light | pass ([run 46045568481](https://github.com/namanwtf/atom/actions/runs/46045568481)); the first try on each commit timed out launching the app ("no app thread"), the same flake seen on release/next-2, and the reruns passed |
-| End-to-end tasks | 14 of 17 on the final code ([run 46045568458](https://github.com/namanwtf/atom/actions/runs/46045568458)), including the new "Hey Atom" model check (q) and "Hey Atom" pause and listen (k), which both passed in both runs |
+| Unit tests, debug and release builds, release-hygiene checks (CI) | pass on f589946, the release code ([run 46133486664](https://github.com/namanwtf/atom/actions/runs/46133486664)); only the last step, Release readiness, held the pull request until this scorecard |
+| Screenshots, dark and light | pass ([run 46124620552](https://github.com/namanwtf/atom/actions/runs/46124620552)), including the new "Hey ATOM" shots over Files and Clock. After the merge of #41 the first launch twice lost a race with the Home key; the script now waits for the launcher and retries a stuck launch once |
+| Side-by-side comparison | ran on earlier commits of this branch; not a release gate |
+| End-to-end tasks | 16 of 18 on the release code f589946 ([run 46133484368](https://github.com/namanwtf/atom/actions/runs/46133484368)), including the new "Hey ATOM" overlay (r: the wake word, live words, the command run in place with the screen, the result) and the new chat bar (s: a typed command runs in place, a follow-up continues the same conversation), and the "Hey Atom" model check (q) and pause and listen (k) |
 
 ## End-to-end tasks that did not pass
 
 | | Task | Why |
 |---|---|---|
-| a | Write and run a small script in the terminal | emulator limit, as in 4.0.5 and 4.0.6: the Linux install does not finish on this emulator |
-| h | Floating bubble mini chat | the Send tap missed on the emulator; it also failed once on 4.0.6. Nothing in 4.0.7 touches the bubble |
-| n | Screen turned off while operating Settings | the 3B test model finished the task before the screen was turned off, so there was no wait to check |
+| a | Write and run a small script in the terminal | emulator limit, as in every release since 4.0.5: the Linux install does not finish on this emulator |
+| d | Read the last notification | the 3B test model called the notification tool but left the dinner notification out of its answer; it passed in the three earlier runs of this branch, and 4.0.8 does not change notifications |
 
-These runs use the cloud-style test model (Qwen2.5 3B), so the tiny-model plan is not involved in them. Tasks e, b, o
-and p failed only in the first run and passed in the second.
+Getting there took three runs of r. The first two failed in the test, not the app: the emulator's listening
+screenshot took 16 s, longer than the overlay's 14 s guard for a capture that has gone quiet, so the overlay ended
+before the test sent the final words. The guard now restarts with each new word (a real recognizer sends words while
+someone speaks and always ends within 10 s), and the test keeps sending words while it takes the screenshot. On the
+slowest runner (half the usual speed) the tasks that lean on the model (e, b, m) ran out of time once; they passed in
+the other runs.
 
 ## What was not tested, and what an emulator cannot tell
 
-- Real phones: smoothness, battery, heat. 4.0.7 adds no polling, timers, wake locks or services. "Hey Atom" now really
-  runs (in 4.0.6 it failed and stopped, so it drew nothing); it runs at its designed cost, with the speech gate
-  keeping the models idle in silence.
-- "Hey Atom" triggering on a real microphone. The emulator checks that the models load and run.
-- Qwen3 0.6B on a phone's GPU. The prompt was checked on the runner's CPU. Its answers vary from run to run, so a
-  model this small can still sometimes set an alarm wrong.
-- The stray `</think>` never appeared on the runner; its fix rests on the rendered chat template and unit tests with
-  the phone's exact output.
+- Real phones: smoothness, battery, heat. The panel and light exist only between the wake word and the end of the
+  command; the light animates only while listening. No new polling, wake locks or services.
+- A real microphone: the emulator feeds the words in. Partial words from a phone's own recognizer, and how quickly it
+  ends, depend on the phone.
+- Screen context on secure apps (banking) and with a password field on screen: covered by unit tests, not on a phone.
+- Whether a phone that cached the old notification picture shows the new octopus straight away.
+- Real providers: DeepSeek accepting 32,768 output tokens, the "answer now" retry, a 429 "slow down" being waited out,
+  and six images accepted in one request. Unit tests check the requests ATOM sends.
 
 ## Verdict
 
-Both fixes build, pass their unit tests and pass their new on-device and end-to-end checks; the "Hey Atom" task now
-passes end to end for the first time since 4.0.5. The three end-to-end failures are an emulator limit, a tap that
-missed in a part of the app this release does not change, and a task the test model finished too quickly to check.
+Everything new in 4.0.8 builds, passes its unit tests and passes end to end: "Hey ATOM" listens, shows the words,
+runs the command in place with the screen and shows the answer; the chat bar runs a typed command and a follow-up.
+The two failures are an emulator limit and one answer from the small test model in a part of the app this release does
+not change.
 
-Shipped at the owner's request: "Go".
+Shipped at the owner's request: "include everything in 4.0.8", "be quick".
 
 Result: ready

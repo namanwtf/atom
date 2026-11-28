@@ -137,6 +137,7 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 
 - **"Hey ATOM" on screen:** say "Hey ATOM" and a silver-blue light glows around the screen, your words appear as you speak, and ATOM does the task right there. No guessing after the chime.
 - **It sees what you see:** a "Hey ATOM" command can use what is on the screen, so "summarise this" or "reply to this" just works. It is skipped for password fields and secure screens, and one tap turns it off.
+- **Type instead:** the panel has a "Type to ATOM" bar. Tap it to stop listening and type, fix a misheard command, or send a follow-up after the answer.
 - **One light everywhere:** "Hey ATOM", the assistant and phone control share the same silver-blue glow.
 - **Deep Think finishes its answers:** thinking models get far more room (up to 64K tokens for Claude, GPT and Gemini, more when the provider says so). If an answer still runs out, ATOM asks for the answer straight away and offers Continue.
 - **Limits follow your model:** large models get more of the conversation, more screenshots and longer tool results; small ones stay light. Power users can tune them in Settings > LLM providers > Advanced.
