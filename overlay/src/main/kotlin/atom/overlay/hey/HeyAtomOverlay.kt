@@ -235,6 +235,13 @@ object HeyAtomOverlay : WakePresenter {
         return run.phase != RunPhase.Cancelled
     }
 
+    /** True while the light shows for [conversationId]'s run, the same light the run glow draws. */
+    internal fun glowLitFor(conversationId: String): Boolean {
+        val s = stage as? HeyStage.Working ?: return false
+        return glow != null && !leaving && s.conversationId == conversationId &&
+            HeyMachine.glow(s, workingGlow = OverlayRuntime.prefs.edgeGlow.value) != HeyGlow.None
+    }
+
     /** A run starts using the screen: nothing of the overlay may cover what the agent reads and taps. */
     internal fun hideForAgent(conversationId: String): Boolean {
         if (stage == HeyStage.Hidden || panel == null) return false
@@ -398,9 +405,19 @@ object HeyAtomOverlay : WakePresenter {
         leaving = false
         val mode = HeyMachine.panel(s, screenBusy = RunOverlays.view != null)
         if (mode == HeyPanel.None) {
-            // Handed to the run capsule: gone at once, so the agent's first look at the screen sees only the app.
-            removeWindows()
+            // Handed to the run capsule: the panel goes at once, so the agent's first look at the screen sees only the
+            // app. The light stays a few frames, until the run glow (the same light) has drawn, so the edge never
+            // blinks.
             shown = s
+            panel?.remove()
+            panel = null
+            panelMode = HeyPanel.None
+            val light = glow ?: return
+            glow = null
+            OverlayRuntime.scope.launch {
+                delay(HANDOVER_MS)
+                light.remove()
+            }
             return
         }
         shown = s
@@ -531,6 +548,7 @@ object HeyAtomOverlay : WakePresenter {
     private const val EXIT_MS = 280L
     private const val CAPTURE_WAIT_MS = 600L
     private const val SETTLE_MS = 120L
+    private const val HANDOVER_MS = 80L
     const val GLOW_TITLE = "AtomHeyAtomGlow"
     const val PANEL_TITLE = "AtomHeyAtom"
 }

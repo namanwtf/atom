@@ -97,7 +97,7 @@ internal enum class HeyGlow {
     /** One bright pulse, then [Calm]. */
     Pulse,
 
-    /** A thin, still line: drawn once, no frames while it stays. */
+    /** Exactly the run glow, still: drawn once, no frames while it stays. */
     Calm,
     None,
 }
@@ -232,12 +232,15 @@ internal object HeyMachine {
 
     const val TAIL_CHARS = 160
 
-    fun glow(stage: HeyStage): HeyGlow = when (stage) {
+    /**
+     * [workingGlow] is the "edge glow while ATOM operates" setting: while working the light is the run glow, so it
+     * follows that switch. Once the run ends the light goes (the run glow would too) and the result panel stays.
+     */
+    fun glow(stage: HeyStage, workingGlow: Boolean = true): HeyGlow = when (stage) {
         is HeyStage.Listening -> HeyGlow.Live
         is HeyStage.Heard -> HeyGlow.Pulse
-        is HeyStage.Working -> if (stage.handedOff) HeyGlow.None else HeyGlow.Calm
-        is HeyStage.Opening, is HeyStage.Done -> HeyGlow.Calm
-        HeyStage.Missed, HeyStage.Hidden -> HeyGlow.None
+        is HeyStage.Working -> if (stage.handedOff || !workingGlow) HeyGlow.None else HeyGlow.Calm
+        is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed, HeyStage.Hidden -> HeyGlow.None
     }
 
     /**

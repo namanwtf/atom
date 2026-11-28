@@ -63,6 +63,9 @@ class HeyMachineTest {
         assertEquals("Setting a timer", working.step)
         assertEquals(HeyGlow.Calm, HeyMachine.glow(working))
         assertEquals(HeyPanel.Inline, HeyMachine.panel(working))
+        // While working the light is the run glow and follows its switch; with the result it goes.
+        assertEquals(HeyGlow.None, HeyMachine.glow(working, workingGlow = false))
+        assertEquals(HeyGlow.None, HeyMachine.glow(steps[6].stage))
         val done = assertIs<HeyStage.Done>(steps[6].stage)
         assertTrue(done.ok)
         assertEquals("Done. Your timer runs for 10 minutes.", done.result)

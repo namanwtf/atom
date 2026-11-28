@@ -89,6 +89,8 @@ import androidx.compose.ui.unit.sp
 import atom.overlay.Overlay
 import atom.overlay.R
 import atom.overlay.ui.ApprovalCard
+import atom.overlay.ui.drawEdgeGlow
+import atom.overlay.ui.rememberDisplayCorner
 import atom.overlay.ui.OverlayIcons
 import atom.overlay.ui.PillButton
 import atom.ui.feature.RunPhase
@@ -499,43 +501,17 @@ private fun RoundCopy(onClick: () -> Unit, size: Dp = 44.dp) {
 // ------------------------------------------------------------------ Edge glow
 
 /**
- * A 3dp line plus a soft halo that follows the display's rounded corners while the agent operates the screen,
- * in a blue → violet → pink → amber sweep; a still amber outline while paused. Drawn once after fading in: it
- * requests no frames while the run goes on.
+ * A 3dp line plus a soft halo that follows the display's rounded corners while the agent operates the screen
+ * ([drawEdgeGlow], the light the "Hey ATOM" overlay and the assistant use too); a still amber outline while paused.
+ * Drawn once after fading in: it requests no frames while the run goes on. [fadeIn] is false when it takes over
+ * from the "Hey ATOM" light, which looks the same, so the edge does not dim in between.
  */
 @Composable
-internal fun EdgeGlow(paused: Boolean) {
-    val view = LocalView.current
-    val fade = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { fade.animateTo(1f, tween(420)) }
-    val cornerPx = remember(view) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            view.rootWindowInsets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat()
-        } else {
-            null
-        }
-    }
+internal fun EdgeGlow(paused: Boolean, fadeIn: Boolean = true) {
+    val fade = remember { Animatable(if (fadeIn) 0f else 1f) }
+    LaunchedEffect(Unit) { if (fadeIn) fade.animateTo(1f, tween(420)) }
+    val cornerPx = rememberDisplayCorner()
     Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
-        val radius = cornerPx ?: 28.dp.toPx()
-        val inset0 = 1.5.dp.toPx()
-        val brush = if (paused) SolidColor(Amber.copy(alpha = 0.55f)) else Brush.sweepGradient(GLOW, center = center)
-        val layers = if (paused) {
-            listOf(3.dp.toPx() to 1f)
-        } else {
-            listOf(14.dp.toPx() to 0.12f, 8.dp.toPx() to 0.22f, 3.dp.toPx() to 0.95f)
-        }
-        for ((width, alpha) in layers) {
-            val inset = inset0 + width / 2f
-            drawRoundRect(
-                brush,
-                topLeft = Offset(inset, inset),
-                size = Size(size.width - inset * 2, size.height - inset * 2),
-                cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)),
-                alpha = alpha,
-                style = Stroke(width),
-            )
-        }
+        drawEdgeGlow(cornerPx, paused = paused)
     }
 }
-
-private val GLOW = listOf(Color(0xFF7AB8FF), Color(0xFFB59CFF), Color(0xFFFF9EC7), Color(0xFFFFC98A), Color(0xFF7AB8FF))

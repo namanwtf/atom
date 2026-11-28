@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import atom.overlay.ui.EdgeGlowStyle
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -74,8 +75,9 @@ private fun DrawScope.drawHalo(p: Float) {
     val left = Path()
     measure.getSegment(length - head, (length - head + band).coerceAtMost(length), left, true)
     val aurora = Brush.sweepGradient(AURORA, center = Offset(w / 2f, h / 2f))
-    for ((width, alpha) in listOf(18.dp.toPx() to 0.08f, 8.dp.toPx() to 0.2f, 2.5.dp.toPx() to 0.85f)) {
-        val style = Stroke(width, cap = StrokeCap.Round)
+    // The same strokes as ATOM's edge light (the run glow, "Hey ATOM"), running down both edges.
+    for ((widthDp, alpha) in EdgeGlowStyle.LAYERS) {
+        val style = Stroke(widthDp.dp.toPx(), cap = StrokeCap.Round)
         drawPath(right, aurora, alpha = alpha * fade, style = style)
         drawPath(left, aurora, alpha = alpha * fade, style = style)
     }
@@ -127,5 +129,5 @@ internal fun VoiceWave(level: Float, modifier: Modifier = Modifier) {
 
 private const val HALO_MS = 900
 
-/** The wake colours: light blue, violet, pink, amber, and back to blue so the sweep closes without a seam. */
-private val AURORA = listOf(Color(0xFF60A5FA), Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFFFBBF24), Color(0xFF60A5FA))
+/** The wake colours: ATOM's one edge-light palette (light blue, violet, pink, peach, back to blue). */
+private val AURORA = EdgeGlowStyle.PALETTE

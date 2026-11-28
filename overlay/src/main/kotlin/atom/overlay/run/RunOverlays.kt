@@ -115,7 +115,16 @@ internal object RunOverlays {
 
     fun markDriving(conversationId: String) {
         driving += conversationId
+        takeOverFromHey(conversationId)
         refresh()
+    }
+
+    /** The glow about to show takes over from the same light the "Hey ATOM" overlay draws: no fade in between. */
+    private var glowSeamless = false
+
+    private fun takeOverFromHey(conversationId: String) {
+        if (HeyAtomOverlay.glowLitFor(conversationId)) glowSeamless = true
+        HeyAtomOverlay.hideForAgent(conversationId)
     }
 
     fun onRuns(runs: List<HostRun>) {
@@ -126,7 +135,7 @@ internal object RunOverlays {
                 // Fallback for when the app does not call Overlay.clearScreenForAgent before screen tools.
                 MiniChat.hideForAgent(run.conversationId)
                 AssistantController.hideForAgent(run.conversationId)
-                HeyAtomOverlay.hideForAgent(run.conversationId)
+                takeOverFromHey(run.conversationId)
             }
         }
         refresh()
@@ -335,7 +344,10 @@ internal object RunOverlays {
         // Glow first, so a capsule created in the same pass sits above it.
         val glowing = next != null && prefs.edgeGlow.value &&
             (next.phase == RunPhase.Running || next.phase == RunPhase.Starting || next.phase == RunPhase.Paused)
-        if (glowing) ensureGlow() else removeGlow()
+        if (glowing) ensureGlow() else {
+            removeGlow()
+            glowSeamless = false
+        }
         glowPaused = next?.phase == RunPhase.Paused
         if (next != null) ensureCapsule() else removeCapsule()
         if (result != null) ensureResultWindow() else removeResultWindow()
@@ -407,7 +419,9 @@ internal object RunOverlays {
         val params = OverlayWindow.params(slot.type, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, OverlayWindow.PASS_THROUGH).apply {
             alpha = OverlayWindow.MAX_PASS_THROUGH_ALPHA
         }
-        val w = OverlayWindow(slot.context, params) { EdgeGlow(glowPaused) }
+        val fadeIn = !glowSeamless
+        glowSeamless = false
+        val w = OverlayWindow(slot.context, params) { EdgeGlow(glowPaused, fadeIn) }
         if (w.show()) glow = w
     }
 

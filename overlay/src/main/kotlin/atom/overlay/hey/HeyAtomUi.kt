@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -78,131 +79,81 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import atom.overlay.R
 import atom.overlay.run.CapsuleStatus
+import atom.overlay.OverlayRuntime
 import atom.overlay.ui.ApprovalCard
+import atom.overlay.ui.drawEdgeGlow
+import atom.overlay.ui.rememberDisplayCorner
 import atom.ui.theme.AtomEmblem
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
-// ATOM's light: black and silver. A cool steel halo carries it on light screens, a white core on dark ones, and a
-// thin graphite keyline keeps the edge readable over white content.
-private val Steel = Color(0xFF8D9FB3)
+// The panel's own tones. The light around the screen is ATOM's one edge light (atom.overlay.ui.EdgeGlow).
 private val Ice = Color(0xFFE4ECF6)
 private val Silver = Color(0xFFC4CDD7)
-private val Keyline = Color(0xFF0A0D11)
 private val SoftRed = Color(0xFFFF8E86)
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-/** Halo layers from the outside in: width in dp at full spread, and alpha at full intensity. */
-private val HALO = listOf(46f to 0.045f, 32f to 0.065f, 21f to 0.09f, 13f to 0.13f, 7f to 0.2f)
-private const val CORE_DP = 2.4f
 private const val SHIMMER_MS = 4_800
 private const val SPIN_MS = 1_300
-private const val STOPS = 24
 
 // ------------------------------------------------------------------ Edge light
 
 /**
- * The light around the screen edges, following the display's rounded corners. Live: two soft highlights travel
- * slowly round the edge and the band widens and brightens with the voice. Pulse: one bright breath. Calm: a thin
- * still line. Everything it draws reads the animated values in the draw phase only, so a still light is drawn
- * once and requests no frames.
+ * The light around the screen edges: the same light as the run glow ([drawEdgeGlow]), with listening on top. Live:
+ * the sweep turns slowly round the edge and the band widens with the voice. Pulse: one bright breath. Calm: exactly
+ * the run glow (still, resting sweep), so a run that takes the screen hands over to its glow without a seam. Every
+ * animated value is read in the draw phase only: a still light is drawn once and requests no frames.
  */
 @Composable
 internal fun HeyEdgeLight() {
     val stage = HeyAtomOverlay.shown
     val motion = HeyAtomOverlay.motion
     val leaving = HeyAtomOverlay.leaving
-    val mode = HeyMachine.glow(stage)
-    val view = LocalView.current
-    val cornerPx = remember(view) { roundedCorner(view) }
+    val glowOn by OverlayRuntime.prefs.edgeGlow.collectAsState()
+    val mode = HeyMachine.glow(stage, workingGlow = glowOn)
+    val cornerPx = rememberDisplayCorner()
 
     val appear = remember { Animatable(if (motion) 0f else 1f) }
     LaunchedEffect(leaving, motion) {
         val target = if (leaving) 0f else 1f
-        if (motion) appear.animateTo(target, tween(if (leaving) 260 else 520, easing = Emphasized)) else appear.snapTo(target)
+        if (motion) appear.animateTo(target, tween(if (leaving) 260 else 420, easing = Emphasized)) else appear.snapTo(target)
     }
-    val intensity = remember { Animatable(0f) }
+    val strength = remember { Animatable(0f) }
     LaunchedEffect(mode, motion) {
-        val rest = restIntensity(mode)
+        val rest = restStrength(mode)
         if (!motion) {
-            intensity.snapTo(rest)
+            strength.snapTo(rest)
         } else if (mode == HeyGlow.Pulse) {
-            intensity.animateTo(1.5f, tween(220, easing = Emphasized))
-            intensity.animateTo(rest, tween(900, easing = Emphasized))
+            strength.animateTo(1.6f, tween(220, easing = Emphasized))
+            strength.animateTo(rest, tween(900, easing = Emphasized))
         } else {
-            intensity.animateTo(rest, tween(if (mode == HeyGlow.None) 420 else 640, easing = Emphasized))
+            strength.animateTo(rest, tween(if (mode == HeyGlow.None) 420 else 640, easing = Emphasized))
         }
     }
     val live = motion && mode == HeyGlow.Live
+    // The sweep turns while listening and then comes to rest on a whole turn: the run glow's own position.
+    val turn = remember { Animatable(0f) }
+    LaunchedEffect(live) {
+        if (live) {
+            while (true) turn.animateTo(turn.value + 1f, tween(SHIMMER_MS, easing = LinearEasing))
+        } else {
+            val rest = kotlin.math.ceil(turn.value)
+            if (motion) turn.animateTo(rest, tween(700, easing = Emphasized)) else turn.snapTo(rest)
+        }
+    }
     val voice = animateFloatAsState(if (live) HeyAtomOverlay.level else 0f, tween(140), label = "voice")
-    val phase = travelling(live)
     Canvas(Modifier.fillMaxSize()) {
-        val strength = intensity.value * appear.value
-        if (strength > 0.002f) edgeLight(cornerPx ?: 28.dp.toPx(), strength, voice.value, phase.value)
+        drawEdgeGlow(cornerPx, strength = strength.value * appear.value, spread = 1f + 0.9f * voice.value, turn = turn.value)
     }
 }
 
-private fun restIntensity(mode: HeyGlow): Float = when (mode) {
-    HeyGlow.Live -> 1f
-    HeyGlow.Pulse -> 0.55f
-    HeyGlow.Calm -> 0.42f
+/** 1 is the run glow; listening is a touch brighter. */
+private fun restStrength(mode: HeyGlow): Float = when (mode) {
+    HeyGlow.Live -> 1.15f
+    HeyGlow.Pulse, HeyGlow.Calm -> 1f
     HeyGlow.None -> 0f
-}
-
-/** The highlights' position round the edge (0..1); it moves only while [active]. */
-@Composable
-private fun travelling(active: Boolean): State<Float> {
-    if (!active) return remember { mutableFloatStateOf(0.12f) }
-    val t = rememberInfiniteTransition(label = "shimmer")
-    return t.animateFloat(0.12f, 1.12f, infiniteRepeatable(tween(SHIMMER_MS, easing = LinearEasing)), label = "phase")
-}
-
-private fun roundedCorner(view: View): Float? =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        view.rootWindowInsets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat()?.takeIf { it > 0f }
-    } else {
-        null
-    }
-
-private fun DrawScope.edgeLight(radius: Float, strength: Float, voice: Float, phase: Float) {
-    val dp = density
-    val full = strength.coerceAtMost(1f)
-    val spread = 0.3f + 0.7f * full + 0.6f * voice + 0.25f * (strength - 1f).coerceAtLeast(0f)
-    val halo = Brush.sweepGradient(*stops(phase, Steel, Ice, 0.65f), center = center)
-    for ((width, alpha) in HALO) ring(halo, width * dp * spread, (alpha * strength).coerceAtMost(1f), 0f, radius)
-    val core = (CORE_DP + 1.6f * voice) * dp * (0.75f + 0.25f * full)
-    // The keyline sits just inside the core: invisible on dark content, a crisp edge on white.
-    ring(SolidColor(Keyline), 1f * dp, 0.24f * full, core, radius)
-    ring(Brush.sweepGradient(*stops(phase, Silver, Color.White, 1f), center = center), core, (0.95f * strength).coerceAtMost(1f), 0f, radius)
-}
-
-/** A stroke following the display outline, [inset] px in from the edge. */
-private fun DrawScope.ring(brush: Brush, width: Float, alpha: Float, inset: Float, radius: Float) {
-    if (width <= 0f || alpha <= 0f) return
-    val i = inset + width / 2f
-    drawRoundRect(
-        brush,
-        topLeft = Offset(i, i),
-        size = Size(size.width - i * 2, size.height - i * 2),
-        cornerRadius = CornerRadius((radius - i).coerceAtLeast(0f)),
-        alpha = alpha,
-        style = Stroke(width),
-    )
-}
-
-/** Colour stops round the edge: [base], brightening to [high] at two soft highlights half a turn apart. */
-private fun stops(phase: Float, base: Color, high: Color, strength: Float): Array<Pair<Float, Color>> = Array(STOPS + 1) { k ->
-    val t = k / STOPS.toFloat()
-    val lift = max(bump(t, phase, 0.11f), 0.65f * bump(t, phase + 0.5f, 0.075f))
-    t to lerp(base, high, (lift * strength).coerceIn(0f, 1f))
-}
-
-private fun bump(t: Float, center: Float, width: Float): Float {
-    val raw = abs(t - center) % 1f
-    val d = min(raw, 1f - raw)
-    return exp(-(d * d) / (2f * width * width))
 }
 
 // ------------------------------------------------------------------ Panel
