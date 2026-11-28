@@ -16,6 +16,8 @@ import atom.app.data.EntryKind
 import atom.app.graph
 import atom.app.service.TaskActionReceiver
 import atom.core.llm.Role
+import atom.core.ondevice.WakeModelsLoad
+import atom.core.ondevice.WakeShapes
 import atom.llm.cloud.DetectedCapabilities
 import atom.llm.cloud.ModelConfig
 import atom.llm.cloud.ProviderConfig
@@ -37,7 +39,7 @@ import org.json.JSONObject
  *   (OpenAI-compatible, no key), selects it and finishes onboarding.
  * - `content read --uri content://<pkg>.e2e/state` prints a JSON dump of the runs (phase, tool calls, answer, errors),
  *   scheduled tasks, Linux and accessibility state.
- * - methods `clear`, `stop`, `approve`, `deny`, `linux_install` (see [call]).
+ * - methods `clear`, `stop`, `approve`, `deny`, `linux_install`, `wake_models` (see [call]).
  *
  * Only the shell (adb) and root uids, and the app itself, may use it.
  */
@@ -167,6 +169,10 @@ class E2eProvider : ContentProvider() {
                 atom.voice.Wake.setEnabled(ctx, on, atom.voice.WakePolicy(screenOffListening = false, listenWhileCharging = true))
                 "hey atom ${if (on) "on" else "off"}"
             }
+            // Loads every "Hey Atom" model stage from the installed on-device AI pack the way a listening session
+            // does, runs each once on silence and closes them again: "ok: ..." with the output sizes and the score,
+            // or the load or inference error.
+            "wake_models" -> runBlocking(Dispatchers.IO) { wakeModelsCheck() }
             "state" -> {
                 result.putString("json", state().toString())
                 "ok"
@@ -175,6 +181,30 @@ class E2eProvider : ContentProvider() {
         }
         result.putString("result", message)
         return result
+    }
+
+    private fun wakeModelsCheck(): String {
+        val engines = atom.app.ondevice.OnDevicePack.engines() ?: return "error: the on-device AI pack is not loaded"
+        val path = atom.app.ondevice.OnDevicePack.loadedPath() ?: return "error: the on-device AI pack is not loaded"
+        val models = when (val load = engines.wakeModels(path)) {
+            is WakeModelsLoad.Failed -> return "error: ${load.reason}"
+            is WakeModelsLoad.Ok -> load.models
+        }
+        return try {
+            val mel = FloatArray(WakeShapes.MEL_FRAMES_PER_CHUNK * WakeShapes.MEL_BINS)
+            models.melspectrogram(FloatArray(WakeShapes.MEL_INPUT_SAMPLES), mel)
+            val embedding = FloatArray(WakeShapes.EMBEDDING_DIM)
+            models.embedding(FloatArray(WakeShapes.MEL_WINDOW_FRAMES * WakeShapes.MEL_BINS), embedding)
+            val score = models.classify(FloatArray(models.classifierFrames * WakeShapes.EMBEDDING_DIM))
+            val finite = mel.all { it.isFinite() } && embedding.all { it.isFinite() } && score.isFinite()
+            val summary = "melspectrogram ${mel.size} values; embedding ${embedding.size} values; " +
+                "classifier ${models.classifierFrames} frames; score on silence $score"
+            if (finite && score in 0f..1f) "ok: $summary" else "error: output out of range: $summary"
+        } catch (e: Throwable) {
+            "error: inference failed: ${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            models.close()
+        }
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {

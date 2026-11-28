@@ -23,7 +23,7 @@ object ModelCatalog {
             minRamGb = 2,
             license = "Apache-2.0",
             gated = false,
-            summary = "Tiny and fast: quick replies, short rewrites and simple commands with almost no battery cost.",
+            summary = "Tiny and fast: chat, quick answers and short rewrites with almost no battery cost.",
             supportsVision = false,
         ),
         CatalogModel(

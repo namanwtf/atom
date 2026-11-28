@@ -9,6 +9,7 @@ import atom.app.data.SettingsRepository
 import atom.core.agent.AgentConfig
 import atom.core.agent.ContextPolicy
 import atom.core.agent.SmallModel
+import atom.core.agent.TinyModel
 import atom.core.llm.DegenerateOutputGuard
 import atom.core.llm.LlmEngine
 import atom.core.llm.PromptedToolEngine
@@ -73,6 +74,8 @@ class RoutedEngine internal constructor(
     val contextWindow: Int? = null,
     /** An on-device model under about 3B parameters ([SmallModel]): fine for chat, weak at multi-step tasks. */
     val smallModel: Boolean = false,
+    /** An on-device model under about 1.5B parameters ([TinyModel]): a short prompt and one-step tools only. */
+    val tinyModel: Boolean = false,
 ) {
     fun snapReasoning(effort: ReasoningEffort?): ReasoningEffort? = Reasoning.snap(effort, reasoning)
 
@@ -352,6 +355,7 @@ class EngineRouter(
             // The model's own window (LiteRT-LM files carry it), not the size the engine was asked for.
             contextWindow = engine.capabilities.contextWindow.takeIf { it > 0 } ?: RoutedEngine.LOCAL_CONTEXT_WINDOW,
             smallModel = SmallModel.isSmall(installed.name, installed.sizeBytes),
+            tinyModel = TinyModel.isTiny(installed.name, installed.sizeBytes),
         )
     }
 

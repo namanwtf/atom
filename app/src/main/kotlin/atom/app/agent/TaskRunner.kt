@@ -24,6 +24,7 @@ import atom.core.agent.MessageInfo
 import atom.core.agent.RunControl
 import atom.core.agent.Scrubber
 import atom.core.agent.StopReason
+import atom.core.agent.TinyModel
 import atom.core.agent.TitleGenerator
 import atom.core.llm.ChatMessage
 import atom.core.llm.ContentPart
@@ -39,12 +40,14 @@ import atom.core.runtime.SteerQueue
 import atom.core.tool.Risk
 import atom.core.tool.Tool
 import atom.core.tool.ToolContext
+import atom.core.tool.ToolExposure
 import atom.core.tool.ToolRegistry
 import atom.core.tool.ToolResult
 import atom.core.tool.schema
 import atom.device.Accessibility
 import atom.device.DeviceTools
 import atom.automation.CapabilityTools
+import atom.automation.ToolGroups
 import atom.automation.ToolOrigin
 import atom.linux.LinuxTools
 import atom.ui.feature.AgentHost
@@ -838,49 +841,64 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                         .associate { it.key to it.value },
                 )
                 loadout.preload(history.messages)
-                val registry = ToolRegistry(loadout.all)
+                // The groups the request most likely needs: phrase rules over the request and the recent tool calls.
+                val routedGroups = atom.automation.ToolRouter.route(
+                    request = request.prompt ?: history.messages.lastOrNull { it.role == Role.User }?.text.orEmpty(),
+                    recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
+                )
+                // A tiny on-device model (TinyModel) gets a short prompt of its own and at most one group of one-step
+                // tools, offered directly: no core set, no enable_tools catalog, no preload. The full prompt drowns it.
+                val tiny = engine.onDevice && engine.tinyModel
+                val tinyTools = if (!tiny) emptyList<Tool>() else TinyModel.toolsFor(tools, TinyModel.groupFor(routedGroups)) { t ->
+                    ToolGroups.groupsOf(t.spec.name, t.spec.description)
+                }
+                val registry = ToolRegistry(if (tiny) tinyTools else loadout.all)
+                val exposure: ToolExposure = if (tiny) ToolExposure.All(registry) else loadout
                 val autoCompact = settings.autoCompaction
                 val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools)
                     .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
+                    .let { c -> if (tiny) c.copy(maxSteps = minOf(c.maxSteps, TinyModel.MAX_STEPS)) else c }
                     .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
                 // The groups the request most likely needs are loaded now, so the model rarely has to call
                 // enable_tools first (small models almost never do). The load goes into the conversation as an
                 // enable_tools call with its result (and the groups' notes): it persists with the conversation and
                 // the system prompt, the cached prefix, stays the same from turn to turn.
-                val preloaded = if (request.regenerate != null) null else atom.core.agent.ToolPreload.apply(
+                val preloaded = if (request.regenerate != null || tiny) null else atom.core.agent.ToolPreload.apply(
                     loadout,
-                    atom.automation.ToolRouter.route(
-                        request = request.prompt ?: history.messages.lastOrNull { it.role == Role.User }?.text.orEmpty(),
-                        recentTools = history.messages.takeLast(RECENT_FOR_ROUTING).flatMap { m -> m.toolCalls.map { it.name } },
-                    ),
+                    routedGroups,
                     baseConfig,
                 ).asExchange(loadout, takenIds = stored.flatMap { m -> m.message.toolCalls.map { it.id } }.toSet())
-                val basePrompt = SystemPrompt.build(
-                    tier = shell.tier,
-                    onDevice = engine.onDevice,
-                    hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second },
-                    onDemandTools = loadout.loader != null,
-                )
+                val basePrompt = if (tiny) {
+                    TinyModel.systemPrompt(withTools = tinyTools.isNotEmpty(), today = SystemPrompt.today())
+                } else {
+                    SystemPrompt.build(
+                        tier = shell.tier,
+                        onDevice = engine.onDevice,
+                        hints = hints.filter { it.first !in ToolFamilies.DEFERRED_HINTS }.map { it.second },
+                        onDemandTools = loadout.loader != null,
+                    )
+                }
                 val systemPrompt = character?.let { basePrompt + "\n\n" + it.prompt.systemWithPostHistory() } ?: basePrompt
                 // The clock time rides on the latest user message, so the system prompt (and the cached prefix) stays
                 // the same all day. Character chats keep their own framing.
                 val messages = if (character == null) SystemPrompt.withTime(history.messages) else history.messages
                 val config = baseConfig.copy(systemPrompt = systemPrompt)
-                if (debuggable) logRequestSize(systemPrompt, messages, loadout.specs(), registry.specs, config)
+                if (debuggable) logRequestSize(systemPrompt, messages, exposure.specs(), registry.specs, config)
                 val notice = listOfNotNull(
                     fallbackNotice?.takeIf { roleSelection == null },
                     engine.notice,
                     if (window == null && autoCompact) app.getString(atom.app.R.string.run_window_unknown) else null,
                 ).joinToString("\n").ifEmpty { null }
                 if (fallbackNotice != null && roleSelection == null && request.regenerate == null) commit(StoredMessage.notice(fallbackNotice), modelVisible = false)
-                // A tiny on-device model asked for browser or phone work: say plainly, once per conversation, that it
-                // will probably not manage it. The run goes ahead anyway.
+                // A small on-device model asked for browser or phone work: say plainly, once per conversation, that it
+                // will probably not manage it. The run goes ahead anyway. A tiny one that got its one-step tools for
+                // the request (an alarm, a setting) is not warned; one that got none is told what it can do.
                 if (request.regenerate == null) {
-                    val warning = app.getString(atom.app.R.string.run_small_model_agent)
+                    val warning = app.getString(if (tiny) atom.app.R.string.run_tiny_model_task else atom.app.R.string.run_small_model_agent)
                     val warned = stored.any { it.kind == EntryKind.Notice && it.message.text == warning }
-                    if (atom.core.agent.SmallModel.shouldWarn(engine.onDevice, engine.smallModel, request.prompt.orEmpty(), warned)) {
-                        commit(StoredMessage.notice(warning), modelVisible = false)
-                    }
+                    val warn = atom.core.agent.SmallModel.shouldWarn(engine.onDevice, engine.smallModel || tiny, request.prompt.orEmpty(), warned) &&
+                        (!tiny || tinyTools.isEmpty())
+                    if (warn) commit(StoredMessage.notice(warning), modelVisible = false)
                 }
                 contextWindow = config.usableWindow
                 updateRun(id) { copy(phase = if (paused.value) RunPhase.Paused else RunPhase.Running, engineLabel = engine.label, onDevice = engine.onDevice, notice = notice) }
@@ -896,7 +914,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 }
 
                 stats = stats.withTurn()
-                Agent(engine.engine, registry, config, loadout).run(messages, toolContext, control, preloaded).collect { handle(it) }
+                Agent(engine.engine, registry, config, exposure).run(messages, toolContext, control, preloaded).collect { handle(it) }
                 settle(RunOutcome.Completed)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {

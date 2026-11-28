@@ -13,6 +13,7 @@ import atom.core.llm.LlmRequest
 import atom.core.llm.ReasoningEffort
 import atom.core.llm.Releasable
 import atom.core.llm.Role
+import atom.core.llm.ThinkTagSplitter
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -142,6 +143,10 @@ class LiteRtEngine(
                 }
             }
 
+            // The answer text can still carry the model's own tags: Qwen3 with thinking off gets an empty
+            // "<think>\n\n</think>" from its template and often writes "</think>" again, which the runtime passes
+            // through as text. Stray tags and chat-format markers never reach the answer.
+            val splitter = ThinkTagSplitter()
             val chunks = AtomicInteger(0)
             val cancelRequested = AtomicBoolean(false)
             val contextFull = AtomicBoolean(false)
@@ -167,7 +172,7 @@ class LiteRtEngine(
                                 if (text.isEmpty() && thought.isEmpty()) return
                                 val n = chunks.incrementAndGet()
                                 if (thought.isNotEmpty() && trySend(LlmEvent.ReasoningDelta(thought)).isFailure) cancelNative()
-                                if (text.isNotEmpty() && trySend(LlmEvent.TextDelta(text)).isFailure) cancelNative()
+                                if (text.isNotEmpty() && !splitter.feed(text).all { trySend(it).isSuccess }) cancelNative()
                                 if (n >= maxOut) cancelNative()
                             }
 
@@ -207,6 +212,7 @@ class LiteRtEngine(
                     throw LlmException("LiteRT-LM generation failed: ${t.message}", retryable = true, cause = t)
                 }
 
+                splitter.finish().forEach { send(it) }
                 val generated = chunks.get()
                 // LiteRT-LM streams one chunk per decode step, so chunks approximate generated tokens.
                 val total = withContext(worker) { runCatching { conversation.getTokenCount() }.getOrDefault(0) }

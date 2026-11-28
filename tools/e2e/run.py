@@ -732,6 +732,16 @@ def wait_wake(pattern, timeout=20):
     return False, w
 
 
+def s_wake_models(res):
+    """q. Every "Hey Atom" model stage loads from the installed on-device AI pack and runs once on silence."""
+    st = state()
+    if not res.check(bool(st.get("packReady")), "on-device AI pack installed (it carries the wake word)"):
+        return
+    out = call("wake_models")
+    log("  " + out)
+    res.check("ok:" in out, f"melspectrogram, embedding and classifier load and run on silence ({out})")
+
+
 def s_hey_atom_charging(res):
     """k. Battery fix check: "Hey Atom" pauses with the screen off on battery and listens again when plugged in."""
     st = state()
@@ -930,6 +940,7 @@ SCENARIOS = [
     # comes last.
     ("i", "Automations: boot receiver on while a task exists", s_receiver),
     ("j", "Notification history keeps ordinary notifications", s_notification_history),
+    ("q", "Hey Atom models: every stage loads and runs on silence", s_wake_models),
     ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),

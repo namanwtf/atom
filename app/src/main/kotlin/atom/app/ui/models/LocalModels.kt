@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -63,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import atom.app.R
 import atom.app.data.AppSettings
 import atom.app.data.EngineSelection
+import atom.core.agent.TinyModel
 import atom.ui.components.AtomSwitch
 import atom.ui.components.CircleIconButton
 import atom.ui.components.Group
@@ -236,6 +238,18 @@ private fun ModelCard(
             if (model.license.isNotBlank()) QuietPill(model.license)
             if (model.supportsVision) QuietPill(stringResource(R.string.badge_vision))
             if (model.gated) QuietPill(stringResource(R.string.badge_needs_hf))
+        }
+        if (TinyModel.isTiny(model.name, model.sizeBytes)) {
+            // Honest about what a tiny model can do before it is downloaded: no multi-step tasks.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Info, null, Modifier.size(16.dp), tint = colors.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.mdl_tiny_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            }
         }
         if (tooBig) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -131,6 +131,7 @@
     <string name="badge_needs_hf">Needs HF token</string>
     <string name="badge_key_saved">Key saved</string>
     <string name="min_ram">%1$d GB RAM</string>
+    <string name="mdl_tiny_note">Very small: good for chat and one-step actions like alarms, timers and quick settings. For tasks in apps or on the web, pick Gemma 4 E2B or a larger model.</string>
     <string name="ram_warning">Needs %1$d GB RAM; this phone has %2$d GB. It may not run.</string>
     <string name="download_progress">%1$s of %2$s · %3$d%%</string>
     <string name="download_queued">Waiting…</string>

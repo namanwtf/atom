@@ -1,7 +1,8 @@
 # Runs an on-device catalog model on this runner with the LiteRT-LM runtime version the app ships, on the exact file
 # the app's model downloader fetches (same URL and SHA-256 as models/ModelCatalog.kt). It prints the model file's own
 # settings and what the model answers to Atom's prompts, with Atom 4.0.4's settings ("before") and the current ones
-# ("after"). No key or secret is used. The runner has no GPU: the phone's GPU and NPU paths are not covered.
+# ("after"). No key or secret is used. The runner has no GPU: the phone's GPU and NPU paths are not covered. The
+# wake-word job loads the "Hey Atom" models of the on-device AI pack the same way and runs each once on silence.
 name: On-device model
 
 on:
@@ -10,6 +11,7 @@ on:
     paths:
       - engine/litert/**
       - tools/ondevice/**
+      - ondevice-pack/**
       - models/src/main/kotlin/atom/models/ModelCatalog.kt
       - gradle/libs.versions.toml
       - .github/workflows/ondevice-model.yml
@@ -19,10 +21,43 @@ permissions:
 
 env:
   LITERTLM_VERSION: "0.20.0"   # gradle/libs.versions.toml: litertlm
+  LITERT_VERSION: "2.4.0"      # ondevice-pack/build.gradle.kts: com.google.ai.edge.litert:litert (the wake word)
   MODEL_URL: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm
   MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
 
 jobs:
+  # "Hey Atom": every wake-word model stage of the pack, loaded in the pack's order with the LiteRT version the pack
+  # ships (ondevice-pack/build.gradle.kts: com.google.ai.edge.litert:litert) and run once on silence.
+  wake-word:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install LiteRT
+        run: pip install "ai-edge-litert==$LITERT_VERSION" numpy
+      - name: Load and run every stage
+        run: python3 -u tools/ondevice/wake_probe.py ondevice-pack/src/main/assets/wakeword
+      - name: When the pack's Java interpreter allocates tensors
+        # The pack must give the melspectrogram input its shape before the first allocation: this shows which calls
+        # of the app's LiteRT Java API allocate (the constructor's init, run, allocateTensors).
+        run: |
+          mkdir aar && cd aar
+          for a in litert litert-api; do
+            curl -fsSL -o "$a.aar" "https://dl.google.com/android/maven2/com/google/ai/edge/litert/$a/$LITERT_VERSION/$a-$LITERT_VERSION.aar" || continue
+            unzip -q -o "$a.aar" classes.jar && mv classes.jar "$a.jar"
+          done
+          for jar in *.jar; do
+            for c in $(unzip -Z1 "$jar" | grep -E 'NativeInterpreterWrapper(Experimental)?\.class$' | sed 's/\.class$//; s#/#.#g'); do
+              echo "== $jar $c"
+              javap -c -p -cp "$jar" "$c" | awk '/^  [a-z].*\(/{m=$0} /allocateTensors/{print m " -> " $0}' | sort -u
+              # The constructor's init: whether its allocation is guarded (an exception table entry around it).
+              javap -c -p -cp "$jar" "$c" | awk '/private void init\(/{p=1} p&&/^$/{exit} p' | grep -E 'init\(|allocateTensors|Exception table|from +to|^ +[0-9]+ +[0-9]+ +[0-9]+|athrow|isMemoryAllocated' || true
+            done
+          done
+
   api:
     runs-on: ubuntu-latest
     timeout-minutes: 10

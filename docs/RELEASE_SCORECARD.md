@@ -1,105 +1,69 @@
-# Atom 4.0.6 release scorecard
+# ATOM 4.0.7 release scorecard
 
 Written for the owner, in plain words. Everything below ran on GitHub's test machines (an Android phone emulator
 plus a small AI model running on the same machine), never on a personal computer. Links go to the runs.
 
-## What 4.0.6 brings
+## What 4.0.7 brings
 
-- **Make me a website.** "Make me a small website that tracks my water intake": Atom writes the page (HTML, CSS and
-  JavaScript) and opens a live preview that reloads by itself when Atom changes a file. Each site has its own private
-  address that only Atom's own screens can open; no other app on the phone can reach its files, and nothing listens
-  on the phone's network. The preview can be reopened from a card in the chat or from Settings > Tools > Sites, opened in
-  Atom's browser and shared as a .zip. It needs no Linux and no internet. (#32)
-- **Report a problem.** Settings > About > Report a problem, and a small "Report a problem" under a failed run in the
-  chat. It builds one text file on the phone (versions, device, the last run's steps without their contents, recent
-  crashes and freezes, Atom's own log lines) with keys, tokens and personal data removed. You read it first and share
-  it yourself; nothing is sent automatically. (#31)
-- **Ready-made routines.** On the Scheduled tasks screen: Morning brief, Price watch, Weekly phone cleanup (report
-  only) and Evening wrap-up. Each opens the usual editor filled in; you only tap Save. (#31)
-- **"· add key" is one tap.** When home says "DeepSeek Flash · add key", tapping it opens DeepSeek's key screen
-  directly instead of the model list. Back returns to the chat.
-- **Thinking models after a restart.** DeepSeek and Kimi in thinking mode refused to continue a conversation with
-  earlier tool steps once the app had been restarted, because the model's reasoning was kept in memory only. It is
-  now taken from the saved conversation and counts against the context, so a long conversation still fits. While a
-  model really thinks, an old step saved without its reasoning is sent as a plain note; models that do not think
-  (deepseek-chat, Kimi K2 Instruct, Qwen Instruct) keep their tool steps exactly as in 4.0.5, and a new thinking model
-  nothing knows yet still gets its reasoning back.
-- **"Allow all commands for this task" works.** In 4.0.5 every terminal and shell command asked again and showed raw
-  "terminal_run({...})" text: a wrapper that every tool passes through dropped the command's own prompt. Prompts now
-  show the whole command ("Run in the Linux terminal: ...") and offer the button, and one tap covers the rest of the
-  task (plainly destructive commands still ask).
-- **The bubble's hold menu is closer.** Its three buttons sit 28dp from the bubble's edge instead of about 76dp.
-- **The launcher icon has new resource names** (atom_launcher), so a phone that cached the old app's icon stops
-  showing it. (The commit that renamed it also added density bitmaps; they were never used, because the adaptive icon
-  always wins on Android 11 and newer, and a later commit removed them.)
-- **Smaller fixes from review.** Website tools that write or delete files count as file tools, so a scheduled task
-  limited to the web cannot change files; the problem report also removes web search, image, speech and MCP keys;
-  "make a game plan" or "a page in Notion" no longer loads the website tools; only the user's own sites report page
-  errors to the agent; a scheduled task never opens the preview on screen.
-- **Tests.** The end-to-end tests warm up the model once, run every task on the same device clock, check results more
-  strictly (the script really printed 5, the page really loaded), stop tasks that run out of time, and still print
-  their results if the emulator dies. The floating bubble test now taps Send where it really is (it used to hit the
-  keyboard's Enter key).
+Two fixes for bugs the owner found on a real phone with 4.0.6. (#39)
+
+- **"Hey Atom" loads again.** Speech settings showed "Wake-word model failed to load: ... Node number 2 (CONV_2D)
+  failed to prepare." The melspectrogram model's input is stored in the file as one sample, and LiteRT's interpreter
+  prepares the model at that stored size as soon as it is opened, before ATOM could give it the real size (1,760
+  samples). Its first convolution needs a 512-sample window, so it could not be prepared. ATOM now writes the real
+  input size into its in-memory copy of the model before opening it (two bytes; the file on disk and the computation
+  are unchanged, and the output matches the resized original exactly). A load error now names the model file. The
+  end-to-end "Hey Atom" task had been failing with this same message since 4.0.5; it was this bug, not an emulator
+  limit.
+- **Tiny offline models answer cleanly.** Qwen3 0.6B answered "set an alarm for 8:00" with stray `</think>` tags and
+  fragments of ATOM's own prompt. Two causes:
+  - The model writes `</think>` again after its chat template has already closed the thinking block, and the
+    LiteRT-LM engine passed it on as text. The answer text of both on-device engines now goes through the think-tag
+    filter, which drops a closing tag with nothing open and a second opening tag.
+  - The full agent prompt (about 2,100 of its 4,096 tokens: instructions, memory and skills notes, 17 core tools and
+    the tool catalog) overwhelmed a 0.6B model. A model under 1.5B parameters now gets a short prompt of its own
+    (about 370 tokens), only the tools of the one-step group the request needs (alarms and timers, or quick
+    settings), and at most 4 steps; plain chat gets no tools. A task it has no tools for says that a larger model is
+    needed and suggests Gemma 4 E2B, and the on-device models screen says what a tiny model can do.
 
 ## Checks on the release branch
 
 | Check | Result |
 |---|---|
-| Unit tests, debug and release builds, release-hygiene checks (CI) | pass on 07d5563, the final code ([run 45937912893](https://github.com/namanwtf/atom/actions/runs/45937912893)); the last step, Release readiness, holds this pull request on purpose until the owner approves it |
-| Screenshots, dark and light | pass on 07d5563 ([run 45937912882](https://github.com/namanwtf/atom/actions/runs/45937912882)): the website preview at its new address before and after an edit, the preview card in the chat, Settings > Sites, "Report a problem", the routines, the key screen from "· add key", and the closer hold menu on both sides of the screen |
-| End-to-end tasks | 12 of 15 core tasks on the final code, and the optional website task; every failure is an emulator limit or the small test model's wording (below) |
+| Unit tests, debug and release builds, release-hygiene checks (CI) | pass on e5e0194 ([run 46045568569](https://github.com/namanwtf/atom/actions/runs/46045568569)); only the last step, Release readiness, held the pull request until this scorecard |
+| On-device model workflow | pass ([run 46045568443](https://github.com/namanwtf/atom/actions/runs/46045568443)): the new wake-word job loads all three "Hey Atom" models with LiteRT 2.4.0, with and without XNNPack, and runs each once on silence; it also reproduces the 4.0.6 error with the old loading. Qwen3 0.6B on the runner: 4.0.6's prompt never called `set_alarm` and wrote a made-up result; the new prompt called `set_alarm` (hour 8, minute 0) and answered "Set your alarm for 8:00". Plain chat was clean, and a task without tools got "A larger model can." |
+| Side-by-side comparison | pass ([run 46045568505](https://github.com/namanwtf/atom/actions/runs/46045568505)) |
+| Screenshots, dark and light | pass ([run 46045568481](https://github.com/namanwtf/atom/actions/runs/46045568481)); the first try on each commit timed out launching the app ("no app thread"), the same flake seen on release/next-2, and the reruns passed |
+| End-to-end tasks | 14 of 17 on the final code ([run 46045568458](https://github.com/namanwtf/atom/actions/runs/46045568458)), including the new "Hey Atom" model check (q) and "Hey Atom" pause and listen (k), which both passed in both runs |
 
-## End-to-end tasks (new app, small local model)
+## End-to-end tasks that did not pass
 
-[Run 45937912909](https://github.com/namanwtf/atom/actions/runs/45937912909) on 07d5563, the final code (later commits
-change only this scorecard): **12 of 15 core tasks passed, and the optional website task passed**. The run before it,
-[45931347563](https://github.com/namanwtf/atom/actions/runs/45931347563) on 9a40e71 (before the last review round),
-also passed 12 of 15 core tasks and the website task.
+| | Task | Why |
+|---|---|---|
+| a | Write and run a small script in the terminal | emulator limit, as in 4.0.5 and 4.0.6: the Linux install does not finish on this emulator |
+| h | Floating bubble mini chat | the Send tap missed on the emulator; it also failed once on 4.0.6. Nothing in 4.0.7 touches the bubble |
+| n | Screen turned off while operating Settings | the 3B test model finished the task before the screen was turned off, so there was no wait to check |
 
-| | Task | Final code | Run before | Notes |
-|---|---|---|---|---|
-| g | Open the Lumen character | pass | pass | |
-| c | Turn on Do Not Disturb | pass | pass | |
-| d | What was my last notification about? | fail | pass | the small model asked the notification tool for an app named "unknown" and then said it found nothing; the tool itself worked. Model wording, not Atom |
-| e | Remind me every day at 9am to drink water | pass | pass | |
-| b | Summarize the top story on example.com in the agent browser | pass | pass | |
-| o | Read a web page in the agent browser | pass | pass | |
-| f | Stop a task halfway | pass | pass | |
-| h | Floating bubble mini chat | pass | pass | |
-| i | Automation start-up switch on while a task exists | pass | pass | |
-| j | Normal notifications still saved | pass | pass | |
-| m | Screen turned off during a command task | pass | pass | new check, passed both times: the command's approval showed "Run in Android's shell: ..." and offered "Allow all commands for this task" |
-| n | Screen turned off while operating Settings | pass | fail (crash log only) | in the run before, the crash log held a crash of the Linux installer's PRoot process inside the emulator's ARM translator; Atom itself did not crash |
-| l | After a reboot: start-up switch, boot start, alarm | pass | pass | |
-| a | Write and run a small script in the terminal | fail | fail | emulator limit, as in 4.0.5: the Linux install does not finish on this emulator (and its PRoot process crashed in the ARM translator). The approval check passed: "Run in the Linux terminal: ..." with "Allow all commands for this task" |
-| k | "Hey Atom" pauses on battery, listens when charging | fail | fail | emulator limit, as in 4.0.5: the wake-word model does not load on the emulator's CPU |
-| p | Make a one-page site that says hello (optional) | **pass** | **pass** | the model made the site; site_preview gave its own address (https://hello-site-rf2gbh.invalid/), which matched the site's stored tag, and Atom's preview screen showed that address and the page saying hello. Nothing listens on a port any more, so the check goes through the app and the files |
+These runs use the cloud-style test model (Qwen2.5 3B), so the tiny-model plan is not involved in them. Tasks e, b, o
+and p failed only in the first run and passed in the second.
 
 ## What was not tested, and what an emulator cannot tell
 
-- Real phones: smoothness, battery, heat, mobile data.
-- DeepSeek and Kimi themselves: the thinking fix is checked against the exact requests Atom sends (unit tests), not
-  against the live services, which need paid keys.
-- The website preview on a real phone's WebView version, and sharing the .zip into other apps. The new private
-  address was checked on the emulator's WebView (screenshots and the website task).
-- "Report a problem" on phones whose system restricts reading the app's own log (some ROMs): the report then says the
-  log is empty and why.
+- Real phones: smoothness, battery, heat. 4.0.7 adds no polling, timers, wake locks or services. "Hey Atom" now really
+  runs (in 4.0.6 it failed and stopped, so it drew nothing); it runs at its designed cost, with the speech gate
+  keeping the models idle in silence.
+- "Hey Atom" triggering on a real microphone. The emulator checks that the models load and run.
+- Qwen3 0.6B on a phone's GPU. The prompt was checked on the runner's CPU. Its answers vary from run to run, so a
+  model this small can still sometimes set an alarm wrong.
+- The stray `</think>` never appeared on the runner; its fix rests on the rendered chat template and unit tests with
+  the phone's exact output.
 
 ## Verdict
 
-The new features build, pass their unit tests and show correctly on screen in both themes. On the final code the
-end-to-end tasks pass 12 of 15 and the website task passes; the failures are the two emulator limits known from 4.0.5
-(the terminal's Linux install and "Hey Atom") and one answer worded badly by the small test model. The review fixes
-are in: websites no longer listen on a port, "Allow all commands for this task" works again for terminal and shell
-commands (now checked end to end), thinking models keep their reasoning where the vendors need it, and the bubble's
-menu sits next to it.
+Both fixes build, pass their unit tests and pass their new on-device and end-to-end checks; the "Hey Atom" task now
+passes end to end for the first time since 4.0.5. The three end-to-end failures are an emulator limit, a tap that
+missed in a part of the app this release does not change, and a task the test model finished too quickly to check.
 
-A last independent check of the final review round found it safe to ship and named two small follow-ups, both fixed
-in the final commit with unit tests: the bubble's hold menu now picks the nearest button under the finger (the
-closer buttons made their touch areas overlap, so the first match could be the wrong one), and "a page called ... in
-Notion" no longer loads the website tools. The end-to-end run above is on the last code before those two changes;
-the commits after it change only the README, this scorecard, those two functions and their tests.
-
-Shipped at the owner's request: "Ship it as soon as review passes."
+Shipped at the owner's request: "Go".
 
 Result: ready
