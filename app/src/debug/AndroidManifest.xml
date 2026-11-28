@@ -7,6 +7,8 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- The screenshot pass sets a busy wallpaper to photograph the "Hey ATOM" glass over it (E2eProvider "wallpaper"). -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <application>
         <receiver
             android:name="atom.app.ondevice.DebugPackReceiver"

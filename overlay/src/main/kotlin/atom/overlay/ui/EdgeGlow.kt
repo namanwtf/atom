@@ -6,9 +6,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -19,6 +23,7 @@ import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * ATOM's one light around the screen, in ATOM's black and silver: the run glow while the agent operates the phone,
@@ -143,4 +148,73 @@ private fun DrawScope.ring(brush: Brush, width: Float, alpha: Float, inset: Floa
         alpha = alpha,
         style = Stroke(width),
     )
+}
+
+/** The display outline as a closed path, [inset] px in from the edge, for light that travels along it. */
+internal fun edgePath(width: Float, height: Float, cornerPx: Float, inset: Float): Path = Path().apply {
+    addRoundRect(
+        RoundRect(
+            left = inset,
+            top = inset,
+            right = width - inset,
+            bottom = height - inset,
+            cornerRadius = CornerRadius((cornerPx - inset).coerceAtLeast(0f)),
+        ),
+    )
+}
+
+/**
+ * A comet of light travelling along [measure] (the edge path): its head at [head] (0..1 round the edge), a tail of
+ * [share] of the edge fading out behind it. [alpha] fades the whole comet; [voice] makes it a little wider.
+ */
+internal fun DrawScope.drawComet(measure: PathMeasure, head: Float, share: Float, alpha: Float, voice: Float) {
+    if (alpha <= 0.01f) return
+    val length = measure.length
+    if (length <= 0f) return
+    val d = density
+    val pieces = 14
+    val tail = share * length
+    val start = head * length - tail
+    val halo = Stroke((14f + 8f * voice) * d, cap = StrokeCap.Round)
+    val core = Stroke((3.6f + 1.6f * voice) * d, cap = StrokeCap.Round)
+    for (i in 0 until pieces) {
+        val from = start + tail * i / pieces
+        val to = start + tail * (i + 1) / pieces
+        val fade = ((i + 1f) / pieces).let { it * it }
+        val piece = segment(measure, from, to, length)
+        drawPath(piece, EdgeGlowStyle.STEEL, alpha = (0.38f * fade * alpha).coerceAtMost(1f), style = halo)
+        drawPath(piece, if (i >= pieces - 3) Color.White else EdgeGlowStyle.ICE, alpha = (0.95f * fade * alpha).coerceAtMost(1f), style = core)
+    }
+}
+
+/** The part of the closed edge path from [from] to [to] (px along it, may wrap past either end). */
+private fun segment(measure: PathMeasure, from: Float, to: Float, length: Float): Path {
+    val out = Path()
+    var a = from % length
+    if (a < 0f) a += length
+    val b = a + (to - from)
+    if (b <= length) {
+        measure.getSegment(a, b, out, true)
+    } else {
+        measure.getSegment(a, length, out, true)
+        measure.getSegment(0f, b - length, out, true)
+    }
+    return out
+}
+
+/**
+ * A wave rippling inward from the edge with the voice: at [progress] 0 it is at the edge, at 1 it is [reachDp] in and
+ * gone. [strength] (0..1) is how loud the syllable was.
+ */
+internal fun DrawScope.drawWave(cornerPx: Float?, progress: Float, strength: Float, reachDp: Float) {
+    val p = progress.coerceIn(0f, 1f)
+    val left = 1f - p
+    val alpha = strength * left * sqrt(left)
+    if (alpha <= 0.01f) return
+    val d = density
+    val radius = cornerPx ?: (EdgeGlowStyle.FALLBACK_CORNER_DP * d)
+    val inset = p * reachDp * d
+    val width = (2.5f + 7f * left) * d
+    ring(SolidColor(EdgeGlowStyle.STEEL), width * 2.6f, (0.32f * alpha).coerceAtMost(1f), (inset - width * 0.8f).coerceAtLeast(0f), radius)
+    ring(SolidColor(EdgeGlowStyle.ICE), width, (0.85f * alpha).coerceAtMost(1f), inset, radius)
 }
