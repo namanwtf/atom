@@ -133,10 +133,22 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 
 ## What's new
 
-**4.0.7, the current release**
+**4.0.8, the current release**
+
+- **"Hey ATOM" on screen:** say "Hey ATOM" and a silver-blue light glows around the screen, your words appear as you speak, and ATOM does the task right there. No guessing after the chime.
+- **It sees what you see:** a "Hey ATOM" command can use what is on the screen, so "summarise this" or "reply to this" just works. It is skipped for password fields and secure screens, and one tap turns it off.
+- **One light everywhere:** "Hey ATOM", the assistant and phone control share the same silver-blue glow.
+- **Deep Think finishes its answers:** thinking models get far more room (up to 64K tokens for Claude, GPT and Gemini, more when the provider says so). If an answer still runs out, ATOM asks for the answer straight away and offers Continue.
+- **Limits follow your model:** large models get more of the conversation, more screenshots and longer tool results; small ones stay light. Power users can tune them in Settings > LLM providers > Advanced.
+- The notification shows the ATOM octopus and the name "ATOM".
+
+<details>
+<summary><b>Earlier: 4.0.7</b></summary>
 
 - **"Hey Atom" works again:** the wake-word models load and listen. In 4.0.6 they failed to start with a "Node number 2 (CONV_2D) failed to prepare" error.
 - **Tiny offline models answer cleanly:** Qwen3 0.6B and other very small models get a short prompt and only the tools a request needs, so "set an alarm for 8:00" sets the alarm instead of printing fragments and stray `</think>` text. When a tiny model can't do a task, ATOM says so and suggests a larger one.
+
+</details>
 
 <details>
 <summary><b>Earlier: 4.0.6</b></summary>
