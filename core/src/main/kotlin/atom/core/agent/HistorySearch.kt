@@ -66,7 +66,7 @@ object HistorySearch {
             val entries = source()
             args.optInt("index")?.let { index ->
                 val entry = entries.firstOrNull { it.index == index } ?: return ToolResult.error("No message #$index.")
-                return ToolResult.ok("#$index ${label(entry)}:\n" + entry.text.take(FULL_CHARS))
+                return ToolResult.ok("#$index ${label(entry)}:\n" + entry.text.take(ctx.limits.historyEntryChars))
             }
             val query = args.optString("query")?.takeIf { it.isNotBlank() }
                 ?: return ToolResult.error("Pass a query to search, or an index to read.")
@@ -76,7 +76,6 @@ object HistorySearch {
     }
 
     const val NAME = "search_history"
-    private const val FULL_CHARS = 6_000
     private val WHITESPACE = Regex("\\s+")
 
     private fun label(entry: HistoryEntry): String = when (entry.role) {

@@ -68,6 +68,8 @@ data class AgentConfig(
      * the room the reasoning took. Null sends the model default.
      */
     val briefReasoning: ReasoningEffort? = null,
+    /** Size limits that follow the model (compaction summary, its transcript); see [ModelLimits]. */
+    val limits: ModelLimits = ModelLimits.Default,
 ) {
     /**
      * What one prompt may actually use: the model window minus room for the answer, or the policy's deliberate
@@ -118,6 +120,21 @@ data class AgentConfig(
     }
 
     fun retryDelay(attempt: Int): Long = (retryDelayMs shl attempt.coerceIn(0, 10)).coerceAtMost(retryDelayMs * 8)
+
+    /**
+     * The wait before retry [attempt]: what the provider asked for in Retry-After (never shorter than the usual
+     * backoff, never longer than [MAX_RETRY_AFTER_MS]), else the usual backoff.
+     */
+    fun retryWait(attempt: Int, retryAfterMs: Long?): Long {
+        val backoff = retryDelay(attempt)
+        val asked = retryAfterMs?.takeIf { it > 0 } ?: return backoff
+        return asked.coerceIn(backoff, maxOf(backoff, MAX_RETRY_AFTER_MS))
+    }
+
+    companion object {
+        /** The longest single wait a Retry-After header can ask for; a longer one is cut to this. */
+        const val MAX_RETRY_AFTER_MS = 60_000L
+    }
 }
 
 enum class StopReason {
@@ -518,9 +535,13 @@ class Agent(
             model = config.model,
             prefix = state.convo.subList(0, cut).toList(),
             sensitive = { state.sensitive[it] },
-            maxOutputTokens = (window / 8).coerceIn(400, 2_000),
-            transcriptBudgetChars = (window * 3).coerceAtLeast(8_000),
-            reasoning = if (config.reasoning == ReasoningEffort.Off) ReasoningEffort.Off else null,
+            maxOutputTokens = config.limits.compactionSummaryTokens(window),
+            transcriptBudgetChars = config.limits.compactionTranscriptChars(window),
+            // A summary needs no deep thought: thinking off or the lightest level where the model allows it, so the
+            // reasoning does not use up the summary's room.
+            reasoning = if (config.reasoning == ReasoningEffort.Off) ReasoningEffort.Off else config.briefReasoning,
+            toolResultChars = config.limits.compactionToolResultChars,
+            argumentChars = config.limits.compactionArgumentChars,
         )
         val result = try {
             Compactor.summarize(engine, request)
@@ -655,7 +676,7 @@ class Agent(
                 )
             } catch (e: LlmException) {
                 if (!e.retryable || attempt >= config.maxRetries) throw e
-                val wait = config.retryDelay(attempt)
+                val wait = config.retryWait(attempt, e.retryAfterMs)
                 emit(AgentEvent.Retrying(attempt + 1, config.maxRetries, wait, LlmErrors.explain(e), discardPartial = emittedAny))
                 delay(wait)
                 attempt++

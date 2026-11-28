@@ -154,9 +154,11 @@ interface Releasable {
     suspend fun release()
 }
 
-class LlmException(
+open class LlmException(
     message: String,
     val retryable: Boolean,
     val statusCode: Int? = null,
     cause: Throwable? = null,
+    /** How long the provider asked to wait before trying again (a Retry-After header on 429 or 503), when it did. */
+    val retryAfterMs: Long? = null,
 ) : Exception(message, cause)
