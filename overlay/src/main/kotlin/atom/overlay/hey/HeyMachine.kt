@@ -117,7 +117,10 @@ internal enum class HeyPanel {
  * stage. Pure, so it is unit-tested; [HeyAtomOverlay] applies the effects.
  */
 internal object HeyMachine {
-    /** Longer than the capture's own 10 s limit: only a capture that never reports back ends here. */
+    /**
+     * Longer than the capture's own 10 s limit, counted from the wake word and from each new partial result: only a
+     * capture that stops reporting ends here.
+     */
     const val LISTEN_GUARD_MS = 14_000L
     const val OPENING_MS = 1_800L
     const val DONE_MS = 6_000L
@@ -126,8 +129,9 @@ internal object HeyMachine {
 
     fun reduce(stage: HeyStage, event: HeyEvent): HeyStep = when (event) {
         HeyEvent.Wake -> HeyStep(HeyStage.Listening(), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
+        // New words show the capture is alive: the guard counts from the latest of them.
         is HeyEvent.Partial -> if (stage is HeyStage.Listening && event.text.isNotBlank()) {
-            HeyStep(HeyStage.Listening(event.text.trim()))
+            HeyStep(HeyStage.Listening(event.text.trim()), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
         } else {
             HeyStep(stage)
         }

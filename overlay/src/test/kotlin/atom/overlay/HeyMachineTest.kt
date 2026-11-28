@@ -54,6 +54,7 @@ class HeyMachineTest {
             HeyEvent.TimerElapsed,
         )
         assertEquals(HeyStage.Listening("set a timer for ten minutes"), steps[2].stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.Timer(HeyMachine.LISTEN_GUARD_MS)), steps[2].effects)
         val heard = steps[3]
         assertEquals(HeyStage.Heard("Set a timer for ten minutes"), heard.stage)
         assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), heard.effects)
