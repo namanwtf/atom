@@ -895,6 +895,82 @@ def s_hey_atom_overlay(res):
     res.check(ok and not hey_windows(), f"cancel closes it ({hey_windows()})")
 
 
+def wait_voice_run(known, conversation=None, timeout=480):
+    """Polls for the newest Voice run not in [known] (in [conversation] when given) until it ends; returns it and the
+    overlay stages seen meanwhile. Polls fast, so the overlay's short result stage is caught."""
+    seen, run = set(), None
+    end = time.time() + timeout
+    while time.time() < end:
+        st = state()
+        seen.add((st.get("heyOverlay") or {}).get("stage"))
+        runs = [r for r in st.get("runs", []) if r["runId"] not in known and r.get("source") == "Voice"
+                and (conversation is None or r["conversationId"] == conversation)]
+        if runs:
+            run = max(runs, key=lambda r: r["startedAt"])
+            if not run["active"]:
+                break
+        time.sleep(0.5)
+    return run, seen
+
+
+def s_hey_atom_type(res):
+    """s. "Hey ATOM" chat bar: typing instead of speaking stops listening and keeps the words heard so far in the field,
+    the keyboard types into it, the typed command runs in place like a spoken one, and a follow-up typed under the
+    result continues the same conversation."""
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    sh("am start -W -a android.intent.action.SHOW_ALARMS")
+    time.sleep(3)
+    out = hey_overlay("wake")
+    if not res.check("shown=true" in out, f"wake word: the overlay takes it ({out})"):
+        return
+    time.sleep(2)
+    hey_overlay("partial", text="What is 3")
+    hey_overlay("type")
+    ok, hs = wait_hey(r"^typing$", timeout=5, gap=0.5)
+    res.check(ok, f"the bar's field: typing ({hs.get('stage')})")
+    res.check(hs.get("draft") == "What is 3", f"the words heard so far fill the field ({hs.get('draft')!r})")
+    res.check(hs.get("panelMode") == "Typing", f"the panel takes the keyboard only now ({hs.get('panelMode')})")
+    time.sleep(2)
+    res.notes.append(f"keyboard shown: {keyboard_shown()}")
+    sh("input text '%splus%s3'")
+    time.sleep(2)
+    hs = hey_state()
+    res.check("plus 3" in (hs.get("draft") or ""), f"typed through the keyboard into the field ({hs.get('draft')!r})")
+    shot(f"e2e_{res.key}_typing")
+    known = run_ids()
+    freeze_clock()
+    out = hey_overlay("send")
+    if not res.check("taken=true" in out, f"Send runs the typed command in place ({out})"):
+        return
+    top = resumed_activity()
+    run, seen = wait_voice_run(known)
+    if not res.check(run is not None, "a Voice run started"):
+        return
+    res.tools = names(run)
+    res.check(PKG not in top, f"ATOM stayed in the background ({top[:120]})")
+    res.check(not run["active"] and bool(answer(run)), f"run ended with an answer ({run['phase']}: {answer(run)[:120]!r})")
+    first = run["conversationId"]
+    ok, hs = wait_hey(r"^done$", timeout=4, gap=0.5)
+    if not res.check(ok, f"the result shows ({hs.get('stage')}; seen {sorted(x for x in seen if x)})"):
+        return
+    hey_overlay("type")
+    ok, hs = wait_hey(r"^typing$", timeout=4, gap=0.5)
+    res.check(ok and hs.get("continueIn") == first, f"the bar on the result asks a follow-up in the same conversation ({hs.get('continueIn')})")
+    shot(f"e2e_{res.key}_followup")
+    known = run_ids()
+    freeze_clock()
+    out = hey_overlay("send", text="And what is that times 2?")
+    res.check("taken=true" in out, f"the follow-up runs in place ({out})")
+    run2, _ = wait_voice_run(known, conversation=first)
+    res.check(run2 is not None and run2["conversationId"] == first, "the follow-up continued the same conversation")
+    if run2:
+        res.check(not run2["active"] and bool(answer(run2)), f"follow-up answered ({run2['phase']}: {answer(run2)[:120]!r})")
+    hey_overlay("cancel")
+    ok, _ = wait_hey(r"^hidden$", timeout=4, gap=0.5)
+    time.sleep(1)
+    res.check(ok and not hey_windows(), "closed")
+
+
 def screen_off():
     sh("svc power stayon false")
     sh("input keyevent KEYCODE_SLEEP")
@@ -1067,6 +1143,7 @@ SCENARIOS = [
     ("q", "Hey Atom models: every stage loads and runs on silence", s_wake_models),
     ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
     ("r", "Hey ATOM overlay: listens, runs in place with the screen, shows the result, goes away", s_hey_atom_overlay),
+    ("s", "Hey ATOM chat bar: typed command runs in place, follow-up continues the conversation", s_hey_atom_type),
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
     ("n", "Screen off mid-task: a screen task waits for unlock, then finishes", s_screen_off_ui),

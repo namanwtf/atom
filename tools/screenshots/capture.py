@@ -587,6 +587,9 @@ HEY_STAGES = [
     "done",
     "failed",
     "missed",
+    # The chat bar: a misheard command opened in the keyboard, and a follow-up typed under the result.
+    "typing",
+    "followup",
     # The light while ATOM operates the phone: the same light, from the run overlay.
     "run_glow",
 ]
@@ -626,7 +629,8 @@ def hey_atom_overlay(p):
         host = hey_host()
         for i, stage in enumerate(HEY_STAGES):
             hey_overlay("sample", stage=stage, app=host)
-            time.sleep(1.8)
+            # The keyboard needs a moment to rise for the typing stages.
+            time.sleep(3.0 if stage in ("typing", "followup") else 1.8)
             shot(f"{p}52_hey_{i:02d}_{stage}")
             window_frames()
         # "Remove animations": the border is still and nothing fades.

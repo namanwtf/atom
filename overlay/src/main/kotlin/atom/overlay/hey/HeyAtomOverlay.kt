@@ -84,6 +84,9 @@ object HeyAtomOverlay : WakePresenter {
     internal var screenUse by mutableStateOf(true)
         private set
 
+    /** The chat bar's text while the user types. */
+    internal var draft by mutableStateOf("")
+
     /** What screen context the latest command took along, for the debug hook ("none" or its size). */
     private var sentScreen: String? = null
 
@@ -179,7 +182,7 @@ object HeyAtomOverlay : WakePresenter {
         apply(HeyEvent.Final(text))
         val heard = stage as? HeyStage.Heard ?: return false
         // With ATOM itself in front, the chat shows the run; the overlay only confirms and fades.
-        val id = if (OverlayRuntime.appInFront) null else startRun(heard.words)
+        val id = if (OverlayRuntime.appInFront) null else startRun(heard.words, heard.continueIn)
         if (id == null) {
             apply(HeyEvent.NotStarted)
             return false
@@ -194,9 +197,15 @@ object HeyAtomOverlay : WakePresenter {
 
     override fun onStopped() = apply(HeyEvent.CaptureStopped)
 
-    private fun startRun(text: String): String? {
+    private fun startRun(text: String, continueIn: String? = null): String? {
         val host = OverlayRuntime.host() ?: return null
         RunHub.start()
+        if (continueIn != null) {
+            // A follow-up continues that conversation; while it still runs, the words steer it instead.
+            val started = runCatching { host.start(text, continueIn, RunSource.Voice) }.getOrNull()
+            if (started != null) return started
+            return runCatching { host.steer(continueIn, text) }.map { continueIn }.getOrNull()
+        }
         val context = screen?.takeIf { screenUse }
         // The run holds the context from here on; the overlay lets go of it.
         screen = null
@@ -259,6 +268,46 @@ object HeyAtomOverlay : WakePresenter {
 
     internal fun tapPanel() = apply(HeyEvent.Open)
 
+    // ------------------------------------------------------------------ Chat bar
+
+    /** The chat bar's field: listening stops at once (the microphone is released) and the keyboard opens. */
+    fun startTyping() {
+        apply(HeyEvent.StartTyping)
+        (stage as? HeyStage.Typing)?.let { draft = it.draft }
+    }
+
+    /**
+     * The chat bar's Send: the typed words go the same way as spoken ones (the screen context read at the wake word,
+     * the same approvals, the same hand-over to the run capsule), or continue the conversation of the result.
+     */
+    fun send(text: String = draft): Boolean {
+        val typed = text.trim()
+        if (typed.isEmpty() || stage !is HeyStage.Typing) return false
+        apply(HeyEvent.Send(typed))
+        val heard = stage as? HeyStage.Heard ?: return false
+        draft = ""
+        if (sample) return true
+        val id = startRun(heard.words, heard.continueIn)
+        if (id == null) {
+            apply(HeyEvent.NotStarted)
+            openApp(heard.continueIn)
+            return false
+        }
+        apply(HeyEvent.Started(id))
+        OverlayRuntime.host()?.runs?.value?.firstOrNull { it.conversationId == id }?.let { apply(HeyEvent.Progress(it)) }
+        return true
+    }
+
+    /** The chat bar's mic: back to speaking (the "Hey ATOM" capture starts again, without the wake word). */
+    fun listenAgain(): Boolean {
+        val s = stage
+        if (s !is HeyStage.Typing && s !is HeyStage.Done && s != HeyStage.Missed) return false
+        if (!sample && !Wake.listenAgain()) return false
+        apply(HeyEvent.Listen)
+        draft = ""
+        return true
+    }
+
     internal fun answer(approved: Boolean) {
         val pending = (stage as? HeyStage.Working)?.pending ?: return
         if (!sample) OverlayRuntime.host()?.answer(pending.id, approved)
@@ -273,6 +322,7 @@ object HeyAtomOverlay : WakePresenter {
             is HeyStage.Listening -> if (s.words.isEmpty()) "listening" else "partial"
             is HeyStage.Heard -> "heard"
             is HeyStage.Working -> if (s.handedOff) "handed_off" else "working"
+            is HeyStage.Typing -> "typing"
             is HeyStage.Opening -> "opening"
             is HeyStage.Done -> "done"
             HeyStage.Missed -> "missed"
@@ -286,6 +336,7 @@ object HeyAtomOverlay : WakePresenter {
             "words" to when (s) {
                 is HeyStage.Listening -> s.words
                 is HeyStage.Heard -> s.words
+                is HeyStage.Typing -> s.draft
                 is HeyStage.Working -> s.words
                 is HeyStage.Opening -> s.words
                 is HeyStage.Done -> s.words
@@ -297,6 +348,13 @@ object HeyAtomOverlay : WakePresenter {
                 else -> null
             },
             "result" to (s as? HeyStage.Done)?.result,
+            "draft" to draft,
+            "continueIn" to when (s) {
+                is HeyStage.Typing -> s.continueIn
+                is HeyStage.Listening -> s.continueIn
+                is HeyStage.Heard -> s.continueIn
+                else -> null
+            },
             "screenApp" to screen?.app,
             "screenChars" to (screen?.text?.length ?: 0),
             "screenImage" to (screen?.imageJpeg != null),
@@ -347,13 +405,22 @@ object HeyAtomOverlay : WakePresenter {
             "failed" -> HeyStage.Done(said, SAMPLE_ID, ok = false, result = HeyMachine.shorten(detail ?: "Clock didn’t open. Try again in a moment."))
             "missed" -> HeyStage.Missed
             "opening" -> HeyStage.Opening(said)
+            // A misheard command opened in the keyboard to fix it.
+            "typing" -> HeyStage.Typing(detail ?: "Set a timer for ten minutes and tell me when the past")
+            // A follow-up typed under the result.
+            "followup" -> HeyStage.Typing(
+                detail ?: "And one for 5 minutes for the sauce",
+                SAMPLE_ID,
+                previous = HeyMachine.shorten("Your 10 minute timer is running. I’ll ring when the pasta is done."),
+            )
             else -> return false
         }
         stage = next
+        draft = (next as? HeyStage.Typing)?.draft.orEmpty()
         captureJob?.cancel()
         holding = false
         // The chip as it shows over the Settings app; no screen is read for a sample.
-        screen = if (next is HeyStage.Listening || next is HeyStage.Heard) HeyScreen(app ?: "Settings", "", null, "") else null
+        screen = if (next is HeyStage.Listening || next is HeyStage.Heard || name == "typing") HeyScreen(app ?: "Settings", "", null, "") else null
         screenUse = name != "partial_screen_off"
         this.level = if (next is HeyStage.Listening && motion) level.coerceIn(0f, 1f) else 0f
         sync()
@@ -438,6 +505,7 @@ object HeyAtomOverlay : WakePresenter {
         timer?.cancel()
         timer = null
         level = 0f
+        draft = ""
         captureJob?.cancel()
         captureJob = null
         holding = false
@@ -515,20 +583,30 @@ object HeyAtomOverlay : WakePresenter {
         if (w.show()) panel = w else panelMode = HeyPanel.None
     }
 
-    /** Modal: the whole screen, focusable (Back and taps outside cancel). Inline: only the panel, never focused. */
+    /**
+     * Modal: the whole screen, focusable (Back and taps outside cancel). Typing: the same, and it takes the keyboard
+     * (the only time the overlay is focusable for the input method). Inline: only the panel, never focused.
+     */
     private fun layout(p: LayoutParams, mode: HeyPanel) {
-        if (mode == HeyPanel.Modal) {
+        if (mode == HeyPanel.Modal || mode == HeyPanel.Typing) {
             p.width = LayoutParams.MATCH_PARENT
             p.height = LayoutParams.MATCH_PARENT
             p.gravity = Gravity.TOP or Gravity.START
             p.y = 0
-            p.flags = panelBaseFlags
+            p.flags = panelBaseFlags or (if (mode == HeyPanel.Typing) 0 else LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            @Suppress("DEPRECATION")
+            p.softInputMode = if (mode == HeyPanel.Typing) {
+                LayoutParams.SOFT_INPUT_ADJUST_RESIZE or LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            } else {
+                LayoutParams.SOFT_INPUT_ADJUST_NOTHING or LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+            }
         } else {
             p.width = LayoutParams.MATCH_PARENT
             p.height = LayoutParams.WRAP_CONTENT
             p.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             p.y = bottomInset.roundToInt()
             p.flags = panelBaseFlags or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_NOT_TOUCH_MODAL
+            p.softInputMode = LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
     }
 

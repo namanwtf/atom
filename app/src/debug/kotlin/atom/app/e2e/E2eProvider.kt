@@ -211,6 +211,13 @@ class E2eProvider : ContentProvider() {
                 overlay.cancel()
                 "cancelled"
             }
+            // The chat bar: "type" taps its field, "send" its Send (with "text", or what was typed), "listen" its mic.
+            "type" -> {
+                overlay.startTyping()
+                "typing"
+            }
+            "send" -> "send taken=${overlay.send(text.ifBlank { overlay.describe()["draft"] as? String ?: "" })}"
+            "listen" -> "listen started=${overlay.listenAgain()}"
             "sample" -> {
                 val shown = overlay.showSample(
                     spec.optString("stage"),

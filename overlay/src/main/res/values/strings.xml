@@ -157,6 +157,9 @@
     <string name="hey_atom_cancel">Cancel</string>
     <string name="hey_atom_stop">Stop</string>
     <string name="hey_atom_close">Close</string>
+    <string name="hey_atom_typing">Type your request</string>
+    <string name="hey_atom_type_hint">Type to ATOM</string>
+    <string name="hey_atom_speak">Speak instead</string>
     <string name="hey_atom_screen_chip">Using what’s on screen</string>
     <string name="hey_atom_screen_chip_app">Using what’s on screen · %1$s</string>
     <string name="hey_atom_screen_chip_off">Not using the screen</string>

@@ -157,6 +157,19 @@ class WakeWordService : Service() {
         // The overlay shows the capture when it can (permission granted, phone unlocked); otherwise the command
         // opens the app as before.
         val presenter = Wake.presenter?.takeIf { p -> runCatching { p.onWake() }.getOrDefault(false) }
+        startCapture(presenter)
+    }
+
+    /** The presenter's mic button: a new capture without the wake word, shown by the presenter. */
+    internal fun listenAgain(): Boolean {
+        if (!inForeground || capture.isActive) return false
+        val presenter = Wake.presenter ?: return false
+        stopListening() // the wake-word listener gives the microphone to the capture, as after the wake word
+        startCapture(presenter)
+        return true
+    }
+
+    private fun startCapture(presenter: WakePresenter?) {
         shownBy = presenter
         val progress = presenter?.let { p ->
             object : CommandCapture.Progress {

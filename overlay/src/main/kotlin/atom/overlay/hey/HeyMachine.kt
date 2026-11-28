@@ -12,11 +12,21 @@ import atom.ui.feature.StepState
 internal sealed interface HeyStage {
     data object Hidden : HeyStage
 
-    /** Capturing the command. [words] is the live transcript; empty until the recognizer hears something. */
-    data class Listening(val words: String = "") : HeyStage
+    /**
+     * Capturing the command. [words] is the live transcript; empty until the recognizer hears something.
+     * [continueIn]: a follow-up to that conversation (asked from the result).
+     */
+    data class Listening(val words: String = "", val continueIn: String? = null) : HeyStage
 
-    /** The final words arrived ("Got it"); the run is being started. */
-    data class Heard(val words: String) : HeyStage
+    /** The final words arrived ("Got it"), spoken or typed; the run is being started. */
+    data class Heard(val words: String, val continueIn: String? = null) : HeyStage
+
+    /**
+     * The user types instead of speaking (the panel's chat bar): listening has stopped and the keyboard is open.
+     * [draft] starts with what speech had heard so far, so a misheard command can be fixed. [continueIn] and
+     * [previous]: a follow-up to that conversation, under its last result.
+     */
+    data class Typing(val draft: String = "", val continueIn: String? = null, val previous: String? = null) : HeyStage
 
     /**
      * ATOM runs [conversationId] where the user is. [status] and [step] are the run's one-line status; [pending] is an
@@ -69,6 +79,15 @@ internal sealed interface HeyEvent {
 
     /** A tap on the panel. */
     data object Open : HeyEvent
+
+    /** A tap on the chat bar's field: stop listening (if it was) and type. */
+    data object StartTyping : HeyEvent
+
+    /** The chat bar's Send with [text]. */
+    data class Send(val text: String) : HeyEvent
+
+    /** The chat bar's mic: listening started again (the overlay sends this once the capture runs). */
+    data object Listen : HeyEvent
     data object TimerElapsed : HeyEvent
 }
 
@@ -109,6 +128,9 @@ internal enum class HeyPanel {
 
     /** Only the panel itself is touchable; the app below keeps focus and every other touch. */
     Inline,
+
+    /** Like [Modal], and it takes the keyboard: focusable for the input method only while the user types. */
+    Typing,
     None,
 }
 
@@ -131,14 +153,35 @@ internal object HeyMachine {
         HeyEvent.Wake -> HeyStep(HeyStage.Listening(), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
         // New words show the capture is alive: the guard counts from the latest of them.
         is HeyEvent.Partial -> if (stage is HeyStage.Listening && event.text.isNotBlank()) {
-            HeyStep(HeyStage.Listening(event.text.trim()), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
+            HeyStep(stage.copy(words = event.text.trim()), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
         } else {
             HeyStep(stage)
         }
         is HeyEvent.Final -> if (stage is HeyStage.Listening && event.text.isNotBlank()) {
-            HeyStep(HeyStage.Heard(event.text.trim()), listOf(HeyEffect.ClearTimer))
+            HeyStep(HeyStage.Heard(event.text.trim(), stage.continueIn), listOf(HeyEffect.ClearTimer))
         } else {
             HeyStep(stage)
+        }
+        // Typing stops listening at once (the microphone is released) and keeps what was heard as the draft.
+        HeyEvent.StartTyping -> when (stage) {
+            is HeyStage.Listening -> HeyStep(
+                HeyStage.Typing(stage.words, stage.continueIn),
+                listOf(HeyEffect.StopCapture, HeyEffect.ClearTimer),
+            )
+            HeyStage.Missed -> HeyStep(HeyStage.Typing(), listOf(HeyEffect.ClearTimer))
+            is HeyStage.Done -> HeyStep(HeyStage.Typing(continueIn = stage.conversationId, previous = stage.result), listOf(HeyEffect.ClearTimer))
+            else -> HeyStep(stage)
+        }
+        is HeyEvent.Send -> if (stage is HeyStage.Typing && event.text.isNotBlank()) {
+            HeyStep(HeyStage.Heard(event.text.trim(), stage.continueIn), listOf(HeyEffect.ClearTimer))
+        } else {
+            HeyStep(stage)
+        }
+        HeyEvent.Listen -> when (stage) {
+            is HeyStage.Typing -> HeyStep(HeyStage.Listening(stage.draft, stage.continueIn), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
+            is HeyStage.Done -> HeyStep(HeyStage.Listening(continueIn = stage.conversationId), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
+            HeyStage.Missed -> HeyStep(HeyStage.Listening(), listOf(HeyEffect.Timer(LISTEN_GUARD_MS)))
+            else -> HeyStep(stage)
         }
         HeyEvent.NoSpeech -> when (stage) {
             is HeyStage.Listening, is HeyStage.Heard -> HeyStep(HeyStage.Missed, listOf(HeyEffect.Timer(MISSED_MS)))
@@ -176,6 +219,7 @@ internal object HeyMachine {
         HeyEvent.Cancel -> when (stage) {
             HeyStage.Hidden -> HeyStep(stage)
             is HeyStage.Listening, is HeyStage.Heard -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.StopCapture, HeyEffect.ClearTimer))
+            is HeyStage.Typing -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.ClearTimer))
             is HeyStage.Working -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.StopRun(stage.conversationId), HeyEffect.ClearTimer))
             else -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.ClearTimer))
         }
@@ -234,16 +278,24 @@ internal object HeyMachine {
         return "…" + (if (space in 0 until max / 2) cut.substring(space + 1) else cut)
     }
 
-    const val TAIL_CHARS = 160
+    const val TAIL_CHARS = 110
 
     /**
      * [workingGlow] is the "edge glow while ATOM operates" setting: while working the light is the run glow, so it
      * follows that switch. Once the run ends the light goes (the run glow would too) and the result panel stays.
      */
+    /** Whether the panel shows its chat bar (to type instead of speaking, or to ask a follow-up). */
+    fun showsBar(stage: HeyStage): Boolean = when (stage) {
+        is HeyStage.Listening, is HeyStage.Typing, is HeyStage.Done, HeyStage.Missed -> true
+        else -> false
+    }
+
     fun glow(stage: HeyStage, workingGlow: Boolean = true): HeyGlow = when (stage) {
         is HeyStage.Listening -> HeyGlow.Live
         is HeyStage.Heard -> HeyGlow.Pulse
         is HeyStage.Working -> if (stage.handedOff || !workingGlow) HeyGlow.None else HeyGlow.Calm
+        // Typing: listening has stopped, so the light settles to the calm, still level.
+        is HeyStage.Typing -> HeyGlow.Calm
         is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed, HeyStage.Hidden -> HeyGlow.None
     }
 
@@ -254,6 +306,7 @@ internal object HeyMachine {
     fun panel(stage: HeyStage, screenBusy: Boolean = false): HeyPanel = when (stage) {
         HeyStage.Hidden -> HeyPanel.None
         is HeyStage.Listening, is HeyStage.Heard -> if (screenBusy) HeyPanel.Inline else HeyPanel.Modal
+        is HeyStage.Typing -> HeyPanel.Typing
         is HeyStage.Working -> if (stage.handedOff) HeyPanel.None else HeyPanel.Inline
         is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed -> HeyPanel.Inline
     }

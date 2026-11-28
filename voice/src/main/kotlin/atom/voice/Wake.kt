@@ -140,6 +140,12 @@ object Wake {
         }
     }
 
+    /**
+     * Starts a command capture again without the wake word (the overlay's mic button), shown by [presenter]. Main
+     * thread only. False when "Hey ATOM" is not running or a capture already runs.
+     */
+    fun listenAgain(): Boolean = service?.listenAgain() == true
+
     /** The activity the assist gesture opens (with [AssistantRole.EXTRA_FROM_ASSIST] = true). Call it from `Application.onCreate`. */
     fun setAssistLaunchComponent(component: ComponentName) {
         assistComponent = component

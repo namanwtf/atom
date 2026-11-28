@@ -1,5 +1,29 @@
 package atom.overlay.hey
 
+import android.graphics.Rect
+import android.view.ViewTreeObserver
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import atom.overlay.ui.OverlayIcons
+import atom.ui.theme.AtomIcons
 import android.os.Build
 import android.view.RoundedCorner
 import android.view.View
@@ -97,7 +121,6 @@ private val SoftRed = Color(0xFFFF8E86)
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 private const val SHIMMER_MS = 4_800
-private const val SPIN_MS = 1_300
 
 // ------------------------------------------------------------------ Edge light
 
@@ -159,7 +182,7 @@ private fun restStrength(mode: HeyGlow): Float = when (mode) {
 
 // ------------------------------------------------------------------ Panel
 
-/** The panel's window: modal (a tap outside cancels) while listening, otherwise just the panel. */
+/** The panel's window: modal (a tap outside cancels) while listening or typing, otherwise just the panel. */
 @Composable
 internal fun HeyPanelWindow() {
     val mode = HeyAtomOverlay.panelMode
@@ -170,8 +193,11 @@ internal fun HeyPanelWindow() {
         val target = if (leaving) 0f else 1f
         if (motion) enter.animateTo(target, tween(if (leaving) 220 else 340, easing = Emphasized)) else enter.snapTo(target)
     }
-    if (mode == HeyPanel.Modal) {
-        val inset = with(LocalDensity.current) { HeyAtomOverlay.bottomInset.toDp() }
+    if (mode == HeyPanel.Modal || mode == HeyPanel.Typing) {
+        val density = LocalDensity.current
+        // While typing the panel sits on the keyboard; otherwise above the navigation bar.
+        val keyboard = if (mode == HeyPanel.Typing) keyboardInset() else 0
+        val inset = with(density) { max(HeyAtomOverlay.bottomInset, keyboard.toFloat()).toDp() }
         val cancel = stringResource(R.string.hey_atom_cancel)
         Box(
             Modifier
@@ -185,19 +211,46 @@ internal fun HeyPanelWindow() {
     }
 }
 
+/**
+ * The keyboard's height in px: the larger of the window's IME inset and what the visible display frame leaves out,
+ * read on layout changes only (no polling).
+ */
+@Composable
+private fun keyboardInset(): Int {
+    val ime = WindowInsets.ime.getBottom(LocalDensity.current)
+    val view = LocalView.current
+    var frame by remember { mutableIntStateOf(0) }
+    DisposableEffect(view) {
+        val r = Rect()
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            view.getWindowVisibleDisplayFrame(r)
+            frame = (view.rootView.height - r.bottom).coerceAtLeast(0)
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
+    return max(ime, frame)
+}
+
 private val PanelFill = Brush.verticalGradient(listOf(Color(0xFA191C21), Color(0xFC0B0C0F)))
 private val PanelEdge = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.05f)))
 private val Words = Color(0xFFF7F9FB)
 private val Muted = Color(0xFFA3ACB7)
 
+// The panel's type, in line with the chat: live words 17 sp, status 13 sp, result 15 sp, chip 12 sp. Sizes are in sp,
+// so the system font scale applies once.
+private val WordsStyle @Composable get() = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium)
+private val BodyStyle @Composable get() = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp)
+private val SmallStyle @Composable get() = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp)
+
 @Composable
 private fun HeyCard(enter: Animatable<Float, AnimationVector1D>) {
     val s = HeyAtomOverlay.shown
     val motion = HeyAtomOverlay.motion
-    val shape = RoundedCornerShape(30.dp)
+    val shape = RoundedCornerShape(28.dp)
     Column(
         Modifier
-            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
             .widthIn(max = 560.dp)
             .fillMaxWidth()
             .graphicsLayer {
@@ -211,7 +264,8 @@ private fun HeyCard(enter: Animatable<Float, AnimationVector1D>) {
             .border(1.dp, PanelEdge, shape)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = HeyAtomOverlay::tapPanel)
             .then(if (motion) Modifier.animateContentSize(tween(260, easing = Emphasized)) else Modifier)
-            .padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 18.dp),
+            .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Header(s)
         AnimatedContent(
@@ -222,9 +276,14 @@ private fun HeyCard(enter: Animatable<Float, AnimationVector1D>) {
             },
             label = "body",
         ) { stage -> Body(stage) }
+        if (HeyMachine.showsBar(s)) {
+            Spacer(Modifier.height(10.dp))
+            ChatBar(s)
+        }
     }
 }
 
+/** ATOM's coin at the top centre with the status under it; the close button stays at the top right. */
 @Composable
 private fun Header(s: HeyStage) {
     val label = when (s) {
@@ -232,6 +291,7 @@ private fun Header(s: HeyStage) {
         is HeyStage.Heard, is HeyStage.Opening -> stringResource(R.string.hey_atom_got_it)
         is HeyStage.Working -> statusLabel(s.status)
         is HeyStage.Done -> stringResource(if (s.ok) R.string.hey_atom_done else R.string.hey_atom_failed)
+        is HeyStage.Typing -> stringResource(R.string.hey_atom_typing)
         HeyStage.Missed -> stringResource(R.string.hey_atom_missed_title)
         HeyStage.Hidden -> ""
     }
@@ -240,34 +300,41 @@ private fun Header(s: HeyStage) {
         s == HeyStage.Missed -> Words
         else -> Silver
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Orb(s)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            label,
-            color = color,
-            fontSize = if (s == HeyStage.Missed) 17.sp else 13.sp,
-            fontWeight = if (s == HeyStage.Missed) FontWeight.SemiBold else FontWeight.Medium,
-            letterSpacing = if (s == HeyStage.Missed) 0.sp else 0.3.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        CloseButton(s)
+    Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.align(Alignment.TopCenter).padding(horizontal = 44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Orb(s)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                label,
+                color = color,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                fontWeight = if (s == HeyStage.Missed) FontWeight.SemiBold else FontWeight.Medium,
+                letterSpacing = 0.2.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        Box(Modifier.align(Alignment.TopEnd)) { CloseButton(s) }
     }
 }
 
 @Composable
 private fun Body(s: HeyStage) {
-    val big = MaterialTheme.typography.bodyLarge.copy(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium)
-    val small = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp)
-    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 12.dp)) {
+    val words = WordsStyle
+    val body = BodyStyle
+    val small = SmallStyle
+    val center = TextAlign.Center
+    Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp).padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         when (s) {
             is HeyStage.Listening -> {
                 if (s.words.isEmpty()) {
-                    Text(stringResource(R.string.hey_atom_listening_hint), style = big, color = Muted)
+                    Text(stringResource(R.string.hey_atom_listening_hint), style = words, color = Muted, textAlign = center)
                 } else {
-                    Text(HeyMachine.tail(s.words), style = big, color = Words.copy(alpha = 0.86f), maxLines = 4)
+                    // The newest words matter most: long speech keeps its end, starting with an ellipsis.
+                    Text(HeyMachine.tail(s.words), style = words, color = Words.copy(alpha = 0.86f), maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
                 }
                 ScreenChip()
             }
@@ -275,47 +342,148 @@ private fun Body(s: HeyStage) {
                 // The words settle: they brighten from the live grey to full white.
                 val settle = remember { Animatable(Words.copy(alpha = 0.86f)) }
                 LaunchedEffect(Unit) { settle.animateTo(Words, tween(360)) }
-                Text(HeyMachine.tail(s.words), style = big, color = settle.value, maxLines = 4)
+                Text(HeyMachine.tail(s.words), style = words, color = settle.value, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
                 ScreenChip()
             }
             is HeyStage.Working -> {
-                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
+                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+                Spacer(Modifier.height(6.dp))
                 Text(
                     s.step ?: stringResource(R.string.hey_atom_working),
-                    style = small.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+                    style = body.copy(fontWeight = FontWeight.Medium),
                     color = Words,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = center,
                 )
                 s.pending?.let { approval ->
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     ApprovalCard(approval, onAnswer = HeyAtomOverlay::answer)
                 }
             }
             is HeyStage.Opening -> {
-                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.hey_atom_opening), style = small.copy(fontSize = 16.sp), color = Words)
+                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.hey_atom_opening), style = body, color = Words, textAlign = center)
             }
             is HeyStage.Done -> {
-                Text(s.words, style = small, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
+                Text(s.words, style = small, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = center)
+                Spacer(Modifier.height(6.dp))
                 Text(
                     s.result.ifBlank { stringResource(R.string.hey_atom_done_empty) },
-                    style = small.copy(fontSize = 17.sp, lineHeight = 24.sp),
+                    style = body,
                     color = Words,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = center,
                 )
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.hey_atom_open_hint), style = small.copy(fontSize = 12.sp), color = Muted)
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.hey_atom_open_hint), style = small.copy(fontSize = 12.sp), color = Muted, textAlign = center)
             }
-            HeyStage.Missed -> Text(stringResource(R.string.hey_atom_missed_hint), style = small.copy(fontSize = 15.sp), color = Muted)
+            is HeyStage.Typing -> s.previous?.let { previous ->
+                Text(previous, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+            }
+            HeyStage.Missed -> Text(stringResource(R.string.hey_atom_missed_hint), style = body, color = Muted, textAlign = center)
             HeyStage.Hidden -> Unit
         }
     }
 }
+
+/**
+ * The chat bar, like the app's composer: "Type to ATOM", Send, and a mic to speak instead. Before the user types it
+ * is a pill that starts typing when tapped (listening stops and the keyboard opens); the mic listens again.
+ */
+@Composable
+private fun ChatBar(s: HeyStage) {
+    val typing = s is HeyStage.Typing
+    val shape = RoundedCornerShape(24.dp)
+    val listening = s is HeyStage.Listening
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier
+                .weight(1f)
+                .heightIn(min = 44.dp)
+                .clip(shape)
+                .background(Color.White.copy(alpha = 0.07f))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
+                .then(if (typing) Modifier else Modifier.clickable(onClick = HeyAtomOverlay::startTyping))
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                if (typing) {
+                    TypingField()
+                } else {
+                    Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = Muted, maxLines = 1)
+                }
+            }
+            BarMic(active = listening, enabled = !listening)
+        }
+        if (typing) {
+            val canSend = HeyAtomOverlay.draft.isNotBlank()
+            val send = stringResource(R.string.overlay_send)
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (canSend) Words else Color.White.copy(alpha = 0.10f))
+                    .clickable(enabled = canSend) { HeyAtomOverlay.send() }
+                    .semantics { contentDescription = send },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(OverlayIcons.ArrowUp, null, Modifier.size(20.dp), tint = if (canSend) Color(0xFF0B0C0F) else Muted)
+            }
+        }
+    }
+}
+
+/** The text field while typing: focused at once with the cursor at the end of what speech had heard. */
+@Composable
+private fun TypingField() {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var value by remember { mutableStateOf(TextFieldValue(HeyAtomOverlay.draft, TextRange(HeyAtomOverlay.draft.length))) }
+    // The window becomes focusable as typing starts; the field takes focus and the keyboard opens once it has it.
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused) {
+        runCatching { focus.requestFocus() }
+        if (windowFocused) keyboard?.show()
+    }
+    Box {
+        if (value.text.isEmpty()) Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = Muted, maxLines = 1)
+        BasicTextField(
+            value = value,
+            onValueChange = {
+                value = it
+                HeyAtomOverlay.draft = it.text
+            },
+            textStyle = TextStyle(color = Words, fontSize = 15.sp, lineHeight = 21.sp),
+            cursorBrush = SolidColor(Ice),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { HeyAtomOverlay.send() }),
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth().focusRequester(focus),
+        )
+    }
+}
+
+/** The bar's mic: lit while listening; otherwise it starts listening again. */
+@Composable
+private fun BarMic(active: Boolean, enabled: Boolean) {
+    val label = stringResource(R.string.hey_atom_speak)
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(if (active) Ice.copy(alpha = 0.18f) else Color.Transparent)
+            .clickable(enabled = enabled) { HeyAtomOverlay.listenAgain() }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(AtomIcons.Mic, null, Modifier.size(18.dp), tint = if (active) Ice else Muted)
+    }
+}
+
 
 /**
  * "Using what's on screen · Settings": the screen read at the wake word goes with this request. A tap leaves it out
@@ -334,13 +502,13 @@ private fun ScreenChip() {
     val shape = RoundedCornerShape(50)
     Row(
         Modifier
-            .padding(top = 14.dp)
+            .padding(top = 10.dp)
             .clip(shape)
             .background(if (on) Ice.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f))
             .border(1.dp, if (on) Ice.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.10f), shape)
             .clickable(onClick = HeyAtomOverlay::toggleScreen)
             .semantics { contentDescription = description }
-            .padding(start = 10.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ScreenGlyph(if (on) Ice else Muted, crossed = !on)
@@ -348,7 +516,7 @@ private fun ScreenChip() {
         Text(
             label,
             color = if (on) Words else Muted,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -387,58 +555,45 @@ private fun statusLabel(status: CapsuleStatus): String = stringResource(
     },
 )
 
-/** ATOM's emblem in a small dark disc. It glows with the voice while listening and has a turning arc while working. */
+/**
+ * ATOM's coin in a small dark disc at the top of the panel. While listening it glows and gently swells with the voice
+ * (the level the recognizer reports); otherwise it is still.
+ */
 @Composable
 private fun Orb(s: HeyStage) {
     val motion = HeyAtomOverlay.motion
     val listening = s is HeyStage.Listening
-    val voice by animateFloatAsState(if (listening && motion) HeyAtomOverlay.level else 0f, tween(120), label = "orb")
-    val turn = spinner(motion && s is HeyStage.Working && !s.handedOff)
+    val voice = animateFloatAsState(if (listening && motion) HeyAtomOverlay.level else 0f, tween(120), label = "orb")
     val accent = if (s is HeyStage.Done && !s.ok) SoftRed else Ice
-    val working = s is HeyStage.Working
-    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(38.dp)) {
+    Box(
+        Modifier.size(40.dp).graphicsLayer {
+            val v = voice.value
+            scaleX = 1f + 0.12f * v
+            scaleY = 1f + 0.12f * v
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(40.dp)) {
             val r = size.minDimension / 2f
-            val glowAlpha = if (listening) 0.30f + 0.5f * voice else 0.22f
+            val v = voice.value
+            val glowAlpha = if (listening) 0.30f + 0.5f * v else 0.2f
             drawCircle(
-                Brush.radialGradient(listOf(accent.copy(alpha = glowAlpha), accent.copy(alpha = 0f)), center, r * (0.8f + 0.2f * voice)),
+                Brush.radialGradient(listOf(accent.copy(alpha = glowAlpha), accent.copy(alpha = 0f)), center, r * (0.8f + 0.2f * v)),
                 radius = r,
             )
-            val disc = r * 0.7f
+            val disc = r * 0.72f
             drawCircle(Color(0xFF14171C), radius = disc)
-            drawCircle(accent.copy(alpha = 0.42f), radius = disc, style = Stroke(1.dp.toPx()))
-            if (working) {
-                val stroke = 1.8.dp.toPx()
-                val box = disc * 2f + stroke * 2.4f
-                rotate(turn.value) {
-                    drawArc(
-                        Brush.sweepGradient(listOf(accent.copy(alpha = 0f), accent), center = center),
-                        0f,
-                        290f,
-                        false,
-                        Offset(center.x - box / 2f, center.y - box / 2f),
-                        Size(box, box),
-                        style = Stroke(stroke, cap = StrokeCap.Round),
-                    )
-                }
-            }
+            drawCircle(accent.copy(alpha = 0.45f), radius = disc, style = Stroke(1.dp.toPx()))
         }
-        AtomEmblem(16.dp, tint = Color.White)
+        AtomEmblem(17.dp, tint = Color.White)
     }
-}
-
-@Composable
-private fun spinner(active: Boolean): State<Float> {
-    if (!active) return remember { mutableFloatStateOf(0f) }
-    val t = rememberInfiniteTransition(label = "spin")
-    return t.animateFloat(0f, 360f, infiniteRepeatable(tween(SPIN_MS, easing = LinearEasing)), label = "turn")
 }
 
 @Composable
 private fun CloseButton(s: HeyStage) {
     val label = stringResource(
         when (s) {
-            is HeyStage.Listening, is HeyStage.Heard -> R.string.hey_atom_cancel
+            is HeyStage.Listening, is HeyStage.Heard, is HeyStage.Typing -> R.string.hey_atom_cancel
             is HeyStage.Working -> R.string.hey_atom_stop
             else -> R.string.hey_atom_close
         },

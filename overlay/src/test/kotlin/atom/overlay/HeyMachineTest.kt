@@ -190,4 +190,68 @@ class HeyMachineTest {
         assertTrue(tail.endsWith("word80"))
         assertEquals("short", HeyMachine.tail("  short "))
     }
+
+    // ------------------------------------------------------------------ Chat bar
+
+    @Test
+    fun typingStopsListeningAndKeepsTheWordsHeard() {
+        val step = HeyMachine.reduce(HeyStage.Listening("set a timer for ten"), HeyEvent.StartTyping)
+        assertEquals(HeyStage.Typing("set a timer for ten"), step.stage)
+        assertEquals(listOf(HeyEffect.StopCapture, HeyEffect.ClearTimer), step.effects)
+        assertEquals(HeyPanel.Typing, HeyMachine.panel(step.stage))
+        assertEquals(HeyGlow.Calm, HeyMachine.glow(step.stage))
+        assertTrue(HeyMachine.showsBar(step.stage))
+    }
+
+    @Test
+    fun typedWordsRunLikeSpokenOnes() {
+        val steps = play(
+            HeyStage.Typing("set a timer for ten minutes"),
+            HeyEvent.Send("Set a timer for ten minutes"),
+            HeyEvent.Started("c1"),
+        )
+        assertEquals(HeyStage.Heard("Set a timer for ten minutes"), steps[0].stage)
+        assertIs<HeyStage.Working>(steps[1].stage)
+        // Nothing to send: nothing happens.
+        assertEquals(HeyStage.Typing(""), HeyMachine.reduce(HeyStage.Typing(""), HeyEvent.Send("  ")).stage)
+    }
+
+    @Test
+    fun aFollowUpFromTheResultContinuesThatConversation() {
+        val typing = HeyMachine.reduce(HeyStage.Done("x", "c1", true, "Timer set."), HeyEvent.StartTyping)
+        assertEquals(HeyStage.Typing(continueIn = "c1", previous = "Timer set."), typing.stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), typing.effects)
+        assertEquals(HeyStage.Heard("And another one", "c1"), HeyMachine.reduce(typing.stage, HeyEvent.Send("And another one")).stage)
+        // Spoken follow-ups too: the mic on the result listens for that conversation.
+        val listening = HeyMachine.reduce(HeyStage.Done("x", "c1", true, "ok"), HeyEvent.Listen)
+        assertEquals(HeyStage.Listening(continueIn = "c1"), listening.stage)
+        assertEquals(HeyStage.Heard("thanks", "c1"), HeyMachine.reduce(listening.stage, HeyEvent.Final("thanks")).stage)
+    }
+
+    @Test
+    fun theMicGoesBackToSpeakingWithTheDraft() {
+        val step = HeyMachine.reduce(HeyStage.Typing("open the", "c1"), HeyEvent.Listen)
+        assertEquals(HeyStage.Listening("open the", "c1"), step.stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.Timer(HeyMachine.LISTEN_GUARD_MS)), step.effects)
+        assertEquals(HeyStage.Listening(), HeyMachine.reduce(HeyStage.Missed, HeyEvent.Listen).stage)
+    }
+
+    @Test
+    fun cancellingWhileTypingCloses() {
+        val step = HeyMachine.reduce(HeyStage.Typing("x"), HeyEvent.Cancel)
+        assertEquals(HeyStage.Hidden, step.stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), step.effects)
+    }
+
+    @Test
+    fun theBarShowsWhereTypingMakesSense() {
+        assertEquals(HeyStage.Typing(), HeyMachine.reduce(HeyStage.Missed, HeyEvent.StartTyping).stage)
+        val working = HeyStage.Working("x", "c1")
+        assertEquals(working, HeyMachine.reduce(working, HeyEvent.StartTyping).stage)
+        assertTrue(HeyMachine.showsBar(HeyStage.Listening()))
+        assertTrue(HeyMachine.showsBar(HeyStage.Done("x", "c1", true, "ok")))
+        assertTrue(HeyMachine.showsBar(HeyStage.Missed))
+        assertEquals(false, HeyMachine.showsBar(working))
+        assertEquals(false, HeyMachine.showsBar(HeyStage.Heard("x")))
+    }
 }
