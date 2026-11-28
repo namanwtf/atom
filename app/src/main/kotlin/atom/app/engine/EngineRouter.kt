@@ -8,6 +8,8 @@ import atom.app.data.LocalBackend
 import atom.app.data.SettingsRepository
 import atom.core.agent.AgentConfig
 import atom.core.agent.ContextPolicy
+import atom.core.agent.LimitOverrides
+import atom.core.agent.ModelLimits
 import atom.core.agent.SmallModel
 import atom.core.agent.TinyModel
 import atom.core.llm.DegenerateOutputGuard
@@ -95,12 +97,31 @@ class RoutedEngine internal constructor(
      */
     fun briefReasoning(): ReasoningEffort? = briefReasoningFor(reasoning)
 
-    /** [effort] is the reasoning the run sends; it decides how much output room a cloud request gets. */
+    /**
+     * The run's size limits for this model ([ModelLimits]): from its window ([window] when the run knows a better
+     * one than the catalog), its output limit and whether it sees images, with the user's Advanced [overrides].
+     */
+    fun modelLimits(overrides: LimitOverrides = LimitOverrides(), window: Int? = contextWindow): ModelLimits = ModelLimits(
+        onDevice = onDevice,
+        window = if (onDevice) engine.capabilities.contextWindow.takeIf { it > 0 } ?: LOCAL_CONTEXT_WINDOW else window,
+        maxOutput = output?.maxOutput,
+        vision = engine.capabilities.vision,
+        overrides = overrides,
+    )
+
+    /** The output room a cloud request with [effort] gets after the user's Advanced setting. */
+    fun cloudOutputTokens(effort: ReasoningEffort?, limits: ModelLimits): Int = limits.maxOutputTokens(cloudOutputTokens(effort))
+
+    /**
+     * [effort] is the reasoning the run sends; it decides how much output room a cloud request gets. [limits] are the
+     * run's size limits ([modelLimits]); by default the model's own, without overrides.
+     */
     fun agentConfig(
         systemPrompt: String,
         tools: List<ToolSpec>,
         slowApprovals: Boolean,
         effort: ReasoningEffort? = null,
+        limits: ModelLimits = modelLimits(),
     ): AgentConfig {
         val vision = engine.capabilities.vision
         val toolTimeout = if (slowApprovals) 125_000L else 60_000L
@@ -108,14 +129,15 @@ class RoutedEngine internal constructor(
             return AgentConfig(
                 model = model,
                 systemPrompt = systemPrompt,
-                maxSteps = CLOUD_MAX_STEPS,
-                maxOutputTokens = cloudOutputTokens(effort),
+                maxSteps = limits.maxSteps(CLOUD_MAX_STEPS),
+                maxOutputTokens = cloudOutputTokens(effort, limits),
                 reasoning = effort,
                 briefReasoning = briefReasoning(),
                 toolTimeoutMs = toolTimeout,
                 // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
-                // starts near 85% of that (AgentConfig.usableWindow).
-                context = ContextPolicy(keepImages = if (vision) 1 else 0),
+                // starts near 85% of that (AgentConfig.usableWindow). Tool results and images follow the window.
+                context = limits.policy(ContextPolicy(keepImages = if (vision) 1 else 0)),
+                limits = limits,
             )
         }
         // On-device every prompt token is prefill on the phone's own silicon: keep it small. Tool
@@ -125,10 +147,11 @@ class RoutedEngine internal constructor(
         return AgentConfig(
             model = model,
             systemPrompt = systemPrompt,
-            maxSteps = LOCAL_MAX_STEPS,
+            maxSteps = limits.maxSteps(LOCAL_MAX_STEPS),
             maxOutputTokens = plan.maxOutputTokens,
             reasoning = effort,
             briefReasoning = briefReasoning(),
+            limits = limits,
             toolTimeoutMs = toolTimeout,
             maxRetries = 1,
             context = ContextPolicy(

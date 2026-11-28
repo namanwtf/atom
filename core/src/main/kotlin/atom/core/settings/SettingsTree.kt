@@ -14,6 +14,7 @@ object SettingsRows {
     const val ON_DEVICE = "row:on_device"
     const val HARDWARE = "row:hardware"
     const val CLOUD_FALLBACK = "row:cloud_fallback"
+    const val ADVANCED = "row:advanced"
     const val AUTO_COMPACTION = "row:auto_compaction"
     const val AUTO_TITLES = "row:auto_titles"
     const val BACKGROUND_DISPLAY = "row:background_display"
@@ -61,6 +62,8 @@ object SettingsTree {
             SettingsRows.ON_DEVICE,
             SettingsRows.HARDWARE,
             SettingsRows.CLOUD_FALLBACK,
+            // Newer: limits for power users (output room, steps, tool results, waits).
+            SettingsRows.ADVANCED,
         ),
         SettingsGroup.Context to listOf(
             SettingsRows.AUTO_COMPACTION,

@@ -19,7 +19,6 @@ import atom.device.screen.UiController
 import atom.device.screen.UiError
 
 internal class UiTools(private val context: Context) {
-    private val screenChars = 6_000
 
     fun all(): List<Tool> = listOf(readScreen(), tap(long = false), tap(long = true), typeText(), paste(), scroll(), swipe(), globalAction())
         .map { ScreenTool(it) }
@@ -45,7 +44,9 @@ internal class UiTools(private val context: Context) {
             )
         },
         usesPhoneUi = true,
-    ) { args, _ ->
+    ) { args, ctx ->
+        // 6,000 characters for small windows; models with large windows get more of a long screen.
+        val screenChars = ctx.limits.screenTreeChars
         val wantShot = args.optBoolean("screenshot") == true
         val full = args.optBoolean("full_resolution") == true
         val sh = UiController.shell

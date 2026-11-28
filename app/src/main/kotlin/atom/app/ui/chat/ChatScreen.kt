@@ -1294,6 +1294,10 @@ private fun AccessibilityNudge(onOpenSetup: () -> Unit) {
 
 // ---------------------------------------------------------------- Approval
 
+/** "9:58" for a wait of a minute or more, "42 s" below that. */
+private fun formatWait(seconds: Long): String =
+    if (seconds >= 60) "%d:%02d".format(seconds / 60, seconds % 60) else "$seconds s"
+
 @Composable
 private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit, onAllowTask: () -> Unit) {
     val remaining = rememberCountdown(pending.expiresAtMillis)
@@ -1326,6 +1330,11 @@ private fun ApprovalDialog(pending: PendingApproval, onAnswer: (Boolean) -> Unit
             Text(stringResource(R.string.confirm_allow_task_hint), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.confirm_countdown, remaining), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+        val countdown = when {
+            pending.parked -> stringResource(R.string.confirm_parked)
+            pending.pausesOnTimeout -> stringResource(R.string.confirm_countdown_pause, formatWait(remaining))
+            else -> stringResource(R.string.confirm_countdown, remaining)
+        }
+        Text(countdown, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
     }
 }

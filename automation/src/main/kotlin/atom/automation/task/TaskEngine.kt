@@ -33,6 +33,9 @@ interface TaskPorts {
     fun notifyReadyToRun(task: ScheduledTask)
     /** Wake-up times changed; re-arm the alarm. */
     fun wakeupsChanged()
+
+    /** Characters of the previous result given to the next run; more for models with large windows. */
+    fun memoChars(): Int = TaskEngine.MEMO_CHARS
 }
 
 /**
@@ -142,7 +145,7 @@ class TaskEngine(
         val conversation = if (task.destination == Destination.Conversation) task.conversationId else null
         val previous = conversation?.let { c -> ports.currentRuns().firstOrNull { it.conversationId == c } }
         val request = RunRequest(
-            prompt = buildPrompt(task, ports.now(), ports.zone()),
+            prompt = buildPrompt(task, ports.now(), ports.zone(), ports.memoChars()),
             conversationId = conversation,
             source = RunSource.Schedule,
             capabilities = task.capabilities,
@@ -219,7 +222,7 @@ class TaskEngine(
         val done = run.copy(status = status, endedAt = ports.now().toEpochMilli(), summary = summary)
         state.putRun(done)
         when {
-            status == RunStatus.Succeeded -> state.updateTask(taskId) { it.copy(memo = text.take(MEMO_CHARS), consecutiveFailures = 0) }
+            status == RunStatus.Succeeded -> state.updateTask(taskId) { it.copy(memo = text.take(MAX_MEMO_CHARS), consecutiveFailures = 0) }
             status == RunStatus.Unchanged -> state.updateTask(taskId) { it.copy(consecutiveFailures = 0) }
             status.failure -> registerFailure(taskId)
         }
@@ -258,14 +261,20 @@ class TaskEngine(
         /** A scheduled run that starts this late counts as a catch-up in the run timeline. */
         const val CATCH_UP_AFTER_MS = 5 * 60_000L
         const val MEMO_CHARS = 4_000
+
+        /** What is stored; each run gets [TaskPorts.memoChars] of it. */
+        const val MAX_MEMO_CHARS = 16_000
+
+        /** Set by the app from the limits of the model runs use ([atom.core.agent.ModelLimits.taskMemoChars]). */
+        @Volatile var promptMemoChars: Int = MEMO_CHARS
         const val SUMMARY_CHARS = 600
 
-        fun buildPrompt(task: ScheduledTask, now: Instant, zone: ZoneId): String = buildString {
+        fun buildPrompt(task: ScheduledTask, now: Instant, zone: ZoneId, memoChars: Int = MEMO_CHARS): String = buildString {
             append(task.prompt.trim())
             append("\n\n(Scheduled task \"").append(task.name).append("\", ").append(ScheduleText.relative(now, now, zone)).append(".)")
             val memo = task.memo?.takeIf { it.isNotBlank() }
             if (memo != null) {
-                append("\n\nPrevious run's result, for comparison:\n").append(memo.take(MEMO_CHARS))
+                append("\n\nPrevious run's result, for comparison:\n").append(memo.take(memoChars.coerceIn(MEMO_CHARS, MAX_MEMO_CHARS)))
             }
             if (task.notify == NotifyMode.OnChange && memo != null) {
                 append("\n\nIf nothing meaningful changed since the previous result, reply with exactly $NO_CHANGE.")

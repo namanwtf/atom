@@ -19,6 +19,7 @@ import atom.core.tool.Tool
 import atom.core.tool.ToolContext
 import atom.core.tool.ToolResult
 import atom.core.tool.optBoolean
+import atom.core.tool.optInt
 import atom.core.tool.optString
 import atom.core.tool.schema
 import atom.core.tool.string
@@ -33,11 +34,12 @@ private class SimpleTool(
     parameters: JsonObject,
     override val risk: Risk,
     private val approval: (suspend (JsonObject) -> String?)? = null,
-    private val body: suspend (JsonObject) -> ToolResult,
+    /** Runs with the call's [ToolContext] as receiver (for the run's limits). */
+    private val body: suspend ToolContext.(JsonObject) -> ToolResult,
 ) : Tool {
     override val spec = ToolSpec(name, description, parameters)
     override suspend fun run(args: JsonObject, ctx: ToolContext): ToolResult =
-        runCatching { body(args) }.getOrElse { ToolResult.error(it.message ?: it::class.simpleName ?: "error") }
+        runCatching { ctx.body(args) }.getOrElse { ToolResult.error(it.message ?: it::class.simpleName ?: "error") }
 
     override suspend fun approvalText(args: JsonObject): String? {
         val text = approval ?: return null
@@ -93,6 +95,7 @@ internal object AutomationTools {
                 string("notify", "When to notify", enum = listOf("every_run", "on_change", "silent"))
                 string("capabilities", "Comma list from web, device_read, device_control, terminal, mcp, app_ui; empty for chat only. Omitted: web and device_read only")
                 boolean("quiet_hours", "Defer runs between 23:00 and 07:30")
+                integer("max_minutes", "Longest a run may take, 1-${ScheduledTask.MAX_MINUTES_LIMIT} minutes. Omitted: the default (usually 15)")
             },
             Risk.Sensitive,
         ) { a ->
@@ -108,6 +111,7 @@ internal object AutomationTools {
                 notify = when (a.optString("notify")) { "on_change" -> NotifyMode.OnChange; "silent" -> NotifyMode.Silent; else -> NotifyMode.EveryRun },
                 capabilities = caps,
                 quietHours = QuietHours(enabled = a.optBoolean("quiet_hours") ?: false),
+                maxMinutes = (a.optInt("max_minutes") ?: ScheduledTask.newTaskMinutes).coerceIn(1, ScheduledTask.MAX_MINUTES_LIMIT),
             )
             rt.tasks.save(task)
             val saved = rt.state.task(task.id)!!
@@ -124,10 +128,11 @@ internal object AutomationTools {
         },
         SimpleTool(
             "scheduled_task_manage",
-            "Enable, disable, run now or stop a scheduled task by id.",
+            "Enable, disable, run now or stop a scheduled task by id, or change how long its runs may take.",
             schema {
                 string("id", "Task id from scheduled_task_list", required = true)
-                string("action", "What to do", required = true, enum = listOf("enable", "disable", "run_now", "stop"))
+                string("action", "What to do", required = true, enum = listOf("enable", "disable", "run_now", "stop", "set_max_minutes"))
+                integer("max_minutes", "With set_max_minutes: the longest a run may take, 1-${ScheduledTask.MAX_MINUTES_LIMIT} minutes")
             },
             Risk.Act,
         ) { a ->
@@ -138,6 +143,12 @@ internal object AutomationTools {
                 "disable" -> rt.tasks.setEnabled(id, false)
                 "run_now" -> rt.tasks.runNow(id)?.let { return@SimpleTool ToolResult.error("Not started: $it") }
                 "stop" -> rt.tasks.stop(id)
+                "set_max_minutes" -> {
+                    val minutes = a.optInt("max_minutes")?.takeIf { it in 1..ScheduledTask.MAX_MINUTES_LIMIT }
+                        ?: return@SimpleTool ToolResult.error("Give max_minutes between 1 and ${ScheduledTask.MAX_MINUTES_LIMIT}.")
+                    rt.tasks.save(task.copy(maxMinutes = minutes))
+                    return@SimpleTool ToolResult.ok("\"${task.name}\" may now run for up to $minutes minutes.")
+                }
                 else -> return@SimpleTool ToolResult.error("Unknown action")
             }
             ToolResult.ok("Done: ${a.string("action")} \"${task.name}\".")

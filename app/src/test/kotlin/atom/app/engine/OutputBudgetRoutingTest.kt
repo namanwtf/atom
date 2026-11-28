@@ -39,6 +39,28 @@ class OutputBudgetRoutingTest {
     }
 
     @Test
+    fun aMillionTokenModelGetsLimitsThatFollowItsWindow() {
+        val flash = routed("deepseek", "deepseek-flash")
+        val config = flash.agentConfig("sys", emptyList(), slowApprovals = false, effort = null, limits = flash.modelLimits())
+        assertEquals(52_428, config.context.maxToolResultChars)
+        assertEquals(6, config.context.keepFullToolResults)
+        assertEquals(6, config.context.keepImages)
+        assertNull(config.context.budgetTokens, "no deliberate cap in the cloud")
+        assertEquals(RoutedEngine.CLOUD_MAX_STEPS, config.maxSteps)
+    }
+
+    @Test
+    fun advancedOverridesReachTheRun() {
+        val flash = routed("deepseek", "deepseek-flash")
+        val limits = flash.modelLimits(atom.core.agent.LimitOverrides(maxOutputTokens = 8_192, maxSteps = 80, toolResultChars = 20_000, imagesKept = 2))
+        val config = flash.agentConfig("sys", emptyList(), slowApprovals = false, effort = null, limits = limits)
+        assertEquals(8_192, config.maxOutputTokens)
+        assertEquals(80, config.maxSteps)
+        assertEquals(20_000, config.context.maxToolResultChars)
+        assertEquals(2, config.context.keepImages)
+    }
+
+    @Test
     fun theRetryAfterACutThinksAsLittleAsTheModelAllows() {
         // Thinking can be switched off: off.
         assertEquals(ReasoningEffort.Off, routed("deepseek", "deepseek-flash").briefReasoning())

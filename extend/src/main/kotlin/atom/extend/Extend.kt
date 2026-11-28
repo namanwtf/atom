@@ -79,7 +79,7 @@ interface ToolScope {
      * How long one subagent may run. Agent tool calls are bounded by the parent's tool timeout; when that is
      * longer than this, raise it. On expiry the subagent returns what it has so far.
      */
-    val subagentTimeBudgetMs: Long get() = 55_000
+    val subagentTimeBudgetMs: Long get() = atom.core.agent.ModelLimits.SUBAGENT_MS
 }
 
 /** Wiring the app provides once, from Application.onCreate. Everything has a working default except subagents. */

@@ -19,6 +19,9 @@ class SubagentBridge(private val graph: AppGraph) : ToolScope, SubagentEnginePro
 
     override fun controlFor(taskId: String): RunControl = graph.tasks.controlOf(taskId)
 
+    /** 14 minutes in the cloud by default, or what Settings > Advanced says; the spawn tools' limits follow it. */
+    override val subagentTimeBudgetMs: Long get() = AdvancedLimits.subagentBudgetMs()
+
     override suspend fun acquire(role: String, modelId: String?, parentTaskId: String): SubagentEngine {
         val parent = graph.tasks.selectionOf(parentTaskId)
         val routed = graph.router.acquire(
@@ -33,7 +36,7 @@ class SubagentBridge(private val graph: AppGraph) : ToolScope, SubagentEnginePro
             contextWindow = routed.contextWindow,
             onDevice = routed.onDevice,
             release = { graph.router.release(routed) },
-            outputTokens = { effort -> if (routed.onDevice) null else routed.cloudOutputTokens(effort) },
+            outputTokens = { effort -> if (routed.onDevice) null else routed.cloudOutputTokens(effort, routed.modelLimits(AdvancedLimits.current)) },
             briefReasoning = routed.briefReasoning(),
         )
     }

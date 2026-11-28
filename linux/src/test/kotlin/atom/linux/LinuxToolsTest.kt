@@ -32,6 +32,17 @@ class LinuxToolsTest {
     }
 
     @Test
+    fun capKeepsErrorLinesFromTheMiddleWhenThereIsRoom() {
+        val s = (1..400).joinToString("\n") { "compiling unit $it" } + "\nsrc/main.c:12: error: expected ';'\n" +
+            (1..400).joinToString("\n") { "linking part $it" }
+        val out = LinuxTools.cap(s, 4_000)
+        assertTrue("src/main.c:12: error: expected ';'" in out, out)
+        assertTrue(out.startsWith("compiling unit 1\n"))
+        assertTrue(out.endsWith("linking part 400"))
+        assertTrue(out.length <= 4_200)
+    }
+
+    @Test
     fun blockTextShowsCommandAndState() {
         assertEquals("$ ls\n(no output yet)", LinuxTools.blockText("ls", null))
     }

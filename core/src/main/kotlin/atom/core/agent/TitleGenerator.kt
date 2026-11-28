@@ -10,7 +10,17 @@ import atom.core.llm.ReasoningEffort
 object TitleGenerator {
     const val MAX_CHARS = 60
 
-    fun request(model: String, userText: String, answerText: String, reasoning: ReasoningEffort? = null): LlmRequest =
+    /**
+     * [thinks]: the model will think before it writes (forced reasoning, or a level was chosen); it then gets room for
+     * that, or the title never comes.
+     */
+    fun request(
+        model: String,
+        userText: String,
+        answerText: String,
+        reasoning: ReasoningEffort? = null,
+        thinks: Boolean = reasoning != null && reasoning != ReasoningEffort.Off,
+    ): LlmRequest =
         LlmRequest(
             model = model,
             messages = listOf(
@@ -21,7 +31,7 @@ object TitleGenerator {
                         "\n\nTitle:",
                 ),
             ),
-            maxOutputTokens = if (reasoning == null || reasoning == ReasoningEffort.Off) 48 else 400,
+            maxOutputTokens = if (thinks && reasoning != ReasoningEffort.Off) 400 else 48,
             temperature = 0.3,
             reasoning = reasoning,
         )
