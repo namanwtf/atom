@@ -241,11 +241,19 @@ def launch(route=None, wait=4):
     try:
         r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
-        # Print why the app did not come up (main-thread stack, log, crash buffer) before failing.
+        # Print why the app did not come up (main-thread stack, log, crash buffer), then try once more: on these
+        # emulators a cold start right after a Home key press can lose the race to the launcher and never finish.
         from startup_check import diagnose
 
         diagnose("launch_timeout")
-        fail(f"launch of {ACTIVITY} {route or ''} did not complete within 60 s")
+        print(f"[capture] launch of {ACTIVITY} {route or ''} timed out; starting the app again once")
+        sh(f"am force-stop {PKG}")
+        time.sleep(3)
+        try:
+            r = subprocess.run(["adb", *args], capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            diagnose("launch_timeout_again")
+            fail(f"launch of {ACTIVITY} {route or ''} did not complete within 60 s, twice")
     text = (r.stdout + r.stderr).decode(errors="replace")
     if r.returncode != 0 or "Error" in text:
         fail(f"launch of {ACTIVITY} {route or ''} failed: {text.strip()[:400]}")
@@ -664,6 +672,8 @@ def main():
     # Start each pass from a cold app, so the light pass does not resume on the dark pass's last screen.
     sh(f"am force-stop {PKG}")
     sh("input keyevent KEYCODE_HOME")
+    # Let the launcher settle before the cold start, so the two do not race for the front.
+    time.sleep(2)
     p = f"{mode}_"
 
     launch(wait=8)
