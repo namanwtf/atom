@@ -25,26 +25,37 @@ import kotlin.math.min
  * the "Hey ATOM" overlay and the assistant's entry all draw it from here, so they look the same and hand over to each
  * other without a seam.
  *
- * A soft cool-blue halo carries it over white screens, a silver-to-white core makes it shine over dark ones, and a
- * thin graphite keyline just inside the core keeps the edge crisp on light content. Two soft highlights sit on the
+ * A luminous ice-white core line, a cool-blue halo bleeding about 36 dp inward, and a deep blue keyline just inside
+ * the core, so it reads as light over dark screens and as a clear blue glow over white ones. Two soft highlights sit on the
  * sweep; the "Hey ATOM" overlay turns them while it listens.
  */
 internal object EdgeGlowStyle {
-    /** Cool steel blue: the halo, and what keeps the light visible over white. */
-    val STEEL = Color(0xFF7F9CC0)
-    val ICE = Color(0xFFE4ECF6)
+    /** Cool blue: the halo, saturated enough to read as light (not grey) over white. */
+    val STEEL = Color(0xFF4F86D9)
+    val ICE = Color(0xFFCFE3FF)
     val SILVER = Color(0xFFC4CDD7)
-    val KEYLINE = Color(0xFF0A0D11)
+
+    /** The core's resting tone: near-white with a touch of ice blue. */
+    val CORE = Color(0xFFDCEBFF)
+
+    /** A deep blue line just inside the core: invisible on dark content, a clear edge on white. */
+    val KEYLINE = Color(0xFF1C3A66)
     val PAUSED = Color(0xFFFF9F0A)
 
     /** The sweep's tones for effects that draw their own shapes (the assistant's entry), closing on the first. */
     val PALETTE = listOf(STEEL, ICE, SILVER, Color.White, STEEL)
 
-    /** The halo: how far in it reaches at rest (dp), its alpha at the edge, and how many bands draw its falloff. */
-    const val HALO_DP = 18f
-    const val HALO_ALPHA = 0.34f
-    const val HALO_BANDS = 12
-    const val CORE_DP = 2.4f
+    /**
+     * The working strength: the light while a run operates the phone (the run glow) and "Hey ATOM" at rest. Listening
+     * is 1, the strongest.
+     */
+    const val WORKING = 0.68f
+
+    /** The halo: how far in it reaches at full strength (dp), its alpha at the edge, and the bands of its falloff. */
+    const val HALO_DP = 36f
+    const val HALO_ALPHA = 0.78f
+    const val HALO_BANDS = 18
+    const val CORE_DP = 3.5f
 
     /** The same light as a short band (the assistant's entry): halo to core, width in dp and alpha. */
     val BAND = listOf(21f to 0.1f, 11f to 0.2f, 2.5f to 0.9f)
@@ -100,23 +111,24 @@ internal fun DrawScope.drawEdgeGlow(
     val d = density
     val radius = cornerPx ?: (EdgeGlowStyle.FALLBACK_CORNER_DP * d)
     if (paused) {
-        ring(SolidColor(EdgeGlowStyle.PAUSED.copy(alpha = 0.55f)), 3f * d, strength.coerceAtMost(1f), 1.5f * d, radius)
+        ring(SolidColor(EdgeGlowStyle.PAUSED.copy(alpha = 0.55f)), 3f * d, 1f, 1.5f * d, radius)
         return
     }
     val full = strength.coerceAtMost(1f)
-    val spread = 0.45f + 0.55f * full + 0.7f * voice + 0.3f * (strength - 1f).coerceAtLeast(0f)
+    val spread = 0.7f + 0.3f * full + 0.5f * voice + 0.25f * (strength - 1f).coerceAtLeast(0f)
     // A smooth falloff from the edge inward: thin bands that each fade a little more (no visible steps).
-    val halo = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.STEEL, EdgeGlowStyle.ICE, 0.65f), center = center)
+    val halo = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.STEEL, EdgeGlowStyle.ICE, 0.55f), center = center)
     val bands = EdgeGlowStyle.HALO_BANDS
     val step = EdgeGlowStyle.HALO_DP * d * spread / bands
     for (k in 0 until bands) {
         val fall = 1f - k / bands.toFloat()
-        ring(halo, step + 0.5f, (EdgeGlowStyle.HALO_ALPHA * fall * fall * strength).coerceAtMost(1f), k * step, radius)
+        val alpha = EdgeGlowStyle.HALO_ALPHA * fall * fall * (0.85f + 0.15f * fall) * strength
+        ring(halo, step + 0.5f, alpha.coerceAtMost(1f), k * step, radius)
     }
-    val core = (EdgeGlowStyle.CORE_DP + 1.6f * voice) * d * (0.75f + 0.25f * full)
-    ring(SolidColor(EdgeGlowStyle.KEYLINE), 1f * d, 0.24f * full, core, radius)
-    val coreBrush = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.SILVER, Color.White, 1f), center = center)
-    ring(coreBrush, core, (0.95f * strength).coerceAtMost(1f), 0f, radius)
+    val core = (EdgeGlowStyle.CORE_DP + 1.5f * voice) * d
+    ring(SolidColor(EdgeGlowStyle.KEYLINE), 1.3f * d, (0.55f * full).coerceAtMost(1f), core, radius)
+    val coreBrush = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.CORE, Color.White, 1f), center = center)
+    ring(coreBrush, core, (0.6f + 0.4f * full).coerceAtMost(1f), 0f, radius)
 }
 
 /** A stroke following the display outline, [inset] px in from the edge. */

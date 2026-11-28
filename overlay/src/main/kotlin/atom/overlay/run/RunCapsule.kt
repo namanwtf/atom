@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import atom.overlay.Overlay
 import atom.overlay.R
 import atom.overlay.ui.ApprovalCard
+import atom.overlay.ui.EdgeGlowStyle
 import atom.overlay.ui.drawEdgeGlow
 import atom.overlay.ui.rememberDisplayCorner
 import atom.overlay.ui.OverlayIcons
@@ -512,6 +513,6 @@ internal fun EdgeGlow(paused: Boolean, fadeIn: Boolean = true) {
     LaunchedEffect(Unit) { if (fadeIn) fade.animateTo(1f, tween(420)) }
     val cornerPx = rememberDisplayCorner()
     Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
-        drawEdgeGlow(cornerPx, paused = paused)
+        drawEdgeGlow(cornerPx, strength = EdgeGlowStyle.WORKING, paused = paused)
     }
 }

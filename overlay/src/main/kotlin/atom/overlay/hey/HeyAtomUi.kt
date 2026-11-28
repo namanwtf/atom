@@ -127,7 +127,7 @@ internal fun HeyEdgeLight() {
         if (!motion) {
             strength.snapTo(rest)
         } else if (mode == HeyGlow.Pulse) {
-            strength.animateTo(1.5f, tween(220, easing = Emphasized))
+            strength.animateTo(1.3f, tween(220, easing = Emphasized))
             strength.animateTo(rest, tween(900, easing = Emphasized))
         } else {
             strength.animateTo(rest, tween(if (mode == HeyGlow.None) 420 else 640, easing = Emphasized))
@@ -150,10 +150,10 @@ internal fun HeyEdgeLight() {
     }
 }
 
-/** 1 is the run glow; listening is a touch brighter. */
+/** Listening is the strongest; at rest the light is the run glow's working strength. */
 private fun restStrength(mode: HeyGlow): Float = when (mode) {
-    HeyGlow.Live -> 1.1f
-    HeyGlow.Pulse, HeyGlow.Calm -> 1f
+    HeyGlow.Live -> 1f
+    HeyGlow.Pulse, HeyGlow.Calm -> EdgeGlowStyle.WORKING
     HeyGlow.None -> 0f
 }
 
