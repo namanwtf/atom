@@ -133,7 +133,13 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 
 ## What's new
 
-**4.0.6, the current release**
+**4.0.7, the current release**
+
+- **"Hey Atom" works again:** the wake-word models load and listen. In 4.0.6 they failed to start with a "Node number 2 (CONV_2D) failed to prepare" error.
+- **Tiny offline models answer cleanly:** Qwen3 0.6B and other very small models get a short prompt and only the tools a request needs, so "set an alarm for 8:00" sets the alarm instead of printing fragments and stray `</think>` text. When a tiny model can't do a task, ATOM says so and suggests a larger one.
+
+<details>
+<summary><b>Earlier: 4.0.6</b></summary>
 
 - **Report a problem:** one tap builds a report on the phone, with keys, tokens and personal data removed. You read it and share it yourself.
 - **Ready-made routines:** Morning brief, Price watch, Weekly phone cleanup and Evening wrap-up. Pick one and tap Save.
@@ -142,6 +148,8 @@ No telemetry, no analytics, no account and no Atom server. Every line of code is
 - **"Allow all commands for this task" works:** terminal and shell commands show the whole command and offer it, so one tap covers the rest of the task.
 - **A closer bubble menu:** hold the bubble and its three buttons sit right next to it.
 - Thinking models such as DeepSeek and Kimi keep working with earlier tool steps after the app restarts.
+
+</details>
 
 <details>
 <summary><b>Earlier: 4.0.5</b></summary>
