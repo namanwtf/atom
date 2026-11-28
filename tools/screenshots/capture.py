@@ -572,7 +572,7 @@ HEY_STAGES = [
 
 
 def hey_atom_overlay(p):
-    """The "Hey ATOM" overlay over the Settings app: each stage as a sample (debug hook, no microphone or model),
+    """The "Hey ATOM" overlay over the Clock app: each stage as a sample (debug hook, no microphone or model),
     a still border under "Remove animations", and the Speech settings rows with and without the overlay permission."""
     # The bubble would show with the permission allowed; keep it off these shots (the bubble section below turns it on).
     launch("overlay/settings", wait=3)
@@ -600,7 +600,8 @@ def hey_atom_overlay(p):
             time.sleep(1)
         shot(p + "51_hey_settings_allowed")
         hey_e2e("hey_atom", "off")
-        sh("am start -W -a android.settings.SETTINGS")
+        # A normal app below the overlay. Not the Settings app: it hides other apps' overlay windows.
+        sh("am start -W -a android.intent.action.SHOW_ALARMS")
         time.sleep(3)
         for i, stage in enumerate(HEY_STAGES):
             hey_overlay("sample", stage=stage)

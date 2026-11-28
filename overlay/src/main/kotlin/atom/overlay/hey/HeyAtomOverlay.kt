@@ -169,7 +169,9 @@ object HeyAtomOverlay : WakePresenter {
             holding = false
             sync()
         }
-        if (panel == null) { // the windows could not be added: the command opens ATOM as before
+        // The windows could not be added, or the app in front hides other apps' overlays (Settings, permission and
+        // payment screens do): the user saw nothing, so the command opens ATOM as before.
+        if (panel?.view?.windowVisibility != View.VISIBLE) {
             reset()
             return false
         }

@@ -806,11 +806,12 @@ def resumed_activity():
 
 
 def s_hey_atom_overlay(res):
-    """r. "Hey ATOM" overlay: the wake word shows the light and the panel over another app, reads that app once, shows
+    """r. "Hey ATOM" overlay: the wake word shows the light and the panel over another app (Clock), reads that app once, shows
     the words as they come, runs the command in place (ATOM stays in the background), shows the result and goes away.
     A miss and a cancel close it too. Driven through the debug hook the wake-word service would call (no microphone)."""
     sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
-    sh("am start -W -a android.settings.SETTINGS")
+    # The Clock app below (not Settings: it hides other apps' overlay windows).
+    sh("am start -W -a android.intent.action.SHOW_ALARMS")
     time.sleep(3)
     out = hey_overlay("wake")
     if not res.check("shown=true" in out, f"wake word: the overlay takes it ({out})"):
