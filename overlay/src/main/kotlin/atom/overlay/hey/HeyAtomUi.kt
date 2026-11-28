@@ -185,7 +185,7 @@ internal fun HeyPanelWindow() {
     }
 }
 
-private val PanelFill = Brush.verticalGradient(listOf(Color(0xF0191C21), Color(0xF20B0C0F)))
+private val PanelFill = Brush.verticalGradient(listOf(Color(0xFA191C21), Color(0xFC0B0C0F)))
 private val PanelEdge = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.05f)))
 private val Words = Color(0xFFF7F9FB)
 private val Muted = Color(0xFFA3ACB7)

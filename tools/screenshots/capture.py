@@ -556,6 +556,19 @@ def hey_e2e(method, arg=None):
     return out
 
 
+def hey_host():
+    """Opens the app the overlay shots sit on and returns its name for the screen chip."""
+    sh("am start -W -a android.intent.action.VIEW -t vnd.android.document/root "
+       "-d content://com.android.externalstorage.documents/root/primary")
+    time.sleep(3)
+    top = sh("dumpsys activity activities | grep -E 'topResumedActivity' | head -1")
+    print(f"[capture] overlay host: {top.strip()[:160]}")
+    if "documentsui" in top:
+        return "Files"
+    launch("settings", wait=3)
+    return "Settings"
+
+
 HEY_STAGES = [
     "listening",
     "partial",
@@ -572,7 +585,7 @@ HEY_STAGES = [
 
 
 def hey_atom_overlay(p):
-    """The "Hey ATOM" overlay over the Clock app: each stage as a sample (debug hook, no microphone or model),
+    """The "Hey ATOM" overlay over the Files app (light or dark with the pass) and the Clock app: each stage as a sample (debug hook, no microphone or model),
     a still border under "Remove animations", and the Speech settings rows with and without the overlay permission."""
     # The bubble would show with the permission allowed; keep it off these shots (the bubble section below turns it on).
     launch("overlay/settings", wait=3)
@@ -600,20 +613,28 @@ def hey_atom_overlay(p):
             time.sleep(1)
         shot(p + "51_hey_settings_allowed")
         hey_e2e("hey_atom", "off")
-        # A normal app below the overlay. Not the Settings app: it hides other apps' overlay windows.
-        sh("am start -W -a android.intent.action.SHOW_ALARMS")
-        time.sleep(3)
+        # A normal app below the overlay that follows dark and light mode: the Files app. Not the Settings app: it
+        # hides other apps' overlay windows. ATOM's own settings page if Files does not open.
+        host = hey_host()
         for i, stage in enumerate(HEY_STAGES):
-            hey_overlay("sample", stage=stage)
+            hey_overlay("sample", stage=stage, app=host)
             time.sleep(1.8)
             shot(f"{p}52_hey_{i:02d}_{stage}")
             window_frames()
         # "Remove animations": the border is still and nothing fades.
         sh("settings put global animator_duration_scale 0")
         time.sleep(1)
-        hey_overlay("sample", stage="partial")
+        hey_overlay("sample", stage="partial", app=host)
         time.sleep(1.5)
         shot(p + "53_hey_still_border")
+        # The same light over an app that is always dark (Clock).
+        sh("settings put global animator_duration_scale 1")
+        sh("am start -W -a android.intent.action.SHOW_ALARMS")
+        time.sleep(3)
+        for stage in ("partial", "run_glow"):
+            hey_overlay("sample", stage=stage, app="Clock")
+            time.sleep(1.8)
+            shot(f"{p}53b_hey_clock_{stage}")
         sh("settings put global animator_duration_scale 1")
         hey_overlay("sample", stage="hide")
         time.sleep(1.5)

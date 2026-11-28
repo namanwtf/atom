@@ -40,8 +40,10 @@ internal object EdgeGlowStyle {
     /** The sweep's tones for effects that draw their own shapes (the assistant's entry), closing on the first. */
     val PALETTE = listOf(STEEL, ICE, SILVER, Color.White, STEEL)
 
-    /** Halo strokes from the outside in: width in dp at full spread, alpha at full strength. */
-    val HALO = listOf(46f to 0.05f, 32f to 0.07f, 21f to 0.1f, 13f to 0.14f, 7f to 0.21f)
+    /** The halo: how far in it reaches at rest (dp), its alpha at the edge, and how many bands draw its falloff. */
+    const val HALO_DP = 18f
+    const val HALO_ALPHA = 0.34f
+    const val HALO_BANDS = 12
     const val CORE_DP = 2.4f
 
     /** The same light as a short band (the assistant's entry): halo to core, width in dp and alpha. */
@@ -102,9 +104,15 @@ internal fun DrawScope.drawEdgeGlow(
         return
     }
     val full = strength.coerceAtMost(1f)
-    val spread = 0.3f + 0.7f * full + 0.6f * voice + 0.25f * (strength - 1f).coerceAtLeast(0f)
+    val spread = 0.45f + 0.55f * full + 0.7f * voice + 0.3f * (strength - 1f).coerceAtLeast(0f)
+    // A smooth falloff from the edge inward: thin bands that each fade a little more (no visible steps).
     val halo = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.STEEL, EdgeGlowStyle.ICE, 0.65f), center = center)
-    for ((width, alpha) in EdgeGlowStyle.HALO) ring(halo, width * d * spread, (alpha * strength).coerceAtMost(1f), 0f, radius)
+    val bands = EdgeGlowStyle.HALO_BANDS
+    val step = EdgeGlowStyle.HALO_DP * d * spread / bands
+    for (k in 0 until bands) {
+        val fall = 1f - k / bands.toFloat()
+        ring(halo, step + 0.5f, (EdgeGlowStyle.HALO_ALPHA * fall * fall * strength).coerceAtMost(1f), k * step, radius)
+    }
     val core = (EdgeGlowStyle.CORE_DP + 1.6f * voice) * d * (0.75f + 0.25f * full)
     ring(SolidColor(EdgeGlowStyle.KEYLINE), 1f * d, 0.24f * full, core, radius)
     val coreBrush = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.SILVER, Color.White, 1f), center = center)
