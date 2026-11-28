@@ -110,7 +110,7 @@ private const val STOPS = 24
  * once and requests no frames.
  */
 @Composable
-internal fun HeyGlow() {
+internal fun HeyEdgeLight() {
     val stage = HeyAtomOverlay.shown
     val motion = HeyAtomOverlay.motion
     val leaving = HeyAtomOverlay.leaving

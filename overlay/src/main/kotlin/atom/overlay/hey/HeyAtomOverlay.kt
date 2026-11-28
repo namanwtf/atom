@@ -456,7 +456,7 @@ object HeyAtomOverlay : WakePresenter {
             alpha = OverlayWindow.MAX_PASS_THROUGH_ALPHA
             title = GLOW_TITLE
         }
-        val w = OverlayWindow(slot.context, params) { HeyGlow() }
+        val w = OverlayWindow(slot.context, params) { HeyEdgeLight() }
         // Decoration only: screen readers and the agent's screen reading skip it.
         w.view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         if (w.show()) glow = w
