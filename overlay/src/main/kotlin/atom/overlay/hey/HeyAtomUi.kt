@@ -81,6 +81,7 @@ import atom.overlay.R
 import atom.overlay.run.CapsuleStatus
 import atom.overlay.OverlayRuntime
 import atom.overlay.ui.ApprovalCard
+import atom.overlay.ui.EdgeGlowStyle
 import atom.overlay.ui.drawEdgeGlow
 import atom.overlay.ui.rememberDisplayCorner
 import atom.ui.theme.AtomEmblem
@@ -89,9 +90,9 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
-// The panel's own tones. The light around the screen is ATOM's one edge light (atom.overlay.ui.EdgeGlow).
-private val Ice = Color(0xFFE4ECF6)
-private val Silver = Color(0xFFC4CDD7)
+// The panel's own tones come from ATOM's one edge light (atom.overlay.ui.EdgeGlow).
+private val Ice = EdgeGlowStyle.ICE
+private val Silver = EdgeGlowStyle.SILVER
 private val SoftRed = Color(0xFFFF8E86)
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
@@ -126,7 +127,7 @@ internal fun HeyEdgeLight() {
         if (!motion) {
             strength.snapTo(rest)
         } else if (mode == HeyGlow.Pulse) {
-            strength.animateTo(1.6f, tween(220, easing = Emphasized))
+            strength.animateTo(1.5f, tween(220, easing = Emphasized))
             strength.animateTo(rest, tween(900, easing = Emphasized))
         } else {
             strength.animateTo(rest, tween(if (mode == HeyGlow.None) 420 else 640, easing = Emphasized))
@@ -145,13 +146,13 @@ internal fun HeyEdgeLight() {
     }
     val voice = animateFloatAsState(if (live) HeyAtomOverlay.level else 0f, tween(140), label = "voice")
     Canvas(Modifier.fillMaxSize()) {
-        drawEdgeGlow(cornerPx, strength = strength.value * appear.value, spread = 1f + 0.9f * voice.value, turn = turn.value)
+        drawEdgeGlow(cornerPx, strength = strength.value * appear.value, voice = voice.value, turn = turn.value)
     }
 }
 
 /** 1 is the run glow; listening is a touch brighter. */
 private fun restStrength(mode: HeyGlow): Float = when (mode) {
-    HeyGlow.Live -> 1.15f
+    HeyGlow.Live -> 1.1f
     HeyGlow.Pulse, HeyGlow.Calm -> 1f
     HeyGlow.None -> 0f
 }

@@ -14,43 +14,58 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalView
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * ATOM's one light around the screen: the run glow while the agent operates the phone, the "Hey ATOM" overlay and
- * the assistant's entry all draw it from here, so they look the same and hand over to each other without a seam.
- * A soft halo and a sharp line in a blue → violet → pink → peach sweep; a still amber line while paused.
+ * ATOM's one light around the screen, in ATOM's black and silver: the run glow while the agent operates the phone,
+ * the "Hey ATOM" overlay and the assistant's entry all draw it from here, so they look the same and hand over to each
+ * other without a seam.
+ *
+ * A soft cool-blue halo carries it over white screens, a silver-to-white core makes it shine over dark ones, and a
+ * thin graphite keyline just inside the core keeps the edge crisp on light content. Two soft highlights sit on the
+ * sweep; the "Hey ATOM" overlay turns them while it listens.
  */
 internal object EdgeGlowStyle {
-    /** The sweep's colours, back to blue at the end so it closes without a seam. */
-    val PALETTE = listOf(Color(0xFF7AB8FF), Color(0xFFB59CFF), Color(0xFFFF9EC7), Color(0xFFFFC98A), Color(0xFF7AB8FF))
+    /** Cool steel blue: the halo, and what keeps the light visible over white. */
+    val STEEL = Color(0xFF7F9CC0)
+    val ICE = Color(0xFFE4ECF6)
+    val SILVER = Color(0xFFC4CDD7)
+    val KEYLINE = Color(0xFF0A0D11)
     val PAUSED = Color(0xFFFF9F0A)
 
-    /** Width in dp and alpha of each stroke, from the soft halo to the sharp line. */
-    val LAYERS = listOf(14f to 0.12f, 8f to 0.22f, 3f to 0.95f)
-    const val INSET_DP = 1.5f
+    /** The sweep's tones for effects that draw their own shapes (the assistant's entry), closing on the first. */
+    val PALETTE = listOf(STEEL, ICE, SILVER, Color.White, STEEL)
+
+    /** Halo strokes from the outside in: width in dp at full spread, alpha at full strength. */
+    val HALO = listOf(46f to 0.05f, 32f to 0.07f, 21f to 0.1f, 13f to 0.14f, 7f to 0.21f)
+    const val CORE_DP = 2.4f
+
+    /** The same light as a short band (the assistant's entry): halo to core, width in dp and alpha. */
+    val BAND = listOf(21f to 0.1f, 11f to 0.2f, 2.5f to 0.9f)
     const val FALLBACK_CORNER_DP = 28f
+
+    /** Where the highlights rest (a whole turn adds nothing: every resting light looks the same). */
+    private const val REST = 0.12f
     private const val STOPS = 24
 
-    /**
-     * The sweep, turned by [turn] (in whole turns; 0 or any whole number is the resting position, the exact brush the
-     * run glow draws).
-     */
-    fun brush(center: Offset, turn: Float): Brush {
-        val shift = turn - kotlin.math.floor(turn)
-        if (shift < 1e-4f || shift > 1f - 1e-4f) return Brush.sweepGradient(PALETTE, center = center)
-        val stops = Array(STOPS + 1) { k ->
+    /** Colour stops round the sweep: [base], brightening to [high] at two highlights half a turn apart. */
+    fun stops(turn: Float, base: Color, high: Color, strength: Float): Array<Pair<Float, Color>> {
+        val phase = REST + (turn - floor(turn))
+        return Array(STOPS + 1) { k ->
             val t = k / STOPS.toFloat()
-            t to colorAt(t - shift)
+            val lift = max(bump(t, phase, 0.11f), 0.65f * bump(t, phase + 0.5f, 0.075f))
+            t to lerp(base, high, (lift * strength).coerceIn(0f, 1f))
         }
-        return Brush.sweepGradient(*stops, center = center)
     }
 
-    /** The palette's colour at [position] round the sweep (wrapped into 0..1), as the gradient interpolates it. */
-    fun colorAt(position: Float): Color {
-        val p = position - kotlin.math.floor(position)
-        val scaled = p * (PALETTE.size - 1)
-        val i = scaled.toInt().coerceIn(0, PALETTE.size - 2)
-        return lerp(PALETTE[i], PALETTE[i + 1], scaled - i)
+    private fun bump(t: Float, center: Float, width: Float): Float {
+        val raw = abs(t - center) % 1f
+        val d = min(raw, 1f - raw)
+        return exp(-(d * d) / (2f * width * width))
     }
 }
 
@@ -68,38 +83,43 @@ internal fun rememberDisplayCorner(): Float? {
 }
 
 /**
- * Draws the light along the display outline. [strength] scales every stroke's alpha (1 is the run glow), [spread]
- * their widths, [turn] the sweep's rotation; [paused] draws the still amber line instead.
+ * Draws the light along the display outline. [strength] scales it (1 is the run glow; above 1 brightens and widens
+ * a little, for a pulse), [voice] (0..1) widens the halo and the core with the user's voice, [turn] moves the
+ * highlights round the edge; [paused] draws the still amber line instead.
  */
 internal fun DrawScope.drawEdgeGlow(
     cornerPx: Float?,
     strength: Float = 1f,
-    spread: Float = 1f,
+    voice: Float = 0f,
     turn: Float = 0f,
     paused: Boolean = false,
 ) {
     if (strength <= 0.002f) return
     val d = density
     val radius = cornerPx ?: (EdgeGlowStyle.FALLBACK_CORNER_DP * d)
-    val inset0 = EdgeGlowStyle.INSET_DP * d
     if (paused) {
-        ring(SolidColor(EdgeGlowStyle.PAUSED.copy(alpha = 0.55f)), 3f * d, strength.coerceAtMost(1f), inset0, radius)
+        ring(SolidColor(EdgeGlowStyle.PAUSED.copy(alpha = 0.55f)), 3f * d, strength.coerceAtMost(1f), 1.5f * d, radius)
         return
     }
-    val brush = EdgeGlowStyle.brush(center, turn)
-    for ((width, alpha) in EdgeGlowStyle.LAYERS) {
-        ring(brush, width * d * spread, (alpha * strength).coerceAtMost(1f), inset0, radius)
-    }
+    val full = strength.coerceAtMost(1f)
+    val spread = 0.3f + 0.7f * full + 0.6f * voice + 0.25f * (strength - 1f).coerceAtLeast(0f)
+    val halo = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.STEEL, EdgeGlowStyle.ICE, 0.65f), center = center)
+    for ((width, alpha) in EdgeGlowStyle.HALO) ring(halo, width * d * spread, (alpha * strength).coerceAtMost(1f), 0f, radius)
+    val core = (EdgeGlowStyle.CORE_DP + 1.6f * voice) * d * (0.75f + 0.25f * full)
+    ring(SolidColor(EdgeGlowStyle.KEYLINE), 1f * d, 0.24f * full, core, radius)
+    val coreBrush = Brush.sweepGradient(*EdgeGlowStyle.stops(turn, EdgeGlowStyle.SILVER, Color.White, 1f), center = center)
+    ring(coreBrush, core, (0.95f * strength).coerceAtMost(1f), 0f, radius)
 }
 
-private fun DrawScope.ring(brush: Brush, width: Float, alpha: Float, inset0: Float, radius: Float) {
+/** A stroke following the display outline, [inset] px in from the edge. */
+private fun DrawScope.ring(brush: Brush, width: Float, alpha: Float, inset: Float, radius: Float) {
     if (width <= 0f || alpha <= 0f) return
-    val inset = inset0 + width / 2f
+    val i = inset + width / 2f
     drawRoundRect(
         brush,
-        topLeft = Offset(inset, inset),
-        size = Size(size.width - inset * 2, size.height - inset * 2),
-        cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)),
+        topLeft = Offset(i, i),
+        size = Size(size.width - i * 2, size.height - i * 2),
+        cornerRadius = CornerRadius((radius - i).coerceAtLeast(0f)),
         alpha = alpha,
         style = Stroke(width),
     )

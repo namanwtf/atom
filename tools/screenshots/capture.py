@@ -566,6 +566,8 @@ HEY_STAGES = [
     "done",
     "failed",
     "missed",
+    # The light while ATOM operates the phone: the same light, from the run overlay.
+    "run_glow",
 ]
 
 

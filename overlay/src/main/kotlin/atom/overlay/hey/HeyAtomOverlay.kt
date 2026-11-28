@@ -307,15 +307,21 @@ object HeyAtomOverlay : WakePresenter {
     }
 
     /**
-     * For the debug builds' screenshot hook only: shows [name] (listening, partial, partial_screen_off, heard,
-     * working, approval, done, failed, missed, opening; hide) with sample content, without a microphone, a run or a
-     * timer. [words] is what the user said; [detail] the working step or the result; [app] the app on the screen
-     * chip. False when the overlay cannot show.
+     * For the debug builds' screenshot hook only: shows [name] with sample content, without a microphone, a run or a
+     * timer: listening, partial, partial_screen_off, heard, working, approval, done, failed, missed, opening;
+     * run_glow (the run overlay's own glow, without a run); hide. [words] is what the user said; [detail] the
+     * working step or the result; [app] the app on the screen chip. False when the overlay cannot show.
      */
     fun showSample(name: String, words: String? = null, detail: String? = null, level: Float = 0.55f, app: String? = null): Boolean {
         if (!OverlayRuntime.ready) return false
+        RunOverlays.showSampleGlow(false)
         if (name == "hide") {
             cancel()
+            return true
+        }
+        if (name == "run_glow") { // the light while ATOM operates the phone, the same one this overlay draws
+            cancel()
+            RunOverlays.showSampleGlow(true)
             return true
         }
         if (!Windows.canDrawOverlays()) return false

@@ -119,6 +119,15 @@ internal object RunOverlays {
         refresh()
     }
 
+    /** Debug screenshots only: the run glow without a run. */
+    private var sampleGlow = false
+
+    fun showSampleGlow(on: Boolean) {
+        if (sampleGlow == on) return
+        sampleGlow = on
+        refresh()
+    }
+
     /** The glow about to show takes over from the same light the "Hey ATOM" overlay draws: no fade in between. */
     private var glowSeamless = false
 
@@ -342,7 +351,7 @@ internal object RunOverlays {
         }
         if (stoppingId != null && stoppingId != next?.conversationId) stoppingId = null
         // Glow first, so a capsule created in the same pass sits above it.
-        val glowing = next != null && prefs.edgeGlow.value &&
+        val glowing = sampleGlow || next != null && prefs.edgeGlow.value &&
             (next.phase == RunPhase.Running || next.phase == RunPhase.Starting || next.phase == RunPhase.Paused)
         if (glowing) ensureGlow() else {
             removeGlow()

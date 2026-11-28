@@ -76,7 +76,7 @@ private fun DrawScope.drawHalo(p: Float) {
     measure.getSegment(length - head, (length - head + band).coerceAtMost(length), left, true)
     val aurora = Brush.sweepGradient(AURORA, center = Offset(w / 2f, h / 2f))
     // The same strokes as ATOM's edge light (the run glow, "Hey ATOM"), running down both edges.
-    for ((widthDp, alpha) in EdgeGlowStyle.LAYERS) {
+    for ((widthDp, alpha) in EdgeGlowStyle.BAND) {
         val style = Stroke(widthDp.dp.toPx(), cap = StrokeCap.Round)
         drawPath(right, aurora, alpha = alpha * fade, style = style)
         drawPath(left, aurora, alpha = alpha * fade, style = style)
@@ -129,5 +129,5 @@ internal fun VoiceWave(level: Float, modifier: Modifier = Modifier) {
 
 private const val HALO_MS = 900
 
-/** The wake colours: ATOM's one edge-light palette (light blue, violet, pink, peach, back to blue). */
+/** The wake colours: ATOM's one edge-light palette (steel blue, ice, silver, white, back to steel). */
 private val AURORA = EdgeGlowStyle.PALETTE
