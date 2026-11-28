@@ -107,11 +107,94 @@ internal object Screenshots {
         return Shot(ContentPart.Image("image/jpeg", Base64.encodeToString(bytes, Base64.NO_WRAP)), note)
     }
 
+    /** One frame for "Hey ATOM": a small JPEG, or none; [secure] when the app in front protects its window. */
+    class Glimpse(val jpeg: ByteArray?, val secure: Boolean)
+
+    /**
+     * One screenshot, no retry. A secure window fails with its own error from Android 14; before that it comes
+     * back black, which counts as secure too.
+     */
+    suspend fun glimpse(svc: AccessibilityService, maxSide: Int, quality: Int): Glimpse {
+        val ok = when (val raw = take(svc)) {
+            is Raw.Ok -> raw.result
+            is Raw.Failed -> return Glimpse(null, secure = raw.code == SECURE_WINDOW)
+        }
+        return withContext(Dispatchers.Default) {
+            val software = runCatching { softwareCopy(ok) }.getOrNull() ?: return@withContext Glimpse(null, secure = false)
+            if (BlankFrame.isBlank(software)) {
+                software.recycle()
+                return@withContext Glimpse(null, secure = true)
+            }
+            val w = software.width
+            val h = software.height
+            val scale = minOf(1f, maxSide.toFloat() / max(w, h))
+            val scaled = if (scale < 1f) {
+                Bitmap.createScaledBitmap(software, (w * scale).roundToInt(), (h * scale).roundToInt(), true).also { software.recycle() }
+            } else {
+                software
+            }
+            val bytes = ByteArrayOutputStream(64 * 1024).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                out.toByteArray()
+            }
+            scaled.recycle()
+            Glimpse(bytes, secure = false)
+        }
+    }
+
+    private fun softwareCopy(result: AccessibilityService.ScreenshotResult): Bitmap {
+        val buffer = result.hardwareBuffer
+        try {
+            val hw = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                ?: throw UiError("Screenshot failed: the frame could not be decoded.")
+            try {
+                return hw.copy(Bitmap.Config.ARGB_8888, false)
+            } finally {
+                hw.recycle()
+            }
+        } finally {
+            buffer.close()
+        }
+    }
+
+    /** AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW (API 34). */
+    private const val SECURE_WINDOW = 6
+
     private fun reason(code: Int) = when (code) {
         AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "the service lacks screenshot access."
         AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "requested too quickly; try again in a second."
         AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "invalid display."
         6 /* ERROR_TAKE_SCREENSHOT_SECURE_WINDOW (API 34) */ -> "the screen is protected (secure window)."
         else -> "internal error ($code). Rely on the text tree instead."
+    }
+}
+
+/** A frame that is black everywhere below the status bar: what a protected (FLAG_SECURE) window gives before Android 14. */
+internal object BlankFrame {
+    private const val GRID = 24
+    private const val DARK = 10
+
+    fun isBlank(bitmap: Bitmap): Boolean {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 0 || h <= 0) return true
+        val samples = IntArray(GRID * GRID)
+        var k = 0
+        for (row in 0 until GRID) {
+            val y = (h * (0.1f + 0.8f * row / (GRID - 1))).toInt().coerceIn(0, h - 1)
+            for (col in 0 until GRID) {
+                val x = (w * (0.05f + 0.9f * col / (GRID - 1))).toInt().coerceIn(0, w - 1)
+                samples[k++] = bitmap.getPixel(x, y)
+            }
+        }
+        return allDark(samples)
+    }
+
+    /** True when every ARGB sample is (almost) black. */
+    fun allDark(samples: IntArray): Boolean = samples.all { c ->
+        val r = (c shr 16) and 0xff
+        val g = (c shr 8) and 0xff
+        val b = c and 0xff
+        maxOf(r, g, b) <= DARK
     }
 }

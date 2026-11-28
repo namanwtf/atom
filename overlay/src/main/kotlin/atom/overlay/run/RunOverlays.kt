@@ -19,6 +19,7 @@ import atom.overlay.assistant.AssistantController
 import atom.overlay.bubble.Bubble
 import atom.overlay.bubble.BubbleMood
 import atom.overlay.bubble.BubbleReducer
+import atom.overlay.hey.HeyAtomOverlay
 import atom.overlay.panel.MiniChat
 import atom.overlay.ui.Markdown
 import atom.overlay.window.OverlayWindow
@@ -125,6 +126,7 @@ internal object RunOverlays {
                 // Fallback for when the app does not call Overlay.clearScreenForAgent before screen tools.
                 MiniChat.hideForAgent(run.conversationId)
                 AssistantController.hideForAgent(run.conversationId)
+                HeyAtomOverlay.hideForAgent(run.conversationId)
             }
         }
         refresh()

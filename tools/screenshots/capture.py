@@ -539,6 +539,84 @@ def site_preview(p):
     run_tool("site_write", {"site": SITE_ID, "path": "index.html", "content": site_page(1)})
 
 
+def hey_overlay(event, **fields):
+    """Debug builds only: drives the "Hey ATOM" overlay through E2eProvider's hey_overlay (no microphone)."""
+    spec = json.dumps(dict(event=event, **fields), separators=(",", ":"))
+    out = sh(f"content call --uri content://{PKG}.e2e --method hey_overlay --arg {shlex.quote(spec)}", timeout=60).strip()
+    print(f"[capture] hey_overlay {event} {fields.get('stage', '')}: {out[-200:]}")
+    return out
+
+
+def hey_e2e(method, arg=None):
+    cmd = f"content call --uri content://{PKG}.e2e --method {method}"
+    if arg is not None:
+        cmd += f" --arg {shlex.quote(arg)}"
+    out = sh(cmd, timeout=60).strip()
+    print(f"[capture] {method} {arg or ''}: {out[-200:]}")
+    return out
+
+
+HEY_STAGES = [
+    "listening",
+    "partial",
+    "partial_screen_off",
+    "heard",
+    "working",
+    "approval",
+    "done",
+    "failed",
+    "missed",
+]
+
+
+def hey_atom_overlay(p):
+    """The "Hey ATOM" overlay over the Settings app: each stage as a sample (debug hook, no microphone or model),
+    a still border under "Remove animations", and the Speech settings rows with and without the overlay permission."""
+    # The bubble would show with the permission allowed; keep it off these shots (the bubble section below turns it on).
+    launch("overlay/settings", wait=3)
+    if switch_checked("Floating bubble"):
+        tap("^Floating bubble$", wait=2)
+    # Speech settings with "Hey ATOM" on: first without "display over other apps" (the row asks for it).
+    launch("voice/settings", wait=3)
+    hey_e2e("hey_atom", "on")
+    time.sleep(2)
+    for _ in range(3):
+        sh("input swipe 540 1800 540 500 300")
+        time.sleep(1)
+    shot(p + "50_hey_settings_needs_permission")
+    sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
+    try:
+        launch("voice/settings", wait=3)
+        for _ in range(3):
+            sh("input swipe 540 1800 540 500 300")
+            time.sleep(1)
+        shot(p + "51_hey_settings_allowed")
+        hey_e2e("hey_atom", "off")
+        sh("am start -W -a android.settings.SETTINGS")
+        time.sleep(3)
+        for i, stage in enumerate(HEY_STAGES):
+            hey_overlay("sample", stage=stage)
+            time.sleep(1.8)
+            shot(f"{p}52_hey_{i:02d}_{stage}")
+            window_frames()
+        # "Remove animations": the border is still and nothing fades.
+        sh("settings put global animator_duration_scale 0")
+        time.sleep(1)
+        hey_overlay("sample", stage="partial")
+        time.sleep(1.5)
+        shot(p + "53_hey_still_border")
+        sh("settings put global animator_duration_scale 1")
+        hey_overlay("sample", stage="hide")
+        time.sleep(1.5)
+        shot(p + "54_hey_after_hide")
+    finally:
+        sh("settings put global animator_duration_scale 1")
+        hey_e2e("hey_atom", "off")
+        sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW ignore")
+        sh("input keyevent KEYCODE_HOME")
+        time.sleep(1)
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "dark"
     require_installed()
@@ -660,6 +738,10 @@ def main():
     if not only:
         failed_run_report(p)
         routines(p)
+        try:
+            hey_atom_overlay(p)
+        except Exception as e:  # a failure here must not lose the bubble shots
+            print(f"[capture] Hey ATOM overlay pass failed: {e}")
 
     if mode != "dark":
         return

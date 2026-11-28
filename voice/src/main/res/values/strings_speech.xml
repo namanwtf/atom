@@ -109,6 +109,12 @@
     <string name="speech_set_hey_atom_charging">Listen while charging</string>
     <string name="speech_set_hey_atom_charging_sub">Even with the screen off</string>
     <string name="speech_set_hey_atom_missing">Needs the on-device AI pack. Tap to get it.</string>
+    <string name="speech_set_hey_atom_overlay">Show ATOM on screen</string>
+    <string name="speech_set_hey_atom_overlay_on">A soft light around the screen shows that ATOM is listening, your words appear as you speak, and ATOM works right where you are</string>
+    <string name="speech_set_hey_atom_overlay_needs">Needs “Display over other apps”. Without it, ATOM opens after the wake word instead.</string>
+    <string name="speech_set_hey_atom_overlay_allow">Allow</string>
+    <string name="speech_set_hey_atom_screen">Use what’s on screen</string>
+    <string name="speech_set_hey_atom_screen_sub">When you say “Hey ATOM”, ATOM reads the app in front once, so “what’s this?” and “translate this” work. Never on protected screens or while a password field shows.</string>
     <string name="speech_set_try">Try it</string>
     <string name="speech_set_try_sub">Uses the settings on this page, even before you save. Cloud services may charge you.</string>
     <string name="speech_set_test_recognition">Test recognition</string>

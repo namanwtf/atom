@@ -202,6 +202,13 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         start(prompt, conversationId, source, attachments, capabilities = null)
 
     /**
+     * A new conversation whose first turn also shows the model [context] ("Hey ATOM": what was on screen). The
+     * context lives only in this run's request; the conversation stores the prompt and the context's short note.
+     */
+    override fun start(prompt: String, source: RunSource, context: atom.ui.feature.TurnContext): String? =
+        launchTurn(TurnRequest(Conversation.newId(), base = null, prompt = prompt, attachments = emptyList(), source = source, context = context))
+
+    /**
      * Starts a run whose tool set is limited to [capabilities] (scheduled tasks, automation agent steps). Null keeps
      * every tool; an empty set is "Chat only" and the run gets no tools at all.
      */
@@ -318,6 +325,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         val regenerate: Regenerate? = null,
         /** Tool families this run may use; null = all tools, empty = none. */
         val capabilities: Set<atom.automation.Capability>? = null,
+        /** Shown to the model with this turn only, never stored (see [start] with a TurnContext). */
+        val context: atom.ui.feature.TurnContext? = null,
     )
 
     private fun launchTurn(request: TurnRequest): String? {
@@ -330,7 +339,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
         val placeholder = (request.base ?: Conversation.empty(request.conversationId, now)).let { base ->
-            if (request.prompt == null) base else base.copy(messages = base.messages + userEntry(request, now))
+            if (request.prompt == null) base else base.copy(messages = base.messages + turnEntries(request, now))
         }
         _live.update {
             it + (request.conversationId to LiveRun(
@@ -362,6 +371,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             }
         }
     }
+
+    /** The user's message, plus a notice when the turn carries context the conversation does not keep. */
+    private fun turnEntries(request: TurnRequest, now: Long): List<StoredMessage> =
+        listOfNotNull(userEntry(request, now), request.context?.let { StoredMessage.notice(it.note, now) })
 
     private fun userEntry(request: TurnRequest, now: Long) =
         StoredMessage(ChatMessage.user(request.prompt.orEmpty()), attachments = request.attachments, createdAt = now)
@@ -816,6 +829,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
 
                 val images = loadTurnImages()
                 val history = ModelHistory.build(stored, images, replaysReasoning = engine.engine.capabilities.replaysReasoning)
+                    .let { built -> withTurnContext(built, engine.engine.capabilities.vision) }
                 view.clear()
                 view.addAll(history.storedIndex)
 
@@ -943,7 +957,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             val base = loaded ?: Conversation.empty(id, now)
             val withUser = if (request.prompt != null) {
                 base.copy(
-                    messages = base.messages + userEntry(request, now),
+                    messages = base.messages + turnEntries(request, now),
                     title = base.title.ifBlank { Conversation.titleFrom(request.prompt.ifBlank { request.attachments.firstOrNull()?.name.orEmpty() }) },
                     updatedAt = now,
                 )
@@ -961,6 +975,29 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             graph.conversations.save(snapshot())
             graph.journal.begin(id, stored.size)
             journalOpen = true
+        }
+
+        /**
+         * Adds the request's [atom.ui.feature.TurnContext] to this turn's user message in what the model sees: its
+         * text, and its picture when the model can see images. The stored record never holds either.
+         */
+        private fun withTurnContext(built: ModelHistory.View, vision: Boolean): ModelHistory.View {
+            val context = request.context ?: return built
+            val at = stored.indexOfLast { it.isVisibleUser }
+            val pos = built.storedIndex.indexOf(at)
+            if (pos < 0) return built
+            val image = context.imageJpeg?.takeIf { vision && it.isNotEmpty() }
+            val note = if (image != null) "\nThe attached screenshot is from the same moment." else ""
+            val messages = built.messages.toMutableList()
+            val msg = messages[pos]
+            val text = msg.parts.filterIsInstance<ContentPart.Text>().joinToString("\n") { it.text }
+            val parts = buildList<ContentPart> {
+                add(ContentPart.Text(text + "\n\n" + context.text + note))
+                addAll(msg.parts.filterIsInstance<ContentPart.Image>())
+                if (image != null) add(ContentPart.Image("image/jpeg", java.util.Base64.getEncoder().encodeToString(image)))
+            }
+            messages[pos] = msg.copy(parts = parts)
+            return ModelHistory.View(messages, built.storedIndex)
         }
 
         private suspend fun loadTurnImages(): Map<Int, List<ContentPart.Image>> {

@@ -18,6 +18,7 @@ import android.os.VibratorManager
 import atom.voice.R
 import atom.voice.VoiceCommand
 import atom.voice.Wake
+import atom.voice.WakePresenter
 import atom.voice.WakeState
 import atom.voice.assist.AssistLaunch
 import atom.voice.audio.TriggerDebouncer
@@ -48,6 +49,9 @@ class WakeWordService : Service() {
     private var listener: WakeListener? = null
     private var inForeground = false
     private var shownState: WakeState? = null
+
+    /** The presenter showing the capture that runs now, if it took it. */
+    private var shownBy: WakePresenter? = null
 
     private val listenerCallback = object : WakeListener.Callback {
         override fun onWakeWord() = onTriggered()
@@ -94,6 +98,7 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         stopListening()
+        endShownCapture()
         capture.cancel()
         if (::monitor.isInitialized) monitor.stop()
         if (Wake.service === this) Wake.service = null
@@ -108,6 +113,7 @@ class WakeWordService : Service() {
 
     internal fun shutdown() {
         stopListening()
+        endShownCapture()
         capture.cancel()
         monitor.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -148,10 +154,45 @@ class WakeWordService : Service() {
         listener = null // the listener already released the mic and the models before posting this
         if (!inForeground) return
         haptic()
-        capture.start { text ->
-            if (text != null) Wake.emit(VoiceCommand(text, fromWakeWord = true))
+        // The overlay shows the capture when it can (permission granted, phone unlocked); otherwise the command
+        // opens the app as before.
+        val presenter = Wake.presenter?.takeIf { p -> runCatching { p.onWake() }.getOrDefault(false) }
+        shownBy = presenter
+        val progress = presenter?.let { p ->
+            object : CommandCapture.Progress {
+                override fun onLevel(level: Float) {
+                    runCatching { p.onLevel(level) }
+                }
+
+                override fun onPartial(text: String) {
+                    runCatching { p.onPartial(text) }
+                }
+            }
+        }
+        capture.start(progress) { text ->
+            shownBy = null
+            when {
+                text == null -> if (presenter != null) runCatching { presenter.onMissed() }
+                presenter != null && runCatching { presenter.onCommand(text) }.getOrDefault(false) -> Unit
+                else -> Wake.emit(VoiceCommand(text, fromWakeWord = true))
+            }
             evaluate()
         }
+    }
+
+    /** The presenter's cancel (its X, Back or a tap outside): no command, back to listening for the wake word. */
+    internal fun cancelCapture() {
+        if (!capture.isActive) return
+        shownBy = null
+        capture.cancel()
+        evaluate()
+    }
+
+    /** Tells the presenter that the capture it shows ends now without a result (service stopping). */
+    private fun endShownCapture() {
+        val presenter = shownBy ?: return
+        shownBy = null
+        runCatching { presenter.onStopped() }
     }
 
     private fun haptic() {

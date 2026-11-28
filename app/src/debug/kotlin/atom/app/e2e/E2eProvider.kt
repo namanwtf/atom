@@ -169,6 +169,11 @@ class E2eProvider : ContentProvider() {
                 atom.voice.Wake.setEnabled(ctx, on, atom.voice.WakePolicy(screenOffListening = false, listenWhileCharging = true))
                 "hey atom ${if (on) "on" else "off"}"
             }
+            // The "Hey ATOM" overlay, driven the way the wake-word service drives it but without a microphone:
+            // --arg '{"event": "wake"}', then "level" (value 0..1), "partial" / "final" (text), "missed" or "cancel".
+            // "final" runs the command in place as a real one does. "sample" shows one stage with sample content
+            // for screenshots ({"event": "sample", "stage": "working", "words": "...", "detail": "..."}).
+            "hey_overlay" -> runBlocking(Dispatchers.Main) { heyOverlay(JSONObject(arg?.takeIf { it.isNotBlank() } ?: "{}")) }
             // Loads every "Hey Atom" model stage from the installed on-device AI pack the way a listening session
             // does, runs each once on silence and closes them again: "ok: ..." with the output sizes and the score,
             // or the load or inference error.
@@ -181,6 +186,48 @@ class E2eProvider : ContentProvider() {
         }
         result.putString("result", message)
         return result
+    }
+
+    private fun heyOverlay(spec: JSONObject): String {
+        val overlay = atom.overlay.hey.HeyAtomOverlay
+        val presenter = atom.voice.Wake.presenter ?: return "error: no presenter installed"
+        val text = spec.optString("text")
+        return when (val event = spec.optString("event")) {
+            "wake" -> "wake shown=${presenter.onWake()}"
+            "level" -> {
+                presenter.onLevel(spec.optDouble("value", 0.5).toFloat())
+                "level"
+            }
+            "partial" -> {
+                presenter.onPartial(text)
+                "partial"
+            }
+            "final" -> "final taken=${presenter.onCommand(text)}"
+            "missed" -> {
+                presenter.onMissed()
+                "missed"
+            }
+            "cancel" -> {
+                overlay.cancel()
+                "cancelled"
+            }
+            "sample" -> {
+                val shown = overlay.showSample(
+                    spec.optString("stage"),
+                    words = spec.optString("words").takeIf { it.isNotBlank() },
+                    detail = spec.optString("detail").takeIf { it.isNotBlank() },
+                    level = spec.optDouble("level", 0.55).toFloat(),
+                    app = spec.optString("app").takeIf { it.isNotBlank() },
+                )
+                "sample ${spec.optString("stage")} shown=$shown"
+            }
+            else -> "unknown event $event"
+        } + " stage=${overlay.stageName}"
+    }
+
+    private fun heyOverlayState(): JSONObject {
+        val described = runCatching { runBlocking(Dispatchers.Main) { atom.overlay.hey.HeyAtomOverlay.describe() } }.getOrNull()
+        return JSONObject().apply { described?.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) } }
     }
 
     private fun wakeModelsCheck(): String {
@@ -239,6 +286,7 @@ class E2eProvider : ContentProvider() {
             put("runs", JSONArray().apply { runs.forEach { put(runJson(it)) } })
             put("scheduledTasks", scheduledTasks())
             put("wake", runCatching { atom.voice.Wake.state.value.toString() }.getOrDefault("unknown"))
+            put("heyOverlay", heyOverlayState())
             put("screenWait", atom.ui.feature.ScreenWait.tasks.value.isNotEmpty())
             put("packReady", runCatching { atom.app.ondevice.OnDevicePack.ready.value }.getOrDefault(false))
             put("systemEventReceiver", componentState("atom.automation.system.SystemEventReceiver"))

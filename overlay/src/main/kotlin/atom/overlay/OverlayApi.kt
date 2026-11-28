@@ -58,6 +58,15 @@ interface OverlayHooks {
     /** Settings route for the assistant model and reasoning level. Null hides that row. */
     val assistantModelRoute: String? get() = null
 
+    /**
+     * One look at the app in front for "Hey ATOM", taken when the wake word is heard and before the overlay draws.
+     * Null when the screen cannot be read (no accessibility service, screen locked).
+     */
+    suspend fun captureScreen(): ScreenCapture? = null
+
+    /** True when the model that answers runs from [source] can see images. Unknown counts as no. */
+    suspend fun seesImages(source: RunSource): Boolean = false
+
     companion object {
         /** String extra on [appIntent]: the conversation to open. */
         const val EXTRA_CONVERSATION_ID = "atom.overlay.EXTRA_CONVERSATION_ID"
@@ -65,6 +74,19 @@ interface OverlayHooks {
         val Default: OverlayHooks = object : OverlayHooks {}
     }
 }
+
+/**
+ * What was on screen when the user said "Hey ATOM". [text] is the app's outline as read_screen gives it.
+ * [secure]: the window is protected; [passwordShown]: a password field is visible. Either means nothing is used.
+ */
+class ScreenCapture(
+    val appLabel: String?,
+    val packageName: String?,
+    val text: String,
+    val passwordShown: Boolean,
+    val secure: Boolean,
+    val screenshotJpeg: ByteArray?,
+)
 
 /** Speech to text for the bubble's Talk action, the composer mic and the assistant overlay. */
 interface VoiceBridge {
