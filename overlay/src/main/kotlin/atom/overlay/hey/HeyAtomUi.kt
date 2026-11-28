@@ -1,45 +1,12 @@
 package atom.overlay.hey
 
-import android.graphics.Rect
-import android.view.ViewTreeObserver
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
-import atom.overlay.ui.OverlayIcons
-import atom.ui.theme.AtomIcons
-import android.os.Build
-import android.view.RoundedCorner
-import android.view.View
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.Animatable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,7 +15,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,79 +25,102 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import atom.overlay.OverlayMessage
+import atom.overlay.OverlayRuntime
 import atom.overlay.R
 import atom.overlay.run.CapsuleStatus
-import atom.overlay.OverlayRuntime
 import atom.overlay.ui.ApprovalCard
 import atom.overlay.ui.EdgeGlowStyle
+import atom.overlay.ui.OverlayIcons
+import atom.overlay.ui.drawComet
 import atom.overlay.ui.drawEdgeGlow
+import atom.overlay.ui.drawWave
+import atom.overlay.ui.edgePath
 import atom.overlay.ui.rememberDisplayCorner
+import atom.ui.components.AtomGlass
 import atom.ui.theme.AtomEmblem
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.max
-import kotlin.math.min
+import atom.ui.theme.AtomIcons
+import atom.ui.theme.AtomTheme
+import atom.ui.theme.ThemeMode
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
-// The panel's own tones come from ATOM's one edge light (atom.overlay.ui.EdgeGlow).
-private val Ice = EdgeGlowStyle.ICE
-private val Silver = EdgeGlowStyle.SILVER
-private val SoftRed = Color(0xFFFF8E86)
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-
-private const val SHIMMER_MS = 4_800
 
 // ------------------------------------------------------------------ Edge light
 
 /**
- * The light around the screen edges: the same light as the run glow ([drawEdgeGlow]), with listening on top. Live:
- * the sweep turns slowly round the edge and the band widens with the voice. Pulse: one bright breath. Calm: exactly
- * the run glow (still, resting sweep), so a run that takes the screen hands over to its glow without a seam. Every
- * animated value is read in the draw phase only: a still light is drawn once and requests no frames.
+ * The light around the screen edges: the same light as the run glow ([drawEdgeGlow]), with listening on top.
+ *
+ * Live (listening, at most the capture's 10 s): two bright comets chase each other round the whole edge, one lap
+ * every [HeyMotion.LAP_MS]; each syllable (a rise in loudness, or new words) sends a wave rippling inward from the
+ * edge; the band breathes with the voice. Pulse: one bright breath ("Got it"). Calm: exactly the run glow, still,
+ * so a run that takes the screen hands over to its glow without a seam. Faint: a still line while the answer stays
+ * open. Frames run only while listening or while a wave finishes; every other state is drawn once.
  */
 @Composable
 internal fun HeyEdgeLight() {
@@ -157,85 +149,101 @@ internal fun HeyEdgeLight() {
         }
     }
     val live = motion && mode == HeyGlow.Live
-    // The sweep turns while listening and then comes to rest on a whole turn: the run glow's own position.
-    val turn = remember { Animatable(0f) }
+    val voice = animateFloatAsState(if (live) HeyAtomOverlay.level else 0f, tween(110), label = "voice")
+    val comets = remember { Animatable(0f) }
+    LaunchedEffect(live) { comets.animateTo(if (live) 1f else 0f, tween(if (live) 300 else 420)) }
+
+    // One frame clock for the comets and the waves, ticking only while listening or while a wave is still out.
+    val waves = remember { HeyWaves() }
+    var clock by remember { mutableLongStateOf(0L) }
+    var started by remember { mutableLongStateOf(0L) }
     LaunchedEffect(live) {
         if (live) {
-            while (true) turn.animateTo(turn.value + 1f, tween(SHIMMER_MS, easing = LinearEasing))
-        } else {
-            val rest = kotlin.math.ceil(turn.value)
-            if (motion) turn.animateTo(rest, tween(700, easing = Emphasized)) else turn.snapTo(rest)
+            withFrameMillis { clock = it }
+            started = clock
+            launch { snapshotFlow { HeyAtomOverlay.level }.collect { waves.onLevel(it, clock) } }
+            launch { snapshotFlow { HeyAtomOverlay.wordsTick }.drop(1).collect { waves.onWords(clock) } }
         }
+        while (live || waves.prune(clock)) withFrameMillis { clock = it }
     }
-    val voice = animateFloatAsState(if (live) HeyAtomOverlay.level else 0f, tween(140), label = "voice")
-    Canvas(Modifier.fillMaxSize()) {
-        drawEdgeGlow(cornerPx, strength = strength.value * appear.value, voice = voice.value, turn = turn.value)
-    }
+
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .drawWithCache {
+                val d = density
+                val path = edgePath(size.width, size.height, cornerPx ?: (EdgeGlowStyle.FALLBACK_CORNER_DP * d), 2.2f * d)
+                val measure = PathMeasure().apply { setPath(path, true) }
+                onDrawBehind {
+                    val shown = appear.value
+                    val v = voice.value
+                    drawEdgeGlow(cornerPx, strength = strength.value * shown * (1f + 0.3f * v), voice = v)
+                    val now = clock
+                    for (w in waves.waves) {
+                        val p = HeyMotion.waveProgress(w, now) ?: continue
+                        drawWave(cornerPx, p, w.strength * shown, HeyMotion.WAVE_DP)
+                    }
+                    val c = comets.value * shown
+                    if (c > 0.01f) {
+                        val elapsed = now - started
+                        for (i in 0 until 2) drawComet(measure, HeyMotion.cometHead(elapsed, i), HeyMotion.COMET_SHARE, c, v)
+                    }
+                }
+            },
+    ) {}
 }
 
-/** Listening is the strongest; at rest the light is the run glow's working strength. */
+/** Listening is the strongest; at rest the light is the run glow's working strength; with the answer, faint. */
 private fun restStrength(mode: HeyGlow): Float = when (mode) {
     HeyGlow.Live -> 1f
     HeyGlow.Pulse, HeyGlow.Calm -> EdgeGlowStyle.WORKING
+    HeyGlow.Faint -> 0.3f
     HeyGlow.None -> 0f
 }
 
-// ------------------------------------------------------------------ Panel
+// ------------------------------------------------------------------ Scrim
 
-/** The panel's window: modal (a tap outside cancels) while listening or typing, otherwise just the panel. */
+/** The transparent layer under the card while it is modal: a tap anywhere on it closes the panel. */
 @Composable
-internal fun HeyPanelWindow() {
-    val mode = HeyAtomOverlay.panelMode
-    val leaving = HeyAtomOverlay.leaving
-    val motion = HeyAtomOverlay.motion
-    val enter = remember { Animatable(if (motion) 0f else 1f) }
-    LaunchedEffect(leaving, motion) {
-        val target = if (leaving) 0f else 1f
-        if (motion) enter.animateTo(target, tween(if (leaving) 220 else 340, easing = Emphasized)) else enter.snapTo(target)
-    }
-    if (mode == HeyPanel.Modal || mode == HeyPanel.Typing) {
-        val density = LocalDensity.current
-        // While typing the panel sits on the keyboard; otherwise above the navigation bar.
-        val keyboard = if (mode == HeyPanel.Typing) keyboardInset() else 0
-        val inset = with(density) { max(HeyAtomOverlay.bottomInset, keyboard.toFloat()).toDp() }
-        val cancel = stringResource(R.string.hey_atom_cancel)
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = cancel, onClick = HeyAtomOverlay::cancel)
-                .padding(bottom = inset),
-            contentAlignment = Alignment.BottomCenter,
-        ) { HeyCard(enter) }
+internal fun HeyScrim() {
+    val close = stringResource(R.string.hey_atom_close)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = close, onClick = HeyAtomOverlay::close),
+    )
+}
+
+// ------------------------------------------------------------------ Card
+
+/** The card's colours for a light or a dark glass. */
+internal class HeyPalette(val dark: Boolean) {
+    val words = if (dark) Color(0xFFF7F9FB) else Color(0xFF101318)
+    val muted = if (dark) Color(0xFFA3ACB7) else Color(0xFF555E69)
+    val label = if (dark) EdgeGlowStyle.SILVER else Color(0xFF39424D)
+    val accent = if (dark) EdgeGlowStyle.ICE else Color(0xFF2E6BC6)
+    val raised = if (dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f)
+    val hairline = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.10f)
+    val edge = if (dark) {
+        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.05f)))
     } else {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) { HeyCard(enter) }
+        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.9f), Color.Black.copy(alpha = 0.08f)))
     }
+    val send = words
+    val onSend = if (dark) Color(0xFF0B0C0F) else Color.White
+    val error = if (dark) Color(0xFFFF8E86) else Color(0xFFC5221F)
 }
 
-/**
- * The keyboard's height in px: the larger of the window's IME inset and what the visible display frame leaves out,
- * read on layout changes only (no polling).
- */
+private val LocalHey = staticCompositionLocalOf { HeyPalette(dark = true) }
+
+/** The card window's content: ATOM's glass (light or dark with the system) under the panel. */
 @Composable
-private fun keyboardInset(): Int {
-    val ime = WindowInsets.ime.getBottom(LocalDensity.current)
-    val view = LocalView.current
-    var frame by remember { mutableIntStateOf(0) }
-    DisposableEffect(view) {
-        val r = Rect()
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            view.getWindowVisibleDisplayFrame(r)
-            frame = (view.rootView.height - r.bottom).coerceAtLeast(0)
-        }
-        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+internal fun HeyCardWindow() {
+    val dark = HeyAtomOverlay.dark
+    AtomTheme(if (dark) ThemeMode.Dark else ThemeMode.Light) {
+        CompositionLocalProvider(LocalHey provides remember(dark) { HeyPalette(dark) }) { HeyCard() }
     }
-    return max(ime, frame)
 }
-
-private val PanelFill = Brush.verticalGradient(listOf(Color(0xFA191C21), Color(0xFC0B0C0F)))
-private val PanelEdge = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.05f)))
-private val Words = Color(0xFFF7F9FB)
-private val Muted = Color(0xFFA3ACB7)
 
 // The panel's type, in line with the chat: live words 17 sp, status 13 sp, result 15 sp, chip 12 sp. Sizes are in sp,
 // so the system font scale applies once.
@@ -244,30 +252,50 @@ private val BodyStyle @Composable get() = MaterialTheme.typography.bodyMedium.co
 private val SmallStyle @Composable get() = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp)
 
 @Composable
-private fun HeyCard(enter: Animatable<Float, AnimationVector1D>) {
+private fun HeyCard() {
     val s = HeyAtomOverlay.shown
     val motion = HeyAtomOverlay.motion
-    val shape = RoundedCornerShape(28.dp)
+    val leaving = HeyAtomOverlay.leaving
+    val h = LocalHey.current
+    val shape = RoundedCornerShape(HeyGlass.CORNER_DP.dp)
+    val enter = remember { Animatable(if (motion) 0f else 1f) }
+    LaunchedEffect(leaving, motion) {
+        val target = if (leaving) 0f else 1f
+        if (motion) enter.animateTo(target, tween(if (leaving) 220 else 300, easing = Emphasized)) else enter.snapTo(target)
+    }
+    // A swipe down closes the panel: the content follows the finger a little and fades.
+    val density = LocalDensity.current
+    val threshold = with(density) { 72.dp.toPx() }
+    var drag by remember { mutableFloatStateOf(0f) }
     Column(
         Modifier
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .widthIn(max = 560.dp)
             .fillMaxWidth()
             .graphicsLayer {
-                val e = enter.value
-                translationY = (1f - e) * 40.dp.toPx()
-                alpha = e
+                val pull = (drag / threshold).coerceIn(0f, 1f)
+                translationY = pull * 18.dp.toPx() + (1f - enter.value) * 24.dp.toPx()
+                alpha = enter.value * (1f - 0.6f * pull)
             }
-            .shadow(20.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(PanelFill)
-            .border(1.dp, PanelEdge, shape)
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = HeyAtomOverlay::tapPanel)
+            .border(1.dp, h.edge, shape)
             .then(if (motion) Modifier.animateContentSize(tween(260, easing = Emphasized)) else Modifier)
-            .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+            .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Header(s)
+        Column(
+            Modifier.fillMaxWidth().pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragEnd = { if (drag >= threshold) HeyAtomOverlay.close() else drag = 0f },
+                    onDragCancel = { drag = 0f },
+                ) { change, dy ->
+                    change.consume()
+                    drag = (drag + dy).coerceAtLeast(0f)
+                }
+            },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(Modifier.padding(bottom = 4.dp).size(width = 34.dp, height = 4.dp).clip(RoundedCornerShape(50)).background(h.muted.copy(alpha = 0.45f)))
+            Header(s)
+        }
         AnimatedContent(
             targetState = s,
             contentKey = { it::class },
@@ -286,6 +314,7 @@ private fun HeyCard(enter: Animatable<Float, AnimationVector1D>) {
 /** ATOM's coin at the top centre with the status under it; the close button stays at the top right. */
 @Composable
 private fun Header(s: HeyStage) {
+    val h = LocalHey.current
     val label = when (s) {
         is HeyStage.Listening -> stringResource(R.string.hey_atom_listening)
         is HeyStage.Heard, is HeyStage.Opening -> stringResource(R.string.hey_atom_got_it)
@@ -296,9 +325,9 @@ private fun Header(s: HeyStage) {
         HeyStage.Hidden -> ""
     }
     val color = when {
-        s is HeyStage.Done && !s.ok -> SoftRed
-        s == HeyStage.Missed -> Words
-        else -> Silver
+        s is HeyStage.Done && !s.ok -> h.error
+        s == HeyStage.Missed -> h.words
+        else -> h.label
     }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.align(Alignment.TopCenter).padding(horizontal = 44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -323,35 +352,40 @@ private fun Header(s: HeyStage) {
 
 @Composable
 private fun Body(s: HeyStage) {
+    val h = LocalHey.current
     val words = WordsStyle
     val body = BodyStyle
     val small = SmallStyle
     val center = TextAlign.Center
+    val turns = HeyAtomOverlay.turns
     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp).padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         when (s) {
             is HeyStage.Listening -> {
+                if (s.continueIn != null && turns.isNotEmpty()) Turns(turns)
                 if (s.words.isEmpty()) {
-                    Text(stringResource(R.string.hey_atom_listening_hint), style = words, color = Muted, textAlign = center)
+                    Text(stringResource(R.string.hey_atom_listening_hint), style = words, color = h.muted, textAlign = center)
                 } else {
                     // The newest words matter most: long speech keeps its end, starting with an ellipsis.
-                    Text(HeyMachine.tail(s.words), style = words, color = Words.copy(alpha = 0.86f), maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
+                    Text(HeyMachine.tail(s.words), style = words, color = h.words.copy(alpha = 0.86f), maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
                 }
-                ScreenChip()
+                if (s.continueIn == null) ScreenChip()
             }
             is HeyStage.Heard -> {
-                // The words settle: they brighten from the live grey to full white.
-                val settle = remember { Animatable(Words.copy(alpha = 0.86f)) }
-                LaunchedEffect(Unit) { settle.animateTo(Words, tween(360)) }
-                Text(HeyMachine.tail(s.words), style = words, color = settle.value, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
-                ScreenChip()
+                // The words settle: they brighten from the live grey to full strength.
+                val settle = remember { Animatable(0.86f) }
+                LaunchedEffect(Unit) { settle.animateTo(1f, tween(360)) }
+                Text(HeyMachine.tail(s.words), style = words, color = h.words.copy(alpha = settle.value), maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = center)
+                if (s.continueIn == null) ScreenChip()
             }
             is HeyStage.Working -> {
-                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+                if (turns.isNotEmpty()) Turns(turns + OverlayMessage(fromUser = true, text = s.words)) else {
+                    Text(s.words, style = small, color = h.muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     s.step ?: stringResource(R.string.hey_atom_working),
                     style = body.copy(fontWeight = FontWeight.Medium),
-                    color = Words,
+                    color = h.words,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = center,
@@ -362,29 +396,70 @@ private fun Body(s: HeyStage) {
                 }
             }
             is HeyStage.Opening -> {
-                Text(s.words, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+                Text(s.words, style = small, color = h.muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
                 Spacer(Modifier.height(6.dp))
-                Text(stringResource(R.string.hey_atom_opening), style = body, color = Words, textAlign = center)
+                Text(stringResource(R.string.hey_atom_opening), style = body, color = h.words, textAlign = center)
             }
             is HeyStage.Done -> {
-                Text(s.words, style = small, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = center)
+                if (turns.isNotEmpty()) {
+                    Turns(turns)
+                } else {
+                    Text(s.words, style = small, color = h.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = center)
+                    Spacer(Modifier.height(6.dp))
+                    Text(s.result.ifBlank { stringResource(R.string.hey_atom_done_empty) }, style = body, color = h.words, maxLines = 4, overflow = TextOverflow.Ellipsis, textAlign = center)
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    s.result.ifBlank { stringResource(R.string.hey_atom_done_empty) },
-                    style = body,
-                    color = Words,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+                    stringResource(R.string.hey_atom_open_full),
+                    style = small.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    color = h.accent,
                     textAlign = center,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = HeyAtomOverlay::tapPanel).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(stringResource(R.string.hey_atom_open_hint), style = small.copy(fontSize = 12.sp), color = Muted, textAlign = center)
             }
-            is HeyStage.Typing -> s.previous?.let { previous ->
-                Text(previous, style = small, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center)
+            is HeyStage.Typing -> if (s.continueIn != null && turns.isNotEmpty()) {
+                Turns(turns)
+            } else {
+                s.previous?.let { previous -> Text(previous, style = small, color = h.muted, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = center) }
             }
-            HeyStage.Missed -> Text(stringResource(R.string.hey_atom_missed_hint), style = body, color = Muted, textAlign = center)
+            HeyStage.Missed -> Text(stringResource(R.string.hey_atom_missed_hint), style = body, color = h.muted, textAlign = center)
             HeyStage.Hidden -> Unit
+        }
+    }
+}
+
+/**
+ * The conversation's last turns, newest at the bottom: the user's words on the right in a soft bubble, ATOM's answers
+ * on the left. Scrolls inside at most 45% of the screen, kept at the newest turn.
+ */
+@Composable
+private fun Turns(turns: List<OverlayMessage>) {
+    val h = LocalHey.current
+    val density = LocalDensity.current
+    val cap = with(density) { (HeyAtomOverlay.screenHeight * 0.45f).toDp() }.coerceAtLeast(160.dp)
+    val scroll = rememberScrollState()
+    LaunchedEffect(turns.size, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = cap).verticalScroll(scroll),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for (turn in turns) {
+            if (turn.fromUser) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    Text(
+                        turn.text,
+                        style = SmallStyle.copy(fontSize = 14.sp, lineHeight = 19.sp),
+                        color = h.words.copy(alpha = 0.82f),
+                        modifier = Modifier
+                            .widthIn(max = 300.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(h.raised)
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+            } else {
+                Text(turn.text, style = BodyStyle, color = h.words, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
+            }
         }
     }
 }
@@ -395,6 +470,7 @@ private fun Body(s: HeyStage) {
  */
 @Composable
 private fun ChatBar(s: HeyStage) {
+    val h = LocalHey.current
     val typing = s is HeyStage.Typing
     val shape = RoundedCornerShape(24.dp)
     val listening = s is HeyStage.Listening
@@ -404,8 +480,8 @@ private fun ChatBar(s: HeyStage) {
                 .weight(1f)
                 .heightIn(min = 44.dp)
                 .clip(shape)
-                .background(Color.White.copy(alpha = 0.07f))
-                .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
+                .background(h.raised)
+                .border(1.dp, h.hairline, shape)
                 .then(if (typing) Modifier else Modifier.clickable(onClick = HeyAtomOverlay::startTyping))
                 .padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -414,7 +490,7 @@ private fun ChatBar(s: HeyStage) {
                 if (s is HeyStage.Typing) {
                     TypingField(s)
                 } else {
-                    Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = Muted, maxLines = 1)
+                    Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = h.muted, maxLines = 1)
                 }
             }
             BarMic(active = listening, enabled = !listening)
@@ -426,12 +502,12 @@ private fun ChatBar(s: HeyStage) {
                 Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(if (canSend) Words else Color.White.copy(alpha = 0.10f))
+                    .background(if (canSend) h.send else h.raised)
                     .clickable(enabled = canSend) { HeyAtomOverlay.send() }
                     .semantics { contentDescription = send },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(OverlayIcons.ArrowUp, null, Modifier.size(20.dp), tint = if (canSend) Color(0xFF0B0C0F) else Muted)
+                Icon(OverlayIcons.ArrowUp, null, Modifier.size(20.dp), tint = if (canSend) h.onSend else h.muted)
             }
         }
     }
@@ -440,26 +516,27 @@ private fun ChatBar(s: HeyStage) {
 /** The text field while typing: focused at once with the cursor at the end of what speech had heard. */
 @Composable
 private fun TypingField(stage: HeyStage.Typing) {
+    val h = LocalHey.current
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // A new typing stage (a follow-up after a command) starts from its own draft.
     var value by remember(stage) { mutableStateOf(TextFieldValue(HeyAtomOverlay.draft, TextRange(HeyAtomOverlay.draft.length))) }
-    // The window becomes focusable as typing starts; the field takes focus and the keyboard opens once it has it.
+    // The card becomes focusable as typing starts; the field takes focus and the keyboard opens once it has it.
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(windowFocused) {
         runCatching { focus.requestFocus() }
         if (windowFocused) keyboard?.show()
     }
     Box {
-        if (value.text.isEmpty()) Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = Muted, maxLines = 1)
+        if (value.text.isEmpty()) Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = h.muted, maxLines = 1)
         BasicTextField(
             value = value,
             onValueChange = {
                 value = it
                 HeyAtomOverlay.draft = it.text
             },
-            textStyle = TextStyle(color = Words, fontSize = 15.sp, lineHeight = 21.sp),
-            cursorBrush = SolidColor(Ice),
+            textStyle = TextStyle(color = h.words, fontSize = 15.sp, lineHeight = 21.sp),
+            cursorBrush = SolidColor(h.accent),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { HeyAtomOverlay.send() }),
             maxLines = 4,
@@ -471,20 +548,20 @@ private fun TypingField(stage: HeyStage.Typing) {
 /** The bar's mic: lit while listening; otherwise it starts listening again. */
 @Composable
 private fun BarMic(active: Boolean, enabled: Boolean) {
+    val h = LocalHey.current
     val label = stringResource(R.string.hey_atom_speak)
     Box(
         Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(if (active) Ice.copy(alpha = 0.18f) else Color.Transparent)
+            .background(if (active) h.accent.copy(alpha = 0.18f) else Color.Transparent)
             .clickable(enabled = enabled) { HeyAtomOverlay.listenAgain() }
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(AtomIcons.Mic, null, Modifier.size(18.dp), tint = if (active) Ice else Muted)
+        Icon(AtomIcons.Mic, null, Modifier.size(18.dp), tint = if (active) h.accent else h.muted)
     }
 }
-
 
 /**
  * "Using what's on screen · Settings": the screen read at the wake word goes with this request. A tap leaves it out
@@ -492,6 +569,7 @@ private fun BarMic(active: Boolean, enabled: Boolean) {
  */
 @Composable
 private fun ScreenChip() {
+    val h = LocalHey.current
     val screen = HeyAtomOverlay.screen ?: return
     val on = HeyAtomOverlay.screenUse
     val label = when {
@@ -505,23 +583,16 @@ private fun ScreenChip() {
         Modifier
             .padding(top = 10.dp)
             .clip(shape)
-            .background(if (on) Ice.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f))
-            .border(1.dp, if (on) Ice.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.10f), shape)
+            .background(if (on) h.accent.copy(alpha = 0.12f) else h.raised)
+            .border(1.dp, if (on) h.accent.copy(alpha = 0.3f) else h.hairline, shape)
             .clickable(onClick = HeyAtomOverlay::toggleScreen)
             .semantics { contentDescription = description }
             .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ScreenGlyph(if (on) Ice else Muted, crossed = !on)
+        ScreenGlyph(if (on) h.accent else h.muted, crossed = !on)
         Spacer(Modifier.width(8.dp))
-        Text(
-            label,
-            color = if (on) Words else Muted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Text(label, color = if (on) h.words else h.muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -562,10 +633,11 @@ private fun statusLabel(status: CapsuleStatus): String = stringResource(
  */
 @Composable
 private fun Orb(s: HeyStage) {
+    val h = LocalHey.current
     val motion = HeyAtomOverlay.motion
     val listening = s is HeyStage.Listening
     val voice = animateFloatAsState(if (listening && motion) HeyAtomOverlay.level else 0f, tween(120), label = "orb")
-    val accent = if (s is HeyStage.Done && !s.ok) SoftRed else Ice
+    val accent = if (s is HeyStage.Done && !s.ok) h.error else EdgeGlowStyle.ICE
     Box(
         Modifier.size(40.dp).graphicsLayer {
             val v = voice.value
@@ -592,6 +664,7 @@ private fun Orb(s: HeyStage) {
 
 @Composable
 private fun CloseButton(s: HeyStage) {
+    val h = LocalHey.current
     val label = stringResource(
         when (s) {
             is HeyStage.Listening, is HeyStage.Heard, is HeyStage.Typing -> R.string.hey_atom_cancel
@@ -603,11 +676,26 @@ private fun CloseButton(s: HeyStage) {
         Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.09f))
+            .background(h.raised)
             .clickable(onClick = HeyAtomOverlay::cancel)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Filled.Close, null, Modifier.size(18.dp), tint = Words.copy(alpha = 0.85f))
+        Icon(Icons.Filled.Close, null, Modifier.size(18.dp), tint = h.words.copy(alpha = 0.85f))
+    }
+}
+
+/** ATOM's glass for the card, from the app's one glass style ([AtomGlass]). */
+internal object HeyGlass {
+    const val CORNER_DP = 28f
+    private const val DARK_BASE = 0xFF0B0C0F.toInt()
+    private const val LIGHT_BASE = 0xFFF4F6F9.toInt()
+
+    /** The card's tint (ARGB): translucent over a blur, nearly opaque without one. */
+    fun tint(dark: Boolean, blurred: Boolean): Int {
+        val base = if (dark) DARK_BASE else LIGHT_BASE
+        val color = Color(base)
+        val alpha = if (blurred) AtomGlass.tintAlpha(color) else AtomGlass.fallbackAlpha(color)
+        return (base and 0x00FFFFFF) or ((alpha * 255f).toInt().coerceIn(0, 255) shl 24)
     }
 }

@@ -2,15 +2,21 @@ package atom.overlay.hey
 
 import android.animation.ValueAnimator
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
-import android.view.Gravity
+import android.content.IntentFilter
+import android.content.res.Configuration
 import android.view.View
 import android.view.WindowManager.LayoutParams
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import atom.overlay.Overlay
+import atom.overlay.OverlayMessage
 import atom.overlay.OverlayRuntime
 import atom.overlay.R
 import atom.overlay.RunHub
@@ -18,12 +24,14 @@ import atom.overlay.assistant.AutoSpeak
 import atom.overlay.run.CapsuleStatus
 import atom.overlay.run.RunOverlays
 import atom.overlay.ui.Markdown
+import atom.overlay.window.CardWindow
 import atom.overlay.window.OverlayWindow
 import atom.overlay.window.Windows
 import atom.ui.feature.HostApproval
 import atom.ui.feature.HostRun
 import atom.ui.feature.RunPhase
 import atom.ui.feature.RunSource
+import atom.ui.components.AtomGlass
 import atom.ui.feature.TurnContext
 import atom.voice.Wake
 import atom.voice.WakePresenter
@@ -65,6 +73,10 @@ object HeyAtomOverlay : WakePresenter {
     internal var level by mutableFloatStateOf(0f)
         private set
 
+    /** Counts new recognised words while listening; each one sends a wave through the light. */
+    internal var wordsTick by mutableIntStateOf(0)
+        private set
+
     /** False under "Remove animations": a still border, no fades. */
     internal var motion by mutableStateOf(true)
         private set
@@ -97,8 +109,26 @@ object HeyAtomOverlay : WakePresenter {
     /** A debug sample is on screen: no capture, run or timer behind it. */
     private var sample = false
     private var glow: OverlayWindow? = null
-    private var panel: OverlayWindow? = null
-    private var panelBaseFlags = 0
+    private var scrim: OverlayWindow? = null
+    private var panel: CardWindow? = null
+    private var scrimBaseFlags = 0
+    private var screenReceiver: BroadcastReceiver? = null
+
+    /** The card follows the system theme: a light or a dark glass. */
+    internal var dark by mutableStateOf(true)
+        private set
+
+    /** True while the card's glass blurs what is behind (otherwise its tint is nearly opaque). */
+    internal var blurred by mutableStateOf(false)
+        private set
+
+    /** Screen height in px, for the card's height cap. */
+    internal var screenHeight by mutableFloatStateOf(0f)
+        private set
+
+    /** The conversation's last turns, shown in the card once a command has an answer (newest last). */
+    internal var turns by mutableStateOf<List<OverlayMessage>>(emptyList())
+        private set
     private var timer: Job? = null
     private var exit: Job? = null
 
@@ -132,7 +162,7 @@ object HeyAtomOverlay : WakePresenter {
         holding = true
         // An earlier result still on screen must not be in the capture: it goes first, and the compositor gets a
         // frame to drop it.
-        val hadWindows = glow != null || panel != null
+        val hadWindows = glow != null || panel != null || scrim != null
         if (hadWindows) removeWindows()
         val at = System.currentTimeMillis()
         val app = OverlayRuntime.app
@@ -162,7 +192,12 @@ object HeyAtomOverlay : WakePresenter {
         if (stage is HeyStage.Listening && motion) this.level = level.coerceIn(0f, 1f)
     }
 
-    override fun onPartial(text: String) = apply(HeyEvent.Partial(text))
+    override fun onPartial(text: String) {
+        val before = (stage as? HeyStage.Listening)?.words
+        apply(HeyEvent.Partial(text))
+        // New words send a wave through the light too (for recognizers that report no loudness).
+        if ((stage as? HeyStage.Listening)?.words?.let { it != before } == true) wordsTick++
+    }
 
     override fun onCommand(text: String): Boolean {
         if (stage !is HeyStage.Listening) return false
@@ -263,8 +298,14 @@ object HeyAtomOverlay : WakePresenter {
 
     // ------------------------------------------------------------------ Panel actions
 
-    /** The X, Back, or a tap outside the panel: stops listening, or stops the run while it works. */
+    /** The X: stops listening, or stops the run while it works, and closes. */
     fun cancel() = apply(HeyEvent.Cancel)
+
+    /**
+     * Back, a swipe down, a tap outside the card or the screen turning off: closes the panel. A working run goes on
+     * (the run capsule and the notification carry it).
+     */
+    fun close() = apply(HeyEvent.Close)
 
     internal fun tapPanel() = apply(HeyEvent.Open)
 
@@ -403,6 +444,14 @@ object HeyAtomOverlay : WakePresenter {
             )
             "done" -> HeyStage.Done(said, SAMPLE_ID, ok = true, result = HeyMachine.shorten(detail ?: "Your 10 minute timer is running. I’ll ring when the pasta is done."))
             "failed" -> HeyStage.Done(said, SAMPLE_ID, ok = false, result = HeyMachine.shorten(detail ?: "Clock didn’t open. Try again in a moment."))
+            "listening_voice" -> HeyStage.Listening(said)
+            // The answer and a follow-up, with the conversation's turns in the card.
+            "multiturn" -> HeyStage.Done(
+                "And one for 5 minutes for the sauce",
+                SAMPLE_ID,
+                ok = true,
+                result = "Done: a second timer for 5 minutes is running too.",
+            )
             "missed" -> HeyStage.Missed
             "opening" -> HeyStage.Opening(said)
             // A misheard command opened in the keyboard to fix it.
@@ -417,6 +466,9 @@ object HeyAtomOverlay : WakePresenter {
         }
         stage = next
         draft = (next as? HeyStage.Typing)?.draft.orEmpty()
+        turns = if (name == "multiturn") SAMPLE_TURNS else emptyList()
+        sampleVoice?.cancel()
+        sampleVoice = if (name == "listening_voice") OverlayRuntime.scope.launch { speakSample() } else null
         captureJob?.cancel()
         holding = false
         // The chip as it shows over the Settings app; no screen is read for a sample.
@@ -428,12 +480,36 @@ object HeyAtomOverlay : WakePresenter {
     }
 
     private const val SAMPLE_ID = "debug-hey-atom-sample"
+    private var sampleVoice: Job? = null
+
+    private val SAMPLE_TURNS = listOf(
+        OverlayMessage(fromUser = true, text = "Set a timer for ten minutes and tell me when the pasta is done"),
+        OverlayMessage(fromUser = false, text = "Your 10 minute timer is running. I’ll ring when the pasta is done."),
+        OverlayMessage(fromUser = true, text = "And one for 5 minutes for the sauce"),
+        OverlayMessage(fromUser = false, text = "Done: a second timer for 5 minutes is running too."),
+    )
+
+    /** Debug sample only: a voice that rises and falls like speech, for the frames that show the light moving. */
+    private suspend fun speakSample() {
+        var t = 0
+        while (sample && stage is HeyStage.Listening) {
+            val syllable = (t % 7) / 6f
+            level = if (t % 7 < 3) 0.35f + 0.6f * (1f - syllable) else 0.08f
+            if (t % 21 == 0) wordsTick++
+            t++
+            delay(90)
+        }
+    }
 
     // ------------------------------------------------------------------ Machine
 
     private fun apply(event: HeyEvent) {
+        val before = stage
         val step = HeyMachine.reduce(stage, event)
         stage = step.stage
+        val now = stage
+        if (now is HeyStage.Heard && now.continueIn == null && before !is HeyStage.Heard) turns = emptyList()
+        if (now is HeyStage.Done && before !is HeyStage.Done && !sample) loadTurns(now)
         step.effects.forEach(::perform)
         sync()
     }
@@ -460,6 +536,19 @@ object HeyAtomOverlay : WakePresenter {
         }
     }
 
+    /** The conversation's last turns for the card (one query when the answer arrives; the answer itself until then). */
+    private fun loadTurns(done: HeyStage.Done) {
+        turns = listOf(OverlayMessage(fromUser = true, text = done.words), OverlayMessage(fromUser = false, text = done.result))
+        val id = done.conversationId
+        OverlayRuntime.scope.launch {
+            val stored = runCatching { Overlay.hooks.transcript(id) }.getOrNull()
+            val current = stage as? HeyStage.Done ?: return@launch
+            if (current.conversationId == id && !stored.isNullOrEmpty()) turns = stored.takeLast(MAX_TURNS).map { m ->
+                if (m.fromUser) m else m.copy(text = Markdown.plain(m.text))
+            }
+        }
+    }
+
     private fun openApp(conversationId: String?) {
         val ctx = panel?.view?.context ?: OverlayRuntime.app
         runCatching { ctx.startActivity(Overlay.hooks.appIntent(ctx, conversationId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -467,7 +556,11 @@ object HeyAtomOverlay : WakePresenter {
 
     // ------------------------------------------------------------------ Windows
 
-    /** Makes the windows match [stage]. */
+    /**
+     * Makes the windows match [stage]. Three windows: the light (never touchable), the scrim (full screen and
+     * transparent: a tap on it, or Back, closes the panel; only while listening, typing or showing the answer) and the
+     * card, a window of its own so its frosted glass blurs only what is behind the card.
+     */
     private fun sync() {
         val s = stage
         if (s == HeyStage.Hidden) {
@@ -485,9 +578,7 @@ object HeyAtomOverlay : WakePresenter {
             // app. The light stays a few frames, until the run glow (the same light) has drawn, so the edge never
             // blinks.
             shown = s
-            panel?.remove()
-            panel = null
-            panelMode = HeyPanel.None
+            removePanel()
             val light = glow ?: return
             glow = null
             OverlayRuntime.scope.launch {
@@ -498,7 +589,19 @@ object HeyAtomOverlay : WakePresenter {
         }
         shown = s
         ensureGlow()
-        ensurePanel(mode, relayout = wasLeaving)
+        val wantScrim = mode == HeyPanel.Modal || mode == HeyPanel.Typing
+        if (wantScrim && scrim == null) {
+            // The scrim must sit below the card: a card already shown is added again above it.
+            panel?.remove()
+            panel = null
+            ensureScrim()
+        } else if (!wantScrim) {
+            scrim?.remove()
+            scrim = null
+        }
+        ensurePanel()
+        if (mode != panelMode || wasLeaving) applyMode(mode)
+        watchScreen(true)
     }
 
     private fun leave() {
@@ -506,11 +609,12 @@ object HeyAtomOverlay : WakePresenter {
         timer = null
         level = 0f
         draft = ""
+        turns = emptyList()
         captureJob?.cancel()
         captureJob = null
         holding = false
         screen = null
-        if (glow == null && panel == null) {
+        if (glow == null && panel == null && scrim == null) {
             reset()
             return
         }
@@ -521,7 +625,8 @@ object HeyAtomOverlay : WakePresenter {
         if (leaving) return
         leaving = true
         // Touches go to the app below while the overlay fades.
-        panel?.let { w ->
+        panel?.setTouchable(false)
+        scrim?.let { w ->
             w.params.flags = w.params.flags or LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_NOT_FOCUSABLE
             w.update()
         }
@@ -556,58 +661,77 @@ object HeyAtomOverlay : WakePresenter {
         if (w.show()) glow = w
     }
 
-    private fun ensurePanel(mode: HeyPanel, relayout: Boolean) {
-        val existing = panel
-        if (existing != null) {
-            if (mode != panelMode || relayout) {
-                panelMode = mode
-                layout(existing.params, mode)
-                existing.update()
-            }
-            return
-        }
+    /** The transparent full-screen layer under the card: a tap on it, or Back while it has focus, closes the panel. */
+    private fun ensureScrim() {
+        if (scrim != null) return
         val slot = Windows.appOverlay() ?: return
-        bottomInset = Windows.area(slot.context).bottom
         val params = OverlayWindow.params(slot.type, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, 0).apply {
-            title = PANEL_TITLE
-            softInputMode = LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            title = SCRIM_TITLE
+            @Suppress("DEPRECATION")
+            softInputMode = LayoutParams.SOFT_INPUT_ADJUST_NOTHING or LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
         }
-        panelBaseFlags = params.flags
-        panelMode = mode
-        layout(params, mode)
-        // Back reaches the window only while it is modal (focusable), and then it always cancels.
+        scrimBaseFlags = params.flags
         val w = OverlayWindow(slot.context, params, onBack = {
-            cancel()
+            close()
             true
-        }) { HeyPanelWindow() }
-        if (w.show()) panel = w else panelMode = HeyPanel.None
+        }) { HeyScrim() }
+        if (w.show()) scrim = w
+    }
+
+    private fun ensurePanel() {
+        if (panel != null) return
+        val slot = Windows.appOverlay() ?: return
+        val ctx = slot.context
+        val area = Windows.area(ctx)
+        bottomInset = area.bottom
+        dark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_NO
+        val d = ctx.resources.displayMetrics.density
+        screenHeight = area.height
+        val w = CardWindow(ctx, PANEL_TITLE, onBack = { close() }, onOutsideTouch = { close() }) { HeyCardWindow() }
+        w.place(
+            widthPx = minOf(area.width - 24 * d, 560 * d).roundToInt(),
+            bottomPx = (area.bottom + 10 * d).roundToInt(),
+        )
+        w.onBlurChanged = { enabled ->
+            blurred = enabled
+            applyGlass()
+        }
+        panelMode = HeyPanel.None
+        if (!w.show()) return
+        panel = w
+        blurred = w.blurEnabled() && !Windows.powerSave()
+        applyGlass()
+    }
+
+    /** The card's frosted glass: ATOM's glass tint for the theme, over a blur of what is behind when available. */
+    private fun applyGlass() {
+        val w = panel ?: return
+        val d = w.view.resources.displayMetrics.density
+        val tint = HeyGlass.tint(dark = dark, blurred = blurred)
+        w.setGlass(tint, cornerPx = HeyGlass.CORNER_DP * d, blurPx = if (blurred) (AtomGlass.BlurRadius.value * d).roundToInt() else 0)
     }
 
     /**
-     * Modal: the whole screen, focusable (Back and taps outside cancel). Typing: the same, and it takes the keyboard
-     * (the only time the overlay is focusable for the input method). Inline: only the panel, never focused.
+     * Modal: the scrim has focus (Back closes) and catches taps outside the card. Typing: the card takes focus and
+     * the keyboard; the scrim still closes on a tap. Inline: no scrim, the app keeps every touch, and a touch outside
+     * the card closes it.
      */
-    private fun layout(p: LayoutParams, mode: HeyPanel) {
-        if (mode == HeyPanel.Modal || mode == HeyPanel.Typing) {
-            p.width = LayoutParams.MATCH_PARENT
-            p.height = LayoutParams.MATCH_PARENT
-            p.gravity = Gravity.TOP or Gravity.START
-            p.y = 0
-            p.flags = panelBaseFlags or (if (mode == HeyPanel.Typing) 0 else LayoutParams.FLAG_ALT_FOCUSABLE_IM)
-            @Suppress("DEPRECATION")
-            p.softInputMode = if (mode == HeyPanel.Typing) {
-                LayoutParams.SOFT_INPUT_ADJUST_RESIZE or LayoutParams.SOFT_INPUT_STATE_VISIBLE
-            } else {
-                LayoutParams.SOFT_INPUT_ADJUST_NOTHING or LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
-            }
-        } else {
-            p.width = LayoutParams.MATCH_PARENT
-            p.height = LayoutParams.WRAP_CONTENT
-            p.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            p.y = bottomInset.roundToInt()
-            p.flags = panelBaseFlags or LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_NOT_TOUCH_MODAL
-            p.softInputMode = LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+    private fun applyMode(mode: HeyPanel) {
+        panelMode = mode
+        panel?.setInput(typing = mode == HeyPanel.Typing, watchOutside = mode == HeyPanel.Inline)
+        panel?.setTouchable(true)
+        scrim?.let { w ->
+            w.params.flags = scrimBaseFlags or (if (mode == HeyPanel.Typing) LayoutParams.FLAG_NOT_FOCUSABLE else LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            w.update()
         }
+    }
+
+    private fun removePanel() {
+        panel?.remove()
+        panel = null
+        scrim?.remove()
+        scrim = null
+        panelMode = HeyPanel.None
     }
 
     private fun removeWindows() {
@@ -615,14 +739,31 @@ object HeyAtomOverlay : WakePresenter {
         exit = null
         glow?.remove()
         glow = null
-        panel?.remove()
-        panel = null
-        panelMode = HeyPanel.None
+        removePanel()
+        watchScreen(false)
         leaving = false
         level = 0f
         if (stage == HeyStage.Hidden) {
             shown = HeyStage.Hidden
             sample = false
+        }
+    }
+
+    /** The screen turning off closes the panel. Registered only while the overlay shows. */
+    private fun watchScreen(on: Boolean) {
+        if (on == (screenReceiver != null)) return
+        if (on) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (intent.action == Intent.ACTION_SCREEN_OFF) close()
+                }
+            }
+            runCatching {
+                ContextCompat.registerReceiver(OverlayRuntime.app, receiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)
+            }.onSuccess { screenReceiver = receiver }
+        } else {
+            screenReceiver?.let { runCatching { OverlayRuntime.app.unregisterReceiver(it) } }
+            screenReceiver = null
         }
     }
 
@@ -633,9 +774,11 @@ object HeyAtomOverlay : WakePresenter {
     private fun animationsOn(): Boolean = runCatching { ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
 
     private const val EXIT_MS = 280L
+    private const val MAX_TURNS = 8
     private const val CAPTURE_WAIT_MS = 600L
     private const val SETTLE_MS = 120L
     private const val HANDOVER_MS = 80L
     const val GLOW_TITLE = "AtomHeyAtomGlow"
     const val PANEL_TITLE = "AtomHeyAtom"
+    const val SCRIM_TITLE = "AtomHeyAtomScrim"
 }

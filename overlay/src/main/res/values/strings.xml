@@ -157,6 +157,7 @@
     <string name="hey_atom_cancel">Cancel</string>
     <string name="hey_atom_stop">Stop</string>
     <string name="hey_atom_close">Close</string>
+    <string name="hey_atom_open_full">Open in ATOM</string>
     <string name="hey_atom_typing">Type your request</string>
     <string name="hey_atom_type_hint">Type to ATOM</string>
     <string name="hey_atom_speak">Speak instead</string>

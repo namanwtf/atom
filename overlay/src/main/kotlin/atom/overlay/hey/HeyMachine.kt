@@ -74,8 +74,14 @@ internal sealed interface HeyEvent {
      */
     data class ScreenTaken(val conversationId: String) : HeyEvent
 
-    /** The X, Back, or a tap outside the panel. */
+    /** The X: stops listening, or stops the run while it works, and closes. */
     data object Cancel : HeyEvent
+
+    /**
+     * Back, a swipe down, a tap outside the panel or the screen turning off: closes the panel. Listening stops; a
+     * working run goes on (the run capsule and the notification carry it).
+     */
+    data object Close : HeyEvent
 
     /** A tap on the panel. */
     data object Open : HeyEvent
@@ -118,6 +124,9 @@ internal enum class HeyGlow {
 
     /** Exactly the run glow, still: drawn once, no frames while it stays. */
     Calm,
+
+    /** A faint still line while the answer stays on screen: drawn once, no frames. */
+    Faint,
     None,
 }
 
@@ -145,8 +154,6 @@ internal object HeyMachine {
      */
     const val LISTEN_GUARD_MS = 14_000L
     const val OPENING_MS = 1_800L
-    const val DONE_MS = 6_000L
-    const val MISSED_MS = 3_500L
     const val RESULT_CHARS = 180
 
     fun reduce(stage: HeyStage, event: HeyEvent): HeyStep = when (event) {
@@ -184,7 +191,8 @@ internal object HeyMachine {
             else -> HeyStep(stage)
         }
         HeyEvent.NoSpeech -> when (stage) {
-            is HeyStage.Listening, is HeyStage.Heard -> HeyStep(HeyStage.Missed, listOf(HeyEffect.Timer(MISSED_MS)))
+            // "Didn't catch that" stays (with the bar and the mic to try again) until the user closes it.
+            is HeyStage.Listening, is HeyStage.Heard -> HeyStep(HeyStage.Missed, listOf(HeyEffect.ClearTimer))
             else -> HeyStep(stage)
         }
         HeyEvent.CaptureStopped -> when (stage) {
@@ -223,6 +231,11 @@ internal object HeyMachine {
             is HeyStage.Working -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.StopRun(stage.conversationId), HeyEffect.ClearTimer))
             else -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.ClearTimer))
         }
+        HeyEvent.Close -> when (stage) {
+            HeyStage.Hidden -> HeyStep(stage)
+            is HeyStage.Listening, is HeyStage.Heard -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.StopCapture, HeyEffect.ClearTimer))
+            else -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.ClearTimer))
+        }
         HeyEvent.Open -> when (stage) {
             is HeyStage.Working -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.OpenConversation(stage.conversationId), HeyEffect.ClearTimer))
             is HeyStage.Done -> HeyStep(HeyStage.Hidden, listOf(HeyEffect.OpenConversation(stage.conversationId), HeyEffect.ClearTimer))
@@ -230,8 +243,8 @@ internal object HeyMachine {
             else -> HeyStep(stage)
         }
         HeyEvent.TimerElapsed -> when (stage) {
-            is HeyStage.Listening -> HeyStep(HeyStage.Missed, listOf(HeyEffect.StopCapture, HeyEffect.Timer(MISSED_MS)))
-            is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed -> HeyStep(HeyStage.Hidden)
+            is HeyStage.Listening -> HeyStep(HeyStage.Missed, listOf(HeyEffect.StopCapture))
+            is HeyStage.Opening -> HeyStep(HeyStage.Hidden)
             else -> HeyStep(stage)
         }
     }
@@ -254,10 +267,8 @@ internal object HeyMachine {
         if (run.phase == RunPhase.Cancelled) return HeyStep(HeyStage.Hidden, listOf(HeyEffect.ClearTimer))
         val ok = run.phase == RunPhase.Done
         val text = if (ok) Markdown.plain(run.text) else run.error.orEmpty()
-        return HeyStep(
-            HeyStage.Done(stage.words, stage.conversationId, ok, shorten(text)),
-            listOf(HeyEffect.Timer(DONE_MS)),
-        )
+        // The answer stays, with the chat bar for a follow-up, until the user closes the panel: no timer.
+        return HeyStep(HeyStage.Done(stage.words, stage.conversationId, ok, shorten(text)), listOf(HeyEffect.ClearTimer))
     }
 
     /** One paragraph of at most [RESULT_CHARS], cut at a word with an ellipsis. */
@@ -296,7 +307,9 @@ internal object HeyMachine {
         is HeyStage.Working -> if (stage.handedOff || !workingGlow) HeyGlow.None else HeyGlow.Calm
         // Typing: listening has stopped, so the light settles to the calm, still level.
         is HeyStage.Typing -> HeyGlow.Calm
-        is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed, HeyStage.Hidden -> HeyGlow.None
+        // The panel stays open with the answer: a faint, still line says ATOM is still there.
+        is HeyStage.Done, HeyStage.Missed -> HeyGlow.Faint
+        is HeyStage.Opening, HeyStage.Hidden -> HeyGlow.None
     }
 
     /**
@@ -307,7 +320,10 @@ internal object HeyMachine {
         HeyStage.Hidden -> HeyPanel.None
         is HeyStage.Listening, is HeyStage.Heard -> if (screenBusy) HeyPanel.Inline else HeyPanel.Modal
         is HeyStage.Typing -> HeyPanel.Typing
+        // While a run works the app keeps every touch (a tap outside only closes the panel), so the agent is never
+        // blocked; with the answer or a miss, a tap outside closes the panel.
         is HeyStage.Working -> if (stage.handedOff) HeyPanel.None else HeyPanel.Inline
-        is HeyStage.Opening, is HeyStage.Done, HeyStage.Missed -> HeyPanel.Inline
+        is HeyStage.Opening -> HeyPanel.Inline
+        is HeyStage.Done, HeyStage.Missed -> if (screenBusy) HeyPanel.Inline else HeyPanel.Modal
     }
 }

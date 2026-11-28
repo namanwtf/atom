@@ -590,6 +590,8 @@ HEY_STAGES = [
     # The chat bar: a misheard command opened in the keyboard, and a follow-up typed under the result.
     "typing",
     "followup",
+    # The answer stays open with the conversation's turns (a command and its follow-up).
+    "multiturn",
     # The light while ATOM operates the phone: the same light, from the run overlay.
     "run_glow",
 ]
@@ -639,6 +641,23 @@ def hey_atom_overlay(p):
         hey_overlay("sample", stage="partial", app=host)
         time.sleep(1.5)
         shot(p + "53_hey_still_border")
+        # The light moving while listening: comets round the edge, waves with the voice (frames in a row).
+        sh("settings put global animator_duration_scale 1")
+        time.sleep(1)
+        hey_overlay("sample", stage="listening_voice", app=host)
+        time.sleep(1.2)
+        frames(p + "55_hey_motion", count=4, gap=0.3)
+        # The glass over a busy, colourful wallpaper on the home screen.
+        hey_e2e("wallpaper", "busy")
+        sh("input keyevent KEYCODE_HOME")
+        time.sleep(3)
+        for stage in ("partial", "working", "multiturn"):
+            hey_overlay("sample", stage=stage, app="Home")
+            time.sleep(2.0)
+            shot(f"{p}56_hey_wallpaper_{stage}")
+        hey_overlay("sample", stage="hide")
+        hey_e2e("wallpaper", "clear")
+        time.sleep(1.5)
         # The same light over an app that is always dark (Clock).
         sh("settings put global animator_duration_scale 1")
         sh("am start -W -a android.intent.action.SHOW_ALARMS")

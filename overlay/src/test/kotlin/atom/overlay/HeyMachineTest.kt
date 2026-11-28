@@ -64,23 +64,38 @@ class HeyMachineTest {
         assertEquals("Setting a timer", working.step)
         assertEquals(HeyGlow.Calm, HeyMachine.glow(working))
         assertEquals(HeyPanel.Inline, HeyMachine.panel(working))
-        // While working the light is the run glow and follows its switch; with the result it goes.
+        // While working the light is the run glow and follows its switch; with the answer it is a faint still line.
         assertEquals(HeyGlow.None, HeyMachine.glow(working, workingGlow = false))
-        assertEquals(HeyGlow.None, HeyMachine.glow(steps[6].stage))
+        assertEquals(HeyGlow.Faint, HeyMachine.glow(steps[6].stage))
         val done = assertIs<HeyStage.Done>(steps[6].stage)
         assertTrue(done.ok)
         assertEquals("Done. Your timer runs for 10 minutes.", done.result)
-        assertEquals(listOf<HeyEffect>(HeyEffect.Timer(HeyMachine.DONE_MS)), steps[6].effects)
-        assertEquals(HeyStage.Hidden, steps[7].stage)
+        // The answer stays until the user closes it: no timer, and a stray timer does not close it either.
+        assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), steps[6].effects)
+        assertEquals(done, steps[7].stage)
+        assertEquals(HeyPanel.Modal, HeyMachine.panel(done))
     }
 
     @Test
-    fun timeoutOrSilenceSaysDidntCatchThatThenFades() {
+    fun timeoutOrSilenceSaysDidntCatchThatAndStays() {
         val missed = HeyMachine.reduce(HeyStage.Listening("hm"), HeyEvent.NoSpeech)
         assertEquals(HeyStage.Missed, missed.stage)
-        assertEquals(listOf<HeyEffect>(HeyEffect.Timer(HeyMachine.MISSED_MS)), missed.effects)
-        assertEquals(HeyPanel.Inline, HeyMachine.panel(missed.stage))
-        assertEquals(HeyStage.Hidden, HeyMachine.reduce(missed.stage, HeyEvent.TimerElapsed).stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), missed.effects)
+        assertEquals(HeyPanel.Modal, HeyMachine.panel(missed.stage))
+        assertEquals(HeyGlow.Faint, HeyMachine.glow(missed.stage))
+        assertEquals(HeyStage.Missed, HeyMachine.reduce(missed.stage, HeyEvent.TimerElapsed).stage)
+        assertEquals(HeyStage.Hidden, HeyMachine.reduce(missed.stage, HeyEvent.Close).stage)
+    }
+
+    @Test
+    fun closingNeverStopsAWorkingRun() {
+        val step = HeyMachine.reduce(HeyStage.Working("x", "c1"), HeyEvent.Close)
+        assertEquals(HeyStage.Hidden, step.stage)
+        assertEquals(listOf<HeyEffect>(HeyEffect.ClearTimer), step.effects)
+        // Closing while listening stops listening.
+        assertEquals(listOf(HeyEffect.StopCapture, HeyEffect.ClearTimer), HeyMachine.reduce(HeyStage.Listening("a"), HeyEvent.Close).effects)
+        assertEquals(HeyStage.Hidden, HeyMachine.reduce(HeyStage.Done("x", "c1", true, "ok"), HeyEvent.Close).stage)
+        assertEquals(HeyStage.Hidden, HeyMachine.reduce(HeyStage.Typing("x"), HeyEvent.Close).stage)
     }
 
     @Test

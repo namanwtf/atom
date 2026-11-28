@@ -174,6 +174,15 @@ class E2eProvider : ContentProvider() {
             // "final" runs the command in place as a real one does. "sample" shows one stage with sample content
             // for screenshots ({"event": "sample", "stage": "working", "words": "...", "detail": "..."}).
             "hey_overlay" -> runBlocking(Dispatchers.Main) { heyOverlay(JSONObject(arg?.takeIf { it.isNotBlank() } ?: "{}")) }
+            // A busy, colourful wallpaper ("busy") for the overlay's glass shots, or the default one again ("clear").
+            "wallpaper" -> {
+                val wm = android.app.WallpaperManager.getInstance(ctx)
+                if (arg == "clear") {
+                    runCatching { wm.clear() }.fold({ "wallpaper cleared" }, { "error: ${it.message}" })
+                } else {
+                    runCatching { wm.setBitmap(busyWallpaper(ctx)) }.fold({ "wallpaper set" }, { "error: ${it.message}" })
+                }
+            }
             // Loads every "Hey Atom" model stage from the installed on-device AI pack the way a listening session
             // does, runs each once on silence and closes them again: "ok: ..." with the output sizes and the score,
             // or the load or inference error.
@@ -186,6 +195,32 @@ class E2eProvider : ContentProvider() {
         }
         result.putString("result", message)
         return result
+    }
+
+    /** A loud red pattern of circles and stripes, the kind of wallpaper the glass must stay readable over. */
+    private fun busyWallpaper(ctx: android.content.Context): android.graphics.Bitmap {
+        val m = ctx.resources.displayMetrics
+        val w = m.widthPixels.coerceAtLeast(1)
+        val h = m.heightPixels.coerceAtLeast(1)
+        val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(0xFFC2185B.toInt())
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        val colors = intArrayOf(0xFFFFEB3B.toInt(), 0xFFFFFFFF.toInt(), 0xFF00BCD4.toInt(), 0xFF8E0000.toInt(), 0xFFFF6F00.toInt(), 0xFF111111.toInt())
+        for (i in 0 until 14) {
+            paint.color = colors[i % colors.size]
+            canvas.save()
+            canvas.rotate(i * 17f, w / 2f, h / 2f)
+            canvas.drawRect(-w.toFloat(), h * (i / 14f), 2f * w, h * (i / 14f) + h / 40f, paint)
+            canvas.restore()
+        }
+        for (i in 0 until 26) {
+            paint.color = colors[(i * 5) % colors.size]
+            paint.alpha = 220
+            val r = (w / 14f) * (1 + (i * 37) % 5)
+            canvas.drawCircle(((i * 197) % w).toFloat(), ((i * 331) % h).toFloat(), r, paint)
+        }
+        return bitmap
     }
 
     private fun heyOverlay(spec: JSONObject): String {
@@ -210,6 +245,11 @@ class E2eProvider : ContentProvider() {
             "cancel" -> {
                 overlay.cancel()
                 "cancelled"
+            }
+            // Back, a swipe down or a tap outside the panel.
+            "close" -> {
+                overlay.close()
+                "closed"
             }
             // The chat bar: "type" taps its field, "send" its Send (with "text", or what was typed), "listen" its mic.
             "type" -> {

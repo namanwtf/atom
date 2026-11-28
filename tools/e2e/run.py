@@ -808,8 +808,8 @@ def resumed_activity():
 
 def s_hey_atom_overlay(res):
     """r. "Hey ATOM" overlay: the wake word shows the light and the panel over another app (Clock), reads that app once, shows
-    the words as they come, runs the command in place (ATOM stays in the background), shows the result and goes away.
-    A miss and a cancel close it too. Driven through the debug hook the wake-word service would call (no microphone)."""
+    the words as they come, runs the command in place (ATOM stays in the background) and shows the result, which stays
+    until the user closes it. A miss stays too; closing and a cancel remove the overlay. Driven through the debug hook the wake-word service would call (no microphone)."""
     sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
     # The Clock app below (not Settings: it hides other apps' overlay windows).
     sh("am start -W -a android.intent.action.SHOW_ALARMS")
@@ -886,19 +886,27 @@ def s_hey_atom_overlay(res):
     res.notes.append(f"stages seen while it ran: {sorted(x for x in seen if x)}")
     res.check("working" in seen or "handed_off" in seen, "showed ATOM working")
     res.check("done" in seen, "showed the result")
-    ok, hs = wait_hey(r"^hidden$", timeout=15)
+    # The answer stays until the user closes it (no timer): still there well after the old 6 s fade.
+    time.sleep(8)
+    hs = hey_state()
+    res.check(hs.get("stage") == "done" and "AtomHeyAtom" in hey_windows(), f"the answer stays open ({hs.get('stage')}, windows {hey_windows()})")
+    hey_overlay("close")
+    ok, hs = wait_hey(r"^hidden$", timeout=4, gap=0.5)
     time.sleep(1)
-    res.check(ok and not hey_windows(), f"faded after a few seconds ({hs.get('stage')}, windows {hey_windows()})")
-    # Didn't catch that.
+    res.check(ok and not hey_windows(), f"closing it (Back) removes it ({hs.get('stage')}, windows {hey_windows()})")
+    # Didn't catch that: also stays, with the bar to try again, until closed.
     hey_overlay("wake")
     time.sleep(2)
     hey_overlay("missed")
     ok, _ = wait_hey(r"^missed$", timeout=4, gap=0.5)
     res.check(ok, "a miss says it didn't catch that")
     shot(f"e2e_{res.key}_missed")
-    ok, _ = wait_hey(r"^hidden$", timeout=10)
+    time.sleep(5)
+    res.check(hey_state().get("stage") == "missed", "and stays until closed")
+    hey_overlay("close")
+    ok, _ = wait_hey(r"^hidden$", timeout=4, gap=0.5)
     time.sleep(1)
-    res.check(ok and not hey_windows(), "and goes away")
+    res.check(ok and not hey_windows(), "closing it removes it")
     # Cancel while listening.
     hey_overlay("wake")
     time.sleep(2)
@@ -978,7 +986,10 @@ def s_hey_atom_type(res):
     res.check(run2 is not None and run2["conversationId"] == first, "the follow-up continued the same conversation")
     if run2:
         res.check(not run2["active"] and bool(answer(run2)), f"follow-up answered ({run2['phase']}: {answer(run2)[:120]!r})")
-    hey_overlay("cancel")
+    # The answer to the follow-up stays open too; closing removes it.
+    time.sleep(2)
+    res.check(hey_state().get("stage") in ("done", "working", "handed_off"), f"the panel stays with the follow-up ({hey_state().get('stage')})")
+    hey_overlay("close")
     ok, _ = wait_hey(r"^hidden$", timeout=4, gap=0.5)
     time.sleep(1)
     res.check(ok and not hey_windows(), "closed")
@@ -1155,7 +1166,7 @@ SCENARIOS = [
     ("j", "Notification history keeps ordinary notifications", s_notification_history),
     ("q", "Hey Atom models: every stage loads and runs on silence", s_wake_models),
     ("k", "Hey Atom: pauses on battery, listens when charging", s_hey_atom_charging),
-    ("r", "Hey ATOM overlay: listens, runs in place with the screen, shows the result, goes away", s_hey_atom_overlay),
+    ("r", "Hey ATOM overlay: listens, runs in place with the screen, result stays until closed", s_hey_atom_overlay),
     ("s", "Hey ATOM chat bar: typed command runs in place, follow-up continues the conversation", s_hey_atom_type),
     # The owner's question: does a run survive the screen turning off mid-task?
     ("m", "Screen off mid-task: a shell task finishes", s_screen_off_background),
