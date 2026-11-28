@@ -105,6 +105,10 @@ data class PendingApproval(
     val expiresAtMillis: Long,
     val reason: String? = null,
     val taskGrantable: Boolean = false,
+    /** When nobody answers by [expiresAtMillis] the run pauses (true) or the action is declined (false). */
+    val pausesOnTimeout: Boolean = false,
+    /** Nobody answered in time and the run paused; the question stays open until the user answers. */
+    val parked: Boolean = false,
 )
 
 enum class RunOutcome { Completed, StepLimit, OutputLimit, Failed, Cancelled }
@@ -540,14 +544,24 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             // A summary needs no web: no provider-hosted search on this call.
             val engine = graph.router.acquire(selectionFor(conversation).first, hostedSearch = false).also { routed = it }
             val known = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(engine.selection ?: selectionFor(conversation).first) }.getOrNull()
-            val config = engine.agentConfig("", emptyList(), slowApprovals = false).copy(contextWindow = known)
+            val limits = engine.modelLimits(graph.settings.current().limits, known)
+            val config = engine.agentConfig("", emptyList(), slowApprovals = false, limits = limits).copy(contextWindow = known)
             val window = config.usableWindow ?: config.packing.budgetTokens ?: atom.core.agent.ContextPolicy.UNKNOWN_WINDOW_BUDGET
             val cut = Compactor.cutIndex(view.messages, keepRecentTokens = (window * 0.3).toInt())
             if (cut <= 0) return CompactResult.NothingToCompact
             val before = ContextPacker.measure("", view.messages, config.context)
             val result = Compactor.summarize(
                 engine.engine,
-                Compactor.request(engine.model, view.messages.subList(0, cut), maxOutputTokens = (window / 8).coerceIn(400, 2_000), transcriptBudgetChars = window * 3),
+                Compactor.request(
+                    engine.model,
+                    view.messages.subList(0, cut),
+                    maxOutputTokens = limits.compactionSummaryTokens(window),
+                    transcriptBudgetChars = limits.compactionTranscriptChars(window),
+                    // Thinking off or brief: the summary needs room, not deep thought.
+                    reasoning = engine.briefReasoning(),
+                    toolResultChars = limits.compactionToolResultChars,
+                    argumentChars = limits.compactionArgumentChars,
+                ),
             )
             val summary = Compactor.summaryMessage(result.summary)
             val at = view.storedIndex.getOrElse(cut) { conversation.messages.size }
@@ -610,7 +624,10 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             holdsMutex.withLock {
                 // A run waiting for the screen to be unlocked is parked: no wake lock while it waits (the screen-on and
                 // user-present broadcasts wake it).
-                val now = synchronized(lock) { executions.values.count { !it.paused.value && !atom.ui.feature.ScreenWait.waiting(it.runId) } }
+                // Waiting for an approval is parked the same way.
+                val now = synchronized(lock) {
+                    executions.values.count { !it.paused.value && !it.awaitingApproval && !atom.ui.feature.ScreenWait.waiting(it.runId) }
+                }
                 graph.runPower.update(now, graph.settings.current().keepScreenOn)
             }
         }
@@ -619,6 +636,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     private val holdsMutex = Mutex()
 
     init {
+        // The Advanced limits for the places that read them outside a run's start (subagent budget, new tasks).
+        scope.launch { graph.settings.settings.map { it.limits }.distinctUntilChanged().collect { AdvancedLimits.apply(it) } }
         // "Keep screen on while running" applies at once, also to a run already going.
         scope.launch { graph.settings.settings.map { it.keepScreenOn }.distinctUntilChanged().collect { refreshHolds() } }
         // A run starting or ending a wait for the screen to be unlocked changes what holds the wake lock.
@@ -721,10 +740,19 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
         private var flushJob: Job? = null
 
         private val myApprovals = ConcurrentHashMap.newKeySet<Long>()
+
+        /** A tool waits for the user's approval; the run holds no wake lock meanwhile. */
+        @Volatile
+        var awaitingApproval = false
         private var titleCandidate: Conversation? = null
+
+        /** This run's size limits ([ModelLimits]), set once the engine is known. */
+        @Volatile
+        private var runLimits: atom.core.agent.ModelLimits = atom.core.agent.ModelLimits.Default
 
         private val toolContext = object : ToolContext {
             override val taskId: String = runId
+            override val limits: atom.core.agent.ModelLimits get() = runLimits
             override suspend fun confirm(action: String): Boolean = requestApproval(atom.core.tool.ApprovalRequest(action))
             override suspend fun approve(request: atom.core.tool.ApprovalRequest): Boolean = requestApproval(request)
         }
@@ -815,6 +843,11 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 selectionInUse = engine.selection ?: selection
                 val window = engine.contextWindow ?: runCatching { graph.modelInfo.contextWindow(selectionInUse) }.getOrNull()
                 windowInUse = window
+                val limits = engine.modelLimits(settings.limits, window).also { runLimits = it }
+                AdvancedLimits.apply(settings.limits)
+                // Tool descriptions and the scheduled-task memo are sized for the model this run uses.
+                atom.extend.mcp.McpTools.maxDescription = limits.mcpDescriptionChars
+                atom.automation.task.TaskEngine.promptMemoChars = limits.taskMemoChars
                 support = ReasoningSupport.of(engine.reasoning.supported, engine.reasoning.levels)
                 val conversationEffort = conversation.reasoningEffort ?: settings.defaultReasoning
                 val wantedEffort = if (role != null && roleSelection != null) {
@@ -827,7 +860,7 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     effort = engine.snapReasoning(wantedEffort),
                 )
 
-                val images = loadTurnImages()
+                val images = loadTurnImages(limits.imagesKept)
                 val history = ModelHistory.build(stored, images, replaysReasoning = engine.engine.capabilities.replaysReasoning)
                     .let { built -> withTurnContext(built, engine.engine.capabilities.vision) }
                 view.clear()
@@ -869,10 +902,14 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 val registry = ToolRegistry(if (tiny) tinyTools else loadout.all)
                 val exposure: ToolExposure = if (tiny) ToolExposure.All(registry) else loadout
                 val autoCompact = settings.autoCompaction
-                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools)
-                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
+                // A thinking request gets room for its reasoning as well as the answer (RoutedEngine.cloudOutputTokens).
+                val baseConfig = engine.agentConfig(systemPrompt = "", tools = registry.specs, slowApprovals = settings.confirmActTools, effort = reasoningSetting, limits = limits)
+                    // A regenerated reply is one model call, unless the original turn used tools: then the new one may
+                    // use them again (only its final reply replaces the old one).
+                    .let { c -> if (request.regenerate != null && !regenerateUsesTools()) c.copy(maxSteps = 1, wrapUpPrompt = null) else c }
+                    .let { c -> if (request.regenerate != null) c.copy(maxSteps = minOf(c.maxSteps, REGENERATE_MAX_STEPS)) else c }
                     .let { c -> if (tiny) c.copy(maxSteps = minOf(c.maxSteps, TinyModel.MAX_STEPS)) else c }
-                    .copy(reasoning = reasoningSetting, contextWindow = window, autoCompact = autoCompact)
+                    .copy(contextWindow = window, autoCompact = autoCompact)
                 // The groups the request most likely needs are loaded now, so the model rarely has to call
                 // enable_tools first (small models almost never do). The load goes into the conversation as an
                 // enable_tools call with its result (and the groups' notes): it persists with the conversation and
@@ -1000,12 +1037,39 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             return ModelHistory.View(messages, built.storedIndex)
         }
 
-        private suspend fun loadTurnImages(): Map<Int, List<ContentPart.Image>> {
-            val at = stored.indexOfLast { it.isVisibleUser }
-            if (at < 0) return emptyMap()
-            val paths = stored[at].attachments.filter { it.kind == AttachmentKind.Image }.take(Attachments.MAX_IMAGES)
-            if (paths.isEmpty()) return emptyMap()
-            return mapOf(at to paths.mapNotNull { Attachments.loadImage(it.path) })
+        /**
+         * Images the user attached, newest first, up to [keep] in all ([atom.core.agent.ModelLimits.imagesKept]): the
+         * latest message's always (as before), and for a model with a large window those of earlier messages too, so
+         * a follow-up question about an earlier photo still has it.
+         */
+        private suspend fun loadTurnImages(keep: Int): Map<Int, List<ContentPart.Image>> {
+            val latest = stored.indexOfLast { it.isVisibleUser }
+            if (latest < 0) return emptyMap()
+            val out = LinkedHashMap<Int, List<ContentPart.Image>>()
+            var left = maxOf(keep, 1)
+            for (at in latest downTo 0) {
+                if (left <= 0 || (keep <= 1 && at != latest)) break
+                val s = stored[at]
+                if (!s.isVisibleUser) continue
+                // The latest message keeps all its images (up to the attachment cap); earlier ones fill what is left.
+                val cap = if (at == latest) Attachments.MAX_IMAGES else minOf(left, Attachments.MAX_IMAGES)
+                val paths = s.attachments.filter { it.kind == AttachmentKind.Image }.take(cap)
+                if (paths.isEmpty()) continue
+                val images = paths.mapNotNull { Attachments.loadImage(it.path) }
+                if (images.isEmpty()) continue
+                out[at] = images
+                left -= images.size
+            }
+            return out
+        }
+
+        /** Whether the turn of the reply being regenerated called tools before it answered. */
+        private fun regenerateUsesTools(): Boolean {
+            val r = request.regenerate ?: return false
+            val messages = r.original.messages
+            val start = messages.subList(0, r.answerIndex.coerceAtMost(messages.size)).indexOfLast { it.isVisibleUser }
+            if (start < 0) return false
+            return (start until r.answerIndex.coerceAtMost(messages.size)).any { messages[it].message.toolCalls.isNotEmpty() }
         }
 
         /** Tool name -> id of the feature that gave it, for routing feature hints to on-demand tool groups. */
@@ -1279,17 +1343,36 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
             val deferred = CompletableDeferred<Boolean>()
             approvals[approvalId] = deferred
             myApprovals += approvalId
+            val limits = runLimits
+            val wait = limits.approvalWaitMs
+            val pauses = limits.overrides.approvalPausesRun
             val pending = PendingApproval(
                 approvalId,
                 ask.action,
-                System.currentTimeMillis() + APPROVAL_TIMEOUT_MS,
+                System.currentTimeMillis() + wait,
                 reason = ask.reason,
                 taskGrantable = grantable,
+                pausesOnTimeout = pauses,
             )
             updateRun(id) { copy(pending = pending, phase = RunPhase.WaitingForApproval, stream = stream.copy(awaitingApproval = true)) }
+            // Nothing runs while the user decides: the wake lock is let go until the answer comes.
+            awaitingApproval = true
+            refreshHolds()
+            var parkedRun = false
             val approved = try {
-                withTimeoutOrNull(APPROVAL_TIMEOUT_MS) { deferred.await() } ?: false
+                ApprovalWait.await(deferred, wait, pauses) {
+                    parkedRun = true
+                    // Nobody answered in time: the run pauses (no tool runs, no model call) and the question stays
+                    // open, so the user can answer whenever they come back. The approval notification says so.
+                    val parked = pending.copy(expiresAtMillis = System.currentTimeMillis() + ApprovalWait.PARKED_MS, parked = true)
+                    pause(id)
+                    updateRun(id) { copy(pending = parked, phase = RunPhase.Paused) }
+                }
             } finally {
+                awaitingApproval = false
+                // The run paused only because nobody answered: the answer picks it up again.
+                if (parkedRun && paused.value) resume(id)
+                refreshHolds()
                 approvals.remove(approvalId)
                 myApprovals -= approvalId
                 updateRun(id) {
@@ -1356,7 +1439,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                 RunOutcome.Cancelled -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_stopped))
                 RunOutcome.Failed -> stored += StoredMessage.notice(error ?: app.getString(atom.app.R.string.run_failed)).copy(isError = true)
                 RunOutcome.StepLimit -> stored += StoredMessage.notice(app.getString(if (stuck) atom.app.R.string.run_stuck else atom.app.R.string.run_step_limit))
-                RunOutcome.OutputLimit -> stored += StoredMessage.notice(LlmErrors.explain(atom.core.llm.LlmFailure.OutputLimit))
+                // Reached only after the agent's own retry also ran out of room; the chat offers Continue for it.
+                RunOutcome.OutputLimit -> stored += StoredMessage.notice(app.getString(atom.app.R.string.run_output_limit))
                 else -> Unit
             }
             val final = request.regenerate?.let { regenerated(it) } ?: snapshot()
@@ -1438,7 +1522,9 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
                     choice.reasoning
                 }
                 val title = withTimeoutOrNull(TITLE_TIMEOUT_MS) {
-                    runCatching { TitleGenerator.generate(engine.engine, TitleGenerator.request(engine.model, user, answer, reasoning)) }.getOrNull()
+                    // A model that thinks (it cannot be switched off, or a level was chosen) gets room to think first.
+                    val thinks = reasoning != ReasoningEffort.Off && engine.reasoning.supported
+                    runCatching { TitleGenerator.generate(engine.engine, TitleGenerator.request(engine.model, user, answer, reasoning, thinks)) }.getOrNull()
                 } ?: return
                 // Through editConversation, so a turn that started meanwhile keeps the title when it saves.
                 val updated = editConversation(id) { c ->
@@ -1477,7 +1563,8 @@ class TaskRunner(private val app: Application, private val graph: AppGraph) : Ag
     }
 
     private companion object {
-        const val APPROVAL_TIMEOUT_MS = 60_000L
+        /** Model calls a regenerated reply that uses tools may take. */
+        const val REGENERATE_MAX_STEPS = 30
         const val NOTIFY_ASK_AFTER_MS = 8_000L
         const val TITLE_TIMEOUT_MS = 20_000L
         const val KEEP_FINISHED = 6

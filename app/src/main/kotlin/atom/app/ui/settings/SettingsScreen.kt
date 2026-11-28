@@ -199,6 +199,10 @@ class SettingsViewModel(app: Context, private val graph: AppGraph) : ViewModel()
     fun setKeepScreenOn(value: Boolean) {
         viewModelScope.launch { graph.settings.setKeepScreenOn(value) }
     }
+
+    fun setLimits(value: atom.core.agent.LimitOverrides) {
+        viewModelScope.launch { graph.settings.setLimits(value) }
+    }
 }
 
 /** Callbacks into the app's navigation. */
@@ -401,6 +405,12 @@ private fun BuiltInRow(key: String, vm: SettingsViewModel, s: AppSettings, nav: 
             }
         }
         SettingsRows.CLOUD_FALLBACK -> FallbackRow(vm, s, nav)
+        SettingsRows.ADVANCED -> ArrowRow(
+            title = stringResource(R.string.adv_title),
+            summary = stringResource(R.string.adv_row_sub),
+            icon = Icons.Rounded.Tune,
+            onClick = { nav.openRoute(ADVANCED_ROUTE) },
+        )
         SettingsRows.AUTO_COMPACTION -> SwitchRow(
             title = stringResource(R.string.settings_auto_compaction),
             checked = s.autoCompaction,
@@ -629,6 +639,9 @@ private fun UpdateRow(links: ProjectLinks, nav: SettingsNav) {
 }
 
 private const val ABOUT_ROUTE = "general/about"
+
+/** The Advanced page's route (also opened by the screenshot workflow). */
+const val ADVANCED_ROUTE = "settings-advanced"
 
 /** Where Check for updates, Feedback and Source code point; null hides or disables the row. */
 private class ProjectLinks(val updateRepo: String?, val source: String?, val feedback: String?) {

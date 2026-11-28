@@ -36,7 +36,9 @@ object LlmErrors {
             status == 403 || FORBIDDEN.any { it in text } -> LlmFailure.Forbidden
             status == 404 || NOT_FOUND.any { it in text } -> LlmFailure.NotFound
             FILTER.any { it in text } -> LlmFailure.ContentFilter
-            OUTPUT.any { it in text } -> LlmFailure.OutputLimit
+            // A 400 that names max_tokens refuses the request's limit itself ("max_tokens must be at most..."): its
+            // own words say more than "ran out of room".
+            status != 400 && OUTPUT.any { it in text } -> LlmFailure.OutputLimit
             status == 408 || status == 504 || causes.any { it is SocketTimeoutException } || TIMEOUT.any { it in text } ->
                 LlmFailure.Timeout
             causes.any { it is UnknownHostException || (it is IOException && it !is SocketTimeoutException) } ||
@@ -61,12 +63,15 @@ object LlmErrors {
         LlmFailure.Timeout -> "The model took too long to respond. Try again, or pick a faster model."
         LlmFailure.ConnectionLost -> "The connection to the model was lost. Check the network, then try again."
         LlmFailure.ContentFilter -> "The provider's content filter blocked this response. Rephrase the request and try again."
-        LlmFailure.OutputLimit -> "The answer hit the model's output limit before it finished."
+        LlmFailure.OutputLimit -> "The model ran out of room before it finished answering. Try again, or ask for a shorter answer."
         LlmFailure.ContextOverflow -> "This conversation no longer fits the model's context window. Compact the context or start a new conversation."
         LlmFailure.Unreadable -> DegenerateOutputGuard.UNREADABLE_MESSAGE
         LlmFailure.Server -> "The provider had a server error${status?.let { " (HTTP $it)" } ?: ""}. Try again shortly."
         LlmFailure.Unknown -> detail?.trim()?.take(300)?.ifEmpty { null } ?: "The model request failed."
     }
+
+    /** The notice earlier builds stored when a run ended at the output limit; the chat still offers Continue for it. */
+    const val LEGACY_OUTPUT_LIMIT = "The answer hit the model's output limit before it finished."
 
     private val CONTEXT = listOf(
         "context length", "context_length", "maximum context", "context window", "too many tokens", "prompt is too long",

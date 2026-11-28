@@ -109,9 +109,9 @@ internal class BackgroundTools(private val context: Context) {
             "background_act are pixels of this screenshot.",
         Risk.Read,
         schema {},
-    ) { _, _ ->
+    ) { _, ctx ->
         val lease = lease()
-        val tree = DisplayRouter.readTree(lease)
+        val tree = DisplayRouter.readTree(lease, ctx.limits.screenTreeChars)
         val bmp = DisplayRouter.screenshot(lease)
             ?: return@T if (tree != null) ToolResult.ok(tree) else ToolResult.error("Nothing has been drawn on the background display yet; wait a moment and look again.")
         val shot = withContext(Dispatchers.Default) { encode(bmp) }

@@ -32,7 +32,8 @@ class MemoryTest {
         assertEquals(200 * 4, MemoryText.budgetChars(4_000))
         assertEquals((32_768 * 0.03).toInt() * 4, MemoryText.budgetChars(null))
         assertTrue(MemoryText.budgetChars(128_000) > MemoryText.budgetChars(32_768))
-        assertEquals(MemoryText.MAX_CORE_TOKENS * 4, MemoryText.budgetChars(1_000_000))
+        assertEquals(MemoryText.MAX_CORE_TOKENS * 4, MemoryText.budgetChars(64_000))
+        assertEquals(MemoryText.MAX_CORE_TOKENS_LARGE * 4, MemoryText.budgetChars(1_000_000))
     }
 
     @Test

@@ -39,7 +39,16 @@ data class ScheduledTask(
     val usesPhoneUi: Boolean get() = Capability.AppUi in capabilities
 
     companion object {
-        val MAX_MINUTES_OPTIONS = listOf(2, 5, 10, 15)
+        val MAX_MINUTES_OPTIONS = listOf(2, 5, 10, 15, 30, 60)
+
+        /** The longest duration a task may be given (also through the agent's tools). */
+        const val MAX_MINUTES_LIMIT = 120
+
+        /**
+         * The duration a new task starts with: 15 minutes, or what the user chose in Settings > Advanced. Tasks saved
+         * before keep their own value.
+         */
+        @Volatile var newTaskMinutes: Int = 15
         /** Consecutive failed runs before the task pauses itself. */
         const val AUTO_PAUSE_AFTER = 5
     }

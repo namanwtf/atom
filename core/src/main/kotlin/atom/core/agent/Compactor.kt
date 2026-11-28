@@ -51,17 +51,31 @@ object Compactor {
         maxOutputTokens: Int = 1_200,
         transcriptBudgetChars: Int = 120_000,
         reasoning: ReasoningEffort? = null,
+        toolResultChars: Int = TOOL_RESULT_CHARS,
+        argumentChars: Int = ARGUMENT_CHARS,
     ): LlmRequest = LlmRequest(
         model = model,
         messages = listOf(
             ChatMessage.system(INSTRUCTIONS),
-            ChatMessage.user(transcript(prefix, sensitive, transcriptBudgetChars) + "\n\nWrite the summary now."),
+            ChatMessage.user(transcript(prefix, sensitive, transcriptBudgetChars, toolResultChars, argumentChars) + "\n\nWrite the summary now."),
         ),
         maxOutputTokens = maxOutputTokens,
         reasoning = reasoning,
     )
 
-    suspend fun summarize(engine: LlmEngine, request: LlmRequest): Result {
+    /**
+     * Writes the summary. A reply with no text (a thinking model that spent the room reasoning, or a provider hiccup)
+     * gets one more try, with thinking off and twice the room, before it counts as a failure.
+     */
+    suspend fun summarize(engine: LlmEngine, request: LlmRequest): Result = try {
+        summarizeOnce(engine, request)
+    } catch (e: EmptySummaryException) {
+        summarizeOnce(engine, request.copy(reasoning = ReasoningEffort.Off, maxOutputTokens = request.maxOutputTokens * 2))
+    }
+
+    private class EmptySummaryException : LlmException("The model returned an empty summary", retryable = false)
+
+    private suspend fun summarizeOnce(engine: LlmEngine, request: LlmRequest): Result {
         val started = System.nanoTime()
         var firstToken: Long? = null
         val text = StringBuilder()
@@ -83,7 +97,7 @@ object Compactor {
             }
         }
         val summary = stripThinking(text.toString()).trim()
-        if (summary.isEmpty()) throw LlmException("The model returned an empty summary", retryable = false)
+        if (summary.isEmpty()) throw EmptySummaryException()
         if (finish == FinishReason.Cancelled) throw LlmException("Summary was cancelled", retryable = false)
         val now = System.nanoTime()
         return Result(
@@ -97,17 +111,23 @@ object Compactor {
         )
     }
 
-    fun transcript(messages: List<ChatMessage>, sensitive: (Int) -> Boolean, budgetChars: Int): String {
+    fun transcript(
+        messages: List<ChatMessage>,
+        sensitive: (Int) -> Boolean,
+        budgetChars: Int,
+        toolResultChars: Int = TOOL_RESULT_CHARS,
+        argumentChars: Int = ARGUMENT_CHARS,
+    ): String {
         val lines = messages.mapIndexed { i, msg ->
             when (msg.role) {
                 Role.System -> ""
                 Role.User -> if (isSummary(msg)) "Earlier summary:\n" + msg.text.removePrefix(SUMMARY_HEADER).trim() else "User: " + msg.text
                 Role.Assistant -> buildString {
                     append("Atom: ").append(msg.text)
-                    msg.toolCalls.forEach { append("\n  -> called ").append(it.name).append(' ').append(it.argumentsJson.take(400)) }
+                    msg.toolCalls.forEach { append("\n  -> called ").append(it.name).append(' ').append(it.argumentsJson.take(argumentChars)) }
                 }
                 Role.Tool -> {
-                    val body = if (sensitive(i) || Scrubber.isScrubbed(msg)) "[sensitive result omitted]" else msg.text.take(TOOL_RESULT_CHARS)
+                    val body = if (sensitive(i) || Scrubber.isScrubbed(msg)) "[sensitive result omitted]" else msg.text.take(toolResultChars)
                     val images = msg.parts.count { it is ContentPart.Image }
                     "  <- ${msg.toolName ?: "tool"} result: $body" + if (images > 0) " [$images image(s)]" else ""
                 }
@@ -133,7 +153,9 @@ object Compactor {
         convo.indices.filter { i -> convo[i].role != Role.Tool || i == 0 }
 
     private val THINK = Regex("(?s)<think>.*?</think>")
-    private const val TOOL_RESULT_CHARS = 1_500
+    /** What one tool result and one call's arguments keep in the transcript; big cloud windows keep more. */
+    const val TOOL_RESULT_CHARS = 1_500
+    const val ARGUMENT_CHARS = 400
 
     private val INSTRUCTIONS = """
         You compact a conversation between a user and Atom, an assistant that operates the user's Android phone, so the work can continue with less context.

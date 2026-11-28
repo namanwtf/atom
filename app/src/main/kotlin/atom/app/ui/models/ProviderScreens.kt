@@ -923,7 +923,9 @@ private fun ModelRow(
             }
             FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (current) CurrentTag()
+                // An unknown window is said plainly: compaction stays off and limits stay small until it is set.
                 model.effectiveContextWindow?.let { QuietTag(stringResource(R.string.set_context_tag, formatTokens(it))) }
+                    ?: QuietTag(stringResource(R.string.set_context_unknown_tag))
                 if (model.reasoning.supported) QuietTag(stringResource(R.string.set_supports_reasoning))
                 if (model.vision == true) QuietTag(stringResource(R.string.badge_vision))
                 if (model.fromAccount) QuietTag(stringResource(R.string.mdl_badge_account))

@@ -120,7 +120,18 @@ class AppCompileEngine(private val graph: AppGraph) : EngineProvider {
     override suspend fun current(): CompileEngine? {
         val routed = runCatching { graph.router.acquire(null as EngineSelection?) }.getOrNull() ?: return null
         graph.router.release(routed)
-        return CompileEngine(routed.engine, routed.model, reasoning = null)
+        // Thinking off (or the lightest level) for a JSON answer, with room for any reasoning that remains. A cloud
+        // model with a large window sees every tool; small and on-device models keep the short list.
+        val brief = routed.briefReasoning()
+        val big = !routed.onDevice && (routed.contextWindow ?: 0) >= 128_000
+        return CompileEngine(
+            routed.engine,
+            routed.model,
+            reasoning = brief,
+            maxOutputTokens = if (routed.onDevice) 1_500 else maxOf(4_096, routed.cloudOutputTokens(brief)),
+            maxTools = if (big) Int.MAX_VALUE else 150,
+            toolDescriptionChars = if (big) 300 else 120,
+        )
     }
 }
 

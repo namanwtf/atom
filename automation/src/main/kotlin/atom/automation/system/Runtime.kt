@@ -159,6 +159,7 @@ internal class AutomationRuntime private constructor(context: Context) {
             notifier.alert("task:${task.id}", TaskNotices.pausedTitle(task.name), message)
         override fun notifyReadyToRun(task: ScheduledTask) = notifier.readyToRun(task.id, task.name)
         override fun wakeupsChanged() = rearm()
+        override fun memoChars(): Int = atom.automation.task.TaskEngine.promptMemoChars
     }
 
     private inner class RuleBridge : RulePorts {

@@ -11,15 +11,29 @@ import okhttp3.Response
 internal fun isRetryableStatus(code: Int): Boolean =
     code == 408 || code == 409 || code == 425 || code == 429 || code >= 500
 
+/**
+ * A Retry-After header in milliseconds: delay-seconds ("20") or an HTTP date. Null when absent, unreadable or in the
+ * past. The agent bounds what it actually waits.
+ */
+internal fun retryAfterMs(header: String?, now: Long = System.currentTimeMillis()): Long? {
+    val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    value.toLongOrNull()?.let { return if (it > 0) it * 1_000 else null }
+    value.toDoubleOrNull()?.let { return if (it > 0) (it * 1_000).toLong() else null }
+    val at = runCatching { java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }
+        .getOrNull() ?: return null
+    return (at - now).takeIf { it > 0 }
+}
+
 /** Builds [LlmException]s for one provider, scrubbing the API key from anything echoed back. */
 internal class ErrorMapper(private val providerName: String, private val secret: String) {
 
-    fun http(code: Int, body: String): LlmException {
+    fun http(code: Int, body: String, retryAfter: String? = null): LlmException {
         val detail = errorMessage(body) ?: body.trim().take(MAX_DETAIL).ifEmpty { "no details" }
         return LlmException(
             message = scrub("$providerName request failed (HTTP $code): $detail"),
             retryable = isRetryableStatus(code),
             statusCode = code,
+            retryAfterMs = if (code == 429 || code == 503) retryAfterMs(retryAfter) else null,
         )
     }
 
@@ -45,7 +59,7 @@ internal class ErrorMapper(private val providerName: String, private val secret:
             } catch (e: Exception) {
                 null
             }
-            if (!response.isSuccessful) return http(response.code, body.orEmpty())
+            if (!response.isSuccessful) return http(response.code, body.orEmpty(), response.header("Retry-After"))
             // A readable body on a 2xx means the server answered something other than a stream.
             if (body != null && t !is IOException) {
                 val detail = errorMessage(body) ?: "unexpected response type ${response.header("Content-Type")}"

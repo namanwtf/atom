@@ -4,6 +4,7 @@ import atom.core.agent.Agent
 import atom.core.agent.AgentConfig
 import atom.core.agent.AgentEvent
 import atom.core.agent.ContextPolicy
+import atom.core.agent.ModelLimits
 import atom.core.agent.RunControl
 import atom.core.llm.ChatMessage
 import atom.core.llm.PromptedToolEngine
@@ -42,7 +43,8 @@ class SubagentEnvironment(
     val categoryOf: (Tool) -> ToolCategory? = { null },
     val controlFor: (taskId: String) -> RunControl = { RunControl.None },
     val settings: () -> SubagentSettings,
-    val timeBudgetMs: Long = 55_000,
+    /** How long one subagent may work in the cloud; on the phone it stays [ModelLimits.LOCAL_SUBAGENT_MS] at most. */
+    val timeBudgetMs: Long = ModelLimits.SUBAGENT_MS,
 )
 
 /** Runs core [Agent] in a fresh context with a scoped tool set, and only ever inside a parent's tool call. */
@@ -57,7 +59,8 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         val role = tasks.map { it.def.name }.distinct().singleOrNull() ?: "parallel"
         val engine = env.engines.acquire(role, settings.modelId, parent.taskId)
         try {
-            val deadline = System.currentTimeMillis() + env.timeBudgetMs
+            val budget = if (engine.onDevice) minOf(env.timeBudgetMs, ModelLimits.LOCAL_SUBAGENT_MS) else env.timeBudgetMs
+            val deadline = System.currentTimeMillis() + budget
             return if (engine.onDevice || tasks.size == 1) {
                 tasks.map { execute(it, engine, settings, parent, deadline) }
             } else {
@@ -79,17 +82,25 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         val tools = ToolScoping.select(env.parentTools(parent.taskId), def.tools, def.readOnly, env.categoryOf)
         val llm = if (engine.engine.capabilities.nativeToolCalls) engine.engine else PromptedToolEngine(engine.engine)
         val window = engine.contextWindow ?: engine.engine.capabilities.contextWindow.takeIf { it > 0 }
+        // The parent's limits with this engine's window: a subagent on a big cloud model gets the same room.
+        val subLimits = parent.limits.copy(onDevice = engine.onDevice, window = window, vision = engine.engine.capabilities.vision)
         val config = AgentConfig(
             model = engine.model,
             systemPrompt = systemPrompt(def, tools),
             // The time budget is the real bound; the step cap and the loop guard catch runaway loops.
             maxSteps = if (engine.onDevice) 16 else 60,
-            maxOutputTokens = if (engine.onDevice) 768 else 2048,
+            maxOutputTokens = engine.outputTokens(settings.reasoning) ?: if (engine.onDevice) 768 else 2048,
             reasoning = settings.reasoning,
+            briefReasoning = engine.briefReasoning,
             contextWindow = window,
             // Cloud: the model's own window (compaction near 85% of it). On-device every prompt token is prefill on the
             // phone, so a deliberate cap stays.
-            context = ContextPolicy(budgetTokens = if (engine.onDevice) window?.let { (it * 0.7).toInt().coerceIn(2_500, 24_000) } ?: 2_500 else null),
+            context = if (engine.onDevice) {
+                ContextPolicy(budgetTokens = window?.let { (it * 0.7).toInt().coerceIn(2_500, 24_000) } ?: 2_500)
+            } else {
+                subLimits.policy()
+            },
+            limits = subLimits,
             // At the step limit (or when stuck) the subagent still writes its summary for the main agent, with no more tools.
             wrapUpPrompt = WRAP_UP,
         )
@@ -97,6 +108,7 @@ class SubagentRunner(private val env: SubagentEnvironment) {
         SubagentRuns.update(runId) { copy(model = engine.model) }
         val child = object : ToolContext {
             override val taskId: String = parent.taskId
+            override val limits = subLimits
             override suspend fun confirm(action: String) = parent.confirm("Subagent ${def.name}: $action")
             override suspend fun approve(request: atom.core.tool.ApprovalRequest) =
                 parent.approve(request.copy(action = "Subagent ${def.name}: ${request.action}"))
@@ -177,7 +189,8 @@ class SubagentRunner(private val env: SubagentEnvironment) {
                 "\n[The subagent ran out of time; this is partial.]")
             else -> SubagentStatus.Failed to "The subagent ended without an answer."
         }
-        val trimmed = summary.trim().let { if (it.length > MAX_SUMMARY) it.take(MAX_SUMMARY) + "\n…[summary trimmed]" else it }
+        val maxSummary = subLimits.subagentSummaryChars
+        val trimmed = summary.trim().let { if (it.length > maxSummary) it.take(maxSummary) + "\n…[summary trimmed]" else it }
         SubagentRuns.update(runId) {
             copy(
                 status = status,
@@ -194,8 +207,8 @@ class SubagentRunner(private val env: SubagentEnvironment) {
     }
 
     companion object {
-        const val MAX_PARALLEL = 4
-        private const val MAX_SUMMARY = 6_000
+        /** Tasks one parallel call may start: they run at the same time in the cloud, one after another on the phone. */
+        const val MAX_PARALLEL = 8
         private const val PUBLISH_MS = 150L
 
         /** Sent with no tools offered when the subagent stops before finishing (step limit, stuck), so it still reports back. */

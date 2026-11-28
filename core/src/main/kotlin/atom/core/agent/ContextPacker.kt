@@ -13,10 +13,13 @@ data class ContextPolicy(
      * and compacted long before the model is anywhere near full.
      */
     val budgetTokens: Int? = null,
-    /** Most recent tool results kept at full length; older ones are shrunk to a stub. */
-    val keepFullToolResults: Int = 3,
-    val maxToolResultChars: Int = 8_000,
-    val compactedToolResultChars: Int = 280,
+    /**
+     * Most recent steps whose tool results stay at full length (every result of one assistant turn counts as one
+     * step); older ones are shrunk to a stub. The cloud values follow the model ([ModelLimits.policy]).
+     */
+    val keepFullToolResults: Int = ModelLimits.KEEP_FULL_STEPS,
+    val maxToolResultChars: Int = ModelLimits.TOOL_RESULT_CHARS,
+    val compactedToolResultChars: Int = ModelLimits.COMPACTED_CHARS,
     /** Screenshots are the most expensive input; only the newest few survive. */
     val keepImages: Int = 1,
     /**
@@ -92,20 +95,52 @@ object ContextPacker {
             message.toolCalls.sumOf { estimate(it.argumentsJson) + estimate(it.name) } +
             (message.reasoning?.takeIf { message.toolCalls.isNotEmpty() && it.isNotBlank() }?.let(::estimate) ?: 0) + 4
 
+    /**
+     * The results of the newest [ContextPolicy.keepFullToolResults] steps stay in full (up to
+     * [ContextPolicy.maxToolResultChars] each); older ones shrink. A step is every result of one assistant turn, so
+     * calls made in parallel all stay in full together.
+     */
     private fun shrinkToolResults(convo: List<ChatMessage>, policy: ContextPolicy): List<ChatMessage> {
-        var seen = 0
-        return convo.asReversed().map { msg ->
-            if (msg.role != Role.Tool) return@map msg
-            val limit = if (seen++ < policy.keepFullToolResults) policy.maxToolResultChars else policy.compactedToolResultChars
-            msg.copy(parts = msg.parts.map { part ->
-                if (part is ContentPart.Text && part.text.length > limit) {
-                    ContentPart.Text(part.text.take(limit) + "\n…[${part.text.length - limit} chars trimmed]")
-                } else {
-                    part
-                }
+        val out = ArrayList<ChatMessage>(convo.size)
+        var steps = 0
+        var inStep = false
+        for (msg in convo.asReversed()) {
+            if (msg.role != Role.Tool) {
+                inStep = false
+                out += msg
+                continue
+            }
+            if (!inStep) {
+                steps++
+                inStep = true
+            }
+            val limit = if (steps <= policy.keepFullToolResults) policy.maxToolResultChars else policy.compactedToolResultChars
+            out += msg.copy(parts = msg.parts.map { part ->
+                if (part is ContentPart.Text && part.text.length > limit) ContentPart.Text(trimResult(part.text, limit)) else part
             })
-        }.asReversed()
+        }
+        return out.asReversed()
     }
+
+    /**
+     * [text] cut to about [limit] characters. The start is kept, and so is a paging footer at the end ("Call again
+     * with offset=…", "[page 2 of 5]"): it tells the model how to read on, so the middle goes instead.
+     */
+    fun trimResult(text: String, limit: Int): String {
+        if (text.length <= limit) return text
+        val lastBreak = text.trimEnd().lastIndexOf('\n')
+        val footer = if (lastBreak >= 0) text.substring(lastBreak + 1).trim() else ""
+        val keepFooter = footer.isNotEmpty() && footer.length <= limit / 3 && PAGING.containsMatchIn(footer)
+        if (!keepFooter) return text.take(limit) + "\n…[${text.length - limit} chars trimmed]"
+        val head = (limit - footer.length).coerceAtLeast(0)
+        val cut = text.length - head - footer.length
+        return text.take(head) + "\n…[$cut chars trimmed]…\n" + footer
+    }
+
+    private val PAGING = Regex(
+        "offset\\s*=|call again|next page|page \\d+ of \\d+|more (lines|results|characters|chars)|continue (from|with|reading)|truncated",
+        RegexOption.IGNORE_CASE,
+    )
 
     private fun limitImages(convo: List<ChatMessage>, keep: Int): List<ChatMessage> {
         var kept = 0

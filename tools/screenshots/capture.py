@@ -723,6 +723,8 @@ def main():
 
     routes = [
         ("10_settings", "settings"),
+        # Settings > Advanced: the power-user limits, all on Auto in a fresh install.
+        ("10b_advanced", "settings-advanced"),
         ("11_models", "models"),
         # With the debug on-device AI pack installed (tools/screenshots/install_pack.py): "Ready" and its engines.
         ("11b_on_device", "models-on-device"),

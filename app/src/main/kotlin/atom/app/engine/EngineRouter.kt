@@ -8,6 +8,8 @@ import atom.app.data.LocalBackend
 import atom.app.data.SettingsRepository
 import atom.core.agent.AgentConfig
 import atom.core.agent.ContextPolicy
+import atom.core.agent.LimitOverrides
+import atom.core.agent.ModelLimits
 import atom.core.agent.SmallModel
 import atom.core.agent.TinyModel
 import atom.core.llm.DegenerateOutputGuard
@@ -33,6 +35,7 @@ import atom.llm.cloud.GrokAuth
 import atom.llm.cloud.HeaderEntry
 import atom.llm.cloud.ModelConfig
 import atom.llm.cloud.OAuthException
+import atom.llm.cloud.OutputBudget
 import atom.llm.cloud.PresetCatalog
 import atom.llm.cloud.Protocol
 import atom.llm.cloud.Provider
@@ -76,22 +79,65 @@ class RoutedEngine internal constructor(
     val smallModel: Boolean = false,
     /** An on-device model under about 1.5B parameters ([TinyModel]): a short prompt and one-step tools only. */
     val tinyModel: Boolean = false,
+    /** What a cloud model's output budget depends on; null on-device, where [localPlan] decides it. */
+    val output: OutputBudget.Target? = null,
 ) {
     fun snapReasoning(effort: ReasoningEffort?): ReasoningEffort? = Reasoning.snap(effort, reasoning)
 
-    fun agentConfig(systemPrompt: String, tools: List<ToolSpec>, slowApprovals: Boolean): AgentConfig {
+    /**
+     * Output tokens a cloud request with [effort] may use: room for the reasoning as well as the answer when the
+     * model thinks ([OutputBudget]), the plain answer budget otherwise.
+     */
+    fun cloudOutputTokens(effort: ReasoningEffort?): Int = output?.tokens(effort) ?: CLOUD_MAX_OUTPUT
+
+    /**
+     * The reasoning for the one retry after a thinking model spent its whole output budget reasoning
+     * ([AgentConfig.briefReasoning]): thinking off where the model allows it, else its lightest level, else the
+     * model default.
+     */
+    fun briefReasoning(): ReasoningEffort? = briefReasoningFor(reasoning)
+
+    /**
+     * The run's size limits for this model ([ModelLimits]): from its window ([window] when the run knows a better
+     * one than the catalog), its output limit and whether it sees images, with the user's Advanced [overrides].
+     */
+    fun modelLimits(overrides: LimitOverrides = LimitOverrides(), window: Int? = contextWindow): ModelLimits = ModelLimits(
+        onDevice = onDevice,
+        window = if (onDevice) engine.capabilities.contextWindow.takeIf { it > 0 } ?: LOCAL_CONTEXT_WINDOW else window,
+        maxOutput = output?.maxOutput,
+        vision = engine.capabilities.vision,
+        overrides = overrides,
+    )
+
+    /** The output room a cloud request with [effort] gets after the user's Advanced setting. */
+    fun cloudOutputTokens(effort: ReasoningEffort?, limits: ModelLimits): Int = limits.maxOutputTokens(cloudOutputTokens(effort))
+
+    /**
+     * [effort] is the reasoning the run sends; it decides how much output room a cloud request gets. [limits] are the
+     * run's size limits ([modelLimits]); by default the model's own, without overrides.
+     */
+    fun agentConfig(
+        systemPrompt: String,
+        tools: List<ToolSpec>,
+        slowApprovals: Boolean,
+        effort: ReasoningEffort? = null,
+        limits: ModelLimits = modelLimits(),
+    ): AgentConfig {
         val vision = engine.capabilities.vision
         val toolTimeout = if (slowApprovals) 125_000L else 60_000L
         if (!onDevice) {
             return AgentConfig(
                 model = model,
                 systemPrompt = systemPrompt,
-                maxSteps = CLOUD_MAX_STEPS,
-                maxOutputTokens = CLOUD_MAX_OUTPUT,
+                maxSteps = limits.maxSteps(CLOUD_MAX_STEPS),
+                maxOutputTokens = cloudOutputTokens(effort, limits),
+                reasoning = effort,
+                briefReasoning = briefReasoning(),
                 toolTimeoutMs = toolTimeout,
                 // No deliberate cap: the prompt may use the model window minus the answer, and automatic compaction
-                // starts near 85% of that (AgentConfig.usableWindow).
-                context = ContextPolicy(keepImages = if (vision) 1 else 0),
+                // starts near 85% of that (AgentConfig.usableWindow). Tool results and images follow the window.
+                context = limits.policy(ContextPolicy(keepImages = if (vision) 1 else 0)),
+                limits = limits,
             )
         }
         // On-device every prompt token is prefill on the phone's own silicon: keep it small. Tool
@@ -101,8 +147,11 @@ class RoutedEngine internal constructor(
         return AgentConfig(
             model = model,
             systemPrompt = systemPrompt,
-            maxSteps = LOCAL_MAX_STEPS,
+            maxSteps = limits.maxSteps(LOCAL_MAX_STEPS),
             maxOutputTokens = plan.maxOutputTokens,
+            reasoning = effort,
+            briefReasoning = briefReasoning(),
+            limits = limits,
             toolTimeoutMs = toolTimeout,
             maxRetries = 1,
             context = ContextPolicy(
@@ -148,8 +197,21 @@ class RoutedEngine internal constructor(
             return LocalPlan(promptBudget = budget, maxOutputTokens = maxOut, maxToolResultChars = if (small) 1_500 else 3_000)
         }
 
-        /** Answer room a cloud run reserves; its prompt may use the rest of the model window. */
-        const val CLOUD_MAX_OUTPUT = 2048
+        /**
+         * Answer room a cloud run reserves when the model does not think; its prompt may use the rest of the model
+         * window. A thinking request gets more ([cloudOutputTokens]).
+         */
+        const val CLOUD_MAX_OUTPUT = OutputBudget.ANSWER
+
+        /** See [RoutedEngine.briefReasoning]. */
+        fun briefReasoningFor(info: ReasoningInfo): ReasoningEffort? {
+            val support = atom.core.llm.ReasoningSupport.of(info.supported, info.levels)
+            return when {
+                support.mode == atom.core.llm.ReasoningMode.Unsupported -> null
+                support.canDisable -> ReasoningEffort.Off
+                else -> support.levels.minOrNull()
+            }
+        }
     }
 }
 
@@ -284,6 +346,14 @@ class EngineRouter(
             selection = selection.copy(model = modelId),
             reasoning = modelConfig.reasoning,
             contextWindow = modelConfig.effectiveContextWindow,
+            output = OutputBudget.Target(
+                wire = provider.wire,
+                family = provider.family,
+                modelId = modelId,
+                reasoning = modelConfig.engineReasoning,
+                maxOutput = modelConfig.maxOutput,
+                contextWindow = modelConfig.effectiveContextWindow,
+            ),
         )
     }
 

@@ -82,7 +82,16 @@ object FollowGlobalModels : ModelChoiceProvider {
     override fun choices(): List<ModelChoice> = emptyList()
 }
 
-data class EngineSelection(val engine: LlmEngine, val model: String, val reasoning: ReasoningEffort? = null)
+data class EngineSelection(
+    val engine: LlmEngine,
+    val model: String,
+    val reasoning: ReasoningEffort? = null,
+    /** Output room for the rule JSON (more when the model thinks). */
+    val maxOutputTokens: Int = 1_500,
+    /** Tools listed in the compile prompt, and how much of each description: a big cloud window lists them all. */
+    val maxTools: Int = 150,
+    val toolDescriptionChars: Int = 120,
+)
 
 /** Supplies the model used once, when a sentence is compiled into an automation. */
 fun interface EngineProvider {

@@ -81,7 +81,7 @@ internal class OpenAiChatEngine(
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
         val decoder = OpenAiStreamDecoder(errors)
-        sseEvents(http, httpRequest(request), errors).collect { event ->
+        sseEvents(http.forRequest(request), httpRequest(request), errors).collect { event ->
             decoder.onData(event.data).forEach { emit(it) }
         }
         decoder.finish().forEach { emit(it) }
@@ -221,7 +221,7 @@ internal class OpenAiChatEngine(
                                     put("type", "function")
                                     putJsonObject("function") {
                                         put("name", call.name)
-                                        put("arguments", normalizeArguments(call.argumentsJson))
+                                        put("arguments", wireArguments(call.argumentsJson))
                                     }
                                 }
                             }

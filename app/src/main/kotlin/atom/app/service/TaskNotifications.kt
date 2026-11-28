@@ -218,7 +218,7 @@ class TaskNotifications(private val context: Context) {
         // Collapsed and heads-up, only the title and one line show: the command itself goes in the title.
         val notification = base(CH_APPROVAL)
             .setContentTitle(ApprovalText.headline(pending.action))
-            .setContentText(context.getString(R.string.confirm_title))
+            .setContentText(context.getString(if (pending.parked) R.string.notif_approval_parked else R.string.confirm_title))
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.action))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

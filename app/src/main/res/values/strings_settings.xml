@@ -16,6 +16,31 @@
     <string name="set_effort_unsupported">Not supported by selected model</string>
     <string name="set_on_device">On-device models</string>
     <string name="set_on_device_sub">Run models on this phone (LiteRT and llama.cpp)</string>
+    <!-- Settings > Advanced (power users). -->
+    <string name="adv_title">Advanced</string>
+    <string name="adv_row_sub">Output room, step limit, tool results and waits, for power users</string>
+    <string name="adv_intro">For power users. On Auto (recommended), ATOM sizes every limit from the selected model: its context window, its output limit and whether it can see images. Small on-device models keep their tight limits. A value set here applies to every model; ATOM never asks a model for more output than it reports it can give.</string>
+    <string name="adv_auto">Auto (recommended)</string>
+    <string name="adv_section_model">Model requests</string>
+    <string name="adv_section_time">Time limits</string>
+    <string name="adv_max_output">Max output tokens</string>
+    <string name="adv_max_output_sub">Room for reasoning and the answer in one reply. Auto: 2,048 without thinking, up to 128K when the model thinks.</string>
+    <string name="adv_max_steps">Agent step limit</string>
+    <string name="adv_max_steps_sub">Model calls in one run before ATOM stops and reports. Auto: 400 in the cloud, 60 on the phone.</string>
+    <string name="adv_tool_result">Tool result size</string>
+    <string name="adv_tool_result_sub">How much of one tool result the model reads in full. Auto: 8,000 characters, up to 60,000 for models with large windows.</string>
+    <string name="adv_images">Images kept per request</string>
+    <string name="adv_images_sub">Screenshots and photos a model that can see keeps in view. Auto: up to 6 for large windows.</string>
+    <string name="adv_subagent">Subagent time budget</string>
+    <string name="adv_subagent_sub">How long one subagent may work. Auto: 14 minutes in the cloud.</string>
+    <string name="adv_approval">Approval wait</string>
+    <string name="adv_approval_sub">How long ATOM waits for you to allow or deny an action. Auto: 10 minutes. No wake lock is held meanwhile.</string>
+    <string name="adv_approval_pause">Pause when nobody answers</string>
+    <string name="adv_approval_pause_sub">On: the task pauses and the question stays open until you answer. Off: the action is denied.</string>
+    <string name="adv_task">Scheduled task duration</string>
+    <string name="adv_task_sub">The longest a new scheduled task may run. Auto: 15 minutes. Existing tasks keep theirs.</string>
+    <string name="adv_minutes">%1$d min</string>
+    <string name="adv_chars">%1$s characters</string>
 
     <!-- Rows that open feature screens, with the classic titles. -->
     <string name="set_memory">Memory</string>
@@ -119,6 +144,7 @@
     <string name="set_delete_n_models">Delete %1$d models</string>
     <string name="set_edit_model">Edit model parameters</string>
     <string name="set_context_tag">%1$s context</string>
+    <string name="set_context_unknown_tag">Context window unknown</string>
     <string name="set_supports_reasoning">Supports Reasoning</string>
 
     <!-- Model picker -->

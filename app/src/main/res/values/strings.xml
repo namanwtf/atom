@@ -76,6 +76,9 @@
     <string name="confirm_title">Allow this action?</string>
     <string name="confirm_text">Atom wants to do something that needs your OK.</string>
     <string name="confirm_countdown">Denied automatically in %1$d s</string>
+    <string name="confirm_countdown_pause">If you don\'t answer in %1$s, ATOM pauses the task until you do</string>
+    <string name="confirm_parked">ATOM paused this task. It goes on as soon as you answer.</string>
+    <string name="notif_approval_parked">Paused until you answer</string>
     <string name="confirm_allow">Allow</string>
     <string name="confirm_deny">Deny</string>
     <string name="confirm_allow_task">Allow all commands for this task</string>

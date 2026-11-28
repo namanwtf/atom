@@ -261,7 +261,7 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
         taskId?.let { rt.state.task(it) }
             ?: presetIndex?.let { Presets.all.getOrNull(it)?.build?.invoke(now) }
             ?: routine?.let { (r, what, where) -> routineDraft(context, r, what, where, now) }
-            ?: ScheduledTask("", "", "", Schedule.Daily(9 * 60), createdAt = now)
+            ?: ScheduledTask("", "", "", Schedule.Daily(9 * 60), maxMinutes = ScheduledTask.newTaskMinutes, createdAt = now)
     }
     var t by remember { mutableStateOf(initial) }
     var cronText by remember { mutableStateOf((initial.schedule as? Schedule.CronSchedule)?.expression ?: "0 9 * * 1-5") }
@@ -435,14 +435,16 @@ internal fun TaskEditorScreen(taskId: String?, presetIndex: Int?, nav: FeatureNa
                     }
                 }
             }
-            item { SectionLabel("Max duration") }
+            item { SectionLabel("Max duration (minutes)") }
             item {
                 Group {
                     Box(Modifier.padding(12.dp)) {
+                        // A value set by the agent that is not one of the options shows as the nearest one.
+                        val options = ScheduledTask.MAX_MINUTES_OPTIONS
                         SegmentedControl(
-                            ScheduledTask.MAX_MINUTES_OPTIONS.map { "$it min" to null },
-                            ScheduledTask.MAX_MINUTES_OPTIONS.indexOf(t.maxMinutes).coerceAtLeast(0),
-                            { t = t.copy(maxMinutes = ScheduledTask.MAX_MINUTES_OPTIONS[it]) },
+                            options.map { "$it" to null },
+                            options.indexOf(options.minBy { o -> kotlin.math.abs(o - t.maxMinutes) }),
+                            { t = t.copy(maxMinutes = options[it]) },
                         )
                     }
                 }

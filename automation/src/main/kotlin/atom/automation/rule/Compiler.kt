@@ -29,7 +29,10 @@ class LlmRuleCompiler(
     override suspend fun compile(sentence: String): CompileResult {
         val selection = engines.current() ?: return CompileResult(null, errors = listOf("Set up a model first: compiling an automation uses it once"))
         val catalog = tools()
-        val messages = mutableListOf(ChatMessage.system(systemPrompt(catalog)), ChatMessage.user(sentence.trim()))
+        val messages = mutableListOf(
+            ChatMessage.system(systemPrompt(catalog, selection.maxTools, selection.toolDescriptionChars)),
+            ChatMessage.user(sentence.trim()),
+        )
         var last: ParseResult? = null
         repeat(2) { attempt ->
             val reply = runCatching { ask(selection, messages) }.getOrElse {
@@ -56,7 +59,7 @@ class LlmRuleCompiler(
             LlmRequest(
                 model = selection.model,
                 messages = messages,
-                maxOutputTokens = 1500,
+                maxOutputTokens = selection.maxOutputTokens,
                 temperature = 0.0,
                 reasoning = selection.reasoning,
             ),
@@ -66,8 +69,9 @@ class LlmRuleCompiler(
 
     companion object {
         private const val MAX_TOOLS = 150
+        private const val DESCRIPTION_CHARS = 120
 
-        fun systemPrompt(tools: List<ToolSpec>): String = buildString {
+        fun systemPrompt(tools: List<ToolSpec>, maxTools: Int = MAX_TOOLS, descriptionChars: Int = DESCRIPTION_CHARS): String = buildString {
             appendLine("You convert one sentence describing a phone automation into a single JSON object. Reply with JSON only, no prose, no code fence.")
             appendLine()
             appendLine("Shape:")
@@ -103,9 +107,9 @@ class LlmRuleCompiler(
             if (tools.isNotEmpty()) {
                 appendLine()
                 appendLine("Tools:")
-                tools.take(MAX_TOOLS).forEach { t ->
+                tools.take(maxTools).forEach { t ->
                     val params = (t.parameters["properties"] as? JsonObject)?.keys?.joinToString(", ").orEmpty()
-                    append("- ").append(t.name).append("(").append(params).append("): ").appendLine(t.description.lineSequence().first().take(120))
+                    append("- ").append(t.name).append("(").append(params).append("): ").appendLine(t.description.lineSequence().first().take(descriptionChars))
                 }
             }
         }

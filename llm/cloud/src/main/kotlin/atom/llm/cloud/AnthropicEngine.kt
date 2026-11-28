@@ -48,7 +48,7 @@ internal class AnthropicEngine(
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
         val decoder = AnthropicStreamDecoder(errors)
-        sseEvents(http, httpRequest(request), errors).collect { event ->
+        sseEvents(http.forRequest(request), httpRequest(request), errors).collect { event ->
             decoder.onEvent(event.type, event.data).forEach { emit(it) }
         }
         decoder.finish().forEach { emit(it) }

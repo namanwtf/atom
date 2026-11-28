@@ -55,7 +55,7 @@ internal class OpenAiResponsesEngine(
 
     override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
         val decoder = ResponsesStreamDecoder(errors)
-        sseEvents(http, httpRequest(request), errors).collect { event ->
+        sseEvents(http.forRequest(request), httpRequest(request), errors).collect { event ->
             decoder.onEvent(event.type, event.data).forEach { emit(it) }
         }
         decoder.finish().forEach { emit(it) }
@@ -167,7 +167,7 @@ internal class OpenAiResponsesEngine(
                         put("type", "function_call")
                         put("call_id", call.id)
                         put("name", call.name)
-                        put("arguments", normalizeArguments(call.argumentsJson))
+                        put("arguments", wireArguments(call.argumentsJson))
                     }
                 }
                 Role.Tool -> {

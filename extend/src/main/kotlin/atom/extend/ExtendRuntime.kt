@@ -51,7 +51,7 @@ internal object ExtendRuntime {
                 categoryOf = { scope?.categoryOf(it) },
                 controlFor = { taskId -> scope?.controlFor(taskId) ?: atom.core.agent.RunControl.None },
                 settings = { subagents.settings.value },
-                timeBudgetMs = scope?.subagentTimeBudgetMs ?: 55_000,
+                timeBudgetMs = scope?.subagentTimeBudgetMs ?: atom.core.agent.ModelLimits.SUBAGENT_MS,
             ),
         )
     }
