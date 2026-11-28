@@ -234,6 +234,7 @@ class WakeWordService : Service() {
         )
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+            .setLargeIcon(atom.ui.theme.NotificationArt.largeIcon(this))
             .setColor(android.graphics.Color.BLACK)
             .setContentTitle(getString(R.string.atom_voice_title))
             .setContentText(text)

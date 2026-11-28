@@ -584,6 +584,12 @@ def hey_atom_overlay(p):
         sh("input swipe 540 1800 540 500 300")
         time.sleep(1)
     shot(p + "50_hey_settings_needs_permission")
+    # The "Hey ATOM" notification in the shade, with ATOM's own coin as its picture.
+    sh("cmd statusbar expand-notifications")
+    time.sleep(2.5)
+    shot(p + "50b_hey_notification")
+    sh("cmd statusbar collapse")
+    time.sleep(1.5)
     sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW allow")
     try:
         launch("voice/settings", wait=3)

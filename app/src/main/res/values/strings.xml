@@ -96,13 +96,13 @@
 
     <!-- Notifications -->
     <string name="channel_task">Running task</string>
-    <string name="channel_task_desc">Shown only while Atom is working on a task you asked for.</string>
+    <string name="channel_task_desc">Shown only while ATOM is working on a task you asked for.</string>
     <string name="channel_approval">Approvals</string>
-    <string name="channel_approval_desc">Atom asks before sensitive actions.</string>
+    <string name="channel_approval_desc">ATOM asks before sensitive actions.</string>
     <string name="channel_result">Task results</string>
-    <string name="channel_result_desc">When a task finishes while Atom is in the background.</string>
-    <string name="notif_working_title">Atom is running</string>
-    <string name="notif_waiting_title">Atom needs your approval</string>
+    <string name="channel_result_desc">When a task finishes while ATOM is in the background.</string>
+    <string name="notif_working_title">ATOM is running</string>
+    <string name="notif_waiting_title">ATOM needs your approval</string>
     <string name="notif_waiting_text">Tap Allow or Deny</string>
     <string name="notif_unlock_to_answer">Unlock to answer</string>
     <string name="notif_unlock_to_see">Unlock to see it</string>

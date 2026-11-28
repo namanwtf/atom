@@ -272,6 +272,8 @@ class TaskNotifications(private val context: Context) {
 
     private fun base(channel: String) = NotificationCompat.Builder(context, channel)
         .setSmallIcon(atom.ui.R.drawable.ic_stat_atom)
+        // ATOM's own coin, whatever app icon the system has cached for this package.
+        .setLargeIcon(atom.ui.theme.NotificationArt.largeIcon(context))
         .setColor(ACCENT)
 
     private fun canPost(): Boolean =

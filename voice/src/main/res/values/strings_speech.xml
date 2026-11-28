@@ -2,10 +2,10 @@
 <resources>
     <!-- Read aloud -->
     <string name="assistant_voice_channel">Assistant voice</string>
-    <string name="assistant_voice_channel_desc">Shown while Atom is listening or reading aloud outside the app, with a Stop button.</string>
-    <string name="assistant_voice_listening">Atom is listening</string>
+    <string name="assistant_voice_channel_desc">Shown while ATOM is listening or reading aloud outside the app, with a Stop button.</string>
+    <string name="assistant_voice_listening">ATOM is listening</string>
     <string name="assistant_voice_listening_text">Active only while the assistant overlay is visible</string>
-    <string name="speech_reading_title">Atom is reading aloud</string>
+    <string name="speech_reading_title">ATOM is reading aloud</string>
     <string name="speech_stop">Stop</string>
     <string name="speech_read_aloud">Read aloud</string>
     <string name="speech_stop_reading">Stop reading</string>
