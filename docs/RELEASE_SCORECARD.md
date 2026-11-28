@@ -51,7 +51,7 @@ plus a small AI model running on the same machine), never on a personal computer
 | | Task | Why |
 |---|---|---|
 | a | Write and run a small script in the terminal | emulator limit, as in every release since 4.0.5: the Linux install does not finish on this emulator |
-| d | Read the last notification | the 3B test model called the notification tool but left the dinner notification out of its answer; it passed in the three earlier runs of this branch, and 4.0.8 does not change notifications |
+| d | Read the last notification | the 3B test model called the notification tool but left the dinner notification out of its answer; it passed in the two earlier full runs of this branch, and 4.0.8 does not change notifications |
 
 Getting there took three runs of r. The first two failed in the test, not the app: the emulator's listening
 screenshot took 16 s, longer than the overlay's 14 s guard for a capture that has gone quiet, so the overlay ended
