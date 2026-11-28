@@ -21,6 +21,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -828,12 +829,24 @@ def s_hey_atom_overlay(res):
     hey_overlay("partial", text="What is 2 plus 2")
     ok, hs = wait_hey(r"^partial$", timeout=5)
     res.check(ok and hs.get("words") == "What is 2 plus 2", f"live words shown ({hs.get('words')!r})")
-    shot(f"e2e_{res.key}_listening")
-    known = run_ids()
-    freeze_clock()
     # A real capture reports its final words within its 10 s limit, and the overlay ends a capture that stays silent
-    # longer (its guard). The screenshot above takes the emulator several seconds, so the words come once more, as the
-    # recognizer would send them, right before the final result.
+    # longer (its guard). The screenshot below can take the emulator longer than the guard, so while it is taken the
+    # words keep coming every few seconds, as a recognizer sends partial results while someone is still speaking.
+    still_speaking = threading.Event()
+
+    def keep_speaking():
+        while not still_speaking.wait(4):
+            hey_overlay("partial", text="What is 2 plus 2")
+
+    speaker = threading.Thread(target=keep_speaking, daemon=True)
+    speaker.start()
+    try:
+        shot(f"e2e_{res.key}_listening")
+        known = run_ids()
+        freeze_clock()
+    finally:
+        still_speaking.set()
+        speaker.join()
     hey_overlay("partial", text="What is 2 plus 2?")
     out = hey_overlay("final", text="What is 2 plus 2?")
     if not res.check("taken=true" in out, f"the command runs in place ({out})"):
