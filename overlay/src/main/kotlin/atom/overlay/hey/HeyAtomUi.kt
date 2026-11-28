@@ -411,8 +411,8 @@ private fun ChatBar(s: HeyStage) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                if (typing) {
-                    TypingField()
+                if (s is HeyStage.Typing) {
+                    TypingField(s)
                 } else {
                     Text(stringResource(R.string.hey_atom_type_hint), fontSize = 15.sp, color = Muted, maxLines = 1)
                 }
@@ -439,10 +439,11 @@ private fun ChatBar(s: HeyStage) {
 
 /** The text field while typing: focused at once with the cursor at the end of what speech had heard. */
 @Composable
-private fun TypingField() {
+private fun TypingField(stage: HeyStage.Typing) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    var value by remember { mutableStateOf(TextFieldValue(HeyAtomOverlay.draft, TextRange(HeyAtomOverlay.draft.length))) }
+    // A new typing stage (a follow-up after a command) starts from its own draft.
+    var value by remember(stage) { mutableStateOf(TextFieldValue(HeyAtomOverlay.draft, TextRange(HeyAtomOverlay.draft.length))) }
     // The window becomes focusable as typing starts; the field takes focus and the keyboard opens once it has it.
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(windowFocused) {
