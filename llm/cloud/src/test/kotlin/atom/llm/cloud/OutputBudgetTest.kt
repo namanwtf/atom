@@ -63,9 +63,9 @@ class OutputBudgetTest {
         assertEquals(16_384, preset("qwen", "qwen3.8-max", ReasoningEffort.High))
         assertEquals(OutputBudget.ANSWER, preset("qwen", "qwen3.8-max", ReasoningEffort.Off))
         assertEquals(16_384, preset("mimo", "mimo-v2.5", null))
-        assertEquals(32_768, preset("openai", "gpt-6.1-sol", ReasoningEffort.Medium))
-        assertEquals(32_768, preset("gemini", "gemini-4-argon", null))
-        assertEquals(32_768, preset("anthropic", "claude-opus-5-5", ReasoningEffort.High))
+        assertEquals(65_536, preset("openai", "gpt-6.1-sol", ReasoningEffort.Medium))
+        assertEquals(65_536, preset("gemini", "gemini-4-argon", null))
+        assertEquals(65_536, preset("anthropic", "claude-opus-5-5", ReasoningEffort.High))
     }
 
     @Test
@@ -92,11 +92,27 @@ class OutputBudgetTest {
     fun theModelsOwnLimitAndItsWindowCapTheBudget() {
         val info = ReasoningInfo.forced()
         assertEquals(8_000, OutputBudget.Target(Wire.OpenAiChat, Family.OPENROUTER, "x/r1", info, maxOutput = 8_000).tokens(null))
-        // A small local window: a quarter of it, never below the answer budget.
-        assertEquals(8_192, OutputBudget.Target(Wire.OpenAiChat, Family.CUSTOM, "qwq", info, contextWindow = 32_768).tokens(null))
+        // A small local window: a third of it, never below the answer budget.
+        assertEquals(10_922, OutputBudget.Target(Wire.OpenAiChat, Family.CUSTOM, "qwq", info, contextWindow = 32_768).tokens(null))
         assertEquals(OutputBudget.ANSWER, OutputBudget.Target(Wire.OpenAiChat, Family.CUSTOM, "qwq", info, contextWindow = 4_096).tokens(null))
         // A model whose own limit is below the answer budget gets its own limit.
         assertEquals(1_024, OutputBudget.Target(Wire.OpenAiChat, Family.CUSTOM, "tiny", ReasoningInfo.None, maxOutput = 1_024).tokens(null))
+    }
+
+    @Test
+    fun aModelThatReportsALargerLimitGetsIt() {
+        val info = ReasoningInfo.forced()
+        // The provider's own list says 128K: a thinking request uses all of it, above the vendor figure.
+        assertEquals(128_000, OutputBudget.Target(Wire.Anthropic, Family.ANTHROPIC, "claude-opus-5-5", info, maxOutput = 128_000).tokens(null))
+        assertEquals(100_000, OutputBudget.Target(Wire.OpenAiResponses, Family.OPENAI, "o-model", info, maxOutput = 100_000).tokens(null))
+        // Never more than the ceiling, and never more than a third of the window.
+        assertEquals(OutputBudget.CEILING, OutputBudget.Target(Wire.Gemini, Family.GEMINI, "g", info, maxOutput = 500_000).tokens(null))
+        assertEquals(66_666, OutputBudget.Target(Wire.Anthropic, Family.ANTHROPIC, "claude-opus-5-5", info, maxOutput = 128_000, contextWindow = 200_000).tokens(null))
+        // Without thinking the reported limit does not raise the plain answer budget.
+        assertEquals(OutputBudget.ANSWER, OutputBudget.Target(Wire.OpenAiChat, Family.OPENAI, "gpt-4o", ReasoningInfo.None, maxOutput = 16_384).tokens(null))
+        // Legacy Claude keeps its answer room even when its limit is reported (the thinking budget goes on top).
+        val legacy = OutputBudget.Target(Wire.Anthropic, Family.ANTHROPIC, "claude-sonnet-4-5", ReasoningInfo.of(ReasoningEffort.Off, ReasoningEffort.High), maxOutput = 64_000)
+        assertEquals(OutputBudget.ANSWER, legacy.tokens(ReasoningEffort.High))
     }
 
     @Test

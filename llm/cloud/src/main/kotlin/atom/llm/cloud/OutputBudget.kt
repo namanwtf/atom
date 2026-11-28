@@ -15,10 +15,14 @@ import atom.core.llm.ReasoningEffort
  * - DeepSeek: thinking mode defaults to 64K output tokens (128K at max effort), so 32K (64K at max effort) is accepted.
  * - Kimi (Moonshot): the thinking guides ask for max_tokens of at least 16,000 and use 32K in their examples.
  * - Qwen (Alibaba Bailian) and SiliconFlow: 16K, within the smallest thinking-mode output limit of their models.
- * - OpenAI reasoning models, Gemini 2.5 and later, adaptive-thinking Claude: 32K, well under their maximums.
+ * - OpenAI reasoning models, Gemini 2.5 and later, adaptive-thinking Claude (4.6 and later): 64K, within the output
+ *   limit of every model of those generations (Gemini 2.5 and later take 65,536; adaptive Claude takes 64K or more;
+ *   OpenAI's reasoning models take 100K or more).
  * - Anything else: 16K.
- * A model's own output limit, when its catalog entry or model list says it, caps the budget, and so does a quarter of
- * a known context window (some servers refuse a request whose prompt plus output limit exceeds the window).
+ * When the provider's own model list reports a model's output limit, a thinking request uses that limit (up to
+ * [CEILING]) instead of the vendor figure, so a model that takes more gets more. The budget is also capped at a third
+ * of a known context window: the prompt may use the window minus the output room, and some servers refuse a request
+ * whose prompt plus output limit exceeds the window, so the prompt keeps at least two thirds of it.
  */
 object OutputBudget {
     /** Answer room when the model does not think. */
@@ -32,6 +36,12 @@ object OutputBudget {
 
     /** DeepSeek at its deepest effort, whose default output limit doubles there. */
     const val THINKING_MAX = 65_536
+
+    /** OpenAI reasoning models, Gemini 2.5 and later and adaptive-thinking Claude, which all take at least this. */
+    const val THINKING_XL = 65_536
+
+    /** The most a thinking request asks for, even when a model reports a larger output limit. */
+    const val CEILING = 131_072
 
     /** What [tokens] needs to know about the model a request goes to. */
     data class Target(
@@ -49,9 +59,16 @@ object OutputBudget {
 
     fun tokens(target: Target, effort: ReasoningEffort?): Int {
         val thinks = thinks(target.reasoning, effort) ?: ChatReasoning.interleaved(target.family)
-        val wanted = if (thinks) thinkingBudget(target, effort) else ANSWER
+        val reported = target.maxOutput?.takeIf { it > 0 }
+        val wanted = when {
+            !thinks -> ANSWER
+            // The legacy Anthropic thinking budget goes on top of max_tokens; the answer keeps its own room there.
+            target.wire == Wire.Anthropic && AnthropicEngine.isLegacyModel(target.modelId) -> ANSWER
+            reported != null -> minOf(reported, CEILING)
+            else -> thinkingBudget(target, effort)
+        }
         var budget = wanted
-        target.contextWindow?.takeIf { it > 0 }?.let { window -> budget = minOf(budget, maxOf(ANSWER, window / 4)) }
+        target.contextWindow?.takeIf { it > 0 }?.let { window -> budget = minOf(budget, maxOf(ANSWER, window / 3)) }
         target.maxOutput?.takeIf { it > 0 }?.let { max -> budget = minOf(budget, max) }
         return budget
     }
@@ -78,11 +95,12 @@ object OutputBudget {
 
     private fun thinkingBudget(target: Target, effort: ReasoningEffort?): Int = when (target.wire) {
         // The legacy thinking budget goes on top of max_tokens there; the answer keeps its own room.
-        Wire.Anthropic -> if (AnthropicEngine.isLegacyModel(target.modelId)) ANSWER else THINKING_LARGE
-        Wire.Gemini, Wire.Vertex -> THINKING_LARGE
+        Wire.Anthropic -> if (AnthropicEngine.isLegacyModel(target.modelId)) ANSWER else THINKING_XL
+        Wire.Gemini, Wire.Vertex -> THINKING_XL
         Wire.OpenAiChat, Wire.OpenAiResponses -> when (target.family) {
             Family.DEEPSEEK -> if (effort == ReasoningEffort.Max) THINKING_MAX else THINKING_LARGE
-            Family.MOONSHOT, Family.OPENAI -> THINKING_LARGE
+            Family.OPENAI -> THINKING_XL
+            Family.MOONSHOT -> THINKING_LARGE
             else -> THINKING
         }
     }
